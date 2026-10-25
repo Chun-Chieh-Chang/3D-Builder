@@ -1,4 +1,3 @@
-import { ToolButton } from './ToolButton';
 import { useEffect, useRef, useState } from 'react';
 import { t } from '@3db/i18n';
 import { Parameters } from '@3db/model';
@@ -46,7 +45,7 @@ export function InstantDepthHandle() {
   };
   void tick;
   return <>
-    <div style={{position:'absolute',right:16,bottom:16,zIndex:5}}><ToolButton action={{id:'instant3D',label:t('instant3d.name'),group:'view',enabled:()=>true,run:()=>{}}} active={enabled} pressed={enabled} description={t('instant3d.tip')} onClick={()=>{cleanup.current?.();setEnabled(value=>!value);}}/></div>
+    <button className="view-chip" data-action="instant3D" aria-pressed={enabled} style={{position:'absolute',right:16,bottom:16,zIndex:5}} onClick={()=>{cleanup.current?.();setEnabled(value=>!value);}}>Instant3D</button>
     {at&&host&&eligible&&<div data-instant-depth={feature.id} style={{position:'absolute',left:at[0]-host.left,top:at[1]-host.top,zIndex:5,pointerEvents:'none'}}>
       <svg width="220" height="220" viewBox="-110 -110 220 220" style={{position:'absolute',left:-110,top:-110,overflow:'visible'}}>
         <line x1="0" y1="0" x2={u[0]!*90} y2={u[1]!*90} stroke="var(--accent)"/>

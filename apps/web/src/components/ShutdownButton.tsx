@@ -1,4 +1,3 @@
-import { ToolButton } from './ToolButton';
 import { t } from '@3db/i18n';
 import { store, useStore } from '../state/store';
 
@@ -11,6 +10,8 @@ export function ShutdownButton() {
   const shuttingDown = useStore((s) => s.shuttingDown);
   if (!import.meta.env.DEV) return null;
   return (
-    <ToolButton action={{id:'shutdown',label:t('shutdown.button'),group:'tools',enabled:()=>!shuttingDown,run:()=>{}}} shutdown disabled={shuttingDown} description={t('shutdown.tip')} onClick={()=>void store.shutdown()}/>
+    <button className="tool" data-shutdown disabled={shuttingDown} title={t('shutdown.tip')} onClick={() => void store.shutdown()}>
+      {t('shutdown.button')}
+    </button>
   );
 }

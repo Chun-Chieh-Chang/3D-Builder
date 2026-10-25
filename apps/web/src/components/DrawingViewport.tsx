@@ -1,5 +1,3 @@
-import { ACTIONS } from '../actions';
-import { ToolButton } from './ToolButton';
 import { t } from '@3db/i18n';
 import { DrawingMenu, type DrawingMenuAt } from './DrawingViewMenu';
 import { SheetTabs } from './SheetTabs';
@@ -1425,7 +1423,13 @@ export function DrawingViewport() {
         )}
       </div>
       <div className="heads-up">
-        {(['fit','undo','redo'] as const).map(id=><ToolButton key={id} action={ACTIONS.find(a=>a.id===id)!} disabled={id==='undo'?!drw.canUndo:id==='redo'?!drw.canRedo:false} onClick={id==='fit'?fit:id==='undo'?()=>d.undo():()=>d.redo()}/>)}
+        <button onClick={fit}>{t('drawingUi.fit')}</button>
+        <button disabled={!drw.canUndo} onClick={() => d.undo()}>
+          {t('drawingUi.undo')}
+        </button>
+        <button disabled={!drw.canRedo} onClick={() => d.redo()}>
+          {t('drawingUi.redo')}
+        </button>
       </div>
       {tool?.kind === 'section' && !pendingPlacement && (
         <div className="heads-up drawing-toolopts" data-section-type style={{ top: 44 }}>

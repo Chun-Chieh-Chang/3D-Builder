@@ -1,4 +1,3 @@
-import { ToolButton } from './ToolButton';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { imageBitmapOf } from '../state/pictures';
 import { t } from '@3db/i18n';
@@ -7,7 +6,7 @@ import { InstantDepthHandle } from './InstantDepthHandle';
 import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, settingsOf, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { cubeFacets, Viewer, type DatumDisplay, type DisplayMode, type PlaneDisplay, type SectionPlane, type SketchOverlay, type StandardView } from '@3db/render';
-import { ACTIONS } from '../actions';
+import { ACTIONS, shortcutOf } from '../actions';
 import { chosen, pickable, prompt } from '../state/datumSlots';
 import { sample } from '@3db/sketch/interact';
 import { buildOverlay, SKETCH_COLORS } from '../sketcher/overlay';
@@ -517,7 +516,9 @@ export function Viewport() {
       {!sketching && <InstantDepthHandle />}
       <div ref={barRef} className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
-          <ToolButton key={a.id} action={a} disabled={!a.enabled(store.getState())} active={!!a.active?.()} onClick={a.run}/>
+          <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label} (${shortcutOf(a)})` : a.label}>
+            {a.label}
+          </button>
         ))}
       </div>
       {sketching && (
@@ -835,8 +836,10 @@ export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
         ))}
       </span>
       )}
-      <ToolButton action={{id:'view-section',label:t('view.section'),group:'view',enabled:()=>true,run:()=>{}}} active={cut!==null} pressed={cut!==null} description={t('view.sectionDragTip')} onClick={()=>setCut(cut?null:{axis:0,at:((bounds?.min[0]??0)+(bounds?.max[0]??0))/2,flip:false})}/>
-
+      <button className={`view-chip ${cut ? 'active' : ''}`} aria-pressed={cut !== null} title={t('view.sectionDragTip')} onClick={() => setCut(cut ? null : { axis: 0, at: ((bounds?.min[0] ?? 0) + (bounds?.max[0] ?? 0)) / 2, flip: false })}>
+        <Icon name="sectionView" />
+        {t('view.section')}
+      </button>
       {cut && range && (
         <div className="section-panel">
           <select
