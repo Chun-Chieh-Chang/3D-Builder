@@ -24,7 +24,8 @@ npm run build -w @3db/desktop   # 桌面版安裝檔（要 Rust 與 MSVC，見 a
 |---|---|
 | [handoff.md](handoff.md) | 目前狀態、待辦、下一步、工作約定、已知陷阱（換電腦先讀 §0） |
 | [docs/blueprint.md](docs/blueprint.md) | 範圍、架構、階段與驗收標準 |
-| [docs/adr/](docs/adr) | 架構決策紀錄（至 0200；0196 已撤回），每個里程碑一份，含驗收表與限制；全部列在 handoff.md §2 |
+| [docs/adr/](docs/adr) | 架構決策紀錄（至 0201；0196 已撤回），每個里程碑一份，含驗收表與限制；全部列在 handoff.md §2 |
+| [選單與圖示預覽](docs/design/menu-redesign/preview.html) | 參照SolidCraft的選單規劃與205指令圖示總覽（獨立設計稿） |
 | [DEV_LOG.md](DEV_LOG.md) | 每次交付的做法、紅隊四問、測試與 RCA（新的在最上面） |
 | [AGENTS.md](AGENTS.md) | 從過去錯誤萃取的強制規則（紅隊四問、記憶體量測、測試門檻） |
 | `docs/phase*-plan.md` | 各階段的里程碑與驗收標準；[docs/hardening-plan.md](docs/hardening-plan.md) 為鞏固（H-1 到 H-11） |

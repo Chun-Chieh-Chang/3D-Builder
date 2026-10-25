@@ -1,0 +1,2696 @@
+{
+  "status": "design-preview",
+  "baseline": "0a9b2ec",
+  "reference": {
+    "repository": "https://github.com/tangency-labs/solidcraft",
+    "commit": "bbc3aa4301380f4d6180ccbb12c35162d1fd98a1"
+  },
+  "commands": [
+    {
+      "id": "new-part",
+      "label": "新零件",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "新增"
+      ]
+    },
+    {
+      "id": "new-part-template",
+      "label": "新零件（範本）…",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "新增"
+      ]
+    },
+    {
+      "id": "new-assembly",
+      "label": "新組合件",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "新增"
+      ]
+    },
+    {
+      "id": "new-demo",
+      "label": "新示範件",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "新增"
+      ]
+    },
+    {
+      "id": "open",
+      "label": "開啟舊檔",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "開啟與儲存"
+      ]
+    },
+    {
+      "id": "save",
+      "label": "儲存檔案",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "開啟與儲存"
+      ]
+    },
+    {
+      "id": "save-as",
+      "label": "另存新檔",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "開啟與儲存"
+      ]
+    },
+    {
+      "id": "export-step",
+      "label": "輸出 STEP",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "匯出"
+      ]
+    },
+    {
+      "id": "export-stl",
+      "label": "輸出 STL",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "匯出"
+      ]
+    },
+    {
+      "id": "export-image",
+      "label": "輸出影像",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "匯出"
+      ]
+    },
+    {
+      "id": "new-drawing",
+      "label": "新工程圖",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "新增"
+      ]
+    },
+    {
+      "id": "generate-assembly",
+      "label": "從本體產生組合件",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "插入",
+        "檔案與幾何"
+      ]
+    },
+    {
+      "id": "import-step-assembly",
+      "label": "輸入 STEP 組合件…",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "插入",
+        "檔案與幾何"
+      ]
+    },
+    {
+      "id": "return-assembly",
+      "label": "返回組合件",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "返回"
+      ]
+    },
+    {
+      "id": "open-drawing-part",
+      "label": "開啟零件",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "視圖配置",
+        "來源"
+      ]
+    },
+    {
+      "id": "equations",
+      "label": "方程式",
+      "group": "tools",
+      "menuOnly": false,
+      "proposed": [
+        "管理",
+        "參數與屬性"
+      ]
+    },
+    {
+      "id": "appearance",
+      "label": "外觀",
+      "group": "tools",
+      "menuOnly": false,
+      "proposed": [
+        "管理",
+        "外觀"
+      ]
+    },
+    {
+      "id": "options",
+      "label": "系統選項…",
+      "group": "tools",
+      "menuOnly": false,
+      "proposed": [
+        "管理",
+        "設定"
+      ]
+    },
+    {
+      "id": "shortcuts",
+      "label": "快速鍵…",
+      "group": "tools",
+      "menuOnly": false,
+      "proposed": [
+        "管理",
+        "設定"
+      ]
+    },
+    {
+      "id": "measure-part",
+      "label": "測量",
+      "group": "tools",
+      "menuOnly": false,
+      "proposed": [
+        "檢查",
+        "量測"
+      ]
+    },
+    {
+      "id": "draft-analysis",
+      "label": "拔模分析",
+      "group": "tools",
+      "menuOnly": false,
+      "proposed": [
+        "檢查",
+        "幾何品質"
+      ]
+    },
+    {
+      "id": "undercut-analysis",
+      "label": "底切分析",
+      "group": "tools",
+      "menuOnly": false,
+      "proposed": [
+        "檢查",
+        "幾何品質"
+      ]
+    },
+    {
+      "id": "thickness-analysis",
+      "label": "厚度分析",
+      "group": "tools",
+      "menuOnly": false,
+      "proposed": [
+        "檢查",
+        "幾何品質"
+      ]
+    },
+    {
+      "id": "check-part",
+      "label": "檢查幾何…",
+      "group": "tools",
+      "menuOnly": false,
+      "proposed": [
+        "檢查",
+        "幾何品質"
+      ]
+    },
+    {
+      "id": "physical-part",
+      "label": "物質特性…",
+      "group": "tools",
+      "menuOnly": false,
+      "proposed": [
+        "檢查",
+        "量測"
+      ]
+    },
+    {
+      "id": "properties",
+      "label": "檔案屬性",
+      "group": "tools",
+      "menuOnly": false,
+      "proposed": [
+        "管理",
+        "參數與屬性"
+      ]
+    },
+    {
+      "id": "extrude",
+      "label": "伸長填料/基材",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "建立"
+      ]
+    },
+    {
+      "id": "revolve",
+      "label": "旋轉填料/基材",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "建立"
+      ]
+    },
+    {
+      "id": "sweep",
+      "label": "掃出填料/基材",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "建立"
+      ]
+    },
+    {
+      "id": "gear",
+      "label": "直齒齒輪",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "孔與機械"
+      ]
+    },
+    {
+      "id": "rack",
+      "label": "直齒齒條",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "孔與機械"
+      ]
+    },
+    {
+      "id": "loft",
+      "label": "疊層拉伸填料/基材",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "建立"
+      ]
+    },
+    {
+      "id": "rib",
+      "label": "肋材",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "建立"
+      ]
+    },
+    {
+      "id": "extrude-cut",
+      "label": "伸長除料",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "除料"
+      ]
+    },
+    {
+      "id": "revolve-cut",
+      "label": "旋轉除料",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "除料"
+      ]
+    },
+    {
+      "id": "sweep-cut",
+      "label": "掃出除料",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "除料"
+      ]
+    },
+    {
+      "id": "loft-cut",
+      "label": "疊層拉伸除料",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "除料"
+      ]
+    },
+    {
+      "id": "thread",
+      "label": "螺牙",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "孔與機械"
+      ]
+    },
+    {
+      "id": "knurl",
+      "label": "壓花",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "孔與機械"
+      ]
+    },
+    {
+      "id": "cosmetic-thread",
+      "label": "裝飾螺紋線",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "孔與機械"
+      ]
+    },
+    {
+      "id": "ruled-surface",
+      "label": "直紋曲面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "曲面",
+        "建立"
+      ]
+    },
+    {
+      "id": "radiated-surface",
+      "label": "放射曲面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "曲面",
+        "建立"
+      ]
+    },
+    {
+      "id": "replace-face",
+      "label": "取代面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "曲面",
+        "縫合與替換"
+      ]
+    },
+    {
+      "id": "projected-curve",
+      "label": "投影曲線",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "參考幾何"
+      ]
+    },
+    {
+      "id": "helix",
+      "label": "螺旋曲線與渦捲線",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "參考幾何"
+      ]
+    },
+    {
+      "id": "fillet",
+      "label": "圓角",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "修飾"
+      ]
+    },
+    {
+      "id": "chamfer",
+      "label": "導角",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "修飾"
+      ]
+    },
+    {
+      "id": "delete-face",
+      "label": "刪除面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "實體操作"
+      ]
+    },
+    {
+      "id": "hole",
+      "label": "異型孔",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "孔與機械"
+      ]
+    },
+    {
+      "id": "screw-boss",
+      "label": "螺柱",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "塑膠結構"
+      ]
+    },
+    {
+      "id": "base-flange",
+      "label": "基材凸緣",
+      "group": "sheet",
+      "menuOnly": false,
+      "proposed": [
+        "鈑金",
+        "基材與折彎"
+      ]
+    },
+    {
+      "id": "sheet-unfold",
+      "label": "展開加工",
+      "group": "sheet",
+      "menuOnly": false,
+      "proposed": [
+        "鈑金",
+        "展開加工"
+      ]
+    },
+    {
+      "id": "sheet-unfold-selected",
+      "label": "部分展開",
+      "group": "sheet",
+      "menuOnly": false,
+      "proposed": [
+        "鈑金",
+        "展開加工"
+      ]
+    },
+    {
+      "id": "sheet-refold",
+      "label": "摺回",
+      "group": "sheet",
+      "menuOnly": false,
+      "proposed": [
+        "鈑金",
+        "展開加工"
+      ]
+    },
+    {
+      "id": "mid-bend",
+      "label": "中間折彎",
+      "group": "sheet",
+      "menuOnly": false,
+      "proposed": [
+        "鈑金",
+        "基材與折彎"
+      ]
+    },
+    {
+      "id": "jog",
+      "label": "凸折",
+      "group": "sheet",
+      "menuOnly": false,
+      "proposed": [
+        "鈑金",
+        "基材與折彎"
+      ]
+    },
+    {
+      "id": "edge-flange",
+      "label": "邊線凸緣",
+      "group": "sheet",
+      "menuOnly": false,
+      "proposed": [
+        "鈑金",
+        "基材與折彎"
+      ]
+    },
+    {
+      "id": "hem",
+      "label": "摺邊",
+      "group": "sheet",
+      "menuOnly": false,
+      "proposed": [
+        "鈑金",
+        "基材與折彎"
+      ]
+    },
+    {
+      "id": "break-corner",
+      "label": "斷開角落",
+      "group": "sheet",
+      "menuOnly": false,
+      "proposed": [
+        "鈑金",
+        "角落"
+      ]
+    },
+    {
+      "id": "flat-pattern",
+      "label": "平板型式",
+      "group": "sheet",
+      "menuOnly": false,
+      "proposed": [
+        "鈑金",
+        "平板型式"
+      ]
+    },
+    {
+      "id": "snap-hook",
+      "label": "卡榫",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "塑膠結構"
+      ]
+    },
+    {
+      "id": "snap-catch",
+      "label": "卡榫的窗",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "塑膠結構"
+      ]
+    },
+    {
+      "id": "vent",
+      "label": "排氣口",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "塑膠結構"
+      ]
+    },
+    {
+      "id": "draft",
+      "label": "拔模",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "修飾"
+      ]
+    },
+    {
+      "id": "shell",
+      "label": "薄殼",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "修飾"
+      ]
+    },
+    {
+      "id": "move-face",
+      "label": "移動面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "實體操作"
+      ]
+    },
+    {
+      "id": "offset-surface",
+      "label": "偏移曲面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "曲面",
+        "建立"
+      ]
+    },
+    {
+      "id": "split-line",
+      "label": "分割線",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "曲面",
+        "修剪與延伸"
+      ]
+    },
+    {
+      "id": "knit",
+      "label": "縫織曲面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "曲面",
+        "縫合與替換"
+      ]
+    },
+    {
+      "id": "fill-surface",
+      "label": "填補曲面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "曲面",
+        "建立"
+      ]
+    },
+    {
+      "id": "flat-surface",
+      "label": "平坦曲面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "曲面",
+        "建立"
+      ]
+    },
+    {
+      "id": "trim-surface",
+      "label": "修剪曲面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "曲面",
+        "修剪與延伸"
+      ]
+    },
+    {
+      "id": "mutual-trim",
+      "label": "互相修剪曲面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "曲面",
+        "修剪與延伸"
+      ]
+    },
+    {
+      "id": "extend-surface",
+      "label": "延伸曲面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "曲面",
+        "修剪與延伸"
+      ]
+    },
+    {
+      "id": "thicken",
+      "label": "厚面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "曲面",
+        "實體化"
+      ]
+    },
+    {
+      "id": "cut-with-surface",
+      "label": "以曲面除料",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "曲面",
+        "實體化"
+      ]
+    },
+    {
+      "id": "lip-groove",
+      "label": "唇與溝槽",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "塑膠結構"
+      ]
+    },
+    {
+      "id": "combine",
+      "label": "組合",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "實體操作"
+      ]
+    },
+    {
+      "id": "split",
+      "label": "分割實體",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "實體操作"
+      ]
+    },
+    {
+      "id": "move-copy-body",
+      "label": "移動/複製本體",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "實體操作"
+      ]
+    },
+    {
+      "id": "delete-keep-body",
+      "label": "刪除/保留本體",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "實體操作"
+      ]
+    },
+    {
+      "id": "linear-pattern",
+      "label": "線性複製排列",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "排列"
+      ]
+    },
+    {
+      "id": "circular-pattern",
+      "label": "環狀複製排列",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "排列"
+      ]
+    },
+    {
+      "id": "curve-pattern",
+      "label": "曲線複製排列",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "排列"
+      ]
+    },
+    {
+      "id": "mirror",
+      "label": "鏡射",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "排列"
+      ]
+    },
+    {
+      "id": "ref-plane",
+      "label": "基準面",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "參考幾何"
+      ]
+    },
+    {
+      "id": "ref-axis",
+      "label": "基準軸",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "參考幾何"
+      ]
+    },
+    {
+      "id": "ref-point",
+      "label": "參考點",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "參考幾何"
+      ]
+    },
+    {
+      "id": "coord-sys",
+      "label": "座標系統",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "參考幾何"
+      ]
+    },
+    {
+      "id": "import-step",
+      "label": "輸入 STEP",
+      "group": "feature",
+      "menuOnly": false,
+      "proposed": [
+        "插入",
+        "檔案與幾何"
+      ]
+    },
+    {
+      "id": "edit-feature",
+      "label": "編輯特徵",
+      "group": "edit",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "edit-feature-sketch",
+      "label": "編輯草圖",
+      "group": "edit",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "suppress-feature",
+      "label": "抑制",
+      "group": "edit",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "toggle-visibility",
+      "label": "toggle-visibility",
+      "group": "edit",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "delete-feature",
+      "label": "刪除…",
+      "group": "edit",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "insert-component",
+      "label": "插入零組件",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "組合件",
+        "插入與結構"
+      ]
+    },
+    {
+      "id": "mate",
+      "label": "結合",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "組合件",
+        "配合"
+      ]
+    },
+    {
+      "id": "move-component",
+      "label": "移動零組件",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "組合件",
+        "位置"
+      ]
+    },
+    {
+      "id": "rotate-component",
+      "label": "旋轉零組件",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "組合件",
+        "位置"
+      ]
+    },
+    {
+      "id": "move-with-triad",
+      "label": "以座標軸移動",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "組合件",
+        "位置"
+      ]
+    },
+    {
+      "id": "form-sub-assembly",
+      "label": "形成次組合件…",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "組合件",
+        "插入與結構"
+      ]
+    },
+    {
+      "id": "explode",
+      "label": "爆炸視圖",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "組合件",
+        "呈現與清單"
+      ]
+    },
+    {
+      "id": "measure-assembly",
+      "label": "測量",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "檢查",
+        "量測"
+      ]
+    },
+    {
+      "id": "clearance",
+      "label": "餘隙確認",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "檢查",
+        "裝配檢查"
+      ]
+    },
+    {
+      "id": "interference",
+      "label": "干涉檢查",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "檢查",
+        "裝配檢查"
+      ]
+    },
+    {
+      "id": "check-assembly",
+      "label": "檢查幾何…",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "檢查",
+        "幾何品質"
+      ]
+    },
+    {
+      "id": "physical-assembly",
+      "label": "物質特性…",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "檢查",
+        "量測"
+      ]
+    },
+    {
+      "id": "bom",
+      "label": "零件表…",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "組合件",
+        "呈現與清單"
+      ]
+    },
+    {
+      "id": "pattern-linear",
+      "label": "線性複製排列",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "組合件",
+        "排列"
+      ]
+    },
+    {
+      "id": "pattern-circular",
+      "label": "環狀複製排列",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "組合件",
+        "排列"
+      ]
+    },
+    {
+      "id": "mirror-component",
+      "label": "鏡射零組件",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "組合件",
+        "排列"
+      ]
+    },
+    {
+      "id": "fix-component",
+      "label": "固定",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "組合件",
+        "位置"
+      ]
+    },
+    {
+      "id": "float-component",
+      "label": "浮動",
+      "group": "assembly",
+      "menuOnly": false,
+      "proposed": [
+        "組合件",
+        "位置"
+      ]
+    },
+    {
+      "id": "open-component",
+      "label": "開啟次組合件",
+      "group": "assembly",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "relink-component",
+      "label": "重新指定零件檔…",
+      "group": "assembly",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "hide-component",
+      "label": "hide-component",
+      "group": "assembly",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "transparent-component",
+      "label": "transparent-component",
+      "group": "assembly",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "suppress-component",
+      "label": "suppress-component",
+      "group": "assembly",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "delete-component",
+      "label": "刪除…",
+      "group": "assembly",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "sketch",
+      "label": "草圖",
+      "group": "sketch",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "草圖"
+      ]
+    },
+    {
+      "id": "offset-sketch",
+      "label": "偏移草圖",
+      "group": "sketch",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "草圖"
+      ]
+    },
+    {
+      "id": "angle-sketch",
+      "label": "角度草圖",
+      "group": "sketch",
+      "menuOnly": false,
+      "proposed": [
+        "建模",
+        "草圖"
+      ]
+    },
+    {
+      "id": "sketch-picture",
+      "label": "草圖圖片…",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "參考"
+      ]
+    },
+    {
+      "id": "construction",
+      "label": "幾何建構線",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "尺寸與拘束"
+      ]
+    },
+    {
+      "id": "select-underdefined",
+      "label": "選取欠定義圖元",
+      "group": "sketch",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "尺寸與拘束"
+      ]
+    },
+    {
+      "id": "automatic-relations",
+      "label": "自動幾何關係",
+      "group": "sketch",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "尺寸與拘束"
+      ]
+    },
+    {
+      "id": "exit-sketch",
+      "label": "離開草圖",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "完成"
+      ]
+    },
+    {
+      "id": "sketch-delete",
+      "label": "刪除",
+      "group": "sketch-tool",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "sketch-select-chain",
+      "label": "選擇鏈",
+      "group": "sketch-tool",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "sketch-end-tool",
+      "label": "結束目前的工具",
+      "group": "sketch-tool",
+      "menuOnly": true,
+      "proposed": [
+        "右鍵",
+        "依選取物件"
+      ]
+    },
+    {
+      "id": "drw-open-part",
+      "label": "開啟零件",
+      "group": "drawing",
+      "menuOnly": false,
+      "proposed": [
+        "視圖配置",
+        "來源"
+      ]
+    },
+    {
+      "id": "drw-standard",
+      "label": "標準三視圖",
+      "group": "drawing",
+      "menuOnly": false,
+      "proposed": [
+        "視圖配置",
+        "視圖"
+      ]
+    },
+    {
+      "id": "drw-projected",
+      "label": "投影視圖",
+      "group": "drawing",
+      "menuOnly": false,
+      "proposed": [
+        "視圖配置",
+        "視圖"
+      ]
+    },
+    {
+      "id": "drw-section",
+      "label": "剖面",
+      "group": "drawing",
+      "menuOnly": false,
+      "proposed": [
+        "視圖配置",
+        "視圖"
+      ]
+    },
+    {
+      "id": "drw-detail",
+      "label": "細部",
+      "group": "drawing",
+      "menuOnly": false,
+      "proposed": [
+        "視圖配置",
+        "視圖"
+      ]
+    },
+    {
+      "id": "drw-autoscale",
+      "label": "最適比例",
+      "group": "drawing",
+      "menuOnly": false,
+      "proposed": [
+        "視圖配置",
+        "視圖"
+      ]
+    },
+    {
+      "id": "drw-dimension",
+      "label": "智慧型尺寸",
+      "group": "annotation",
+      "menuOnly": false,
+      "proposed": [
+        "註記",
+        "尺寸"
+      ]
+    },
+    {
+      "id": "drw-dim-horizontal",
+      "label": "水平尺寸",
+      "group": "annotation",
+      "menuOnly": false,
+      "parent": "drw-dimension",
+      "proposed": [
+        "註記",
+        "尺寸"
+      ]
+    },
+    {
+      "id": "drw-dim-vertical",
+      "label": "垂直尺寸",
+      "group": "annotation",
+      "menuOnly": false,
+      "parent": "drw-dimension",
+      "proposed": [
+        "註記",
+        "尺寸"
+      ]
+    },
+    {
+      "id": "drw-dim-aligned",
+      "label": "對齊尺寸",
+      "group": "annotation",
+      "menuOnly": false,
+      "parent": "drw-dimension",
+      "proposed": [
+        "註記",
+        "尺寸"
+      ]
+    },
+    {
+      "id": "drw-dim-angle",
+      "label": "角度尺寸",
+      "group": "annotation",
+      "menuOnly": false,
+      "parent": "drw-dimension",
+      "proposed": [
+        "註記",
+        "尺寸"
+      ]
+    },
+    {
+      "id": "drw-dim-radius",
+      "label": "半徑尺寸",
+      "group": "annotation",
+      "menuOnly": false,
+      "parent": "drw-dimension",
+      "proposed": [
+        "註記",
+        "尺寸"
+      ]
+    },
+    {
+      "id": "drw-dim-diameter",
+      "label": "直徑尺寸",
+      "group": "annotation",
+      "menuOnly": false,
+      "parent": "drw-dimension",
+      "proposed": [
+        "註記",
+        "尺寸"
+      ]
+    },
+    {
+      "id": "drw-dim-chamfer",
+      "label": "倒角尺寸",
+      "group": "annotation",
+      "menuOnly": false,
+      "parent": "drw-dimension",
+      "proposed": [
+        "註記",
+        "尺寸"
+      ]
+    },
+    {
+      "id": "drw-baseline",
+      "label": "基線尺寸",
+      "group": "annotation",
+      "menuOnly": false,
+      "proposed": [
+        "註記",
+        "尺寸排列"
+      ]
+    },
+    {
+      "id": "drw-ordinate",
+      "label": "座標尺寸",
+      "group": "annotation",
+      "menuOnly": false,
+      "proposed": [
+        "註記",
+        "尺寸排列"
+      ]
+    },
+    {
+      "id": "drw-arrange",
+      "label": "自動排列尺寸",
+      "group": "annotation",
+      "menuOnly": false,
+      "proposed": [
+        "註記",
+        "尺寸排列"
+      ]
+    },
+    {
+      "id": "drw-note",
+      "label": "註解",
+      "group": "annotation",
+      "menuOnly": false,
+      "proposed": [
+        "註記",
+        "文字與符號"
+      ]
+    },
+    {
+      "id": "drw-datum",
+      "label": "基準",
+      "group": "annotation",
+      "menuOnly": false,
+      "proposed": [
+        "註記",
+        "文字與符號"
+      ]
+    },
+    {
+      "id": "drw-fcf",
+      "label": "幾何公差",
+      "group": "annotation",
+      "menuOnly": false,
+      "proposed": [
+        "註記",
+        "文字與符號"
+      ]
+    },
+    {
+      "id": "drw-centre-mark",
+      "label": "中心符號線",
+      "group": "annotation",
+      "menuOnly": false,
+      "proposed": [
+        "註記",
+        "中心"
+      ]
+    },
+    {
+      "id": "drw-centre-line",
+      "label": "中心線",
+      "group": "annotation",
+      "menuOnly": false,
+      "proposed": [
+        "註記",
+        "中心"
+      ]
+    },
+    {
+      "id": "drw-surface",
+      "label": "加入表面粗糙度",
+      "group": "annotation",
+      "menuOnly": false,
+      "proposed": [
+        "註記",
+        "文字與符號"
+      ]
+    },
+    {
+      "id": "drw-hole-table",
+      "label": "加入孔表",
+      "group": "annotation",
+      "menuOnly": false,
+      "proposed": [
+        "表格",
+        "表格"
+      ]
+    },
+    {
+      "id": "drw-bom",
+      "label": "加入零件表（含零件號球）",
+      "group": "annotation",
+      "menuOnly": false,
+      "proposed": [
+        "表格",
+        "表格"
+      ]
+    },
+    {
+      "id": "drw-pdf",
+      "label": "輸出 PDF",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "匯出"
+      ]
+    },
+    {
+      "id": "drw-dxf",
+      "label": "輸出 DXF",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "匯出"
+      ]
+    },
+    {
+      "id": "drw-svg",
+      "label": "輸出 SVG",
+      "group": "file",
+      "menuOnly": false,
+      "proposed": [
+        "檔案",
+        "匯出"
+      ]
+    },
+    {
+      "id": "undo",
+      "label": "復原",
+      "group": "edit",
+      "menuOnly": false,
+      "proposed": [
+        "編輯",
+        "歷程"
+      ]
+    },
+    {
+      "id": "redo",
+      "label": "重做",
+      "group": "edit",
+      "menuOnly": false,
+      "proposed": [
+        "編輯",
+        "歷程"
+      ]
+    },
+    {
+      "id": "rebuild",
+      "label": "重新計算",
+      "group": "edit",
+      "menuOnly": false,
+      "proposed": [
+        "編輯",
+        "歷程"
+      ]
+    },
+    {
+      "id": "fit",
+      "label": "全部顯示",
+      "group": "view",
+      "menuOnly": false,
+      "proposed": [
+        "檢視",
+        "方向"
+      ]
+    },
+    {
+      "id": "view-front",
+      "label": "前視",
+      "group": "view",
+      "menuOnly": false,
+      "proposed": [
+        "檢視",
+        "方向"
+      ]
+    },
+    {
+      "id": "view-back",
+      "label": "後視",
+      "group": "view",
+      "menuOnly": false,
+      "proposed": [
+        "檢視",
+        "方向"
+      ]
+    },
+    {
+      "id": "view-top",
+      "label": "上視",
+      "group": "view",
+      "menuOnly": false,
+      "proposed": [
+        "檢視",
+        "方向"
+      ]
+    },
+    {
+      "id": "view-bottom",
+      "label": "下視",
+      "group": "view",
+      "menuOnly": false,
+      "proposed": [
+        "檢視",
+        "方向"
+      ]
+    },
+    {
+      "id": "view-right",
+      "label": "右視",
+      "group": "view",
+      "menuOnly": false,
+      "proposed": [
+        "檢視",
+        "方向"
+      ]
+    },
+    {
+      "id": "view-left",
+      "label": "左視",
+      "group": "view",
+      "menuOnly": false,
+      "proposed": [
+        "檢視",
+        "方向"
+      ]
+    },
+    {
+      "id": "view-iso",
+      "label": "等角",
+      "group": "view",
+      "menuOnly": false,
+      "proposed": [
+        "檢視",
+        "方向"
+      ]
+    },
+    {
+      "id": "view-normal",
+      "label": "正視於",
+      "group": "view",
+      "menuOnly": false,
+      "proposed": [
+        "檢視",
+        "方向"
+      ]
+    },
+    {
+      "id": "filter-bar",
+      "label": "選擇濾器列",
+      "group": "view",
+      "menuOnly": false,
+      "proposed": [
+        "檢視",
+        "選取"
+      ]
+    },
+    {
+      "id": "clear-filters",
+      "label": "清除選擇濾器",
+      "group": "view",
+      "menuOnly": false,
+      "proposed": [
+        "檢視",
+        "選取"
+      ]
+    },
+    {
+      "id": "tool-dimension",
+      "label": "智慧型尺寸",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "尺寸與拘束"
+      ]
+    },
+    {
+      "id": "tool-line",
+      "label": "直線",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-centerline",
+      "label": "中心線",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-rect",
+      "label": "邊角矩形",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-centerRect",
+      "label": "中心矩形",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-ellipse",
+      "label": "ellipse",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-bezier",
+      "label": "bezier",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-circle",
+      "label": "圓",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-perimeterCircle",
+      "label": "周邊圓",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-arc",
+      "label": "中心點圓弧",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-tangentArc",
+      "label": "切線弧",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-threePointArc",
+      "label": "三點定弧",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-slot",
+      "label": "狹槽",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-polygon",
+      "label": "多邊形",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-point",
+      "label": "點",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-text",
+      "label": "文字",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "繪製"
+      ]
+    },
+    {
+      "id": "tool-sketchFillet",
+      "label": "草圖圓角",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "修剪與修飾"
+      ]
+    },
+    {
+      "id": "tool-sketchChamfer",
+      "label": "草圖導角",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "修剪與修飾"
+      ]
+    },
+    {
+      "id": "tool-trim",
+      "label": "修剪",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "修剪與修飾"
+      ]
+    },
+    {
+      "id": "tool-extend",
+      "label": "延伸",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "修剪與修飾"
+      ]
+    },
+    {
+      "id": "tool-offset",
+      "label": "偏移圖元",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "修剪與修飾"
+      ]
+    },
+    {
+      "id": "tool-mirror",
+      "label": "鏡射圖元",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "變換與陣列"
+      ]
+    },
+    {
+      "id": "tool-convert",
+      "label": "轉換實體引用",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "參考"
+      ]
+    },
+    {
+      "id": "tool-pierce",
+      "label": "貫穿",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "參考"
+      ]
+    },
+    {
+      "id": "tool-intersect",
+      "label": "相交曲線",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "參考"
+      ]
+    },
+    {
+      "id": "tool-silhouette",
+      "label": "側影輪廓線",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "參考"
+      ]
+    },
+    {
+      "id": "tool-stretchEntities",
+      "label": "stretchEntities",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "變換與陣列"
+      ]
+    },
+    {
+      "id": "tool-moveEntities",
+      "label": "移動圖元",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "變換與陣列"
+      ]
+    },
+    {
+      "id": "tool-copyEntities",
+      "label": "複製圖元",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "變換與陣列"
+      ]
+    },
+    {
+      "id": "tool-rotateEntities",
+      "label": "旋轉圖元",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "變換與陣列"
+      ]
+    },
+    {
+      "id": "tool-scaleEntities",
+      "label": "縮放圖元",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "變換與陣列"
+      ]
+    },
+    {
+      "id": "tool-linearPattern",
+      "label": "線性草圖陣列",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "變換與陣列"
+      ]
+    },
+    {
+      "id": "tool-circularPattern",
+      "label": "環狀草圖陣列",
+      "group": "sketch-tool",
+      "menuOnly": false,
+      "proposed": [
+        "草圖",
+        "變換與陣列"
+      ]
+    }
+  ],
+  "sections": {
+    "建模": [
+      {
+        "name": "草圖",
+        "ids": [
+          "sketch",
+          "offset-sketch",
+          "angle-sketch"
+        ],
+        "promoted": [
+          "sketch"
+        ]
+      },
+      {
+        "name": "建立",
+        "ids": [
+          "extrude",
+          "revolve",
+          "sweep",
+          "loft",
+          "rib"
+        ],
+        "promoted": [
+          "extrude",
+          "revolve"
+        ]
+      },
+      {
+        "name": "除料",
+        "ids": [
+          "extrude-cut",
+          "revolve-cut",
+          "sweep-cut",
+          "loft-cut"
+        ],
+        "promoted": [
+          "extrude-cut"
+        ]
+      },
+      {
+        "name": "修飾",
+        "ids": [
+          "fillet",
+          "chamfer",
+          "shell",
+          "draft"
+        ],
+        "promoted": [
+          "fillet",
+          "chamfer",
+          "shell"
+        ]
+      },
+      {
+        "name": "排列",
+        "ids": [
+          "linear-pattern",
+          "circular-pattern",
+          "curve-pattern",
+          "mirror"
+        ],
+        "promoted": [
+          "linear-pattern",
+          "mirror"
+        ]
+      },
+      {
+        "name": "參考幾何",
+        "ids": [
+          "ref-plane",
+          "ref-axis",
+          "ref-point",
+          "coord-sys",
+          "projected-curve",
+          "helix"
+        ],
+        "promoted": [
+          "ref-plane"
+        ]
+      },
+      {
+        "name": "實體操作",
+        "ids": [
+          "combine",
+          "split",
+          "move-copy-body",
+          "delete-keep-body",
+          "move-face",
+          "delete-face"
+        ],
+        "promoted": [
+          "move-face"
+        ]
+      },
+      {
+        "name": "孔與機械",
+        "ids": [
+          "hole",
+          "thread",
+          "cosmetic-thread",
+          "knurl",
+          "gear",
+          "rack"
+        ],
+        "promoted": [
+          "hole"
+        ]
+      },
+      {
+        "name": "塑膠結構",
+        "ids": [
+          "screw-boss",
+          "snap-hook",
+          "snap-catch",
+          "vent",
+          "lip-groove"
+        ],
+        "promoted": []
+      }
+    ],
+    "曲面": [
+      {
+        "name": "建立",
+        "ids": [
+          "flat-surface",
+          "fill-surface",
+          "offset-surface",
+          "ruled-surface",
+          "radiated-surface"
+        ],
+        "promoted": [
+          "flat-surface",
+          "fill-surface"
+        ]
+      },
+      {
+        "name": "修剪與延伸",
+        "ids": [
+          "trim-surface",
+          "mutual-trim",
+          "extend-surface",
+          "split-line"
+        ],
+        "promoted": [
+          "trim-surface",
+          "extend-surface"
+        ]
+      },
+      {
+        "name": "縫合與替換",
+        "ids": [
+          "knit",
+          "replace-face"
+        ],
+        "promoted": [
+          "knit"
+        ]
+      },
+      {
+        "name": "實體化",
+        "ids": [
+          "thicken",
+          "cut-with-surface"
+        ],
+        "promoted": [
+          "thicken"
+        ]
+      }
+    ],
+    "鈑金": [
+      {
+        "name": "基材與折彎",
+        "ids": [
+          "base-flange",
+          "edge-flange",
+          "mid-bend",
+          "jog",
+          "hem"
+        ],
+        "promoted": [
+          "base-flange",
+          "edge-flange",
+          "mid-bend"
+        ]
+      },
+      {
+        "name": "角落",
+        "ids": [
+          "break-corner"
+        ],
+        "promoted": [
+          "break-corner"
+        ]
+      },
+      {
+        "name": "展開加工",
+        "ids": [
+          "sheet-unfold",
+          "sheet-unfold-selected",
+          "sheet-refold"
+        ],
+        "promoted": [
+          "sheet-unfold",
+          "sheet-unfold-selected",
+          "sheet-refold"
+        ]
+      },
+      {
+        "name": "平板型式",
+        "ids": [
+          "flat-pattern"
+        ],
+        "promoted": [
+          "flat-pattern"
+        ]
+      }
+    ],
+    "插入": [
+      {
+        "name": "檔案與幾何",
+        "ids": [
+          "import-step",
+          "generate-assembly",
+          "import-step-assembly"
+        ],
+        "promoted": [
+          "import-step"
+        ]
+      }
+    ],
+    "檢查": [
+      {
+        "name": "量測",
+        "ids": [
+          "measure-part",
+          "measure-assembly",
+          "physical-part",
+          "physical-assembly"
+        ],
+        "promoted": [
+          "measure-part",
+          "physical-part"
+        ]
+      },
+      {
+        "name": "幾何品質",
+        "ids": [
+          "check-part",
+          "draft-analysis",
+          "undercut-analysis",
+          "thickness-analysis",
+          "check-assembly"
+        ],
+        "promoted": [
+          "check-part",
+          "draft-analysis"
+        ]
+      },
+      {
+        "name": "裝配檢查",
+        "ids": [
+          "interference",
+          "clearance"
+        ],
+        "promoted": [
+          "interference",
+          "clearance"
+        ]
+      }
+    ],
+    "管理": [
+      {
+        "name": "參數與屬性",
+        "ids": [
+          "equations",
+          "properties"
+        ],
+        "promoted": [
+          "equations",
+          "properties"
+        ]
+      },
+      {
+        "name": "外觀",
+        "ids": [
+          "appearance"
+        ],
+        "promoted": [
+          "appearance"
+        ]
+      },
+      {
+        "name": "設定",
+        "ids": [
+          "options",
+          "shortcuts"
+        ],
+        "promoted": [
+          "options",
+          "shortcuts"
+        ]
+      }
+    ],
+    "檢視": [
+      {
+        "name": "方向",
+        "ids": [
+          "fit",
+          "view-front",
+          "view-back",
+          "view-top",
+          "view-bottom",
+          "view-right",
+          "view-left",
+          "view-iso",
+          "view-normal"
+        ],
+        "promoted": [
+          "fit",
+          "view-iso",
+          "view-normal"
+        ]
+      },
+      {
+        "name": "選取",
+        "ids": [
+          "filter-bar",
+          "clear-filters"
+        ],
+        "promoted": [
+          "filter-bar"
+        ]
+      }
+    ],
+    "組合件": [
+      {
+        "name": "插入與結構",
+        "ids": [
+          "insert-component",
+          "form-sub-assembly"
+        ],
+        "promoted": [
+          "insert-component"
+        ]
+      },
+      {
+        "name": "配合",
+        "ids": [
+          "mate"
+        ],
+        "promoted": [
+          "mate"
+        ]
+      },
+      {
+        "name": "位置",
+        "ids": [
+          "move-component",
+          "rotate-component",
+          "move-with-triad",
+          "fix-component",
+          "float-component"
+        ],
+        "promoted": [
+          "move-component",
+          "fix-component"
+        ]
+      },
+      {
+        "name": "排列",
+        "ids": [
+          "pattern-linear",
+          "pattern-circular",
+          "mirror-component"
+        ],
+        "promoted": [
+          "pattern-linear",
+          "mirror-component"
+        ]
+      },
+      {
+        "name": "呈現與清單",
+        "ids": [
+          "explode",
+          "bom"
+        ],
+        "promoted": [
+          "explode",
+          "bom"
+        ]
+      }
+    ],
+    "草圖": [
+      {
+        "name": "繪製",
+        "ids": [
+          "tool-line",
+          "tool-centerline",
+          "tool-rect",
+          "tool-centerRect",
+          "tool-circle",
+          "tool-perimeterCircle",
+          "tool-arc",
+          "tool-tangentArc",
+          "tool-threePointArc",
+          "tool-slot",
+          "tool-polygon",
+          "tool-point",
+          "tool-text",
+          "tool-ellipse",
+          "tool-bezier"
+        ],
+        "promoted": [
+          "tool-line",
+          "tool-rect",
+          "tool-circle"
+        ]
+      },
+      {
+        "name": "修剪與修飾",
+        "ids": [
+          "tool-trim",
+          "tool-extend",
+          "tool-sketchFillet",
+          "tool-sketchChamfer",
+          "tool-offset"
+        ],
+        "promoted": [
+          "tool-trim",
+          "tool-extend",
+          "tool-offset"
+        ]
+      },
+      {
+        "name": "變換與陣列",
+        "ids": [
+          "tool-mirror",
+          "tool-moveEntities",
+          "tool-copyEntities",
+          "tool-rotateEntities",
+          "tool-scaleEntities",
+          "tool-stretchEntities",
+          "tool-linearPattern",
+          "tool-circularPattern"
+        ],
+        "promoted": [
+          "tool-mirror"
+        ]
+      },
+      {
+        "name": "尺寸與拘束",
+        "ids": [
+          "tool-dimension",
+          "construction",
+          "select-underdefined",
+          "automatic-relations"
+        ],
+        "promoted": [
+          "tool-dimension",
+          "construction"
+        ]
+      },
+      {
+        "name": "參考",
+        "ids": [
+          "tool-convert",
+          "tool-pierce",
+          "tool-intersect",
+          "tool-silhouette",
+          "sketch-picture"
+        ],
+        "promoted": [
+          "tool-convert"
+        ]
+      },
+      {
+        "name": "完成",
+        "ids": [
+          "exit-sketch"
+        ],
+        "promoted": [
+          "exit-sketch"
+        ]
+      }
+    ],
+    "視圖配置": [
+      {
+        "name": "視圖",
+        "ids": [
+          "drw-standard",
+          "drw-projected",
+          "drw-section",
+          "drw-detail",
+          "drw-autoscale"
+        ],
+        "promoted": [
+          "drw-standard",
+          "drw-projected",
+          "drw-section"
+        ]
+      },
+      {
+        "name": "來源",
+        "ids": [
+          "drw-open-part",
+          "open-drawing-part"
+        ],
+        "promoted": []
+      }
+    ],
+    "註記": [
+      {
+        "name": "尺寸",
+        "ids": [
+          "drw-dimension",
+          "drw-dim-horizontal",
+          "drw-dim-vertical",
+          "drw-dim-aligned",
+          "drw-dim-angle",
+          "drw-dim-radius",
+          "drw-dim-diameter",
+          "drw-dim-chamfer"
+        ],
+        "promoted": [
+          "drw-dimension"
+        ]
+      },
+      {
+        "name": "尺寸排列",
+        "ids": [
+          "drw-baseline",
+          "drw-ordinate",
+          "drw-arrange"
+        ],
+        "promoted": [
+          "drw-baseline",
+          "drw-arrange"
+        ]
+      },
+      {
+        "name": "文字與符號",
+        "ids": [
+          "drw-note",
+          "drw-datum",
+          "drw-fcf",
+          "drw-surface"
+        ],
+        "promoted": [
+          "drw-note",
+          "drw-fcf"
+        ]
+      },
+      {
+        "name": "中心",
+        "ids": [
+          "drw-centre-mark",
+          "drw-centre-line"
+        ],
+        "promoted": [
+          "drw-centre-mark"
+        ]
+      }
+    ],
+    "表格": [
+      {
+        "name": "表格",
+        "ids": [
+          "drw-hole-table",
+          "drw-bom"
+        ],
+        "promoted": [
+          "drw-hole-table",
+          "drw-bom"
+        ]
+      }
+    ],
+    "檔案": [
+      {
+        "name": "新增",
+        "ids": [
+          "new-part",
+          "new-part-template",
+          "new-assembly",
+          "new-demo",
+          "new-drawing"
+        ],
+        "promoted": []
+      },
+      {
+        "name": "開啟與儲存",
+        "ids": [
+          "open",
+          "save",
+          "save-as"
+        ],
+        "promoted": []
+      },
+      {
+        "name": "匯出",
+        "ids": [
+          "export-step",
+          "export-stl",
+          "export-image",
+          "drw-pdf",
+          "drw-dxf",
+          "drw-svg"
+        ],
+        "promoted": []
+      },
+      {
+        "name": "返回",
+        "ids": [
+          "return-assembly"
+        ],
+        "promoted": []
+      }
+    ],
+    "編輯": [
+      {
+        "name": "歷程",
+        "ids": [
+          "undo",
+          "redo",
+          "rebuild"
+        ],
+        "promoted": []
+      }
+    ]
+  }
+}

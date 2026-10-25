@@ -4,6 +4,7 @@ import { ACTIONS, type UiAction } from '../actions';
 import { actionTooltip, currentTopicId } from '../help/context';
 import { closeHelp, openHelp, setPicking, useHelp } from '../help/state';
 import { useDocumentTitle, useSketcherView, useStore } from '../state/store';
+import { ActionIcon } from './ActionIcon';
 import { ShutdownButton } from './ShutdownButton';
 
 type Tab = { id: string; label: string; groups: UiAction['group'][] };
@@ -114,7 +115,7 @@ export function CommandBar() {
                       <button
                         key={x.id}
                         role="menuitem"
-                        className={x.active?.() ? 'tool active' : 'tool'}
+                        className={x.active?.() ? 'tool with-icon active' : 'tool with-icon'}
                         data-help={x.id}
                         disabled={!x.enabled(state)}
                         onClick={() => {
@@ -124,7 +125,7 @@ export function CommandBar() {
                         }}
                         title={actionTooltip(x)}
                       >
-                        {x.label}
+                        <ActionIcon id={x.id} /><span className="tool-label">{x.label}</span>
                       </button>
                     );
                     const children = ACTIONS.filter((x) => x.parent === a.id);
@@ -162,8 +163,8 @@ export function CommandBar() {
       </nav>
       <div className="quick-actions">
         {quick.map((a) => (
-          <button key={a.id} className="tool" data-help={a.id} disabled={!a.enabled(state)} onClick={a.run} title={actionTooltip(a)}>
-            {a.label}
+          <button key={a.id} className="tool with-icon" data-help={a.id} disabled={!a.enabled(state)} onClick={a.run} title={actionTooltip(a)}>
+            <ActionIcon id={a.id} /><span className="tool-label">{a.label}</span>
           </button>
         ))}
       </div>

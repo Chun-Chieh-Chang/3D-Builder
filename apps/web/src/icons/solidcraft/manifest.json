@@ -1,0 +1,852 @@
+{
+  "upstream": "https://github.com/tangency-labs/solidcraft",
+  "commit": "bbc3aa4301380f4d6180ccbb12c35162d1fd98a1",
+  "license": "MIT",
+  "masters": {
+    "accessibility": {
+      "source": "assets/icons/ui/design/svg/model/accessibility.svg",
+      "sha256": "877e6665c150799f2e6e47d1bd5b303d84f99ff73aaff54e71e4dea09c39b51a"
+    },
+    "activate": {
+      "source": "assets/icons/ui/design/svg/model/activate.svg",
+      "sha256": "a9adc68e1bb07f8e490d19810630226854b6d9ce86cc2e78de725e9b932f4d8d"
+    },
+    "align": {
+      "source": "assets/icons/ui/design/svg/model/align.svg",
+      "sha256": "a283e5124a87391b0454811d673b2c0605191945a44a6c152e787d95fe465f26"
+    },
+    "appearance": {
+      "source": "assets/icons/ui/design/svg/model/appearance.svg",
+      "sha256": "b56b9c86988ed0919fe942fd4003f71f92978fe6ca040a8b8d5635387d8a85b3"
+    },
+    "arc3": {
+      "source": "assets/icons/ui/design/svg/model/arc3.svg",
+      "sha256": "a4d3d8d616cbe48f22fa23ad64923e519d5a2bd82462e80251a38b5f428757c7"
+    },
+    "arc_center": {
+      "source": "assets/icons/ui/design/svg/model/arc_center.svg",
+      "sha256": "f9a7cc2d352c2db68b98fa658b17ca7fc69b416bbe717a5870316be6ac8a7c0b"
+    },
+    "arc_tangent": {
+      "source": "assets/icons/ui/design/svg/model/arc_tangent.svg",
+      "sha256": "59833a7fa0b55df5faf0310e38d64ad291c93540a672bb0bcca2d88b2aa6381b"
+    },
+    "auto_constrain": {
+      "source": "assets/icons/ui/design/svg/model/auto_constrain.svg",
+      "sha256": "69e342c34535c755c90980cfc83efd377f26b171428a4ed5815e795c8988cb79"
+    },
+    "axis": {
+      "source": "assets/icons/ui/design/svg/model/axis.svg",
+      "sha256": "03242c99fe81674140b9fccb9545fcdad2262a622c83c40c14508c45d0f97719"
+    },
+    "blend_surface": {
+      "source": "assets/icons/ui/design/svg/model/blend_surface.svg",
+      "sha256": "c87469c3405260d136850e3c00898c9f4737ef77e63c5cfd31df0ed99319765c"
+    },
+    "body": {
+      "source": "assets/icons/ui/design/svg/model/body.svg",
+      "sha256": "e5b793f7250130116f9b8c112d0ab72085aa0181bad178ab29542e568fce188f"
+    },
+    "boss": {
+      "source": "assets/icons/ui/design/svg/model/boss.svg",
+      "sha256": "38bc64549478298a161fd6de6631206c2013b5008b155a049210864823d10557"
+    },
+    "box": {
+      "source": "assets/icons/ui/design/svg/model/box.svg",
+      "sha256": "0010501a4ceda2601b6077d70ac53ec2060c313d1fdf889fff87fa495fa6fffa"
+    },
+    "c_fix": {
+      "source": "assets/icons/ui/design/svg/model/c_fix.svg",
+      "sha256": "b1c8e1fa23574e7ee9832ccb2af3f1f174c74c21ba06a509379b62fd30b27dbc"
+    },
+    "c_perpendicular": {
+      "source": "assets/icons/ui/design/svg/model/c_perpendicular.svg",
+      "sha256": "3f59cffaa0d38cedd4cef8ca9a0c431b350dee6ed4393ebf5d3d5aa55ee8e9ef"
+    },
+    "camera": {
+      "source": "assets/icons/ui/design/svg/model/camera.svg",
+      "sha256": "60b151fe7cfad21a573cb965eca5d47d4f1042e78d0c03ca5bad0e168c0db7bf"
+    },
+    "canvas": {
+      "source": "assets/icons/ui/design/svg/model/canvas.svg",
+      "sha256": "4303101afa46dd91d78befe3084120567fd6296fcfe7c2848b5f85019f5e4d36"
+    },
+    "center_of_mass": {
+      "source": "assets/icons/ui/design/svg/model/center_of_mass.svg",
+      "sha256": "1c1809b8996fbf64681639306ede4225ce5f89aa4db23dbd465b3839f0d62739"
+    },
+    "centerline": {
+      "source": "assets/icons/ui/design/svg/model/centerline.svg",
+      "sha256": "9c0afa539885909b7abb964def096a06ce39716ec0978262309f97f24a183fdd"
+    },
+    "chain": {
+      "source": "assets/icons/ui/design/svg/model/chain.svg",
+      "sha256": "a497aab087abb0e21d28e10ec5b1314a715cfd1d2d39fd03de87376d3c139d95"
+    },
+    "chamfer": {
+      "source": "assets/icons/ui/design/svg/model/chamfer.svg",
+      "sha256": "e880a67044bb4f2422c2dbd9aa55292a46f65a3aa530979ab81622b917e1851f"
+    },
+    "circle": {
+      "source": "assets/icons/ui/design/svg/model/circle.svg",
+      "sha256": "dcce73ac3a1938fba37ad908fb4bb337c2fd521ee5717105db2046c13e9fc621"
+    },
+    "circle3": {
+      "source": "assets/icons/ui/design/svg/model/circle3.svg",
+      "sha256": "2740fd02f693f8507459a5abc699c57f2f3b9bebf386da3eae0588a97df87cda"
+    },
+    "close": {
+      "source": "assets/icons/ui/design/svg/flat/close.svg",
+      "sha256": "3d5e923a71c92d85c8653f99add07ccef64a0dbe14762225e630c07726134a5f"
+    },
+    "coil": {
+      "source": "assets/icons/ui/design/svg/model/coil.svg",
+      "sha256": "ee0876d0f2d51776d7f82613b77c6e3afa6bc38fba35de1cb5c8a15c68d187ee"
+    },
+    "combine": {
+      "source": "assets/icons/ui/design/svg/model/combine.svg",
+      "sha256": "b7a565cdcab598144675dcc969948e129d66b459d76c0d68ae07ef0e1d0c8be9"
+    },
+    "component": {
+      "source": "assets/icons/ui/design/svg/model/component.svg",
+      "sha256": "b70f463c6635887cebfed2b1c43951385f368f4d7c5afc1f18bd9655210ee90d"
+    },
+    "compute": {
+      "source": "assets/icons/ui/design/svg/model/compute.svg",
+      "sha256": "1b00f20594c6c22531de96353c4a160171d4d173f7cfc7ae4d180816eda09ef4"
+    },
+    "configuration_table": {
+      "source": "assets/icons/ui/design/svg/model/configuration_table.svg",
+      "sha256": "348d67742590c052dece4ca4b94af229de0adaa4612c10733fea602b08101b34"
+    },
+    "construction": {
+      "source": "assets/icons/ui/design/svg/model/construction.svg",
+      "sha256": "d55f74b0af6308c28ce9b28aa3a2c32949e4eb99e3244c4e168ed945f0aafc3b"
+    },
+    "contact_sets": {
+      "source": "assets/icons/ui/design/svg/model/contact_sets.svg",
+      "sha256": "7b26242f5ec2f19260177b284cee2d48ec740a1e8e407559111b7e8ccc9328b9"
+    },
+    "copy": {
+      "source": "assets/icons/ui/design/svg/model/copy.svg",
+      "sha256": "29e0480e40bf08905e52147c836ca7b013467261d11542bc9d91912e45803285"
+    },
+    "cylinder": {
+      "source": "assets/icons/ui/design/svg/model/cylinder.svg",
+      "sha256": "319b397fafb510a8db4cf3ea9c2ef81a4f84c54671bf4406b4afaf35aff4a3d1"
+    },
+    "delete": {
+      "source": "assets/icons/ui/design/svg/model/delete.svg",
+      "sha256": "004b2f2acfe85bef06c6031e561eeffb9eaf8b9a971dc672792612a8c97d3c2d"
+    },
+    "delete_face": {
+      "source": "assets/icons/ui/design/svg/model/delete_face.svg",
+      "sha256": "167599ed7a66c79f53d91fbb983b63e52d8f80ff45d1b786cf50bd0acffa450b"
+    },
+    "dimension": {
+      "source": "assets/icons/ui/design/svg/model/dimension.svg",
+      "sha256": "a949a75c1082ede4c909ca6be56c8200fd2efd781f5fac485020b1c9861c3f0e"
+    },
+    "dots": {
+      "source": "assets/icons/ui/design/svg/model/dots.svg",
+      "sha256": "2f1cb343550daa782a7f8d8a5f9687af56632ccc15c042ac9f32ea8bb0edd768"
+    },
+    "draft": {
+      "source": "assets/icons/ui/design/svg/model/draft.svg",
+      "sha256": "ce598b238e404e50fca25d4e2e6723c1cf4cb4aab63eb8f065b881ab896feed9"
+    },
+    "draft_analysis": {
+      "source": "assets/icons/ui/design/svg/model/draft_analysis.svg",
+      "sha256": "3fe2a8d8ee200e9b7298ebac7b6ec72c0846b90084ba97e7a6a5f24485e4ab9b"
+    },
+    "edit": {
+      "source": "assets/icons/ui/design/svg/model/edit.svg",
+      "sha256": "bcb56fb8d591a26795135a380f3957bf5f2defe487582641149b19f9a6427656"
+    },
+    "ellipse": {
+      "source": "assets/icons/ui/design/svg/model/ellipse.svg",
+      "sha256": "ae9644669921c9248562cd3db5371eaf40dd4000c0028d40895a7908d0e4576e"
+    },
+    "explode": {
+      "source": "assets/icons/ui/design/svg/model/explode.svg",
+      "sha256": "089e8559f9608f4baec0e442c69e6fd4e0c7c106bc3538630936b7f7a0f2e943"
+    },
+    "export": {
+      "source": "assets/icons/ui/design/svg/model/export.svg",
+      "sha256": "54cc94e0c0b4781ea285eff902e1abe84a755f911517cc7b5ae13ce037713a87"
+    },
+    "extend": {
+      "source": "assets/icons/ui/design/svg/model/extend.svg",
+      "sha256": "5d64f12cb3457ebc9e09fa9544e4ae4bfa8f260ec47820d61d4e3f480a27830c"
+    },
+    "extrude": {
+      "source": "assets/icons/ui/design/svg/model/extrude.svg",
+      "sha256": "69e244a55c482b1d3a1840bf4b02f2b7820d3435f64cdfc71d1b31e8826401c8"
+    },
+    "eye": {
+      "source": "assets/icons/ui/design/svg/flat/eye.svg",
+      "sha256": "6c51315e2a701c1c796c23806302f948cc7c53c15fc85e6df9bf7d9706e0ec52"
+    },
+    "fillet": {
+      "source": "assets/icons/ui/design/svg/model/fillet.svg",
+      "sha256": "e353d50ffb619f256d3c496f3db343c742b2c8452b9578a621ea5ddaa8f6cd1a"
+    },
+    "filter": {
+      "source": "assets/icons/ui/design/svg/model/filter.svg",
+      "sha256": "db13db136e65e48bc24853ee37db83d5d16391eb94eabf43be0082fcfd079b97"
+    },
+    "finish": {
+      "source": "assets/icons/ui/design/svg/model/finish.svg",
+      "sha256": "3103373362d303ac71a9ae8f9f82b6651046908f2df8c5c96846f7c02516d4af"
+    },
+    "fit": {
+      "source": "assets/icons/ui/design/svg/flat/fit.svg",
+      "sha256": "f080e1d2d05c3e2b1eb22e988e8591da89c5e36a2e825288e1ead89f66374ab5"
+    },
+    "flange": {
+      "source": "assets/icons/ui/design/svg/model/flange.svg",
+      "sha256": "8b16cb66dd208cf59d40c95b549cd2997f8ff1260015560b6a4b233daa335fdc"
+    },
+    "flat": {
+      "source": "assets/icons/ui/design/svg/model/flat.svg",
+      "sha256": "7269ec589f7e425bed8a8ce1a9cc3ef81bed46d4d6e68c2cad229dde53048eb6"
+    },
+    "fold": {
+      "source": "assets/icons/ui/design/svg/model/fold.svg",
+      "sha256": "e41e8fd0aabc91c1349ed17604928896f39308ddd42a61a3f5802c9a6fa3db7f"
+    },
+    "gear": {
+      "source": "assets/icons/ui/design/svg/model/gear.svg",
+      "sha256": "265dbb25c4ad8e8c95d9c3ec58f6dc80bb5befa396686c9e9463da263f74d786"
+    },
+    "hem": {
+      "source": "assets/icons/ui/design/svg/model/hem.svg",
+      "sha256": "3fe6220ade11b243c43bc1661b4196020a4823d1dede4f683109686f012540dc"
+    },
+    "hole": {
+      "source": "assets/icons/ui/design/svg/model/hole.svg",
+      "sha256": "a1ad293ddf783c1feedeb4b24f19ffcb87ea05dfc1b4941f05c5d65035622de8"
+    },
+    "import": {
+      "source": "assets/icons/ui/design/svg/model/import.svg",
+      "sha256": "516dd75afe5b927d5c563e093147d56e69a89d6daead5532c858fc5fe463cff4"
+    },
+    "include": {
+      "source": "assets/icons/ui/design/svg/model/include.svg",
+      "sha256": "57459cf7b872b2ab128b633a3088aef151b45f6d1fdcca360ecefdf585e8471c"
+    },
+    "inspect": {
+      "source": "assets/icons/ui/design/svg/model/inspect.svg",
+      "sha256": "35e557e705c939025c1c2ca885380740ca4f753f13a51d45e0f88c851f872467"
+    },
+    "interference": {
+      "source": "assets/icons/ui/design/svg/model/interference.svg",
+      "sha256": "c4164f9b9876e7c1177be64efe5d9259f1a09139a0a39aeb2643760e3b9ec908"
+    },
+    "intersect": {
+      "source": "assets/icons/ui/design/svg/model/intersect.svg",
+      "sha256": "2f0eb819f4b2ad39be3a6e05b3bbbbfc7ff056c5609603375b66e6cddeeb1c0d"
+    },
+    "joint": {
+      "source": "assets/icons/ui/design/svg/model/joint.svg",
+      "sha256": "0fc8cf55d1eff85d904a783eeff67e670707e5424ebb352e10ca961bd95172ec"
+    },
+    "line": {
+      "source": "assets/icons/ui/design/svg/model/line.svg",
+      "sha256": "5ba267782351333a870a3bcbdcfb75d52ffd1222a136f21e4645cb6f11fd72ce"
+    },
+    "lip": {
+      "source": "assets/icons/ui/design/svg/model/lip.svg",
+      "sha256": "65b5c95667ef15e6e063538d7074f335666aca467459e82d591357817a539287"
+    },
+    "list": {
+      "source": "assets/icons/ui/design/svg/model/list.svg",
+      "sha256": "eaf5009fd724130dff9ddac6ddbd65ed02c4af9dd931abd77bdf2562fdb27c53"
+    },
+    "loft": {
+      "source": "assets/icons/ui/design/svg/model/loft.svg",
+      "sha256": "39d92ecb9294ab0176e440c9066a6b9b51cb1c8d26bdfe81db0fd331a54eee97"
+    },
+    "measure": {
+      "source": "assets/icons/ui/design/svg/model/measure.svg",
+      "sha256": "bd37b1e0b489d6c17c6071f18ab0503e546714f1d9ed1f63836e60ff470ec89f"
+    },
+    "mirror": {
+      "source": "assets/icons/ui/design/svg/model/mirror.svg",
+      "sha256": "1e9d1e8ff7fe351ff4249887381b61a265a7d1f565f5b42417ca40f7bf50a8e8"
+    },
+    "move": {
+      "source": "assets/icons/ui/design/svg/model/move.svg",
+      "sha256": "9bd2442fea29e10c458559cdf60922f74da39efbe285afb32e8f721b38393d57"
+    },
+    "new": {
+      "source": "assets/icons/ui/design/svg/model/new.svg",
+      "sha256": "0e6b7ea8f3aa8d64350b4924c4a47d215253840c6322203907ba79aee652aef4"
+    },
+    "normal": {
+      "source": "assets/icons/ui/design/svg/model/normal.svg",
+      "sha256": "453db36332f7757b6c229edd10719dd30f1a6f908c5ed4a826ddc950b68bbecc"
+    },
+    "offset": {
+      "source": "assets/icons/ui/design/svg/model/offset.svg",
+      "sha256": "43c9377c12effa8cf71689abf6c6c05fd75ae88a7ed4c8a46f7a5a6fe6a70473"
+    },
+    "offset_surface": {
+      "source": "assets/icons/ui/design/svg/model/offset_surface.svg",
+      "sha256": "d071b17bd98955a600c9e1fc1fa804aa042e0c50eb812e39bc7ef4ff9642feeb"
+    },
+    "open": {
+      "source": "assets/icons/ui/design/svg/model/open.svg",
+      "sha256": "299186a3d7bf6c9122f1ff4eafd419cca157645be1f91d94dbf0721e9c06c2cb"
+    },
+    "origin": {
+      "source": "assets/icons/ui/design/svg/model/origin.svg",
+      "sha256": "f7b86512387b380eeae46e154846ec8aa358f611c8a18d75567d3fcf78367231"
+    },
+    "params": {
+      "source": "assets/icons/ui/design/svg/model/params.svg",
+      "sha256": "32709911f571ac138fd4a2a9fabb3647f6b357bfe5ebc33b180f6aec21d23576"
+    },
+    "patch": {
+      "source": "assets/icons/ui/design/svg/model/patch.svg",
+      "sha256": "e483ff4db305c75e36a3ca5a2b320cf46667713c115f1cbb668e6f052db90d53"
+    },
+    "pattern_circ": {
+      "source": "assets/icons/ui/design/svg/model/pattern_circ.svg",
+      "sha256": "9e555a9fd0629f44c5491f74d65928f8ec85774c7786cd807b9ab98768cfd399"
+    },
+    "pattern_path": {
+      "source": "assets/icons/ui/design/svg/model/pattern_path.svg",
+      "sha256": "10f0d44e768f1b509f5a44829f2cb49832b5f9154458d4d05755b41b9acaadcd"
+    },
+    "pattern_rect": {
+      "source": "assets/icons/ui/design/svg/model/pattern_rect.svg",
+      "sha256": "d38d0c6e420ca82a009cfa11fb24e54a59946708964b12eae2629a680cb64b73"
+    },
+    "perforate": {
+      "source": "assets/icons/ui/design/svg/model/perforate.svg",
+      "sha256": "3b50dce98cfe373c8fc89f6301bbeb353e0eac39fbba7afdeffeb54a9567d9fd"
+    },
+    "plane": {
+      "source": "assets/icons/ui/design/svg/model/plane.svg",
+      "sha256": "4ca6e56304836ecdf8d23b899fe14f2c8b6fb187c6ed54467b38432c0543f1a5"
+    },
+    "point": {
+      "source": "assets/icons/ui/design/svg/model/point.svg",
+      "sha256": "d0b1fed4d11169dee18de51d019fb564f6d847c804c7e871aaabd1baa9702d0a"
+    },
+    "point_edge_plane": {
+      "source": "assets/icons/ui/design/svg/model/point_edge_plane.svg",
+      "sha256": "edab07d8722aedfb24d57fa6b59b92612975735476765067ffdbfec7ea2f86bf"
+    },
+    "point_vertex": {
+      "source": "assets/icons/ui/design/svg/model/point_vertex.svg",
+      "sha256": "3a9d0f77ff9cda5c8d96696a6d35e7e3e220cba55f27f5d9b4d999d2877848d7"
+    },
+    "polygon": {
+      "source": "assets/icons/ui/design/svg/model/polygon.svg",
+      "sha256": "d22f3df71ff780bd3b404a2a7346ddadae51af8f81c42b59c4ef21cba3d89b5e"
+    },
+    "presspull": {
+      "source": "assets/icons/ui/design/svg/model/presspull.svg",
+      "sha256": "02d7539bf6eb22e3a94031413a7055f2961ba5b4c8352dc165b79d43e8b007ff"
+    },
+    "project": {
+      "source": "assets/icons/ui/design/svg/model/project.svg",
+      "sha256": "4111465b83ba79de8ca223ac05d0fe34838f6fa797fd6be9076b14730eb35e12"
+    },
+    "rack_pinion": {
+      "source": "assets/icons/ui/design/svg/model/rack_pinion.svg",
+      "sha256": "cf585cfcaec3d4765e2c72fe95eb1b069d1379c21988febf3a4813820e873fe3"
+    },
+    "rect": {
+      "source": "assets/icons/ui/design/svg/model/rect.svg",
+      "sha256": "472d28c060c463847259dde30ae457c4dfa94d850d7a7371316629eedadd5d0f"
+    },
+    "rect_center": {
+      "source": "assets/icons/ui/design/svg/model/rect_center.svg",
+      "sha256": "3041552542fae545f9ba8ddfa8e825d2a522eb40ee7273cae5e83c419df502d2"
+    },
+    "redo": {
+      "source": "assets/icons/ui/design/svg/flat/redo.svg",
+      "sha256": "fdfefad477bbface3f0b9b206d11af68b6dd5cd3ed6a3124e207d491fb8e5c5d"
+    },
+    "refold": {
+      "source": "assets/icons/ui/design/svg/model/refold.svg",
+      "sha256": "8fc718afa093b0ce7d787b56492a0bc85d64c5f84590e8ce814e5f6e372fc556"
+    },
+    "reorder": {
+      "source": "assets/icons/ui/design/svg/model/reorder.svg",
+      "sha256": "3a96d8977b256997c77764384b32ffb2a1187d433b1e5ee21d36c0920d1337ce"
+    },
+    "replace_face": {
+      "source": "assets/icons/ui/design/svg/model/replace_face.svg",
+      "sha256": "7246a69d72ffab955cc64f7f1c144b6706ff8eb1c6bed39ad31231f44bf8bb66"
+    },
+    "revert": {
+      "source": "assets/icons/ui/design/svg/model/revert.svg",
+      "sha256": "10e446fc0263df3bf261529aef0402f639408bd825ff2a43abb0b3e0172b8114"
+    },
+    "revolve": {
+      "source": "assets/icons/ui/design/svg/model/revolve.svg",
+      "sha256": "9c2bcb7f284716b74ef9b704c5d61aa2f1d75f90e3d6cd948ab63c4c0b305646"
+    },
+    "rib": {
+      "source": "assets/icons/ui/design/svg/model/rib.svg",
+      "sha256": "e76705176b49ecda12d6aca4c20c0566ea00e1d51f052353e34a408812a71847"
+    },
+    "ruled": {
+      "source": "assets/icons/ui/design/svg/model/ruled.svg",
+      "sha256": "321aaa66b8ecdd4abf75986078c392d337e2eccec6d828285202e3bb6ef3baa7"
+    },
+    "save": {
+      "source": "assets/icons/ui/design/svg/flat/save.svg",
+      "sha256": "f34baf170d4549cbc26ceb64a319fdde627eb84e5d9dda182c556e090e9911b7"
+    },
+    "scale": {
+      "source": "assets/icons/ui/design/svg/model/scale.svg",
+      "sha256": "0b53b550e5add5e3f5b727a4c7c36692f4112ae9c282cfe324a611e2b438a685"
+    },
+    "section": {
+      "source": "assets/icons/ui/design/svg/model/section.svg",
+      "sha256": "5dd6ac1c8bf6094c437b1f16c2e895740393f4e517c4b6bdb0ecb81082a3fd19"
+    },
+    "select": {
+      "source": "assets/icons/ui/design/svg/model/select.svg",
+      "sha256": "c7d6e5d3d762c4118bc4f5a7181a39350831d3048325bd812be905088c50ad51"
+    },
+    "sheet": {
+      "source": "assets/icons/ui/design/svg/model/sheet.svg",
+      "sha256": "faf14d13baaad2f568d4bcfdea94aab09f6d94faeb3c1d01cf8d1b831663c22c"
+    },
+    "sheet_rules": {
+      "source": "assets/icons/ui/design/svg/model/sheet_rules.svg",
+      "sha256": "5e5a7b2f42a9d77c4762dd3b6b3d2e3ef1504046750373638edc9da0872cd381"
+    },
+    "shell": {
+      "source": "assets/icons/ui/design/svg/model/shell.svg",
+      "sha256": "ceb0bdb3fe2ff7a4079b5c6fff5e521b4d85bdb9975ec9490c644bac07eec388"
+    },
+    "silhouette": {
+      "source": "assets/icons/ui/design/svg/model/silhouette.svg",
+      "sha256": "70ce49873bf52da8803ec5789acc54450336ce30ac0323575b327cd052183227"
+    },
+    "sketch": {
+      "source": "assets/icons/ui/design/svg/model/sketch.svg",
+      "sha256": "cf7d584ef8fe6cc4f602d76850c1234f37834e94594b89ea7fe79a21b7274a33"
+    },
+    "sketch_chamfer": {
+      "source": "assets/icons/ui/design/svg/model/sketch_chamfer.svg",
+      "sha256": "6d8fa2c2bc42fad613ebb2d8454644313946db7937c5a111acd56e44cd48bd79"
+    },
+    "sketch_fillet": {
+      "source": "assets/icons/ui/design/svg/model/sketch_fillet.svg",
+      "sha256": "5ef536810b8dcc8f6ca35e11e10f79fdc98bc8800288e576b164df7a1d420338"
+    },
+    "sketch_mirror": {
+      "source": "assets/icons/ui/design/svg/model/sketch_mirror.svg",
+      "sha256": "71f1be277b132de2f2634a175d39de192e636e99b1da26fcad2a7f77cfe471d5"
+    },
+    "slot": {
+      "source": "assets/icons/ui/design/svg/model/slot.svg",
+      "sha256": "e76a033564fa2dfd40b124b5efd15e91847bfc40fbf158cd6520d665cfd8c5e3"
+    },
+    "snap_fit": {
+      "source": "assets/icons/ui/design/svg/model/snap_fit.svg",
+      "sha256": "1e7f14cc6ba5c30481d9044300f208be64f48cd2a5b9360a979beb764a0a95b0"
+    },
+    "spline_cv": {
+      "source": "assets/icons/ui/design/svg/model/spline_cv.svg",
+      "sha256": "29eb930b82f421b3a63c45f249a81c775e9312473ac438b878d07db1f4709bb4"
+    },
+    "split_body": {
+      "source": "assets/icons/ui/design/svg/model/split_body.svg",
+      "sha256": "2807c59221b1c51fb6ee5b8e67887d92ac62e6ac74523b5e1f95b6d03633adcc"
+    },
+    "split_face": {
+      "source": "assets/icons/ui/design/svg/model/split_face.svg",
+      "sha256": "e1ccff9a3e434ec5220165c2db834eba224ea6204a1224a982f46259f39dd8d9"
+    },
+    "stitch": {
+      "source": "assets/icons/ui/design/svg/model/stitch.svg",
+      "sha256": "0e4d72abe6c902fa4e96c7a1baf416190e20fb742eb23261570d9f2388f3c6ad"
+    },
+    "surface": {
+      "source": "assets/icons/ui/design/svg/model/surface.svg",
+      "sha256": "cf0e5ede48fcb1b74013f63dafea0614ec6c2f996ee71999638f3d5b81588ccc"
+    },
+    "sweep": {
+      "source": "assets/icons/ui/design/svg/model/sweep.svg",
+      "sha256": "a445637d20c490a090301aa527b13f1d8078447c601aaa2f0f81e2647faac3ea"
+    },
+    "text": {
+      "source": "assets/icons/ui/design/svg/model/text.svg",
+      "sha256": "6f963ab2a1f2d5e71c2f1ff02818703f8ed6b431f0cbf888152c1b645e75b4bb"
+    },
+    "thicken": {
+      "source": "assets/icons/ui/design/svg/model/thicken.svg",
+      "sha256": "4b6336355a4e8afe3c79913f0b8b285cbffd0edaa05ad01cc2198ee0f3e81a81"
+    },
+    "thread": {
+      "source": "assets/icons/ui/design/svg/model/thread.svg",
+      "sha256": "74f867b76b4d3f8808db4de46408e33ee319b41098c6178a3e83b0e30d31d96e"
+    },
+    "trim": {
+      "source": "assets/icons/ui/design/svg/model/trim.svg",
+      "sha256": "b3374faa4d15e87fbc09e5e6e3d2cebf4da3b9eff16de78b242a6672a83d00fb"
+    },
+    "undo": {
+      "source": "assets/icons/ui/design/svg/flat/undo.svg",
+      "sha256": "0442ddbe7d06fa952f3ce06f6248ede5ec3f158a12fbe981784ac01ff2ce568a"
+    },
+    "unfold": {
+      "source": "assets/icons/ui/design/svg/model/unfold.svg",
+      "sha256": "56db695b41908cc12af178bd2b3610b6e66f8b64cd1e8518ce8a168af5995ad9"
+    }
+  },
+  "actions": {
+    "new-part": "new",
+    "new-part-template": "new",
+    "new-demo": "new",
+    "new-assembly": "component",
+    "insert-component": "component",
+    "form-sub-assembly": "component",
+    "sketch": "sketch",
+    "offset-sketch": "sketch",
+    "angle-sketch": "sketch",
+    "edit-feature-sketch": "sketch",
+    "open": "open",
+    "open-component": "open",
+    "open-drawing-part": "open",
+    "drw-open-part": "open",
+    "return-assembly": "open",
+    "save": "save",
+    "save-as": "save",
+    "export-step": "export",
+    "export-stl": "export",
+    "export-image": "export",
+    "drw-pdf": "export",
+    "drw-dxf": "export",
+    "drw-svg": "export",
+    "import-step": "import",
+    "import-step-assembly": "import",
+    "new-drawing": "configuration_table",
+    "generate-assembly": "component",
+    "equations": "params",
+    "appearance": "appearance",
+    "options": "sheet_rules",
+    "shortcuts": "sheet_rules",
+    "measure-part": "measure",
+    "measure-assembly": "measure",
+    "draft-analysis": "draft_analysis",
+    "undercut-analysis": "accessibility",
+    "thickness-analysis": "inspect",
+    "check-part": "inspect",
+    "check-assembly": "inspect",
+    "drw-detail": "inspect",
+    "physical-part": "center_of_mass",
+    "physical-assembly": "center_of_mass",
+    "properties": "list",
+    "bom": "list",
+    "drw-hole-table": "list",
+    "drw-bom": "list",
+    "extrude": "extrude",
+    "revolve": "revolve",
+    "sweep": "sweep",
+    "loft": "loft",
+    "rib": "rib",
+    "gear": "gear",
+    "rack": "rack_pinion",
+    "thread": "thread",
+    "cosmetic-thread": "thread",
+    "knurl": "cylinder",
+    "ruled-surface": "ruled",
+    "radiated-surface": "blend_surface",
+    "replace-face": "replace_face",
+    "projected-curve": "project",
+    "helix": "coil",
+    "fillet": "fillet",
+    "chamfer": "chamfer",
+    "delete-face": "delete_face",
+    "hole": "hole",
+    "screw-boss": "boss",
+    "snap-hook": "snap_fit",
+    "snap-catch": "snap_fit",
+    "vent": "perforate",
+    "draft": "draft",
+    "shell": "shell",
+    "move-face": "presspull",
+    "offset-surface": "offset_surface",
+    "split-line": "split_face",
+    "knit": "stitch",
+    "fill-surface": "patch",
+    "flat-surface": "surface",
+    "drw-surface": "surface",
+    "trim-surface": "trim",
+    "mutual-trim": "trim",
+    "extend-surface": "extend",
+    "thicken": "thicken",
+    "cut-with-surface": "split_body",
+    "split": "split_body",
+    "lip-groove": "lip",
+    "combine": "combine",
+    "move-copy-body": "move",
+    "move-component": "move",
+    "move-with-triad": "move",
+    "delete-keep-body": "delete",
+    "delete-feature": "delete",
+    "delete-component": "delete",
+    "sketch-delete": "delete",
+    "linear-pattern": "pattern_rect",
+    "pattern-linear": "pattern_rect",
+    "circular-pattern": "pattern_circ",
+    "pattern-circular": "pattern_circ",
+    "curve-pattern": "pattern_path",
+    "mirror": "mirror",
+    "mirror-component": "mirror",
+    "ref-plane": "plane",
+    "ref-axis": "axis",
+    "ref-point": "point",
+    "coord-sys": "origin",
+    "base-flange": "sheet",
+    "sheet-unfold": "unfold",
+    "sheet-unfold-selected": "unfold",
+    "sheet-refold": "refold",
+    "mid-bend": "fold",
+    "jog": "fold",
+    "edge-flange": "flange",
+    "hem": "hem",
+    "break-corner": "sketch_chamfer",
+    "flat-pattern": "flat",
+    "edit-feature": "edit",
+    "suppress-feature": "activate",
+    "suppress-component": "activate",
+    "toggle-visibility": "eye",
+    "hide-component": "eye",
+    "mate": "joint",
+    "rotate-component": "reorder",
+    "explode": "explode",
+    "interference": "interference",
+    "clearance": "contact_sets",
+    "fix-component": "c_fix",
+    "float-component": "revert",
+    "relink-component": "revert",
+    "transparent-component": "body",
+    "sketch-picture": "canvas",
+    "construction": "construction",
+    "select-underdefined": "select",
+    "sketch-end-tool": "select",
+    "automatic-relations": "auto_constrain",
+    "exit-sketch": "finish",
+    "sketch-select-chain": "chain",
+    "drw-standard": "camera",
+    "drw-projected": "include",
+    "drw-section": "section",
+    "drw-autoscale": "scale",
+    "drw-dimension": "dimension",
+    "drw-dim-horizontal": "dimension",
+    "drw-dim-vertical": "dimension",
+    "drw-dim-aligned": "dimension",
+    "drw-dim-angle": "dimension",
+    "drw-dim-radius": "dimension",
+    "drw-dim-diameter": "dimension",
+    "drw-dim-chamfer": "dimension",
+    "drw-baseline": "dimension",
+    "drw-ordinate": "dimension",
+    "drw-arrange": "align",
+    "drw-note": "text",
+    "drw-datum": "point_vertex",
+    "drw-fcf": "c_perpendicular",
+    "drw-centre-mark": "dots",
+    "drw-centre-line": "centerline",
+    "undo": "undo",
+    "redo": "redo",
+    "rebuild": "compute",
+    "fit": "fit",
+    "view-front": "box",
+    "view-back": "box",
+    "view-top": "box",
+    "view-bottom": "box",
+    "view-right": "box",
+    "view-left": "box",
+    "view-iso": "box",
+    "view-normal": "normal",
+    "filter-bar": "filter",
+    "clear-filters": "close",
+    "tool-dimension": "dimension",
+    "tool-line": "line",
+    "tool-centerline": "centerline",
+    "tool-rect": "rect",
+    "tool-centerRect": "rect_center",
+    "tool-ellipse": "ellipse",
+    "tool-bezier": "spline_cv",
+    "tool-circle": "circle",
+    "tool-perimeterCircle": "circle3",
+    "tool-arc": "arc_center",
+    "tool-tangentArc": "arc_tangent",
+    "tool-threePointArc": "arc3",
+    "tool-slot": "slot",
+    "tool-polygon": "polygon",
+    "tool-point": "point",
+    "tool-text": "text",
+    "tool-sketchFillet": "sketch_fillet",
+    "tool-sketchChamfer": "sketch_chamfer",
+    "tool-trim": "trim",
+    "tool-extend": "extend",
+    "tool-offset": "offset",
+    "tool-mirror": "sketch_mirror",
+    "tool-convert": "project",
+    "tool-pierce": "point_edge_plane",
+    "tool-intersect": "intersect",
+    "tool-silhouette": "silhouette",
+    "tool-stretchEntities": "move",
+    "tool-moveEntities": "move",
+    "tool-copyEntities": "copy",
+    "tool-rotateEntities": "reorder",
+    "tool-scaleEntities": "scale",
+    "tool-linearPattern": "pattern_rect",
+    "tool-circularPattern": "pattern_circ",
+    "extrude-cut": "extrude",
+    "revolve-cut": "revolve",
+    "sweep-cut": "sweep",
+    "loft-cut": "loft"
+  },
+  "roles": {
+    "ink": {
+      "source": "#34465b",
+      "light": "#34465b",
+      "dark": "#1f2021"
+    },
+    "line": {
+      "source": "#34465b",
+      "light": "#34465b",
+      "dark": "#dbe4ee"
+    },
+    "passive-1": {
+      "source": "#e2e8ef",
+      "light": "#e2e8ef",
+      "dark": "#8da3c3"
+    },
+    "passive-2": {
+      "source": "#b8c3cf",
+      "light": "#b8c3cf",
+      "dark": "#6d81a2"
+    },
+    "passive-3": {
+      "source": "#8e9faf",
+      "light": "#8e9faf",
+      "dark": "#546782"
+    },
+    "gap": {
+      "source": "#ffffff",
+      "light": "#ffffff",
+      "dark": "#1e2530"
+    },
+    "guide": {
+      "source": "#6f879c",
+      "light": "#6f879c",
+      "dark": "#8093a4"
+    },
+    "active-1": {
+      "source": "#b9ddf8",
+      "light": "#b9ddf8",
+      "dark": "#4ea1dc"
+    },
+    "active-2": {
+      "source": "#328bd3",
+      "light": "#328bd3",
+      "dark": "#3287d1"
+    },
+    "active-3": {
+      "source": "#236ead",
+      "light": "#236ead",
+      "dark": "#2976b8"
+    }
+  },
+  "accents": {
+    "surface": {
+      "active-1": {
+        "light": "#f1d2af",
+        "dark": "#cc9362"
+      },
+      "active-2": {
+        "light": "#c06f00",
+        "dark": "#bd750d"
+      },
+      "active-3": {
+        "light": "#a45000",
+        "dark": "#955a0e"
+      }
+    },
+    "form": {
+      "active-1": {
+        "light": "#decff8",
+        "dark": "#9c8dd2"
+      },
+      "active-2": {
+        "light": "#9567e2",
+        "dark": "#9066db"
+      },
+      "active-3": {
+        "light": "#7349cd",
+        "dark": "#7b63a6"
+      }
+    },
+    "mesh": {
+      "active-1": {
+        "light": "#ffec8e",
+        "dark": "#ffe282"
+      },
+      "active-2": {
+        "light": "#bb9600",
+        "dark": "#ab8f00"
+      },
+      "active-3": {
+        "light": "#e0b200",
+        "dark": "#c6a800"
+      }
+    },
+    "sketch": {
+      "active-1": {
+        "light": "#bfe2cc",
+        "dark": "#7ab792"
+      },
+      "active-2": {
+        "light": "#439a65",
+        "dark": "#3a965e"
+      },
+      "active-3": {
+        "light": "#057f45",
+        "dark": "#128d45"
+      }
+    },
+    "constraint": {
+      "active-1": {
+        "light": "#f0cfca",
+        "dark": "#b98c88"
+      },
+      "active-2": {
+        "light": "#c1685f",
+        "dark": "#c27267"
+      },
+      "active-3": {
+        "light": "#ca473d",
+        "dark": "#c16358"
+      }
+    },
+    "construction": {
+      "active-1": {
+        "light": "#ecd3b6",
+        "dark": "#b99a78"
+      },
+      "active-2": {
+        "light": "#b8741f",
+        "dark": "#ad7023"
+      },
+      "active-3": {
+        "light": "#9c5600",
+        "dark": "#a75d00"
+      }
+    }
+  }
+}

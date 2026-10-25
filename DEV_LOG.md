@@ -1,5 +1,18 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-10-25：SolidCraft圖示＋文字與選單設計（ADR 0201）
+
+使用者提供 tangency-labs/solidcraft 並要求重建更直觀的圖示、繼續執行。以固定bbc3aa43上游提交核對workspace／toolbar實作、Ribbon說明與明示為提案的UX設計圖。完成205個既有action的任務式選單配置及獨立可操作設計稿，正式程式先接入圖示＋完整文字；新Ribbon／搜尋／情境切換仍是下一階段，不能把預覽冒充上線功能。14個右鍵專用動作維持範圍，草圖拘束與Viewport控制另規劃同源Adapter。
+
+採用125份上游原創SVG的MIT授權，原檔未改、保存路徑及SHA-256；完整版權／授權隨public/licenses散佈且確認進dist，THIRD_PARTY_NOTICES已更新。派生語意配色及除料／部分展開／裝飾螺紋／滾花、尺寸種類／GD&T等本專案表示，未知ID不套假通用圖。SVG以image隔離mask，完整文字供無障礙名稱、裝飾圖alt空白；沿用run／enabled與help。32px主選單、20px快速列，英文可換行，停用灰階淡化。Schema不變。
+
+4項新增檢查通過：125原檔校驗與MIT；205ID與registry完整對照；語意差異／配色；明暗SVG無外部資源或腳本且viewBox正確。3項真實瀏覽器各有通過結果，含空白／實體啟用狀態、由實際選單建立原生7200mm³實體、中英文與說明、工程圖7種尺寸子類型與啟動半徑工具、設計稿情境／搜尋／圖示載入及32／16px總覽。截圖已檢視，型別／lint／build及help40、既有context20項通過，未跑全套。
+
+紅隊四問：① 明確ID與來源校驗，SVG不含腳本／外部影像，未知ID保留文字；② 不新增幾何核心或布林，真實體積驗證原工具仍工作；③ registry→圖示→選單／尺寸子類型／快速列→雙語help接線，既有run／enabled／模型格式保留，新Ribbon如實標示未上線；④ 原生SVG畫面、實際按鈕操作與OCCT體積，不用設計稿假稱CAD驗收。未量測新Heap，不宣稱零洩漏。
+
+失敗與限制：UI首輪以縮寫「伸長」定位失敗，按真實顯示名稱修正後只重跑workflow；設計稿compact配置一度收起完成草圖，實際看圖找到並修正後只重驗design，通過的drawing不重跑。相關context-menus另兩項失敗，在乾淨0a9b2ec worktree只重跑同兩項仍失敗（stretchEntities未進舊預期、moveEntities仍是select），與本次未改的contextMenus／controller分開記錄，未改舊斷言假綠。證據含原始失敗、基準及重試，保留out/action-icons與out/action-icons-retry。另外修正自製尺寸圖示深底線條的line色角色，4項檢查及僅設計稿UI再通過，證據out/action-icons-final-design。詳ADR0201。
+
+
 ## 2026-10-25：鈑金1、2延伸缺口（ADR 0200，零件Schema84）
 
 新增「部分展開」與可勾選折彎面板；保留未選折彎，凸折按兩彎一組。原生平片記錄各折彎逆運動，後續搬移以共軛更新；圓柱帶另記製造平片、現態實體與圓柱材料框架。反序只撤銷所選折彎，再以原移除材料與各片段求交、平片逆剛體／彎曲帶非線性映射摺回。核對平片除料分配完整及實際折疊除料等於工具體積，K≠0.5依平均半徑/Rn核對，不能錯強迫平折體積相同。原生圓柱面＋UV曲線＋直紋側壁縫合成B-rep，不以網格假造製造幾何。跨彎孔槽與平板型式／原生工程圖事實連動，重複展開保留加工。

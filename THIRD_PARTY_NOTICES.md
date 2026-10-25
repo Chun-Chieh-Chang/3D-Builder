@@ -417,3 +417,10 @@
    - **限制**：只量逐字重疊，看不出「改寫過但照著 SW 的邏輯與順序」的衍生；多數頁面是 2012 到 2022 年的版本，不是參照的 2010 版；抽樣只有約 11%；這不是法律上的相似度認定。草圖吸附的清單涵蓋的抓取種類、伸長的選項順序與 SW 對應，是功能上的參照，措辭是自己的。
    - 如果要擴大比對，優先挑篇幅長、最像在描述 SW 功能的主題（草圖工具、鈑金凸緣、組合件的結合與爆炸）。
 
+
+## SolidCraft 工具圖示（2026-10-25 新增）
+
+- 來源：[tangency-labs/solidcraft](https://github.com/tangency-labs/solidcraft)，提交 `bbc3aa4301380f4d6180ccbb12c35162d1fd98a1`。
+- 作者：Copyright (c) 2026 SolidCraft contributors；依上游逐檔 `ATTRIBUTION.md`，使用其原創 UI SVG 素材，選用 **MIT** 授權。
+- 125 份原始 SVG 保存在 `apps/web/src/icons/solidcraft/`，來源路徑及 SHA-256 見該目錄 `manifest.json`。執行時的配色及除料／部分展開等提示由 3D-Builder 衍生。
+- 完整 MIT 聲明放在 `apps/web/public/licenses/solidcraft-icons-MIT.txt`，建置會隨網頁成品散佈。未使用上游品牌標誌。

@@ -12,6 +12,14 @@
 
 ---
 
+## 2026-10-25：SolidCraft圖示與選單重新規劃（ADR 0201）
+
+使用者提供SolidCraft網址後，明確要求重建較直觀的工具圖示並說move on；最新偏好為**圖示＋完整文字**，不是撤回0196的純圖示版本。正式CommandBar已接入205個action對應圖示，125份具MIT授權的上游原創SVG保留原樣，manifest含來源／校驗碼／配色，完整聲明已隨public/licenses進入建置。除料、部分展開、裝飾螺紋、尺寸種類及製圖符號有語意變體，保留既有enabled／run／說明。Schema仍84／7／30。
+
+[選單規劃](docs/design/menu-redesign/plan.md)與[獨立可操作預覽](docs/design/menu-redesign/preview.html)已完成，可切零件／草圖／組合件／工程圖、分組／搜尋及看雙底色圖示總覽。**新Ribbon分組與搜尋目前是設計稿，尚未接入正式程式**；下一步依規劃建立選單配置層、常駐工作列／收合與情境切換，再做Adapter、鍵盤／停用原因及釘選。不把SolidCraft尚未實作的設計圖內容當本專案能力。
+
+4項新增圖示檢查、3項真實UI各有通過紀錄（含原生伸長7200mm³、英／中與尺寸工具）；型別／lint／build及help40通過。兩項既有context-menus測試失敗已在乾淨0a9b2ec基準重現，分別為未納入stretchEntities的預期及移動工具仍是select，需另案修復；未更改原測試掩蓋，未跑全套。截圖已檢視，證據out/action-icons、out/action-icons-retry及out/action-icons-final-design，詳 [ADR 0201](docs/adr/0201-solidcraft-icons-and-menu-design.md)。
+
 ## 2026-10-25：鈑金1、2延伸缺口（ADR 0200）
 
 已續作 [ADR 0200](docs/adr/0200-sheet-partial-unfold-curved-machining.md)：新增「鈑金 → 部分展開」，屬性面板勾選折彎、其餘保持折疊；凸折兩道彎作為一組。已展開圓柱彎曲帶支援沿板厚等截面切孔／開槽並以原生曲面摺回，保留再展開與完整製造輪廓。斜接／封閉角落已接入映射，可與相容的連續折彎及展開加工混用。零件／組合件／圖紙 Schema **84／7／30**。
@@ -32,7 +40,7 @@
 
 ## 2026-10-25：模型透明塗彩（ADR 0197）
 
-使用者已要求撤回圖示工具列，`e2d0e0f` 已恢復文字名稱；不要自動恢復圖示版。這次在原文字版新增零件／組合件「透明塗彩」，不透明度 10–90%（預設 35%），保留面色／邊線與個別透明、聚焦、剖面配合，網格重建後仍保留顯示設定。純視窗功能，Schema 不變。三個新 UI 案例分項通過（含實際 PNG 像素、原生邊線／體積及配置），help 40 與型別／lint／build 通過，未跑全套。詳 [ADR 0197](docs/adr/0197-transparent-shaded-view.md)。
+當時使用者要求撤回圖示工具列，`e2d0e0f` 已恢復文字名稱。後續使用者明確授權參照SolidCraft重建圖示，最新實作見ADR0201，保留完整文字。這次在原文字版新增零件／組合件「透明塗彩」，不透明度 10–90%（預設 35%），保留面色／邊線與個別透明、聚焦、剖面配合，網格重建後仍保留顯示設定。純視窗功能，Schema 不變。三個新 UI 案例分項通過（含實際 PNG 像素、原生邊線／體積及配置），help 40 與型別／lint／build 通過，未跑全套。詳 [ADR 0197](docs/adr/0197-transparent-shaded-view.md)。
 
 ## 2026-10-25：草圖拘束六項擴充（ADR 0195）
 
@@ -93,7 +101,7 @@
 | 項目 | 現值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 84／7／30（含草圖拘束六項擴充、齒輪／齒條、投影曲線、草圖關係／側影、曲面工具及連動陣列） |
-| ADR | 0001–0195、0197–0200，共 199 份（0196 圖示工具列已撤回），在 `docs/adr/`，全部列在 §2 |
+| ADR | 0001–0195、0197–0201，共 200 份（0196 圖示工具列已撤回），在 `docs/adr/`，全部列在 §2 |
 | 全閘門 | 2026-10-22，G8b 之後：`npm run check` 275 檔、3453 通過、0 失敗、25 略過；完整 `verify:ui` 164/164（含 `manual-sketch-block.js`、`manual-sketch-condition.js`）。2026-10-23 新增驗收探針後：`verify:external-samples` 3/3、`verify:freecad-sheet-metal`、`verify:drawing-export`、`typecheck`、`lint:rules`、`lint:deps`、`git diff --check` 均通過；2026-10-23 提交前完整 `npm run check` 276 檔、3456 通過、0 失敗、25 略過。 |
 | 瀏覽器腳本 | `tests/e2e/` 共 178 個檔案（含輔助檔）；依 `verify-ui.mjs` 的檔頭解析規則，目前有 174 個可執行腳本、206 項呼叫。最新六項功能的 13 項新案例各有通過紀錄，另有預選面修正的 2 項通過，另有尺寸線拖曳 2 項通過，另有圓形 Loft 1 項通過，另有齒輪／齒條 2 項通過，另有共用端點延伸 1 項通過，另有本次草圖拘束六項的 13 項各有通過紀錄；另有透明塗彩 3 項各自通過；另有剖面線設定 2 項各自通過；另有鈑金加工流程 2 項各自通過；非本版完整 206 項皆已通過。 |
 | 實機驗證清單 | [docs/manual-verification.html](docs/manual-verification.html) 91 項（新增 C27） |
@@ -485,6 +493,7 @@
 | [ADR 0198](docs/adr/0198-section-hatch-regions-and-style.md) | 剖面來源辨識、裁剪／局部放大／斷裂線條及紙面線距／角度，圖紙 Schema 29 |
 | [ADR 0199](docs/adr/0199-sheet-manufacturing-workflow.md) | 鈑金連續折彎、可編輯展開加工／摺回、折彎表／註記及展平尺寸；零件83／圖紙30 |
 | [ADR 0200](docs/adr/0200-sheet-partial-unfold-curved-machining.md) | 部分展開、跨圓柱彎曲帶加工／摺回及斜接／封閉角落映射整合；零件84 |
+| [ADR 0201](docs/adr/0201-solidcraft-icons-and-menu-design.md) | SolidCraft授權工具圖示＋文字接入，任務式選單規劃與獨立可操作預覽；Schema不變 |
 | [docs/assembly-explode-plan.md](docs/assembly-explode-plan.md) | 組合件：爆炸線與動畫、多組爆炸、形成新次組合件（計畫） |
 | [docs/cleanup-candidates.md](docs/cleanup-candidates.md) | 清理候選清單（2026-10-07） |
 | [docs/drawing-callouts-plan.md](docs/drawing-callouts-plan.md) | 工程圖：螺紋孔與錐形沉孔的標註、DXF 的 DIMENSION 圖元（計畫） |
