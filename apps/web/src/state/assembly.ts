@@ -1266,6 +1266,11 @@ export class AssemblyStore {
   }
 
   /** 「隱藏」, 「抑制」, 「透明」 and their opposites (C15.5): one undo step. */
+  showHiddenComponents(): void {
+    const ids = this.history.doc.components.filter(c => c.hidden).map(c => c.id);
+    if (ids.length) this.setComponentState(ids, 'hidden', false);
+  }
+
   setComponentState(componentIds: Id[], state: ComponentState, value: boolean): void {
     if (componentIds.length === 0) return;
     if (this.state.mate) this.cancelMate(); // a mate being defined would keep pointing at what is gone

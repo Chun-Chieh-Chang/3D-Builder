@@ -114,6 +114,8 @@ export function Viewport() {
   const bootError = useStore((s) => s.bootError);
   const fitRequest = useStore((s) => s.fitRequest);
   const view = useSketcherView();
+  const gridVisible = useStore(s => s.options.showGrid);
+  const gridSpacing = useStore(s => s.options.snap.gridSpacing);
   const documentSerial=useStore(s=>s.documentSerial);
   useEffect(()=>setModelDimensions(null),[documentSerial]);
   const [modelDimensions,setModelDimensions] = useState<{id:string;faceName:string}|null>(null);
@@ -126,6 +128,8 @@ export function Viewport() {
   const pickFilter = useStore((s) => s.pickFilter);
   const sketching = editing?.kind === 'sketch';
   sketchingRef.current = sketching;
+
+  useEffect(() => { store.viewer?.setGridVisible(gridVisible && !sketching, gridSpacing); }, [gridVisible, gridSpacing, sketching, bootMs]);
 
   useEffect(() => {
     const edgeRef = (edge: number): Ref | null => {
@@ -250,6 +254,8 @@ export function Viewport() {
       },
     });
     store.viewer = viewer;
+    const gridOptions = store.getState().options;
+    viewer.setGridVisible(gridOptions.showGrid && !sketchingRef.current, gridOptions.snap.gridSpacing);
     return () => {
       viewer.dispose();
       store.viewer = null;
@@ -480,9 +486,9 @@ export function Viewport() {
     const corners = box ? [v.planePoint(box.left, box.top, frame), v.planePoint(box.right, box.top, frame), v.planePoint(box.left, box.bottom, frame), v.planePoint(box.right, box.bottom, frame)] : [];
     const onPlane = corners.filter((c): c is [number, number] => c !== null);
     const visible = onPlane.length === 4 ? { min: [Math.min(...onPlane.map((c) => c[0])), Math.min(...onPlane.map((c) => c[1]))] as [number, number], max: [Math.max(...onPlane.map((c) => c[0])), Math.max(...onPlane.map((c) => c[1]))] as [number, number] } : undefined;
-    overlay.current = buildOverlay(frame, sketch, sketchSolve, view, v.pixelSize(), { showRelations: true, values, dimensionPreview: sketcher.dimensionPreview(), precision: settingsOf(doc).dimensionPrecision, visible });
+    overlay.current = buildOverlay(frame, sketch, sketchSolve, { ...view, grid: gridVisible ? gridSpacing : null }, v.pixelSize(), { showRelations: true, values, dimensionPreview: sketcher.dimensionPreview(), precision: settingsOf(doc).dimensionPrecision, visible });
     v.setOverlay(overlay.current);
-  }, [sketching, doc, sketchSolve, view, viewTick]);
+  }, [sketching, doc, sketchSolve, view, viewTick, gridVisible, gridSpacing]);
 
   const shown = displayed.current;
   const hoverName =

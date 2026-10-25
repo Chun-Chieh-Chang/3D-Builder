@@ -73,9 +73,12 @@ export function AssemblyViewport() {
   const asm = useStore((s) => s.asm)!;
   const bootMs = useStore((s) => s.bootMs);
   const bootError = useStore((s) => s.bootError);
+  const gridVisible = useStore(s => s.options.showGrid);
+  const gridSpacing = useStore(s => s.options.snap.gridSpacing);
   const measure = useStore((s) => s.measure);
   const interference = useStore((s) => s.interference);
   const clearance = useStore((s) => s.clearance);
+  useEffect(() => { store.viewer?.setGridVisible(gridVisible, gridSpacing); }, [gridVisible, gridSpacing, bootMs]);
   const measuring = measure !== null;
   const pickFilter = useStore((s) => s.pickFilter);
   const [hover, setHover] = useState<string | null>(null);
@@ -156,6 +159,8 @@ export function AssemblyViewport() {
     });
     viewer.setComponentPicking(true);
     store.viewer = viewer;
+    const gridOptions = store.getState().options;
+    viewer.setGridVisible(gridOptions.showGrid, gridOptions.snap.gridSpacing);
     return () => {
       viewer.dispose();
       store.viewer = null;

@@ -21,6 +21,8 @@ export interface SystemOptions {
   /** The sketch snaps (D5.3c): 「啟用抓取」 and the choices under it. */
   snap: SnapSettings;
   automaticRelations: boolean;
+  /** Reference grid in model and sketch viewports; independent of grid snapping. */
+  showGrid: boolean;
   /** How far an arrow key (and Alt+Left/Right) turns the view, in degrees (SolidWorks: System Options > View > Arrow keys, 15 at first). */
   viewArrowStep: number;
   /** How far an arrow of the view cube turns or rolls the view, in degrees (FreeCAD's NaviCube: 8 steps a turn, 45 at first). */
@@ -39,6 +41,7 @@ export const DEFAULT_OPTIONS: SystemOptions = {
   datumOffset: '10',
   snap: DEFAULT_SNAPS,
   automaticRelations: true,
+  showGrid: true,
   viewArrowStep: 15,
   viewCubeStep: 45,
 };
@@ -62,6 +65,7 @@ export function parseOptions(raw: unknown): SystemOptions {
     pickFilterBar: typeof o.pickFilterBar === 'boolean' ? o.pickFilterBar : DEFAULT_OPTIONS.pickFilterBar,
     datumOffset: typeof o.datumOffset === 'string' && Number.isFinite(Number(o.datumOffset)) && o.datumOffset.trim() !== '' ? o.datumOffset.trim() : DEFAULT_OPTIONS.datumOffset,
     snap: parseSnapSettings(o.snap),
+    showGrid: typeof o.showGrid === 'boolean' ? o.showGrid : DEFAULT_OPTIONS.showGrid,
     automaticRelations: typeof o.automaticRelations === 'boolean' ? o.automaticRelations : true,
     viewArrowStep: angle(o.viewArrowStep, DEFAULT_OPTIONS.viewArrowStep),
     viewCubeStep: angle(o.viewCubeStep, DEFAULT_OPTIONS.viewCubeStep),

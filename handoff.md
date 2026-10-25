@@ -12,6 +12,14 @@
 
 ---
 
+## 2026-10-25：預設網格與隱藏恢復（ADR 0202）
+
+模型／組合件與草圖預設顯示網格，與抓取獨立；工具→系統選項可關閉並記住。模型背景網格不加入fit與選取，草圖沿真實平面顯示。零件隱藏後可從唯一對應特徵右鍵重新顯示，設計樹與空白處右鍵另有「顯示隱藏實體」；組合件有對應恢復入口。隱藏後清除無效選取，不解除抑制或更動幾何，Schema84／7／30不變。
+
+新增6項（含100組網格配置）及相關路徑分項通過，3項真實UI各有通過結果，含WebGL PNG像素、四視向／十次fit、原生6000mm³零件／實例、復原與存讀；截圖已檢視。失敗原檔及只重試失敗項保留out/grid-visibility與retry系列。詳 [ADR 0202](docs/adr/0202-viewport-grid-and-hidden-recovery.md)。
+
+**新接續需求**：使用者提供浮動圓角卡片式參數窗截圖，要求優化參數編輯。先保留本批網格／隱藏成果再實作，重用既有表達式、即時預覽、驗證與確認／取消交易，不以外觀重寫核心。
+
 ## 2026-10-25：SolidCraft圖示與選單重新規劃（ADR 0201）
 
 使用者提供SolidCraft網址後，明確要求重建較直觀的工具圖示並說move on；最新偏好為**圖示＋完整文字**，不是撤回0196的純圖示版本。正式CommandBar已接入205個action對應圖示，125份具MIT授權的上游原創SVG保留原樣，manifest含來源／校驗碼／配色，完整聲明已隨public/licenses進入建置。除料、部分展開、裝飾螺紋、尺寸種類及製圖符號有語意變體，保留既有enabled／run／說明。Schema仍84／7／30。
@@ -101,7 +109,7 @@
 | 項目 | 現值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 84／7／30（含草圖拘束六項擴充、齒輪／齒條、投影曲線、草圖關係／側影、曲面工具及連動陣列） |
-| ADR | 0001–0195、0197–0201，共 200 份（0196 圖示工具列已撤回），在 `docs/adr/`，全部列在 §2 |
+| ADR | 0001–0195、0197–0202，共 201 份（0196 圖示工具列已撤回），在 `docs/adr/`，全部列在 §2 |
 | 全閘門 | 2026-10-22，G8b 之後：`npm run check` 275 檔、3453 通過、0 失敗、25 略過；完整 `verify:ui` 164/164（含 `manual-sketch-block.js`、`manual-sketch-condition.js`）。2026-10-23 新增驗收探針後：`verify:external-samples` 3/3、`verify:freecad-sheet-metal`、`verify:drawing-export`、`typecheck`、`lint:rules`、`lint:deps`、`git diff --check` 均通過；2026-10-23 提交前完整 `npm run check` 276 檔、3456 通過、0 失敗、25 略過。 |
 | 瀏覽器腳本 | `tests/e2e/` 共 178 個檔案（含輔助檔）；依 `verify-ui.mjs` 的檔頭解析規則，目前有 174 個可執行腳本、206 項呼叫。最新六項功能的 13 項新案例各有通過紀錄，另有預選面修正的 2 項通過，另有尺寸線拖曳 2 項通過，另有圓形 Loft 1 項通過，另有齒輪／齒條 2 項通過，另有共用端點延伸 1 項通過，另有本次草圖拘束六項的 13 項各有通過紀錄；另有透明塗彩 3 項各自通過；另有剖面線設定 2 項各自通過；另有鈑金加工流程 2 項各自通過；非本版完整 206 項皆已通過。 |
 | 實機驗證清單 | [docs/manual-verification.html](docs/manual-verification.html) 91 項（新增 C27） |
@@ -494,6 +502,7 @@
 | [ADR 0199](docs/adr/0199-sheet-manufacturing-workflow.md) | 鈑金連續折彎、可編輯展開加工／摺回、折彎表／註記及展平尺寸；零件83／圖紙30 |
 | [ADR 0200](docs/adr/0200-sheet-partial-unfold-curved-machining.md) | 部分展開、跨圓柱彎曲帶加工／摺回及斜接／封閉角落映射整合；零件84 |
 | [ADR 0201](docs/adr/0201-solidcraft-icons-and-menu-design.md) | SolidCraft授權工具圖示＋文字接入，任務式選單規劃與獨立可操作預覽；Schema不變 |
+| [ADR 0202](docs/adr/0202-viewport-grid-and-hidden-recovery.md) | 草圖／模型預設網格與零件／組合件隱藏恢復入口，Schema不變 |
 | [docs/assembly-explode-plan.md](docs/assembly-explode-plan.md) | 組合件：爆炸線與動畫、多組爆炸、形成新次組合件（計畫） |
 | [docs/cleanup-candidates.md](docs/cleanup-candidates.md) | 清理候選清單（2026-10-07） |
 | [docs/drawing-callouts-plan.md](docs/drawing-callouts-plan.md) | 工程圖：螺紋孔與錐形沉孔的標註、DXF 的 DIMENSION 圖元（計畫） |

@@ -63,6 +63,7 @@ import {
   SKETCH_AXIS_H,
   SKETCH_AXIS_V,
   isShown,
+  bodyKey,
 } from '@3db/model';
 import { readAnyDocumentFile, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
 import { gatherSources } from './sources';
@@ -1520,8 +1521,13 @@ class AppStore {
   }
 
   /** Shows or hides sketches, reference planes, default planes or the origin (D4.6). */
+  showHiddenBodies(): void {
+    const keys = (this.state.result?.bodies ?? []).map(b => bodyKey(b.id)).filter(key => !isShown(this.state.doc, key));
+    if (keys.length) this.setVisibility(keys, true);
+  }
+
   setVisibility(keys: string[], value: boolean): void {
-    this.execute({ type: 'setVisibility', keys, value });
+    if (this.execute({ type: 'setVisibility', keys, value }) && !value) this.select(null);
   }
 
   /** 「改用這個」 (B4.3): a feature's reference that no longer resolves now points at the candidate. */

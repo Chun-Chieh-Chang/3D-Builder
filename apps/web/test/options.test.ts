@@ -62,7 +62,7 @@ describe('system options (D8.1)', () => {
 
   it('what is saved is what is loaded', () => {
     let kept = '';
-    const options = { automaticRelations: true, autosave: false, autosaveSeconds: 60, defaultTemplate: 'aluminium' as const, pickFilter: { faces: true, edges: false, vertices: false, planes: false }, pickFilterBar: true, datumOffset: '25', snap: { ...DEFAULT_OPTIONS.snap, enabled: false, grid: true, gridSpacing: 2.5 }, viewArrowStep: 7.5, viewCubeStep: 30 };
+    const options = { showGrid: false, automaticRelations: true, autosave: false, autosaveSeconds: 60, defaultTemplate: 'aluminium' as const, pickFilter: { faces: true, edges: false, vertices: false, planes: false }, pickFilterBar: true, datumOffset: '25', snap: { ...DEFAULT_OPTIONS.snap, enabled: false, grid: true, gridSpacing: 2.5 }, viewArrowStep: 7.5, viewCubeStep: 30 };
     saveOptions(options, { setItem: (_k, v) => void (kept = v) });
     expect(loadOptions({ getItem: () => kept })).toEqual(options);
   });
@@ -83,4 +83,11 @@ describe('system options (D8.1)', () => {
       }),
     ).toEqual(DEFAULT_OPTIONS);
   });
+});
+
+it('model and sketch grid defaults on independently of snapping, and an explicit off preference persists',()=>{
+ expect(DEFAULT_OPTIONS.showGrid).toBe(true);expect(DEFAULT_OPTIONS.snap.grid).toBe(false);
+ expect(parseOptions({snap:{enabled:false,grid:false}}).showGrid).toBe(true);
+ expect(parseOptions({showGrid:false}).showGrid).toBe(false);expect(parseOptions({showGrid:'false'}).showGrid).toBe(true);
+ let kept='';saveOptions({...DEFAULT_OPTIONS,showGrid:false},{setItem:(_key,value)=>{kept=value;}});expect(loadOptions({getItem:()=>kept}).showGrid).toBe(false);
 });

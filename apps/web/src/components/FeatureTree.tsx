@@ -360,6 +360,7 @@ export function FeatureTree() {
         </button>
         {needle && doc.features.every((f) => !matches(f)) && <span className="muted">{t('tree.filterNone')}</span>}
       </div>
+      {bodies.some(b => !isShown(doc, bodyKey(b.id))) && <button className="show-hidden" data-action="show-hidden-bodies" disabled={!!editing} onClick={() => store.showHiddenBodies()}>{t('tree.showHiddenBodies')}</button>}
       <ol
         ref={listRef}
         className="tree-list"

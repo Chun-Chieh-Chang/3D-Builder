@@ -1,6 +1,6 @@
 import { activeSheetUnfold } from '@3db/model';
 import { initialLoftSections } from './state/loftSections';
-import { absorbedSketches, bodyKey, canBeSeed, explosionSteps, isDatumPlaneName, isHideable, isShown, page, type DatumPlaneName, type Feature, type PlaneFrame, type Ref } from '@3db/model';
+import { absorbedSketches, bodyKey, bodyFeature, canBeSeed, explosionSteps, isDatumPlaneName, isHideable, isShown, page, type DatumPlaneName, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { topologyOf } from './state/selectionSets';
 import { OPPOSITE_VIEW } from '@3db/render';
@@ -96,7 +96,14 @@ export const contextVisibilityKey = (s: UiState): string | null => {
     const body = r.bodies.find((b) => faces.some((f) => f >= b.face0 && f < b.face0 + b.faces));
     return body ? bodyKey(body.id) : null;
   }
-  return s.selected !== null && isHideable(s.doc, s.selected) ? s.selected : null;
+  if (s.selected !== null && isHideable(s.doc, s.selected)) return s.selected;
+  if (s.selected && r) {
+    // Hidden bodies cannot be clicked in the viewport. Resolve a tree feature only when
+    // its surviving faces / source identify exactly one body, including hidden material.
+    const bodies = r.bodies.filter(b => bodyFeature(b.id) === s.selected || r.faceNames.slice(b.face0, b.face0 + b.faces).some(name => ownerFeatures(name).includes(s.selected!)));
+    if (bodies.length === 1) return bodyKey(bodies[0]!.id);
+  }
+  return null;
 };
 /** What is selected in the sketch being edited. */
 const sketchSelection = (): string[] => store.sketcher?.getView().selection ?? [];

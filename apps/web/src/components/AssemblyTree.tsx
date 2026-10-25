@@ -162,6 +162,7 @@ export function AssemblyTree() {
         <Icon name="assembly" />
         <span>{name}</span>
       </div>
+      {asm.doc.components.some(c => c.hidden) && <button className="show-hidden" data-action="show-hidden-components" onClick={() => a?.showHiddenComponents()}>{t('tree.showHiddenComponents')}</button>}
       <div className="tree-filter">
         <label className="search-field">
           <Icon name="search" />

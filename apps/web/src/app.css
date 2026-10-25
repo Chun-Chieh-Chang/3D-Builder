@@ -786,3 +786,5 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .view-opacity { order: 1; flex-basis: 100%; max-width: 260px; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); font-size: 12px; }
 .view-opacity input { width: 90px; accent-color: var(--accent); }
 .view-opacity output { min-width: 30px; font-variant-numeric: tabular-nums; }
+
+.show-hidden { margin: 5px 8px; padding: 7px; border: 1px solid var(--accent-line); border-radius: 4px; background: var(--card); color: var(--accent); text-align: left; }

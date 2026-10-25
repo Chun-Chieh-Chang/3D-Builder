@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { referenceGrid } from './referenceGrid';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
@@ -713,6 +714,12 @@ export class Viewer {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
   private readonly overlayScene = new THREE.Scene();
+  /** Background-only geometry is excluded from all content bounds and picking. */
+  private readonly gridScene = new THREE.Scene();
+  private gridGroup: THREE.Group | null = null;
+  private gridVisible = true;
+  private gridSpacing = 5;
+  private gridKey = '';
   private readonly camera: THREE.OrthographicCamera;
   private readonly controls: ViewControls;
   private readonly triadScene = new THREE.Scene();
@@ -898,6 +905,7 @@ export class Viewer {
     cancelAnimationFrame(this.frame);
     this.resizeObserver.disconnect();
     this.controls.dispose();
+    if (this.gridGroup) { disposeGroup(this.gridGroup); this.gridScene.remove(this.gridGroup); this.gridGroup = null; }
     this.clear();
     this.setOverlay(null);
     this.setSketches([]);
@@ -3536,6 +3544,31 @@ export class Viewer {
     return new Promise((resolve) => this.renderer.domElement.toBlob(resolve, 'image/png'));
   }
 
+  /** Display only: grid visibility never enables snapping or changes model geometry. */
+  setGridVisible(visible: boolean, spacing = 5): void {
+    if (typeof visible !== 'boolean' || !Number.isFinite(spacing) || spacing <= 0) throw new RangeError('Invalid viewport grid settings');
+    this.gridVisible = visible;
+    this.gridSpacing = spacing;
+    this.requestRender();
+  }
+
+  private updateGrid(): void {
+    this.camera.updateMatrixWorld();
+    const key = [this.container.clientHeight, this.gridSpacing, ...this.camera.matrixWorld.elements, ...this.camera.projectionMatrix.elements].join(',');
+    if (key === this.gridKey) return;
+    this.gridKey = key;
+    if (this.gridGroup) { disposeGroup(this.gridGroup); this.gridScene.remove(this.gridGroup); }
+    const group = new THREE.Group();
+    const lines = referenceGrid(this.camera, this.container.clientHeight, this.gridSpacing);
+    for (const [points, color] of [[lines.minor, 0xdfe7e5], [lines.major, 0xc4d3ce]] as const) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+      group.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, depthTest: false, depthWrite: false })));
+    }
+    this.gridGroup = group;
+    this.gridScene.add(group);
+  }
+
   private render(): void {
     this.updateSilhouettes();
     const r = this.renderer;
@@ -3543,6 +3576,7 @@ export class Viewer {
     const h = this.container.clientHeight;
     r.setViewport(0, 0, w, h);
     r.clear();
+    if (this.gridVisible) { this.updateGrid(); r.render(this.gridScene, this.camera); r.clearDepth(); }
     r.render(this.scene, this.camera);
     if (this.overlayScene.children.length > 0) {
       r.clearDepth();

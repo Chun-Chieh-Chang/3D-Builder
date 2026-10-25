@@ -386,3 +386,17 @@ describe('one set of commands: the tree, the graphics area and the CommandManage
     expect(read('components/CommandBar.tsx')).toMatch(/!a\.menuOnly/);
   });
 });
+
+describe('recovering hidden bodies from the tree or empty viewport',()=>{
+ it('resolves a tree feature to its unique hidden body without relying on selectable viewport geometry',()=>{
+  const original=part(),r=original.result!;const s=part({selected:'extrude1',doc:{...original.doc,visibility:{'body:b1':false}},result:{...r,bodies:[r.bodies[0]!]}});
+  expect(actions.contextVisibilityKey(s)).toBe('body:b1');
+  expect(menus.menuIds(menus.partMenu(s,null))).toContain('show-hidden-bodies');
+  expect(actions.contextVisibilityKey(part({selected:'extrude1'}))).toBeNull(); // two candidates must not silently toggle one
+ });
+ it('does not offer recovery for already visible material or while a feature is being edited',()=>{
+  expect(menus.menuIds(menus.partMenu(part(),null))).not.toContain('show-hidden-bodies');
+  const original=part();const hidden=part({doc:{...original.doc,visibility:{'body:b1':false}},editing:{kind:'feature',featureId:'extrude1'}} as unknown as Partial<UiState>);
+  expect(menus.menuIds(menus.partMenu(hidden,null))).not.toContain('show-hidden-bodies');
+ });
+});

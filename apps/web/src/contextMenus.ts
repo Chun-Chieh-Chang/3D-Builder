@@ -1,3 +1,4 @@
+import { isShown, bodyKey } from '@3db/model';
 import { t } from '@3db/i18n';
 import type { Id, SketchFeature } from '@3db/model';
 import { SNAP_ITEMS } from '@3db/sketch/snaps';
@@ -65,7 +66,7 @@ export type PartTarget = { kind: 'face' | 'edge' | 'vertex'; index: number } | n
 export function partMenu(s: UiState, at: PartTarget, selection: MenuEntry[] = []): MenuEntry[] {
   const idle = s.editing === null && !s.measure;
   if (!idle) return tidy(selection);
-  if (!at) return tidy([...viewItems(s), SEPARATOR, ...selection]);
+  if (!at) return tidy([...viewItems(s), ...(s.result?.bodies.some(b => !isShown(s.doc, bodyKey(b.id))) ? [SEPARATOR, entry('show-hidden-bodies', t('tree.showHiddenBodies'), () => store.showHiddenBodies())] : []), SEPARATOR, ...selection]);
   const measure = command(s, 'measure-part', () => {
     store.startMeasure();
     store.measurePick(at.kind, at.index, null);
@@ -138,7 +139,7 @@ export function triadMenu(part: TriadPart): MenuEntry[] {
  * suppress, delete; on nothing, inserting and mating and the view.
  */
 export function assemblyMenu(s: UiState, component: Id | null): MenuEntry[] {
-  if (component === null) return tidy([command(s, 'insert-component'), command(s, 'mate'), SEPARATOR, ...viewItems(s)]);
+  if (component === null) return tidy([command(s, 'insert-component'), command(s, 'mate'), ...(s.asm?.doc.components.some(c => c.hidden) ? [entry('show-hidden-components', t('tree.showHiddenComponents'), () => store.assembly?.showHiddenComponents())] : []), SEPARATOR, ...viewItems(s)]);
   const c = s.asm?.doc.components.find((x) => x.id === component);
   if (!c) return [];
   return tidy([
