@@ -1,11 +1,11 @@
 import { getLocale, t, withLocale } from '@3db/i18n';
-import { axesOf, displayOf, isShaded, page, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
+import { axesOf, hatchStyleOf, displayOf, isShaded, page, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type HatchStyle, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
 import type { ShadeImage } from './shade';
 import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
 import { annotationItems } from './gdt';
 import { balloonSpots, bomTableBox, bomTableItems, spotItems, type BalloonSpot, type ViewBom } from './bomTable';
 import { evaluateDimension, type DimensionOutcome, type ElementsResult } from './dimension';
-import { circlePolyline, clipToBand, hatch, outlinePoints, type Polyline } from './geometry';
+import { circlePolyline, clipToOutline, clipToBand, hatch, outlinePoints, type Polyline } from './geometry';
 import { layoutViews, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
 import { fittedTitleHeight, sheetMetrics, titleCells, type Rect } from './sheet';
 import { surfaceFinishItems } from './surfaceFinish';
@@ -177,7 +177,7 @@ function breakItems(placed: PlacedView, box: ViewLines['box']): ScenePolyline[] 
 }
 
 /** A view's lines moved and scaled to where the view is on the sheet; for a section, the hatching of the faces it cut. */
-export function viewItems(view: DrawingView, lines: ViewLines | null | undefined, placed: PlacedView): ScenePolyline[] {
+export function viewItems(view: DrawingView, lines: ViewLines | null | undefined, placed: PlacedView, hatchStyle: Readonly<HatchStyle> = hatchStyleOf(view)): ScenePolyline[] {
   if (!lines) return [];
   const move = (line: readonly number[]): number[] => {
     const out: number[] = [];
@@ -201,7 +201,11 @@ export function viewItems(view: DrawingView, lines: ViewLines | null | undefined
   // the hidden ones (ADR 0146 §7) only where the hidden lines are drawn: dashed with them, or thin in a wireframe, which draws every edge alike. Drawn in
   // any other style they would be lines across the faces in front of them — on a shaded view, lines that the shading says are not there
   if (showsHidden(view) && view.showTangentEdges !== false) draw(lines.tangentHidden, display === 'wireframe' ? 'thin' : 'hidden');
-  if ((view.kind === 'section' || view.kind === 'sectionLocal' || view.kind === 'crop') && lines.cut) for (const l of hatch(lines.cut, HATCH_SPACING / placed.scale)) items.push({ kind: 'polyline', points: move(l), style: 'thin' });
+  if (lines.cut) {
+    let strokes = hatch(lines.cut, hatchStyle.spacing / placed.scale, hatchStyle.angle * Math.PI / 180);
+    for (const outline of lines.hatchClip ?? []) strokes = strokes.flatMap(l => clipToOutline(l, outline));
+    draw(strokes, 'thin');
+  }
   items.push(...breakItems(placed, lines.box));
   return items;
 }
@@ -322,7 +326,7 @@ function buildSceneIn(
     const own = placed.get(v.id)!;
     const image = viewImage(v, resolved.get(v.id), own);
     if (image) images.push(image);
-    items.push(...viewItems(v, resolved.get(v.id), own));
+    items.push(...viewItems(v, resolved.get(v.id), own, hatchStyleOf(v, pg.views)));
     if (!resolved.get(v.id)) continue;
     // The view's name under it. A section, a local section, a detail and an auxiliary view are named by the letter they carry (ISO 128-30: 「A–A」, 「L」), which
     // their own items already write, so only the rest are named here; without it a reader has the lines and no way to tell which view is which.

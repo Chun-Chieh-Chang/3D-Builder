@@ -1594,7 +1594,7 @@ export class Kernel {
    * does. Face origins index the target's faces followed by the tool's (and likewise edges, vertices),
    * so the naming layer can inherit names from both inputs.
    */
-  boolean(op: 'fuse' | 'cut' | 'common', target: ShapeId, tool: ShapeId): OpResult {
+  boolean(op: 'fuse' | 'cut' | 'common', target: ShapeId, tool: ShapeId, options: { mergeFaces?: boolean } = {}): OpResult {
     const oc = this.oc;
     const arena = new Arena();
     const a = this.get(target);
@@ -1612,6 +1612,8 @@ export class Kernel {
           raw,
           arena,
         );
+        // Drawing sections must retain the boundary between a new cut and an uncut coplanar face.
+        if (options.mergeFaces === false) return { shape: this.put(raw.Oriented(raw.Orientation())), faceOrigins: origins };
         const unified = this.unify(raw, origins, arena);
         const shape = this.put(unified.shape);
         // a piece the tool made on the surface of a body face it touches is named after the body face, whether or not the merge joined them (B3.1)
@@ -3513,12 +3515,20 @@ export class Kernel {
     }
   }
 
+  private sectionCap(origins: FaceOrigin[] | undefined, sourceFaceCount: number): boolean {
+    const faces = (origins ?? []).filter(o => o.rel !== 'cap' && o.rel !== 'imported' && o.kind === 'face');
+    // Coincident tool/body faces can have both origins even before same-domain unification.
+    // Any body origin means this region was already a surface, not newly exposed material.
+    return faces.some(o => 'index' in o && o.index >= sourceFaceCount) && !faces.some(o => 'index' in o && o.index < sourceFaceCount);
+  }
+
   /**
    * A section view of the shape (C16.3): the material on the viewer's side of the plane (`normal` points to the viewer) is taken away, and what is left is seen
    * from there as lines, with the outlines of the faces the cut made (to be hatched). The viewer looks along `-normal`; `up` is the sheet's up, square to it.
    */
   sectionView(id: ShapeId, plane: { origin: Vec3; normal: Vec3 }, up: Vec3, options: { tolerance?: number; angular?: number; mesh?: boolean } = {}): ProjectedView {
     const oc = this.oc;
+    const sourceFaceCount = this.topology(id).faces.length;
     const n0 = plane.normal;
     const nl = Math.hypot(n0[0], n0[1], n0[2]);
     if (!(nl > 0)) throw new KernelError(t('kernel.badViewDirection'));
@@ -3534,7 +3544,7 @@ export class Kernel {
       // the tool: a block on the viewer's side of the plane, far bigger than the shape, put where the plane is
       const R = 2 * size + 10;
       const tool = this.halfSpace({ origin: plane.origin, normal: n }, R, made, arena);
-      const cut = this.boolean('cut', id, tool);
+      const cut = this.boolean('cut', id, tool, { mergeFaces: false });
       made.push(cut.shape);
       // the whole shape is on the viewer's side, so the cut takes all of it (a line put off the part, D-I5): nothing to see and nothing cut, said by the
       // empty `cut` rather than by the hidden-line removal failing on an empty shape
@@ -3550,6 +3560,7 @@ export class Kernel {
       const topo = this.topology(cut.shape);
       const onPlane = new Set(
         topo.faces.flatMap((f, i) => {
+          if (!this.sectionCap(cut.faceOrigins[i], sourceFaceCount)) return [];
           if (f.surface !== 'plane' || !f.normal) return [];
           const parallel = Math.abs(f.normal[0] * n[0] + f.normal[1] * n[1] + f.normal[2] * n[2]) > 1 - 1e-9;
           const off = Math.abs((f.center[0] - plane.origin[0]) * n[0] + (f.center[1] - plane.origin[1]) * n[1] + (f.center[2] - plane.origin[2]) * n[2]);
@@ -3560,7 +3571,7 @@ export class Kernel {
       const angular = options.angular ?? 0.1;
       const outlines: number[][] = [];
       topo.edges.forEach((e, ei) => {
-        if (!e.faces.some((f) => onPlane.has(f))) return;
+        if (e.faces.filter(f => onPlane.has(f)).length !== 1) return;
         const edge = this.subShape(cut.shape, 'edge', ei);
         made.push(edge);
         const curve = arena.own(new oc.BRepAdaptor_Curve(arena.own(oc.TopoDS.Edge(this.get(edge)))));
@@ -3607,6 +3618,7 @@ export class Kernel {
    */
   sectionViewPath(id: ShapeId, cut: { normal: Vec3; path: Vec3[]; aligned?: boolean }, up: Vec3, options: { tolerance?: number; angular?: number; mesh?: boolean } = {}): ProjectedView {
     const oc = this.oc;
+    const sourceFaceCount = this.topology(id).faces.length;
     const n0 = cut.normal;
     const nl = Math.hypot(n0[0], n0[1], n0[2]);
     if (!(nl > 0)) throw new KernelError(t('kernel.badViewDirection'));
@@ -3641,21 +3653,37 @@ export class Kernel {
       const prism = arena.own(new oc.BRepPrimAPI_MakePrism(arena.own(mkFace.Face()), arena.own(new oc.gp_Vec(plan.depth[0] * 2 * deep, plan.depth[1] * 2 * deep, plan.depth[2] * 2 * deep)), false, true));
       const tool = this.put(this.build(prism, t('kernel.sectionRegion'), arena));
       made.push(tool);
-      const kept = this.boolean('cut', id, tool);
+      const kept = this.boolean('cut', id, tool, { mergeFaces: false });
       made.push(kept.shape);
       if (this.topology(kept.shape).faces.length === 0) return { visible: [], hidden: [], box: null, cut: [] };
+      const along = (p: Vec3, q: Vec3) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+      const tol = 1e-6 * Math.max(1, size);
+      const sourcePlanes = cut.aligned ? cut.path.slice(0, -1).map((origin, i) => {
+        const d = cut.path[i + 1]!.map((v, k) => v - origin[k]!) as Vec3;
+        const normal: Vec3 = [d[1] * plan.depth[2] - d[2] * plan.depth[1], d[2] * plan.depth[0] - d[0] * plan.depth[2], d[0] * plan.depth[1] - d[1] * plan.depth[0]];
+        const length = Math.hypot(...normal);
+        return { origin, normal: normal.map(v => v / length) as Vec3 };
+      }) : plan.cuts;
+      const capFaces = new Set(this.topology(kept.shape).faces.flatMap((f, i) => {
+        if (!this.sectionCap(kept.faceOrigins[i], sourceFaceCount) || f.surface !== 'plane' || !f.normal) return [];
+        return sourcePlanes.some(c => Math.abs(along(f.normal!, c.normal)) > 1 - 1e-9 && Math.abs(along(f.center.map((v, k) => v - c.origin[k]!) as Vec3, c.normal)) < tol) ? [i] : [];
+      }));
       let shown = kept.shape;
+      let caps: { shape: ShapeId; faces: Set<number> }[] = [{ shape: kept.shape, faces: capFaces }];
       if (plan.turn) {
-        // what is behind the second segment, apart from the rest, turned into the first segment's plane
+        // Keep cap provenance through the split and rigid turn. A coplanar uncut surface
+        // must not become a cap merely because it lies in the final viewing plane.
         const side = this.halfSpace(plan.turn.split, reach, made, arena);
-        const behind = this.boolean('common', kept.shape, side);
+        const behind = this.boolean('common', kept.shape, side, { mergeFaces: false });
         made.push(behind.shape);
-        const rest = this.boolean('cut', kept.shape, side);
+        const rest = this.boolean('cut', kept.shape, side, { mergeFaces: false });
         made.push(rest.shape);
+        const inherited = (r: OpResult) => new Set(r.faceOrigins.flatMap((origins, i) => origins.some(o => o.rel !== 'cap' && o.rel !== 'imported' && o.kind === 'face' && capFaces.has(o.index)) ? [i] : []));
         const turned = this.transformed(behind.shape, plan.turn.rows);
         made.push(turned);
         shown = this.join([rest.shape, turned]);
         made.push(shown);
+        caps = [{ shape: rest.shape, faces: inherited(rest) }, { shape: turned, faces: inherited(behind) }];
       }
       const view: ViewDirection = { dir: [-n[0], -n[1], -n[2]], up };
       const seen = this.projectView(shown, view, options);
@@ -3664,33 +3692,29 @@ export class Kernel {
       const rx: Vec3 = [view.dir[1] * U[2] - view.dir[2] * U[1], view.dir[2] * U[0] - view.dir[0] * U[2], view.dir[0] * U[1] - view.dir[1] * U[0]];
       const rl = Math.hypot(rx[0], rx[1], rx[2]);
       const R3: Vec3 = [rx[0] / rl, rx[1] / rl, rx[2] / rl];
-      const along = (p: Vec3, q: Vec3) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
-      const tol = 1e-6 * Math.max(1, size);
-      // the cut faces: planar, square to the view, on one of the cutting planes
-      const topo = this.topology(shown);
-      const onCut = new Set(
-        topo.faces.flatMap((f, i) => {
-          if (f.surface !== 'plane' || !f.normal) return [];
-          if (Math.abs(along(f.normal, n)) <= 1 - 1e-9) return [];
-          return plan.cuts.some((c) => Math.abs(along([f.center[0] - c.origin[0], f.center[1] - c.origin[1], f.center[2] - c.origin[2]], c.normal)) < tol) ? [i] : [];
-        }),
-      );
       const tolerance = options.tolerance ?? Math.min(0.05, Math.max(1e-3, size * 1e-3));
       const angular = options.angular ?? 0.1;
       const outlines: number[][] = [];
-      topo.edges.forEach((e, ei) => {
-        if (!e.faces.some((f) => onCut.has(f))) return;
-        const edge = this.subShape(shown, 'edge', ei);
-        made.push(edge);
-        const curve = arena.own(new oc.BRepAdaptor_Curve(arena.own(oc.TopoDS.Edge(this.get(edge)))));
-        const pts = arena.own(new oc.GCPnts_TangentialDeflection(curve, angular, tolerance));
-        const flat: number[] = [];
-        for (let i = 1; i <= pts.NbPoints(); i++) {
-          const p = arena.own(pts.Value(i));
-          flat.push(p.X() * R3[0] + p.Y() * R3[1] + p.Z() * R3[2], p.X() * U[0] + p.Y() * U[1] + p.Z() * U[2]);
-        }
-        if (flat.length >= 4) outlines.push(flat);
-      });
+      for (const cap of caps) {
+        const topo = this.topology(cap.shape);
+        const onCut = new Set([...cap.faces].filter(i => {
+          const f = topo.faces[i];
+          return f?.normal && Math.abs(along(f.normal, n)) > 1 - 1e-9;
+        }));
+        topo.edges.forEach((e, ei) => {
+          if (e.faces.filter(f => onCut.has(f)).length !== 1) return;
+          const edge = this.subShape(cap.shape, 'edge', ei);
+          made.push(edge);
+          const curve = arena.own(new oc.BRepAdaptor_Curve(arena.own(oc.TopoDS.Edge(this.get(edge)))));
+          const pts = arena.own(new oc.GCPnts_TangentialDeflection(curve, angular, tolerance));
+          const flat: number[] = [];
+          for (let i = 1; i <= pts.NbPoints(); i++) {
+            const p = arena.own(pts.Value(i));
+            flat.push(p.X() * R3[0] + p.Y() * R3[1] + p.Z() * R3[2], p.X() * U[0] + p.Y() * U[1] + p.Z() * U[2]);
+          }
+          if (flat.length >= 4) outlines.push(flat);
+        });
+      }
       // a jog or the bend is seen edge on: the line where the cut faces either side of it meet (both its ends corners of the cut) is not drawn
       const corners = outlines.flatMap((l) => [[l[0]!, l[1]!], [l[l.length - 2]!, l[l.length - 1]!]] as [number, number][]);
       const isCorner = (x: number, y: number) => corners.some((c) => Math.abs(c[0] - x) < tol && Math.abs(c[1] - y) < tol);
@@ -3724,6 +3748,7 @@ export class Kernel {
    */
   sectionViewLocal(id: ShapeId, outline: Vec3[], depth: number, plane: { origin: Vec3; normal: Vec3 }, up: Vec3, options: { tolerance?: number; angular?: number; mesh?: boolean } = {}): ProjectedView {
     const oc = this.oc;
+    const sourceFaceCount = this.topology(id).faces.length;
     const n0 = plane.normal;
     const nl = Math.hypot(n0[0], n0[1], n0[2]);
     if (!(nl > 0)) throw new KernelError(t('kernel.badViewDirection'));
@@ -3788,7 +3813,7 @@ export class Kernel {
       const tool = prismOf(colHi, depth);
 
       // cut the tool out of the part: only inside the outline and within depth is removed
-      const kept = this.boolean('cut', id, tool);
+      const kept = this.boolean('cut', id, tool, { mergeFaces: false });
       made.push(kept.shape);
       if (this.topology(kept.shape).faces.length === 0) return { visible: [], hidden: [], box: null, cut: [] };
 
@@ -3802,6 +3827,7 @@ export class Kernel {
       const topo = this.topology(kept.shape);
       const onCut = new Set(
         topo.faces.flatMap((f, i) => {
+          if (!this.sectionCap(kept.faceOrigins[i], sourceFaceCount)) return [];
           if (f.surface !== 'plane' || !f.normal) return [];
           const parallel = Math.abs(f.normal[0] * n[0] + f.normal[1] * n[1] + f.normal[2] * n[2]) > 1 - 1e-9;
           const off = Math.abs((f.center[0] - depthPlane[0]) * n[0] + (f.center[1] - depthPlane[1]) * n[1] + (f.center[2] - depthPlane[2]) * n[2]);
@@ -3818,7 +3844,7 @@ export class Kernel {
       const R3: Vec3 = [rx[0] / rl, rx[1] / rl, rx[2] / rl];
       const outlines: number[][] = [];
       topo.edges.forEach((e, ei) => {
-        if (!e.faces.some((f) => onCut.has(f))) return;
+        if (e.faces.filter(f => onCut.has(f)).length !== 1) return;
         const edge = this.subShape(kept.shape, 'edge', ei);
         made.push(edge);
         const curve = arena.own(new oc.BRepAdaptor_Curve(arena.own(oc.TopoDS.Edge(this.get(edge)))));

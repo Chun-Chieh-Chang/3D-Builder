@@ -1,5 +1,5 @@
 import { t, type Locale } from '@3db/i18n';
-import { BREAK_GAP, DIM_STYLE_DEFAULT, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, displayOf, isCorner, isDerived, isShaded, page, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
+import { BREAK_GAP, DIM_STYLE_DEFAULT, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, canHatch, hatchStyleOf, displayOf, isCorner, isDerived, isShaded, page, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
 import { STANDARD_SCALES, arrangementBase, lineAcrossBox, scaleText, type ViewLines } from '@3db/drawing';
 import { ACTIONS, openDrawingPart, shortcutOf } from '../actions';
 import { DimStyleFields } from './DimStyleFields';
@@ -44,6 +44,20 @@ function TextBox({ value, onCommit }: { value: string; onCommit: (v: string) => 
       }}
     />
   );
+}
+
+/** Keep rejected input visible so it can be corrected, without changing the model. */
+function HatchNumberInput({ value, field, onCommit }: { value: number; field: string; onCommit: (n: number) => boolean }) {
+  const [text, setText] = useState(String(value));
+  const [invalid, setInvalid] = useState(false);
+  useEffect(() => { setText(String(value)); setInvalid(false); }, [value]);
+  const commit = () => {
+    if (text.trim() !== '' && Number(text) === value) { setInvalid(false); if (invalid) store.dismissNotice(); return; }
+    const ok = onCommit(text.trim() === '' ? NaN : Number(text));
+    setInvalid(!ok);
+    if (ok) store.dismissNotice();
+  };
+  return <input data-field={field} inputMode="decimal" value={text} aria-invalid={invalid} onChange={e => setText(e.target.value)} onBlur={commit} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); commit(); } }} />;
 }
 
 /** A view's lines drawn small, for a tile of the palette: the visible lines in a box that keeps their proportions. */
@@ -692,6 +706,17 @@ export function DrawingPanel() {
                   ))}
                 </select>
               </label>
+              {canHatch(view, curPage.views) && (
+                <div title={t('drawingUi.hatchTip')}>
+                  {(['spacing', 'angle'] as const).map(field => (
+                    <label className="pm-row" key={field}>
+                      <span>{t(field === 'spacing' ? 'drawingUi.hatchSpacing' : 'drawingUi.hatchAngle')}</span>
+                      <HatchNumberInput key={view.id} field={field === 'spacing' ? 'hatchSpacing' : 'hatchAngle'} value={hatchStyleOf(view, curPage.views)[field]} onCommit={value => d.execute({ type: 'setView', viewId: view.id, patch: { hatch: { ...hatchStyleOf(view, curPage.views), [field]: value } } })} />
+                    </label>
+                  ))}
+                  <div className="pm-row end"><button className="pm-button" data-action="resetHatch" disabled={!view.hatch} onClick={() => d.setView(view.id, { hatch: null })}>{t('drawingUi.hatchReset')}</button></div>
+                </div>
+              )}
               {(view.kind === 'section' || view.kind === 'detail') && (
                 <label className="pm-row">
                   <span>{t('drawingUi.label')}</span>

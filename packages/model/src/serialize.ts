@@ -411,6 +411,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   26: (doc) => doc,
   // v28: sheet callout defaults and associative side-view thread leaders.
   27: (doc) => doc,
+  // v29: per-view paper-space hatch spacing and angle.
+  28: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

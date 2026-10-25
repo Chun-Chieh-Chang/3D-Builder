@@ -1525,3 +1525,47 @@
 
 見 §7：繁體中文、術語採 SW 2010 繁中版；需求模糊先問；使用者提出方案要用五位顧問審查；驗收標準要在計畫擬定後隨即制訂並經使用者確認；檔案刪除、下載、對外動作要先徵得同意；使用者要求時才提交。
 
+
+
+## 優先接續：全類型剖面線修正＋密度／角度（2026-10-25，進行中、尚未交付）
+
+**使用者最新要求**：工程圖剖面線位置有誤，最初指階梯／對正，但已明確要求「不只階梯，應全部檢查」；另要求剖面線密度與角度可調。最後因額度將盡要求先寫好本交接。**以下原始碼有未提交改動，包含兩個仍失敗的新回歸案例，不可宣稱完成或直接推送正式修正。** 工作目錄 `/workspace/3D-Builder`、分支 `main`，開工基準 HEAD `e9ce8a7`（透明塗彩，已推送）；沒有其他人的工作混入。此段優先於下方舊狀態。
+
+### 已確認根因及目前實作
+
+1. **原生錯誤已重現**：切完後按「面與切平面共面」挑剖面會把未切到的原面也當剖切面；OCCT 預設合併共面面，甚至把真正切面與相鄰原面合併。僅檢查面中心／法向不足。
+2. `packages/kernel/src/kernel.ts`：`boolean` 增加可選 `{mergeFaces:false}`（預設不變）；剖面實際切割保留原始面與歷史來源。一般、階梯／對正、局部剖面先按 tool 的 `faceOrigins` ＋平面位置挑 cap；只取恰好一側是 cap 的邊，排除 cap 間內部邊。對正剖面在 split/common/cut/turn 後繼承 cap 來源，再分開取邊。**階梯／對正新案例過，但一般／局部仍誤選共面原面，詳下節；來源包含 tool 並不足以證明新生成面。**
+3. `packages/drawing/src/layout.ts`：裁剪保留完整 `cut`，累積 `hatchClip`，不再先剪成不封閉邊界；局部放大保留母剖面 cut 與圓形裁切；巢狀 crop/detail 優先讀已解出的父視圖。
+4. `packages/drawing/src/scene.ts`：先產生剖面線，再逐個 `hatchClip` 裁切，最後經共同 draw 路徑裁掉斷裂帶後轉紙面。所有有 cut 的視圖都畫線，含剖面的 detail。間距用紙面 mm 除以視圖比例，角度由度轉弧度；SVG／PDF／DXF 共用 scene。
+5. `packages/drawing/src/geometry.ts`：半格掃描起點改為 `(ceil(lo/spacing - .5)+.5)*spacing`，修掉首列被漏掉；拒絕非有限 spacing/angle。不要任意自動封閉每條 native edge，原始 cut 本來就是逐邊的開放片段。
+6. `packages/model/src/drawing.ts`：圖紙 Schema **29（未交付）**、`HatchStyle {spacing,angle}`、預設 3 mm／45°、`ViewCommon.hatch`、`ViewPatch.hatch`（null 重設）、`canHatch`／`hatchStyleOf`。detail/crop 繼承剖面設定；間距 0.5–20 mm，角度 -180–180°，有限數值，命令層拒絕非法輸入，不取絕對值／截斷。`serialize.ts` 有 drawing migration 28→29；零件版本不變。
+7. `apps/web/src/components/DrawingPanel.tsx`：可產生剖面線的視圖有線距／角度與重設按鈕，保留錯誤文字、aria-invalid 與模型拒絕提示；中英文標籤在 i18n 的 drawing.ts。**尚未瀏覽器驗收**。檢查過 drawing store 的 projection cache key 由 axes/cut/shade 等組成，不含 hatch，無須為外觀重算幾何。
+
+### 真實測試結果與失敗證據（請只補測／重跑失敗案例）
+
+- 型別最近一次通過：`/tmp/hatch-types3.log`，`npm run typecheck`。先前 types2 的 serialize 重複 key 是批次替換誤改零件 migration，已修正；目前只有 drawing migration 加29。
+- 一般斜剖面、局部剖面、derived 既有相關測試 **39/39 通過**：`/tmp/hatch-alltypes.log`，命令 `npx vitest run tests/phase5/drawing-slanted-section.test.ts tests/phase5/drawing-local-section-kernel.test.ts tests/phase5/drawing-derived.test.ts`。
+- 階梯／對正相關 **9 通過、9 依 -t 過濾未跑**：`/tmp/hatch-stepped-regression.log`，命令 `npx vitest run tests/phase5/drawing-stepped-section.test.ts -t 'stepped through both|aligned.*hole|aligned.*bend|straight|random'`；含既有 100 stepped＋100 aligned 隨機原生幾何案例，不必無故重跑。
+- 新檔 `tests/phase5/drawing-section-hatch-regression.test.ts` 最新 **2 過／2 失敗**：`/tmp/hatch-coplanar4.log`。**過：stepped、aligned；失敗：straight、local。** 早期 stepped 單案修前失敗／修後通過另在 `/tmp/hatch-native-baseline.log`、`/tmp/hatch-native-fixed1.log`。
+- 新 fixture 是真實 XY L 形輪廓 `[(0,0),(40,0),(40,5),(20,5),(20,30),(0,30)]` 沿 Z 拉伸12，原生 valid＋體積8400。切在 Y=5，只有 X=0..20 是新切面，X=20..40 的 Y=5 原面不該 hatch；投影 x=-X、y=Z，hatch 應在 [-20,0]×[0,12]，面積240。
+- straight 輸出仍含 X>20 的原面；local 用 X=0..30、Z=0..12 輪廓，從 Y30 向內深25，仍含 X20..30 的原面。必須檢查 raw boolean history 是否將「原面未被切」也賦予 tool 起源；補可靠判斷（例如與 source 面相同／原面保留區域的處理、布林 Modified/Generated 真實語義）。**不要改預期面積／放寬閾值把它測綠。** 只重跑：`npx vitest run tests/phase5/drawing-section-hatch-regression.test.ts -t 'straight:|local:'`。
+- 本輪尚未跑 lint/build、新 style 命令與匯出測試、瀏覽器；未做任何「WASM 無洩漏」宣稱。OCCT 已知 Heap 限制仍依 AGENTS.md；不能以 liveShapes 代替 Heap。
+
+### 下一步順序
+
+1. 先修上述 straight/local 兩個失敗的共面原面回歸，確認階梯／對正來源轉移邏輯未受新修正影響。檢查 transformed 後 topology face index 的假設。整體保持 model boolean 預設合面語意，不破壞命名層。
+2. 新增真實 native cut 驅動的 crop/detail／巢狀裁剪／孔洞／斷裂測試，證明 hatch 無跨孔、跑出輪廓、跨斷裂帶。既有39過只是舊覆蓋，不能視為新裁剪路徑已驗收。
+3. 新增 HatchStyle 命令驗證（空值、0、負值、NaN、Infinity、上下界、小數）、繼承／獨立覆寫／重設、復原／重做、舊檔 migration／存讀與比例不影響紙面間距，至少100組樣式配置；驗證不同角度與 SVG／DXF／PDF 共用線條。
+4. UI 真實工程圖驗收：設定間距／角度即時改線、錯誤可修正、換視圖、復原重做、存讀與重設；擷取畫面確認面板不重疊。必要時修 `HatchNumberInput` 的錯誤恢復狀態（如輸入恢復同一有效值時清除全局 notice），不要只檢查 React 欄位。測試可沿用 `tests/e2e/manual-drawing-stepped-section.js` 與 `phase2-assembly.js`（定位板真實fixture，`window.__ui2`、`H.project/open/newDrawing`、`store.drawingStore`、`drw().lines`）。
+5. 完成後跑相關 lint／typecheck／build。依使用者要求只跑新／相關測試及失敗案例，不跑全套；保留原始失敗報告。
+6. 寫 **ADR 0198**（0196 已被撤回圖示版用過，不可重用；0197透明塗彩）；DEV_LOG 必含 AGENTS 紅隊四問、實際證據與限制；更新本段從進行中為真實完成狀態、drawing Schema29及文件索引，最後依既有授權 commit/push main。**目前不要把半成品推送當正式完成。**
+
+### 雲端工具與操作注意
+
+- 未啟動任何 `verify:ui`。最近測試命令均已結束；新工作階段自行 `ps` 確認，勿干擾別人。
+- UI 可用：`VERIFY_UI_ORIGIN=http://127.0.0.1:5397 CHROME_PATH=/workspace/.cloud-setup/chromium npm run verify:ui -- --only '^新增檔名' --shots out/section-hatch/ui --json out/section-hatch/ui.json > /tmp/hatch-ui.log 2>&1`。harness 自管5397，預設另用9333/5393，勿重疊執行；**跑 UI 時不得改原始碼**。
+- 若同檔多個 UI 子案例只有一個失敗，建立只呼叫該 method 的暫時 shim、存 evidence 後移除，再僅重跑失敗子案例。
+- `out/` 被 git 忽略，跨環境先保存需要的證據；`/tmp` 也不保證保留。此交接記錄已包含關鍵失敗的解析fixture與命令，不依賴暫存檔才能接手。
+- 使用者本機 Windows，正式修正推送後需 git pull、重啟服務、Ctrl+Shift+R；本次不必引導他先操作半成品。
+- 使用者拒絕純圖示工具列，保留文字工具名稱。無授權使用子代理，本輪未啟動任何子代理。
+

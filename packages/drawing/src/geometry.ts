@@ -226,7 +226,7 @@ export function clipToOutline(line: readonly number[], outline: ClosedOutline): 
  * (a half-open rule), so a corner never leaves a line unpaired.
  */
 export function hatch(boundary: readonly (readonly number[])[], spacing: number, angle = Math.PI / 4): Polyline[] {
-  if (!(spacing > 0)) return [];
+  if (!(spacing > 0) || !Number.isFinite(spacing) || !Number.isFinite(angle)) return [];
   // rotate so the hatch lines are horizontal: rows y' = k * spacing, and the segments are cut at each crossing
   const c = Math.cos(-angle);
   const s = Math.sin(-angle);
@@ -246,7 +246,7 @@ export function hatch(boundary: readonly (readonly number[])[], spacing: number,
   const out: Polyline[] = [];
   const back = (x: number, y: number): [number, number] => [x * Math.cos(angle) - y * Math.sin(angle), x * Math.sin(angle) + y * Math.cos(angle)];
   // the rows sit half a spacing in from a multiple, so that none is likely to pass exactly through a corner
-  for (let y = Math.ceil(lo / spacing) * spacing + spacing / 2; y < hi; y += spacing) {
+  for (let y = (Math.ceil(lo / spacing - 0.5) + 0.5) * spacing; y < hi; y += spacing) {
     const xs: number[] = [];
     for (const [ax, ay, bx, by] of segments) {
       if (ay === by) continue;
