@@ -1,3 +1,4 @@
+import { FloatingFeatureEditor } from './FloatingFeatureEditor';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { labelsOf, t } from '@3db/i18n';
 import { currentTopicId } from '../help/context';
@@ -141,11 +142,18 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
   const doc = useStore((s) => s.doc);
   const [text, setText] = useState(value);
   const [invalid, setInvalid] = useState(false);
+  const live = useStore(s => s.editing?.kind === 'feature');
+  const command = useRef(toCommand); command.current = toCommand;
   const shown = preview(text, doc, suffix === '°', suffix === '');
   useEffect(() => {
     setText(value);
     setInvalid(false);
   }, [value]);
+  useEffect(() => {
+    if(!live||text===value||!text.trim()||(shown&&'error' in shown))return;
+    const timer=setTimeout(()=>setInvalid(!store.execute(command.current(text.trim()))),280);
+    return()=>clearTimeout(timer);
+  },[text,value,live]);
   const commit = () => {
     if (text === value) { if (invalid) store.dismissNotice(); setInvalid(false); return; }
     setInvalid(!store.execute(toCommand(text.trim())));
@@ -153,7 +161,8 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
   return (
     <span className="value-input">
       <input
-        className={invalid || (shown && 'error' in shown) ? 'invalid' : ''}
+        className={invalid || !text.trim() || (shown && 'error' in shown) ? 'invalid' : ''}
+        aria-invalid={invalid || !text.trim() || !!(shown && 'error' in shown)}
         value={text}
         title={shown ? ('error' in shown ? shown.error : t('value.expression', { value: shown.value })) : undefined}
         onChange={(e) => setText(e.target.value)}
@@ -161,12 +170,14 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
+            e.stopPropagation();
             commit();
           }
         }}
       />
       {suffix !== '' && <span className="suffix">{suffix}</span>}
       {shown && 'value' in shown && <span className="value-preview">= {shown.value}</span>}
+      {shown && 'error' in shown && <span className="value-error" role="status">{shown.error}</span>}
     </span>
   );
 }
@@ -995,19 +1006,16 @@ function MergeBox({ f }: { f: ExtrudeFeature | RevolveFeature | SweepFeature | L
 /** Extrude (C4.1, C4.2): one or two directions with their end conditions and drafts, thin walls, contours and merging. */
 function ExtrudePanel({ f }: { f: ExtrudeFeature }) {
   const doc = useStore((s) => s.doc);
+  const mode = f.dir2 ? 'two' : f.dir1.type==='midPlane' ? 'symmetric' : 'one';
+  const direction = (next:'one'|'symmetric'|'two') => {
+    const depth='depth' in f.dir1?f.dir1.depth:'10';
+    const first=next==='symmetric'?{type:'midPlane' as const,depth}:f.dir1.type==='midPlane'?{type:'blind' as const,depth}:f.dir1;
+    store.execute({type:'setExtrudeDirections',featureId:f.id,first,second:next==='two'?(f.dir2??{type:'blind',depth}):null});
+  };
   return (
     <>
+      <section className="pm-group"><h4>{t('pm.directionMode')}</h4><div className="parameter-segments" role="group" aria-label={t('pm.directionMode')}>{(['one','symmetric','two'] as const).map(m=><button type="button" key={m} data-direction-mode={m} aria-pressed={mode===m} onClick={()=>direction(m)}>{t(m==='one'?'pm.directionOne':m==='symmetric'?'pm.directionSymmetric':'pm.directionTwo')}</button>)}</div></section>
       <DirectionBox f={f} which="dir1" />
-      <section className="pm-group">
-        <label className="pm-row checkbox">
-          <input
-            type="checkbox"
-            checked={!!f.dir2}
-            onChange={(e) => store.execute({ type: 'setEndCondition', featureId: f.id, dir: 'dir2', value: e.target.checked ? { type: 'blind', depth: 'depth' in f.dir1 ? f.dir1.depth : '10' } : null })}
-          />
-          <span>{t('feature.dir2')}</span>
-        </label>
-      </section>
       {f.dir2 && <DirectionBox f={f} which="dir2" />}
       <ThinBox f={f} />
       <section className="pm-group">
@@ -4325,6 +4333,7 @@ export function PropertyManager() {
   const editing = useStore((s) => s.editing);
   const doc = useStore((s) => s.doc);
   const result = useStore((s) => s.result);
+  const floating = useStore(s => s.options.floatingParameters);
   if (!editing) return null;
   const f = findFeature(doc, editing.featureId);
   if (!f) return null;
@@ -4332,6 +4341,10 @@ export function PropertyManager() {
   const sketching = editing.kind === 'sketch';
   // Like the message box at the top of a SolidWorks PropertyManager: why the feature cannot be built yet.
   const status = sketching || isSketchPlane ? undefined : result?.features.find((r) => r.id === f.id);
+  if (!sketching && !isSketchPlane && floating) {
+    const action = f.type === 'importedBody' ? 'import-step' : f.type.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()) + ('op' in f && f.op==='cut'?'-cut':'');
+    return <FloatingFeatureEditor key={f.id} title={`${featureLabel(f)}: ${f.name}`} action={action} error={status?.status==='error'?status.message:undefined}><FeatureParams f={f}/></FloatingFeatureEditor>;
+  }
   return (
     <div className="property-manager" data-help={currentTopicId()}>
       <div className="pm-header">
@@ -4339,6 +4352,7 @@ export function PropertyManager() {
         <span className="pm-title">
           {isSketchPlane ? `${t('pm.editSketchPlane')}: ${f.name}` : sketching ? `${t('pm.editSketch')}: ${f.name}` : `${featureLabel(f)}: ${f.name}`}
         </span>
+        {!sketching&&!isSketchPlane&&<button type="button" data-action="float-parameters" onClick={()=>store.setOptions({floatingParameters:true})}>{t('pm.float')}</button>}
         <button className="pm-ok" title={sketching ? t('pm.exitSketch') : t('pm.ok')} onClick={() => store.commitEdit()}>
           <Icon name="ok" />
         </button>

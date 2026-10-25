@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { imageBitmapOf } from '../state/pictures';
 import { t } from '@3db/i18n';
 import { ModelDimensions } from './ModelDimensions';
+import { ExtrudePreviewHandle } from './ExtrudePreviewHandle';
 import { InstantDepthHandle } from './InstantDepthHandle';
 import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, settingsOf, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
@@ -520,6 +521,7 @@ export function Viewport() {
       <ViewCube />
       <ViewOptions />
       {!sketching && <InstantDepthHandle />}
+      {!sketching && <ExtrudePreviewHandle />}
       <div ref={barRef} className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
           <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label} (${shortcutOf(a)})` : a.label}>

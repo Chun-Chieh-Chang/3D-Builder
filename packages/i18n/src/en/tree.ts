@@ -11,7 +11,7 @@ export const tree: Translation = {
   'tree.notFound': 'Not found: {name}',
   'tree.componentExpand': "Show the part's origin, planes and features",
   'tree.componentDatumTip': 'Click to select, Ctrl+click to add; with two chosen, press Mate',
-  'tree.componentFeatureTip': 'Read only: open the part to change it',
+  'tree.componentFeatureTip': 'Double-click or right-click to edit the source part feature; save and return to update the assembly',
   'tree.componentFeatureFailed': 'This feature fails to rebuild in the part (open the part to see why)',
   'tree.editSketch': 'Edit Sketch',
   'tree.editSketchPlane': 'Edit Sketch Plane',

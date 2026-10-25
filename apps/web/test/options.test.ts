@@ -62,7 +62,7 @@ describe('system options (D8.1)', () => {
 
   it('what is saved is what is loaded', () => {
     let kept = '';
-    const options = { showGrid: false, automaticRelations: true, autosave: false, autosaveSeconds: 60, defaultTemplate: 'aluminium' as const, pickFilter: { faces: true, edges: false, vertices: false, planes: false }, pickFilterBar: true, datumOffset: '25', snap: { ...DEFAULT_OPTIONS.snap, enabled: false, grid: true, gridSpacing: 2.5 }, viewArrowStep: 7.5, viewCubeStep: 30 };
+    const options = { ...DEFAULT_OPTIONS, showGrid: false, automaticRelations: true, autosave: false, autosaveSeconds: 60, defaultTemplate: 'aluminium' as const, pickFilter: { faces: true, edges: false, vertices: false, planes: false }, pickFilterBar: true, datumOffset: '25', snap: { ...DEFAULT_OPTIONS.snap, enabled: false, grid: true, gridSpacing: 2.5 }, viewArrowStep: 7.5, viewCubeStep: 30 };
     saveOptions(options, { setItem: (_k, v) => void (kept = v) });
     expect(loadOptions({ getItem: () => kept })).toEqual(options);
   });

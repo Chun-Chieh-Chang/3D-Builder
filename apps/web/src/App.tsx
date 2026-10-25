@@ -50,9 +50,11 @@ export function App() {
   // The part and assembly panels get the same two tabs as a drawing (ADR 0133). A session opens the PropertyManager tab by itself; the FeatureManager tab
   // stays available, so the tree can be looked at without leaving the session (this relaxes ADR 0034 決定 9, which hid the tree for the whole session).
   const [panel, setPanel] = useState<'tree' | 'properties'>('tree');
+  const floatingParameters = useStore(s => s.options.floatingParameters);
+  const floating = !assembly && partEditing?.kind === 'feature' && floatingParameters;
   useEffect(() => {
-    setPanel(editing ? 'properties' : 'tree');
-  }, [editing]);
+    setPanel(editing && !floating ? 'properties' : 'tree');
+  }, [editing, floating]);
   // What is picked in a part with no session open (plan §2.2): the PropertyManager tab comes alive for it, a pick in the graphics area brings it
   // forward the way a drawing's panel does (a pick in the tree stays in the tree), and letting go of everything goes back to the tree. An assembly
   // is the same story: the component clicked in the view brings it forward, a component or a mate picked in the tree only makes the tab reachable.

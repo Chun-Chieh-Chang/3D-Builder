@@ -536,6 +536,8 @@ class AppStore {
   private untitledAssemblies = 0;
   /** The open assembly; null while a part is open. */
   assembly: AssemblyStore | null = null;
+  /** The active construction gesture owns Esc before the surrounding feature session. */
+  cancelFeatureGesture: (() => void) | null = null;
   /** The project folder of this session (B9.4): assemblies and the parts they use are inside it. */
   private project: FileSystemDirectoryHandle | null = null;
   /** Answers the open project-folder dialog. */
@@ -544,6 +546,8 @@ class AppStore {
   private remembered: FileSystemDirectoryHandle | null = null;
   /** 「開啟零件」: the part file to open (path in the project folder). */
   private partToOpen: string | null = null;
+  private partFeatureToOpen: Id | null = null;
+  private pendingFeatureEdit: { id: Id; serial: number } | null = null;
   /** The assembly file 「返回組合件」 reopens. */
   private returnFile: FileSystemFileHandle | null = null;
   /** The viewport registers itself so view actions (fit, standard views) can reach it. */
@@ -1679,6 +1683,16 @@ class AppStore {
     this.set({ pendingSketch: null });
     if (this.state.editing || this.assembly) return; // something else took the graphics area meanwhile
     this.newSketch(plane, true);
+  }
+
+  private takePendingFeatureEdit(): void {
+    const pending = this.pendingFeatureEdit;
+    if (!pending) return;
+    this.pendingFeatureEdit = null;
+    if (pending.serial !== this.state.documentSerial || this.state.active !== 'part' || this.state.editing) return;
+    const f = findFeature(this.history.doc, pending.id);
+    if (!f || f.suppressed || (f.type === 'sketch' && !this.frameOf(f))) return this.notify(t('assembly.editFeatureUnavailable'), 'error');
+    this.beginEdit(f.id);
   }
 
   /** The sketch selected in the FeatureManager, for the features built from one. */
@@ -3095,6 +3109,7 @@ class AppStore {
       if (result.seq === this.seq && !this.pending) {
         this.set({ result });
         this.takePendingSketch();
+        this.takePendingFeatureEdit();
         void this.refreshModelSnap();
         this.recycleIfHeapHigh(result);
       }
@@ -3204,7 +3219,10 @@ class AppStore {
   async answerUnsaved(answer: 'save' | 'discard' | 'cancel'): Promise<void> {
     const action = this.state.unsaved;
     this.set({ unsaved: null });
-    if (!action || answer === 'cancel') return;
+    if (!action || answer === 'cancel') {
+      if (action === 'open-part') { this.partToOpen = null; this.partFeatureToOpen = null; }
+      return;
+    }
     if (answer === 'save' && !(await this.save())) return;
     await this.perform(action);
   }
@@ -3389,6 +3407,7 @@ class AppStore {
   }
 
   private load(doc: PartDoc, handle: FileSystemFileHandle | null, fileName: string | null, blobs = new Map<string, Uint8Array>(), untitled = this.state.untitled): void {
+    this.pendingFeatureEdit = null;
     this.closeAssembly();
     this.closeDrawing();
     if (this.state.editing) this.cancelEdit();
@@ -3498,10 +3517,18 @@ class AppStore {
    * document, saved back into that file. The assembly is put away (one document at a time, 2026-09-28
    * decision), after 「要儲存變更嗎？」; 「返回組合件」 reopens it, with the parts as they are then.
    */
-  openComponentPart(componentId: Id): void {
+  openComponentPart(componentId: Id, featureId?: Id): void {
     const a = this.assembly;
     const path = a?.componentPath(componentId);
     if (!a || !path) return;
+    if (featureId) {
+      const state = a.getState();
+      if (state.insert || state.mate || state.move || state.pattern || state.explode || state.formSub) return this.notify(t('assembly.editFinishOperation'), 'error');
+      if (!/\.3dbx$/i.test(path)) return this.notify(t('assembly.editNativeOnly'), 'error');
+      const feature = a.buildOf(componentId)?.features.find(f => f.id === featureId);
+      if (!feature || feature.status === 'suppressed') return this.notify(t('assembly.editFeatureUnavailable'), 'error');
+    }
+    this.partFeatureToOpen = featureId ?? null;
     if (a.getState().files.get(path)?.status === 'missing') return this.notify(t('file.partMissing'), 'error');
     this.partToOpen = path;
     this.guard('open-part');
@@ -3516,12 +3543,15 @@ class AppStore {
     const drw = this.drawing;
     if (!drw) return;
     if (drw.getState().sources.get(path)?.status === 'missing') return this.notify(t('file.partMissing'), 'error');
+    this.partFeatureToOpen = null;
     this.partToOpen = path;
     this.guard('open-part');
   }
 
   private async openPartFile(): Promise<void> {
     const path = this.partToOpen;
+    const featureToEdit = this.partFeatureToOpen;
+    this.partFeatureToOpen = null;
     this.partToOpen = null;
     const project = this.project;
     const from = this.assembly ?? this.drawing;
@@ -3554,6 +3584,7 @@ class AppStore {
       }
       this.returnFile = back;
       this.set({ returnTo: backTo });
+      if (featureToEdit) this.pendingFeatureEdit = { id: featureToEdit, serial: this.state.documentSerial };
       const opened = step ? t('file.openedStep', { name: fileName }) : !back ? t('file.opened', { name: fileName }) : kind === 'drawing' ? t('file.openedBackDrawing', { name: fileName }) : t('file.openedBack', { name: fileName });
       // a drawing never saved has no file to come back to
       this.notify(kind === 'drawing' && !back ? `${opened}${t('file.noDrawingToReturn')}` : opened);

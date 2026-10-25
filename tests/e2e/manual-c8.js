@@ -89,10 +89,12 @@ M.run = async () => {
     return { through, volume: S.volume(), pass: through.failed.length === 0 && through.volume > PLATE + CEILING + POST(30) && near(S.volume(), PLATE + CEILING + POST(10), 1e-4) && state().result.bodies.length === 2 };
   });
   await step('9 方向 2 with depth 4 (grows into the plate: nothing more), then off', async () => {
-    await S.pmCheck('方向 2', true);
+    S.pm().querySelector('[data-direction-mode=two]').click();
+    await H.settle();
     await S.pmType('深度', '4', 1);
     const on = { volume: S.volume(), failed: S.failed() };
-    await S.pmCheck('方向 2', false);
+    S.pm().querySelector('[data-direction-mode=one]').click();
+    await H.settle();
     return { on, volume: S.volume(), pass: on.failed.length === 0 && near(on.volume, PLATE + CEILING + POST(10), 1e-4) && near(S.volume(), PLATE + CEILING + POST(10), 1e-4) };
   });
   await step('10 薄件 with thickness 1: a hollow tube, then off', async () => {

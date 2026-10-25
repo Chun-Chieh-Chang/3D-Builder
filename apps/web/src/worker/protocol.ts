@@ -142,7 +142,7 @@ export interface PartBuildPayload {
   planes: { id: Id; name: string; frame: PlaneFrame }[];
   /** Built coordinate systems exposed to measurement in the assembly. */
   systems: { id: Id; name: string; system: CoordSystem }[];
-  /** The part's features in history order, listed read-only under its component in the assembly's FeatureManager (see `partFeatures`). */
+  /** The part's features in history order, listed under its component in the assembly's FeatureManager; editing opens the source part (see `partFeatures`). */
   features: { id: Id; name: string; type: Feature['type']; status: 'ok' | 'error' | 'suppressed' }[];
   /** Every body it has is a reference body (C7.1): a design aid, not a part to count (C15.16). */
   referenceOnly: boolean;

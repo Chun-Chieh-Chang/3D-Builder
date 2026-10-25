@@ -65,6 +65,7 @@ export function ComponentMenu({ x, y, component, onClose }: { x: number; y: numb
 export function AssemblyTree() {
   const asm = useStore((s) => s.asm)!;
   const name = useDocumentName();
+  const [featureMenu, setFeatureMenu] = useState<{ x:number; y:number; component:Id; feature:Id; sketch:boolean } | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [matesOpen, setMatesOpen] = useState(true);
   const [filter, setFilter] = useState('');
@@ -78,6 +79,7 @@ export function AssemblyTree() {
     return () => window.removeEventListener('pointerdown', close);
   }, [menu]);
 
+  useEffect(() => {if(!featureMenu)return;const close=()=>setFeatureMenu(null);window.addEventListener('pointerdown',close);return()=>window.removeEventListener('pointerdown',close);},[featureMenu]);
   const a = store.assembly;
   const act = (fn: () => void) => () => {
     setMenu(null);
@@ -114,6 +116,7 @@ export function AssemblyTree() {
       style={indent ? { paddingLeft: indent } : undefined}
       title={component ? t('tree.componentDatumTip') : undefined}
       onClick={(e) => a?.pickDatum({ component, ref: { kind: 'datum', name: id } }, additive(e))}
+      onDoubleClick={() => {if(component&&a?.buildOf(component)?.features.some(f=>f.id===id))store.openComponentPart(component,id);}}
     >
       <Icon name={icon} />
       <span className="name">{label}</span>
@@ -121,7 +124,7 @@ export function AssemblyTree() {
   );
   /**
    * What a part shows under its component when it is opened (as SolidWorks lists a part in an assembly): its origin and default planes, then its features in
-   * history order — read only, except its reference planes, which are datums to pick like the default ones.
+   * history order. Double-click edits its source feature; reference planes remain selectable datums.
    */
   const partRows = (c: Component) => {
     const build = a?.buildOf(c.id);
@@ -139,6 +142,8 @@ export function AssemblyTree() {
               className={`tree-row component-feature ${f.status === 'error' ? 'error' : ''} ${f.status === 'suppressed' ? 'suppressed' : ''}`}
               style={{ paddingLeft: 30 }}
               title={f.status === 'error' ? t('tree.componentFeatureFailed') : t('tree.componentFeatureTip')}
+              onDoubleClick={() => store.openComponentPart(c.id, f.id)}
+              onContextMenu={e => {e.preventDefault();setFeatureMenu({x:e.clientX,y:e.clientY,component:c.id,feature:f.id,sketch:f.type==='sketch'});}}
             >
               <Icon name={f.type} />
               <span className="name">{f.name}</span>
@@ -152,6 +157,7 @@ export function AssemblyTree() {
 
   return (
     <div className="feature-tree">
+      {featureMenu && <ContextMenu x={featureMenu.x} y={featureMenu.y}><li data-action="edit-component-feature" onClick={() => {store.openComponentPart(featureMenu.component, featureMenu.feature);setFeatureMenu(null);}}>{t(featureMenu.sketch?'tree.editComponentSketch':'tree.editComponentFeature')}</li></ContextMenu>}
       {returnTo && (
         <button className="return-bar" data-action="returnBack" onClick={() => store.returnToAssembly()} title={t(returnTo.kind === 'drawing' ? 'tree.returnDrawingTip' : 'tree.returnTip')}>
           <Icon name="assembly" />

@@ -82,6 +82,7 @@ export type Command =
   /** 
 ull removes direction 2 (and its draft). */
   | { type: 'setEndCondition'; featureId: Id; dir: 'dir1' | 'dir2'; value: EndCondition | null }
+  | { type: 'setExtrudeDirections'; featureId: Id; first: EndCondition; second: EndCondition | null }
   /** The draft of one direction of an extrusion; 
 ull removes it. */
   | { type: 'setDraft'; featureId: Id; dir: 'dir1' | 'dir2'; draft: WallDraft | null }
@@ -974,6 +975,17 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       c.driving = false;
       const after = resolveDoc(current(draft) as PartDoc).problems;
       for (const id of after.keys()) if (!before.has(id)) throw new CommandError(t('cmd.dimensionStillUsed', { name: dimensionName(c) }));
+      return;
+    }
+    case 'setExtrudeDirections': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'extrude') throw new CommandError(t('cmd.onlyExtrudeHasEnd'));
+      endCondition(cmd.first);
+      if (cmd.second) endCondition(cmd.second);
+      f.dir1 = cmd.first;
+      if (cmd.second) f.dir2 = cmd.second;
+      else { delete f.dir2; delete f.draft2; }
+      checkExprs(draft as PartDoc, f as Feature);
       return;
     }
     case 'setEndCondition': {

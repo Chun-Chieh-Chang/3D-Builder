@@ -9,7 +9,7 @@ export const tree = {
   'tree.notFound': '找不到：{name}',
   'tree.componentExpand': '展開：零件的原點、基準面與特徵',
   'tree.componentDatumTip': '點選以選取，Ctrl＋點選可加選；選好兩個後按「結合」',
-  'tree.componentFeatureTip': '唯讀：要修改請開啟零件',
+  'tree.componentFeatureTip': '雙擊或右鍵編輯來源零件的草圖／特徵，存回後返回組合件更新',
   'tree.componentFeatureFailed': '這個特徵在零件中重建失敗（開啟零件查看）',
   'tree.editSketch': '編輯草圖',
   'tree.editSketchPlane': '編輯草圖基準面',

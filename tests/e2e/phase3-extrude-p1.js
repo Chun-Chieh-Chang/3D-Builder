@@ -66,10 +66,12 @@ X.run = async () => {
   step('drafted outward by 3°', 20 * 10 * 10 + 30 * t * 100 + (4 / 3) * t * t * 1000);
   await check('拔模', false);
 
-  await check('方向 2', true);
+  pm().querySelector('[data-direction-mode=two]').click();
+  await H.settle();
   await input('深度', '4', 1);
   step('a second direction of 4', 2800);
-  await check('方向 2', false);
+  pm().querySelector('[data-direction-mode=one]').click();
+  await H.settle();
 
   await check('薄件', true);
   await input('厚度', '2');
