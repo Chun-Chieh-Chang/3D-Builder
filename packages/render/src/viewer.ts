@@ -2378,12 +2378,7 @@ export class Viewer {
     if (!enabled) this.setHoveredPlane(null);
   }
 
-  /** The shown plane the cursor is on, nearest first, by its key; null when it is on none. */
-  private pickPlane(clientX: number, clientY: number): string | null {
-    return this.pickPlaneHit(clientX, clientY)?.key ?? null;
-  }
-
-  /** ... and how far that plane is, so a plane the body hides does not take the click meant for the body. */
+  /** The shown plane under the cursor and its distance; nearer model geometry keeps picking priority. */
   private pickPlaneHit(clientX: number, clientY: number): { key: string; distance: number } | null {
     if (!this.planeGroup) return null;
     const r = this.rayAt(clientX, clientY);

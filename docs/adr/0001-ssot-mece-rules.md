@@ -10,7 +10,7 @@
 3. **衍生資料可重建**：B-Rep、網格、元素名稱、草圖解、DOF、物質特性、錯誤清單都由 `Regenerator.rebuild(doc)` 產生，永不寫回文件。重新計算是純函數：同一份文件永遠得到同一個結果。
 4. **父子關係不另存**：`@3db/regen/dag` 從特徵內的參考即時推導。
 5. **參考 = 持久名稱 + 幾何指紋**，禁止以拓撲索引引用（`Ref`）。
-6. **分層只能向下**：由 `scripts/check-deps.mjs` 的 `ALLOWED` 表定義並強制（`npm run lint:deps`）。UI 主執行緒只能以 `import type` 使用 kernel/regen/sketch，OCCT 只在 Web Worker 執行。
+6. **分層只能向下**：由 `scripts/check-deps.mjs` 的 `ALLOWED` 表定義並強制（`npm run lint:deps`）。UI 主執行緒不可載入幾何核心；允許的純TS子路徑例外只由該腳本的MAIN_THREAD_ALLOWED_SUBPATHS定義，OCCT只在Web Worker執行。
 7. **新功能先登記**：先在藍圖附錄 C 登記 ID 與擁有套件，再寫程式。
 
 ## 模組與目錄 ID 的擁有關係
@@ -27,3 +27,7 @@
 | `@3db/io` | F1、F2、F3、F4（檔案層） |
 | `@3db/render` | A4.2、A5.1、D4 |
 | `apps/web` | D1–D3、D5–D9（介面） |
+
+## 文件與開發資料的SSOT（2026-10-26補充）
+
+目前產品事實只維護於[產品現況](../project-state.md)，Schema／工作區／指令／驗收入口與依賴清單由程式和lockfile衍生於[盤點](../repository-inventory.md)，生成規則在`check-repository.mjs`。文件主要角色一份一類，完整索引與責任見[導覽](../README.md)。歷史ADR／DEV_LOG／計畫快照保留當時版本；不能用歷史段落覆蓋目前能力或把提案當實作。

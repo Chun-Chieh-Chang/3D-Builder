@@ -1,5 +1,5 @@
 import { beforeAll, expect, it } from 'vitest';
-import { applyCommand, createEmptyPart, DocHistory, serializePart, type Feature } from '@3db/model';
+import { applyCommand, createEmptyPart, DocHistory, serializePart} from '@3db/model';
 import { Kernel } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Regenerator } from '@3db/regen';

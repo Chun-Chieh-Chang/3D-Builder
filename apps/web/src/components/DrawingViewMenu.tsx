@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { t } from '@3db/i18n';
-import { VIEW_DISPLAYS, baseName, displayOf, isCorner, isShaded, page, type Id, type Dimension, type LinearDimension } from '@3db/model';
+import { VIEW_DISPLAYS, baseName, displayOf, isCorner, isShaded, page, type Id, type Dimension} from '@3db/model';
 import { DIMENSION_MODES, arrangementBase, dimensionModesFor, fitAllowed, pickKind, toleranceForChoice, type DimensionMode, type Pickable, type ToleranceChoice } from '@3db/drawing';
 import { ACTIONS, DIMENSION_ACTION, startDimension } from '../actions';
 import { store } from '../state/store';

@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { applyDrawingCommand, createEmptyDrawing, DRAWING_SCHEMA_VERSION, parseDrawing, serializeDrawing, type DrawingDoc, type DrawingView, type ModelDrawingView, page } from '@3db/model';
-import { olderDrawingFile } from '../support/drawingVersion';
+import '../support/drawingVersion';
 import { fromSheet, layoutViews, toSheet, viewImage, viewItems, type PlacedView, type ViewLines } from '@3db/drawing';
 
 const front = (extra: Partial<ModelDrawingView> = {}): DrawingView => ({ id: 'front', kind: 'model', name: 'Front', source: 'part.3dbx', direction: 'front', ...extra });

@@ -1,5 +1,7 @@
 # 工程圖交互邏輯：與 SolidWorks / FreeCAD TechDraw 的差距分析與改進規劃（草案）
 
+> **文件角色：階段／設計計畫快照。** 本文的狀態、Schema、未完成項與驗證數保留原記錄時間，不作目前產品宣稱或新的開工限制。最新交付與限制以[產品現況](project-state.md)為準，執行方式見[開發操作](development.md)。
+
 - 日期：2026-10-13。狀態：**已定案（2026-10-13，使用者回答 §8 的 14 題，見 §9）**；§9 的順序取代 §4 末尾與 §5 主席結論的順序。
 - 依據：
   - 本專案程式碼（逐檔讀過）：`packages/model/src/drawing.ts`（文件與命令，schema 11）、`apps/web/src/components/DrawingViewport.tsx`、`DrawingPanel.tsx`、`DimensionPanel.tsx`、`AnnotationPanel.tsx`、`apps/web/src/state/drawing.ts`、`packages/drawing/src/pick.ts`，以及 ADR 0060–0064、0100–0102、0119、0125、0128 的「限制與未做」。

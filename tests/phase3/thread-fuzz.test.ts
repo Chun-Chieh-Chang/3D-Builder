@@ -8,11 +8,9 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   Kernel,
-  KernelError,
   type Frame,
   type Region,
   type Segment,
-  type ShapeId,
   type ThreadSpec,
   type Vec3,
 } from '@3db/kernel';

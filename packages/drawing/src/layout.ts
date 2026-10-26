@@ -1,7 +1,7 @@
-import { BREAK_GAP, drawingFromPage, isCorner, isDerived, page, rightOf, sectionArrow, sectionSide, withPage, type ClosedOutline, type ViewAxes, type DrawingDoc, type DrawingPage, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewCorner, type ViewName, type ViewSide } from '@3db/model';
+import { BREAK_GAP, isCorner, isDerived, page, rightOf, sectionArrow, sectionSide, withPage, type ClosedOutline, type ViewAxes, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewCorner, type ViewName, type ViewSide } from '@3db/model';
 import { clipToCircle, clipToOutline, outlineBox } from './geometry';
 import type { ShadeImage } from './shade';
-import { sheetMetrics, type Rect } from './sheet';
+import { sheetMetrics} from './sheet';
 
 /** What a view needs to be laid out and drawn: its lines at full size, and for a section the outlines of the faces the cut made (to be hatched). */
 export interface ViewLines {

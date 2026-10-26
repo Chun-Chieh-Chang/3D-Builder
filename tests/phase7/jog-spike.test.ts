@@ -3,7 +3,7 @@
  * line x = 50: the part before the bend zone stays, the zone is the revolved section, the part after is moved by a rigid motion (slid up to the start of the zone, turned about
  * the axis of the bend), and the three are fused. The volume must be the plate's (K = 0.5 keeps it): 7500 mm³.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { Kernel, type Frame, type Region } from '@3db/kernel';
 
 let kernel: Kernel;

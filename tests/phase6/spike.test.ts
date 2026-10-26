@@ -168,7 +168,7 @@ describe('draft analysis (E3.2): the angle of every wall to the way the mold ope
     const wall = [...draftOf(cylinder, [0, 0, 1])].find(([face]) => kernel.topology(cylinder).faces[face]!.surface === 'cylinder')![1];
     expect(Math.abs(wall.min)).toBeLessThan(1e-9);
     expect(classify(wall, (1 * Math.PI) / 180)).toBe('required');
-    const cone = body(build(sketch('s', front, circle('c', 0, 0, 10)), { ...extrude('e', 's', 'boss', { type: 'blind', depth: '20' }), draft1: { angle: '5deg', inward: true } } as Feature));
+    body(build(sketch('s', front, circle('c', 0, 0, 10)), { ...extrude('e', 's', 'boss', { type: 'blind', depth: '20' }), draft1: { angle: '5deg', inward: true } } as Feature));
     // the angle comes from the normals of the surface itself, at the nodes of the mesh: as exact as the surface (the triangle's own normal, or the mesh's averaged one, is 0.1° out here)
     const error = (angular: number) => {
       // a mesh is made once for a shape: each fineness is a shape of its own

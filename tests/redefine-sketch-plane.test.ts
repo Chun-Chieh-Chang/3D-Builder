@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { Kernel } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Regenerator } from '@3db/regen';
-import { applyCommand, parsePart, type PartDoc, type SketchFeature } from '@3db/model';
+import { applyCommand, type PartDoc, type SketchFeature } from '@3db/model';
 import { parentsOf } from '@3db/regen';
 
 describe('redefineSketchPlane (編輯草圖基準面)', () => {

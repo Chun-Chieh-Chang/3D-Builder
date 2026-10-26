@@ -1,5 +1,7 @@
 # Automated acceptance evidence
 
+> 跨平台指令入口與環境設定見[開發操作](development.md)。下方`/workspace/.cloud-setup/`與特定FreeCAD版本路徑是當時環境重現範例，不是儲存庫提供的通用依賴；在其他機器須換成實際可執行檔。歷史通過數不代表本版重跑結果。
+
 This project keeps two kinds of evidence separate:
 
 | Verification need | Agent-run evidence | Remaining independent input |

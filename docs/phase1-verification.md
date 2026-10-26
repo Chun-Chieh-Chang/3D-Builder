@@ -1,5 +1,7 @@
 # Phase 1 驗收紀錄
 
+> **歷史交付／驗證快照**：本文數字與狀態只代表原記錄日期；目前能力與限制見[產品現況](project-state.md)，可重算的版本／清單數見[儲存庫盤點](repository-inventory.md)。
+
 **結論：Phase 1 閘門通過**（使用者確認，2026-09-28）。驗收中發現的 3 個問題都已修正（見 [ADR 0010](adr/0010-phase1-acceptance-fixes.md)）。
 
 藍圖 §3 Phase 1（零件 MVP）的驗收標準：

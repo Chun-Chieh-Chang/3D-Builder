@@ -1,5 +1,5 @@
 import type { Id } from '@3db/model';
-import type { Loop2, P2, Segment2 } from './types';
+import type { Loop2, P2} from './types';
 
 /**
  * Industrial CAD Sans-Serif Vector Font (ADR 0163).

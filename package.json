@@ -25,7 +25,10 @@
     "verify:freecad-sheet-metal": "node scripts/verify-freecad-sheet-metal.mjs",
     "verify:drawing-export": "node scripts/verify-drawing-export.mjs",
     "check:perf": "node scripts/check-perf.mjs",
-    "check": "npm run typecheck && npm run lint:rules && npm run lint:deps && npm run lint:i18n && npm test"
+    "check": "npm run typecheck && npm run lint:rules && npm run lint:deps && npm run lint:i18n && npm run lint:repo && npm test",
+    "docs:sync": "node scripts/check-repository.mjs --write",
+    "lint:repo": "node scripts/check-repository.mjs",
+    "audit:repo": "node scripts/check-repository.mjs --json out/repository-audit.json"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

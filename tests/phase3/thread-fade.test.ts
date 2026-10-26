@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { Kernel, type Frame, type Region, type Segment, type ShapeId, type ThreadSpec, type Vec3 } from '@3db/kernel';
+import { Kernel, type Frame, type Region, type Segment, type ThreadSpec, type Vec3 } from '@3db/kernel';
 
 let kernel: Kernel;
 beforeAll(async () => {

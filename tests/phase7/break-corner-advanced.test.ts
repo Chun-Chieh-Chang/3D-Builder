@@ -17,7 +17,7 @@ import { edgeFingerprint } from '@3db/naming';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { flatPattern, Regenerator, type RebuildResult } from '@3db/regen';
-import { front, line, pin, rectangle, sketch, statuses } from '../phase1/builders';
+import { front, rectangle, sketch, statuses } from '../phase1/builders';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;

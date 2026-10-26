@@ -243,7 +243,6 @@ describe('the entities a click on the model makes (D5.3b)', () => {
     it('reuses existing entity when sketch already has it', () => {
       const m = maker();
       const firstId = anchorModelForSelection(none, nothing, m, item('bottom'), 'curve', [20, 0]);
-      const count = m.entities.length;
       const m2 = maker();
       const secondId = anchorModelForSelection({ entities: m.entities }, nothing, m2, item('bottom'), 'curve', [25, 0]);
       expect(secondId).toBe(firstId);

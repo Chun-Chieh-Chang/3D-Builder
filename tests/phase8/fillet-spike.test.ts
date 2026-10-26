@@ -132,7 +132,6 @@ describe('F-0: a full round of the top of a 40 × 30 × 20 block (the top is 30 
   it('by cutting away the strip over a semicircle: exact, one new cylindrical face', () => {
     const b = block(40, 30, 20);
     const sign = zSign(b);
-    const ztop = 20 * sign;
     // a frame across the length: x along the 30 (the part's y), y along z (up), the sweep along the part's x
     const frame: Frame = { origin: [-1, 0, 0], xDir: [0, 1, 0], yDir: [0, 0, sign], normal: [1, 0, 0] };
     const tool = kernel.extrude(frame, [stripRegion(30, 20)], [42, 0, 0]);

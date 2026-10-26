@@ -1,0 +1,32 @@
+name: Repository integrity
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integrity:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint:rules
+      - run: npm run lint:deps
+      - run: npm run lint:i18n
+      - run: npm run lint:repo
+      - name: Repository contracts and native geometry smoke checks
+        run: npm test -- tests/phase5/repository-maintenance.test.ts tests/phase5/verify-ui-args.test.ts packages/model/test/model.test.ts packages/kernel/test/bodies.test.ts
+      - run: npm run build

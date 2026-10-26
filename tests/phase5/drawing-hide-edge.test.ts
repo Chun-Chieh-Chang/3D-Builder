@@ -13,7 +13,6 @@ import {
   page,
   type DrawingDoc,
   type DrawingRef,
-  type DrawingView,
   type ViewAxes,
   type ViewEdgeSet,
 } from '@3db/model';
@@ -186,7 +185,7 @@ describe('B2.2: withoutHiddenEdges — geometry and line filtering', () => {
 
   it('filters based on component id "in" for assembly views', () => {
     const axes: ViewAxes = viewVectors('front');
-    const lines = kernel.projectView(shape, axes) as ViewLines;
+    kernel.projectView(shape, axes);
     const edgeSet: ViewEdgeSet = {
       edges: [
         {

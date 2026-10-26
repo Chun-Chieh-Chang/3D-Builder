@@ -828,7 +828,6 @@ export class Kernel {
   sweepAlongPath(frame: Frame, regions: Region[], pathFrame: Frame, path: Segment[]): OpResult {
     if (regions.length === 0) throw new KernelError(t('feature.sweepNoProfile'));
     if (path.length === 0) throw new KernelError(t('feature.sweepNoPath'));
-    const oc = this.oc;
     const arena = new Arena();
     try {
       const pathSources = new Map<TopoDS_Shape, string>();
@@ -1355,7 +1354,6 @@ export class Kernel {
     const xLen = Math.hypot(...X);
     X = [X[0] / xLen, X[1] / xLen, X[2] / xLen];
 
-    const oc = this.oc;
     const arena = new Arena();
     try {
       const sets: { shape: TopoDS_Shape; origins: FaceOrigin[][] }[] = [];
@@ -2675,14 +2673,14 @@ export class Kernel {
   }
 
   /**
-   * Where edge `edgeIndex` of `target` crosses a plane (「貫穿」 for any curve, ADR 0173): the curve is evaluated, never cut — no boolean, so nothing is
-   * taken from the heap (AGENTS §3.5). The parameter range is split into steps of about half a millimetre (64 to 4096 of them), every step whose ends lie
+   * Where edge `edgeIndex` of `target` crosses a plane (「貫穿」 for any curve, ADR 0173): the curve is evaluated, never cut.
+   * No boolean is performed; temporary native objects remain arena-owned, without claiming zero Heap growth (AGENTS §3.5).
+   * The parameter range is split into steps of about half a millimetre (64 to 4096 of them), every step whose ends lie
    * on opposite sides is refined by Newton's method kept inside it (bisection when a step would leave it) to 1e-12 mm, and an end lying on the plane
    * (within 1e-9 mm) is a crossing marked `end`. A curve that only touches the plane between two samples, or crosses it twice within one step, is not
    * found: that is the resolution, written in the ADR.
    */
   edgePlaneCrossings(target: ShapeId, edgeIndex: number, plane: { origin: Vec3; normal: Vec3 }): EdgeCrossing[] {
-    const oc = this.oc;
     const arena = new Arena();
     try {
       const { ad, t0, t1, length } = this.edgeCurve(target, edgeIndex, arena);

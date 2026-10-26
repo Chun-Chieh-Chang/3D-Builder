@@ -4,9 +4,7 @@ import {
   createEmptyDrawing,
   DRAWING_SCHEMA_VERSION,
   parseDrawing,
-  serializeDrawing,
   type ChamferDimension,
-  type Dimension,
   type DrawingDoc,
   type ElementFacts,
   type LinearDimension,
@@ -18,7 +16,6 @@ import {
   evaluateDimension,
   planDimension,
   dragDimension,
-  type DimensionMode,
   type Pickable,
   type PlacedView,
 } from '@3db/drawing';

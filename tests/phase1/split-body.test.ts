@@ -19,7 +19,7 @@ import {
 } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
-import { Regenerator, type RebuildResult } from '@3db/regen';
+import { Regenerator} from '@3db/regen';
 import { build, extrude, front, rectangle, sketch, statuses } from './builders';
 
 let kernel: Kernel;

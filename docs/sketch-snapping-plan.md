@@ -1,5 +1,7 @@
 # 草圖吸附與推斷計畫（參照 SolidWorks；已實作並提交）
 
+> **文件角色：階段／設計計畫快照。** 本文的狀態、Schema、未完成項與驗證數保留原記錄時間，不作目前產品宣稱或新的開工限制。最新交付與限制以[產品現況](project-state.md)為準，執行方式見[開發操作](development.md)。
+
 - 日期：2026-10-06。來源：使用者做手動驗證 C3（在板子頂面畫圓）時提出：「沒有像 SW 自動出現磁吸式座標的功能，沒有虛線連接附近的特徵點和游標」，並要求把它規劃進 handoff 或藍圖。
 - **狀態（2026-10-06 實作，2026-10-23 文件更新）**：**S-1 至 S-4 已全數實作、驗證並提交進版本庫**（詳見 [ADR 0099](adr/0099-sketch-snapping.md)；模型幾何投影與貫穿擴充見 [ADR 0136](adr/0136-sketch-snap-projected-edges.md)）。
   - **S-1 推斷線（已提交，ADR 0099）**：水平點／垂直點虛線與自動關係（`alignments` in `interact.ts`，`ControllerView.snap.align`，`overlay.ts` 畫灰色虛線；單元 12 項＋控制器 7 項）；共線／平行／垂直推斷（`inferLine` in `interact.ts`；單元 12 項＋控制器 7 項）。

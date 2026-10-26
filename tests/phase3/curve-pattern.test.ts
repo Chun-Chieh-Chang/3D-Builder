@@ -5,7 +5,7 @@
  * and reverse direction, with strict Red-Teaming defense (AGENTS.md).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyCommand, type Feature, type PartDoc, type PatternDefinition, type PatternFeature, type Ref } from '@3db/model';
+import { type Feature, type PartDoc, type PatternDefinition, type PatternFeature, type Ref } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { dependencies, Regenerator, type RebuildResult } from '@3db/regen';

@@ -1,4 +1,4 @@
-import type { DrawingRef, Ref, ViewEdge, ViewEdgeSet, ViewFeature } from '@3db/model';
+import type { DrawingRef, Ref, ViewEdgeSet, ViewFeature } from '@3db/model';
 import type { ViewLines } from './layout';
 
 /**

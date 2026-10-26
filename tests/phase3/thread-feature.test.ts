@@ -1,9 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyCommand, parsePart, serializePart, shownByDefault, SCHEMA_VERSION, type Command, type Feature, type PartDoc, type Ref, type SketchEntity, type ThreadFeature } from '@3db/model';
+import { applyCommand, parsePart, serializePart, shownByDefault, SCHEMA_VERSION, type Feature, type PartDoc, type SketchEntity, type ThreadFeature } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, type RebuildResult } from '@3db/regen';
-import { build, front, rectangle, sketch, statuses, type SketchParts } from '../phase1/builders';
+import { build, front, sketch, statuses, type SketchParts } from '../phase1/builders';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;

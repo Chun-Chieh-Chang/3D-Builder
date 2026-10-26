@@ -12,15 +12,11 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
-  applyCommand,
   applyDrawingCommand,
-  axesOf,
   createEmptyDrawing,
   createEmptyPart,
-  shownByDefault,
   type Dimension,
   type DrawingDoc,
-  type ElementFacts,
   type Feature,
   type PartDoc,
   type Ref,
@@ -30,7 +26,7 @@ import {
   dimensionRefs, page } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type ShapeId } from '@3db/kernel';
-import { Regenerator, elementFacts, projectDrawingView, viewFeatures, type RebuildResult } from '@3db/regen';
+import { Regenerator, elementFacts, projectDrawingView, type RebuildResult } from '@3db/regen';
 import { binaryStl, readBinaryStl, stlMeasure } from '@3db/io';
 import { buildScene, toDxf, toPdf, type ElementsResult, type ViewLines } from '@3db/drawing';
 import { front, sketch, statuses, type SketchParts } from '../phase1/builders';
@@ -492,7 +488,7 @@ describe('ISO 80369-7 Luer Reference Parts & Drawing Verification (T-4)', () => 
       );
 
       // Verify none of the real element facts had errors:
-      for (const [id, res] of elements.entries()) {
+      for (const res of elements.values()) {
         expect('error' in res).toBe(false);
         if ('elements' in res) {
           expect(res.elements.length).toBeGreaterThan(0);

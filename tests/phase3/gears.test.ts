@@ -1,5 +1,5 @@
 import { beforeAll, expect, it } from 'vitest';
-import { applyCommand, createEmptyPart, DocHistory, gearDimensions, gearParameters, mapRefs, Parameters, parsePart, SCHEMA_VERSION, serializePart, type Feature, type GearParameters, type PartDoc, type SpurGearFeature, type RackFeature } from '@3db/model';
+import { applyCommand, createEmptyPart, DocHistory, gearDimensions, gearParameters, mapRefs, Parameters, parsePart, SCHEMA_VERSION, serializePart, type Feature, type PartDoc} from '@3db/model';
 import { Kernel } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { dependencies, Regenerator } from '@3db/regen';

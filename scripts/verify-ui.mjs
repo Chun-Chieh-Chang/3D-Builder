@@ -23,14 +23,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { devServerArgs } from './verify-ui-args.mjs';
+import { uiJobs } from './ui-jobs.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGIN = process.env.VERIFY_UI_ORIGIN ?? 'http://127.0.0.1:5391';
 // Both ports are overridable so two sessions can run verify:ui at once (the defaults stay as they were).
 const DEBUG_PORT = Number(process.env.VERIFY_UI_DEBUG_PORT) || 9333;
 const SAMPLES_PORT = Number(process.env.VERIFY_UI_SAMPLES_PORT) || 5393;
-/** Helper files of the scripts, not scripts of their own. */
-const NOT_SCRIPTS = new Set(['phase1-demo-parts.js', 'phase3-subassembly.js', 'desktop-probe.mjs', 'manual-support.js']);
 /** Errors the page logs that mean nothing (the browser asks for a favicon the dev server has none of). */
 const IGNORED_ERRORS = [/favicon/i];
 /** How long any one call may go unanswered before the run is called off. This is the backstop for a renderer that cannot answer at all.
@@ -71,19 +70,6 @@ function findBrowser() {
   const found = candidates.find((p) => p && existsSync(p));
   if (!found) throw new Error('no Chrome or Edge found: set CHROME_PATH');
   return found;
-}
-
-/** The scripts and the calls that run them, read from the usage lines in each file's header (`await __x.run();`). */
-function jobs() {
-  const dir = join(ROOT, 'tests', 'e2e');
-  const out = [];
-  for (const file of readdirSync(dir).sort()) {
-    if (!file.endsWith('.js') || NOT_SCRIPTS.has(file) || (only && !only.test(file))) continue;
-    const header = readFileSync(join(dir, file), 'utf8').split('\n').slice(0, 40).filter((l) => l.startsWith('//')).join('\n');
-    const calls = [...new Set([...header.matchAll(/await\s+(__\w+\.\w+)\(/g)].map((m) => m[1]))].filter((c) => !c.startsWith('__sub.'));
-    out.push({ file, calls });
-  }
-  return out;
 }
 
 /** The STEP samples of tests/fixtures/step, served read-only on the port some scripts read them from (127.0.0.1:5393). */
@@ -259,7 +245,7 @@ window.__shot = async (label) => { const n = ++window.__shotN; window.__capture(
     };
 
     const results = [];
-    for (const { file, calls } of jobs()) {
+    for (const { file, calls } of uiJobs(join(ROOT, 'tests', 'e2e'), only)) {
       if (calls.length === 0) {
         results.push({ file, call: '-', status: 'NO ENTRY', detail: 'no `await __x.run();` line in the header' });
         continue;

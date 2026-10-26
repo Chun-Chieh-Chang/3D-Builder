@@ -64,7 +64,6 @@ describe('the variable-radius control points of a fillet (C5.2, ADR 0167)', () =
 
   it('refuses what cannot be a control point and leaves the document unchanged', () => {
     const h = new DocHistory(createDemoPart());
-    const before = h.doc;
     h.execute({ type: 'setFilletVariable', featureId: 'fillet1', points: [at(0, '2'), at(1, '4')] });
     const kept = points(h.doc);
     for (const bad of [

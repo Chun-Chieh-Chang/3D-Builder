@@ -21,7 +21,6 @@ import {
   serializeDrawing,
   type DrawingCommand,
   type DrawingDoc,
-  type DrawingSheet,
   type DrawingView,
   type Id,
   type Leaf,
@@ -54,7 +53,6 @@ import {
   allViews,
   isShaded,
   page,
-  withPage,
   type ViewCorner } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
 import { alignCollinear, arrangeDimensions, attachedAnnotations, FontError, SHADE_SHEET_PX, readTrueType, resolveLines, sectionMissed, toDxf, toPdf, turnLines, visibleElements, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
@@ -1333,7 +1331,7 @@ export class DrawingStore {
     const p = viewById(page(doc).views, parent);
     const parentAxes = p ? axesOf(page(doc).views, page(doc).sheet.projection, p) : null;
     if (!parentAxes) return;
-    const cut = sectionCut(parentAxes, {
+    sectionCut(parentAxes, {
       id: '',
       kind: 'sectionLocal',
       name: '',

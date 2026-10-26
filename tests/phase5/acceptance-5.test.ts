@@ -126,11 +126,10 @@ function plateDrawing(part: OpenedPart): PlateDrawing {
 const sceneTexts = (s: Scene) => s.items.flatMap((i) => (i.kind === 'text' && i.text !== '' ? [i.text] : []));
 
 describe('① the base plate\'s drawing (5-6)', () => {
-  let p: Project;
   let o: Opened;
   let d: PlateDrawing;
   beforeAll(async () => {
-    ({ p, o } = await assemble({ kernel, solver, kept, stepBytes }));
+    ({ o } = await assemble({ kernel, solver, kept, stepBytes }));
     d = plateDrawing(o.parts.get(PLATE)!);
   });
 

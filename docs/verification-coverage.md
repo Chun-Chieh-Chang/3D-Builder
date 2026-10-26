@@ -1,5 +1,7 @@
 # 人工驗證清單的自動化覆蓋（更新至 2026-10-14）
 
+> **歷史交付／驗證快照**：本文數字與狀態只代表原記錄日期；目前能力與限制見[產品現況](project-state.md)，可重算的版本／清單數見[儲存庫盤點](repository-inventory.md)。
+
 [docs/manual-verification.html](manual-verification.html) 的項目，哪些已由機器逐步重做過、哪些只能人做。
 - **一鍵重跑**：`npm run verify:ui`（`scripts/verify-ui.mjs`）。無頭 Chrome 逐一載入 `tests/e2e/*.js`，每支腳本一個全新頁面與空的瀏覽器儲存；任何 `pass: false`、`skipped`、Console 錯誤都算失敗。`--shots <資料夾>` 另存各步驟的截圖，`--only <正規式>` 只跑檔名符合的。
 - **重播腳本**：`tests/e2e/manual-<項目>.js`，照手冊的步驟用同一批 UI 事件（指標、滾輪、鍵盤、PropertyManager、對話框）重做一遍，每個「應該看到」都有一個斷言與一張截圖。共用的做法 A 等在 `tests/e2e/manual-support.js`。

@@ -38,8 +38,6 @@ import {
   type EdgeFlangeFeature,
   type HemFeature,
   type ThreadFeature,
-  type HelixFeature,
-  type BreakCornerFeature,
   type Fingerprint,
   type Id,
   type ImportedBodyFeature,

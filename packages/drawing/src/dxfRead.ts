@@ -265,7 +265,7 @@ export function checkDxf(doc: DxfDocument): string[] {
     note(e.handle);
     if (e.owner) owners.push(e.owner);
   }
-  for (const [h, n] of handles) if (!h) problems.push(t('dxf.noHandle'));
+  for (const h of handles.keys()) if (!h) problems.push(t('dxf.noHandle'));
   for (const [h, n] of handles) if (n > 1) problems.push(t('dxf.dupHandle', { handle: h }));
   for (const o of owners) if (o !== '0' && !handles.has(o)) problems.push(t('dxf.noOwner', { owner: o }));
   const layers = new Set(doc.tables.get('LAYER')?.entries.map((e) => e.name));

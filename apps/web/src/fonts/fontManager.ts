@@ -1,4 +1,4 @@
-import { matchesPresetFont, PRESET_FONTS, readTrueType, type PresetFontId, type TrueTypeFont } from '@3db/drawing';
+import { matchesPresetFont, readTrueType, type PresetFontId, type TrueTypeFont } from '@3db/drawing';
 
 /**
  * Manages loading and caching of TrueType fonts for PDF export.

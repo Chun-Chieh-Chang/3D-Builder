@@ -5,7 +5,7 @@
  */
 import { SKETCH_AXIS_H, SKETCH_AXIS_V, SKETCH_ORIGIN, constraintRefs, entityPoints, isSketchAxis, sketchAxisDir, type DimensionConstraint, type Id, type SketchConstraint, type SketchFeature } from '@3db/model';
 import { textContours } from './font';
-import type { ModelEdge, ModelItem } from './ops';
+import type { ModelItem } from './ops';
 import type { P2, SolvedGeometry } from './types';
 
 export type Geometry = ReadonlyMap<Id, SolvedGeometry>;

@@ -34,7 +34,6 @@ const rebuild = (doc: PartDoc): RebuildResult => {
 };
 const build = (features: Feature[]): PartDoc => features.reduce((d, feature, index) => applyCommand(d, { type: 'insertFeature', feature, index }), createEmptyPart());
 const failures = (r: RebuildResult) => statuses(r).filter((s) => !s.endsWith('=ok'));
-const T = 1.5;
 const BA = (Math.PI / 2) * 2.75;
 const right = { kind: 'datum', name: 'plane:right' } as const; // normal +X; its x runs along −Z, its y along Y
 

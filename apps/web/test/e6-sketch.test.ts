@@ -1,5 +1,5 @@
 import { beforeAll, expect, it } from 'vitest';
-import { applyCommand, createEmptyPart, DocHistory, resolveSketch, type Command, type SketchFeature } from '@3db/model';
+import { applyCommand, createEmptyPart, DocHistory, resolveSketch, type SketchFeature } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { SketchController, type SketchHost } from '../src/sketcher/controller';
 import { DEFAULT_SNAPS } from '@3db/sketch/snaps';

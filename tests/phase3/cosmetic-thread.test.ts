@@ -12,13 +12,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   applyCommand,
-  parsePart,
-  serializePart,
-  SCHEMA_VERSION,
-  type Command,
   type Feature,
   type PartDoc,
-  type Ref,
   type SketchEntity,
   type CosmeticThreadFeature,
 } from '@3db/model';

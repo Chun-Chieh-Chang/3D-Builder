@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { applyCommand, applyDrawingCommand, axesOf, buildBom, createEmptyDrawing, createEmptyPart, leavesOf, sectionPlane, type Dimension, type DrawingDoc, type DrawingView, type Feature, type PartDoc, type Pose, type Ref, type SourceTree, dimensionRefs, page } from '@3db/model';
-import { componentName, exportAssemblyStep, partNameOf, readAnyDocumentFile, sha256Hex, writeAssemblyFile, writeDrawingFile, writePartFile } from '@3db/io';
+import { componentName, exportAssemblyStep, partNameOf, readAnyDocumentFile, writeAssemblyFile, writeDrawingFile, writePartFile } from '@3db/io';
 import { autoDimensions, buildScene, checkDxf, flatPatternDxf, readDxf, readTrueType, toDxf, toPdf, type DxfLine, type ElementsResult, type Scene, type ViewLines } from '@3db/drawing';
 import { edgeFingerprint } from '@3db/naming';
 import { PlaneGcsSolver } from '@3db/sketch';
@@ -215,7 +215,7 @@ describe('B. a jig made from a master model (checklist D, E, F)', () => {
     const trees: Record<string, SourceTree> = {};
     for (const c of p.doc.components) trees[c.id] = { kind: 'part', key: o.pathOf(c.id), path: o.pathOf(c.id) };
     const isRef = (key: string) => o.parts.get(key)!.reference.every(Boolean);
-    const leaves = leavesOf(p.doc, trees, (id) => o.solved.poses.get(id) ?? null).filter((l) => !isRef(l.key));
+    leavesOf(p.doc, trees, (id) => o.solved.poses.get(id) ?? null).filter((l) => !isRef(l.key));
     const rows = buildBom({ doc: p.doc, trees, propsOf: (key) => o.parts.get(key) && undefined, isReference: isRef }).flat;
     expect(rows.map((r) => [r.item, r.name, r.qty])).toEqual([['1', '基板', 1], ['2', '壓板', 1], ['3', 'ISO 8734 6m6x20', 2], ['4', 'ISO 4762 M6x10', 1]]);
     let assembly: DrawingDoc = applyDrawingCommand(createEmptyDrawing(), {

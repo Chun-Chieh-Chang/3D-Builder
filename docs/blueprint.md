@@ -1,13 +1,13 @@
 # 3D-Builder 開發藍圖 — 類 SolidWorks 參數式 CAD（Web 先行、一人 + AI）
 
-> **文件狀態：v1.1**｜SW 全系統拆解 → 四輪取捨（含「模具不做、夾治具要做」的更正）→ 藍圖 已完成｜核准後從 Phase 0（行走骨架）開始實作
+> **文件狀態：v1.1**｜SW 全系統拆解 → 四輪取捨（含「模具不做、夾治具要做」的更正）→ 藍圖 已完成｜保留原規劃與範圍；交付狀態見[產品現況](project-state.md)
 > 本文件是規劃階段的唯一依據（SSOT）：範圍以附錄 C 目錄的「建議」欄 + 第 3 節的階段規則為準。
 
 ## 0. Context
 
 - **要解決的事**：自建一套類 SolidWorks（下稱 SW）的參數式 3D CAD，範圍對標「SW 早期基礎建模能力」，並延伸到你的三個產業流程：**夾治具（加工夾具、組裝治具、檢具）→ 塑膠件 → 鈑金**。模具設計不做。
 - **原始需求（R1–R6）**：基本草圖｜從草圖長出 3D｜SW 式參數化互動介面｜結合關係與父子關係｜輸出 STEP｜功能邏輯基於 SSOT 與 MECE。追加：**R7 與 SW 資料互通**（大量輸入既有 STEP 並繼續修改）、**R8 產業流程**（夾治具、塑膠件、鈑金）。
-- **現況**：`<使用者資料夾>\Downloads\3D-Builder` 為空目錄、非 git repo；全新專案，無既有程式碼可重用。
+- **規劃時的原始起點（歷史）**：`<使用者資料夾>\Downloads\3D-Builder` 為空目錄、非 git repo；全新專案，無既有程式碼可重用。
 - **參考資料**：SW 2010 繁中說明文件（34 章目錄已逐章讀取，術語與完整性已校正，見附錄 B.4）。
 - **預期成果**：
   - 約 3–4 個月（Phase 1）：可用的「零件參數建模 + STEP 往返」版本。
@@ -36,21 +36,21 @@
 
 ## 2. 架構藍圖
 
-### 2.1 技術棧
+### 2.1 技術棧（依實作校正，原選型歷史見ADR0002、0003）
 
 | 層 | 選擇 | 理由 |
 |---|---|---|
-| 幾何核心 | **OCCT 7.9.x**，以官方 Emscripten 流程自建 WASM + 自寫 C++ 門面（embind） | 唯一成熟的開源 B-Rep 核心；自建可控版本與匯出範圍。備案：opencascade.js 預建版 |
+| 幾何核心 | **libcascade預建OCCT WASM + TypeScript門面**（版本由lockfile與ADR0003記錄） | 採用完整綁定以覆蓋建模與輸出；早期選型／缺口驗證保留於ADR0002、0003 |
 | 核心執行 | Web Worker + Comlink；網格以 Transferable ArrayBuffer 回傳 | UI 不被重新計算阻塞（B3.5） |
 | 草圖求解 | **PlaneGCS**（FreeCAD 草圖求解器，LGPL）編成 WASM，包在 `Solver2D` 介面後 | 已在 FreeCAD 實戰驗證；提供 DogLeg/LM、冗餘/衝突診斷與相依參數分析（逐圖元完全定義著色）。備案：libslvs（GPL，內部使用可）或自研 |
 | 結合求解 | **自研 TS 求解器**（每零組件 6 DOF、Levenberg-Marquardt、依連通分量分解、SVD 算剩餘 DOF；限制結合用不等式處理） | A2 + 限制/寬度/相互對稱結合，自研最可控 |
 | 繪圖 | Three.js（WebGL2）+ three-mesh-bvh（拾取）+ 粗線段（邊線） | 成熟、MIT 授權 |
-| UI | React 18 + TypeScript strict + Vite | 介面開發最快、AI 輔助最成熟 |
+| UI | React + TypeScript strict + Vite（實際版本見lockfile） | 介面開發最快、AI 輔助最成熟 |
 | 狀態 | 文件 = 不可變資料（Immer patches 做復原/重做）；衍生快取另存 | SSOT：文件與衍生資料實體分離 |
 | 檔案 | `.3dbx` = ZIP（`document.json` 穩定排序 + `blobs/` 輸入的 STEP + 可選 `cache/`） | JSON 可 diff（B9.6）；輸入的 STEP 是設計意圖的一部分，必須隨檔保存 |
-| 本機存取 | File System Access API（Edge/Chrome）；Phase 3b 起 Tauri 2 原生檔案系統 | 組合件與衍生零件需要讀取資料夾內的其他檔案 |
-| 測試 | Vitest（單元/金樣）、Playwright（E2E） | |
-| 單一 repo | pnpm workspaces | |
+| 本機存取 | File System Access API（Edge/Chrome）；Windows Tauri殼沿用同一前端檔案API | 組合件與衍生零件需要讀取資料夾內的其他檔案 |
+| 測試 | Vitest（單元／金樣）、Chrome／Edge CDP驗收器（UI） | |
+| 單一 repo | npm workspaces | package.json與package-lock.json為準 |
 
 ### 2.2 模組地圖與相依規則（程式碼層的 MECE）
 
@@ -252,6 +252,8 @@ interface AssemblyDoc {
 時程取決於 Phase 0 的 OCCT/WASM 實測結果，以及你審查與測試的時間。Phase 4 之後的順序可以在每次階段閘門時重排。
 
 ## 4. 驗證策略
+
+> 下方`pnpm`／Playwright是規劃時的命令草案，實際可執行指令與測試器以[開發操作](development.md)及[盤點](repository-inventory.md)為準；不存在的命令不可直接照跑。
 
 - **自動化**（每次提交執行）：
   - `pnpm test`：model、指令、遷移、naming、求解器轉接的單元測試。

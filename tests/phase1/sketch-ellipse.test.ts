@@ -10,13 +10,8 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
-  applyCommand,
-  createEmptyPart,
   sketchError,
-  type Command,
   type Feature,
-  type PartDoc,
-  type Ref,
 } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';

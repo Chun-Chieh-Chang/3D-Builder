@@ -1,11 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   applyCommand,
-  createEmptyPart,
-  type Command,
-  type Feature,
   type PartDoc,
-  type Ref,
   type ThreadFeature,
 } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';

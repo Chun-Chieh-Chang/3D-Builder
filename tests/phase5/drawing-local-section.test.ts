@@ -8,7 +8,7 @@ import {
   DRAWING_SCHEMA_VERSION,
   type DrawingDoc,
   type LocalSectionDrawingView, page } from '@3db/model';
-import { olderDrawingFile } from '../support/drawingVersion';
+import '../support/drawingVersion';
 
 const base = (): DrawingDoc => createEmptyDrawing();
 

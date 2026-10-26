@@ -1,5 +1,7 @@
 # 第三方授權清單（THIRD_PARTY_NOTICES）
 
+> **盤點時點說明（2026-10-26）**：下文npm／Rust人工清單是2026-10-08的歷史授權審閱。實際鎖定版本與跨平台可選套件數由[儲存庫盤點](docs/repository-inventory.md)從lockfile產生；Rust lock已變更，舊246筆與「全部未見某授權」不能延伸為目前完整授權認證。保留原授權義務及文字；本輪沒有重新取得所有Rust crate的授權全文。
+
 - 產生日期：2026-10-08（由 `npm ls --all --json`、各套件自己的 `package.json` 與 `cargo metadata` 彙整；版本以 `package-lock.json` 與 `apps/desktop/src-tauri/Cargo.lock` 為準）。
 - 用途：記錄本專案用到哪些第三方元件、各是什麼授權、散佈時要做什麼。**這份清單是技術盤點，不是法律意見**；對外散佈或商品化前請讓律師看過。
 - 本專案自己的程式碼：**目前沒有 `LICENSE` 檔**（保留所有權利）；定位是個人或公司內部使用（[README](README.md) 的「授權說明」）。要對外散佈，先決定本專案自己的授權。

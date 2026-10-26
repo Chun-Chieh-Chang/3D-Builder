@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { store, useStore } from '../state/store';
 import { DrawingMenu, type DrawingMenuAt } from './DrawingViewMenu';
 import { annotationLabel } from './AnnotationPanel';
-import { PALETTE_DIRECTIONS, type DrawingPick, type DrawingTool } from '../state/drawing';
+import { PALETTE_DIRECTIONS, type DrawingPick} from '../state/drawing';
 import { AnnotationPanel } from './AnnotationPanel';
 import { DimensionPanel } from './DimensionPanel';
 import { Icon, type IconName } from './Icon';
