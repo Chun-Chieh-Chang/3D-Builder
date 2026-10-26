@@ -796,7 +796,13 @@ export function DrawingViewport() {
       const original = curPage.dimensions.find(dimension => dimension.id === drag.id);
       // Preserve the grab point: extension lines and text need not start on the dimension line itself.
       if (original) {
-        if (patch.offset !== undefined && start.offset !== undefined && 'offset' in original) patch.offset = round2(original.offset + patch.offset - start.offset);
+        if (patch.offset !== undefined && start.offset !== undefined && 'offset' in original) {
+          // Extension lines may start inside the view. offsetAt clamps placement
+          // there, so use actual pointer displacement for an axis-aligned drag.
+          patch.offset = original.kind === 'linear' && original.orientation !== 'aligned'
+            ? round2(original.offset + (original.orientation === 'horizontal' ? p[1] - drag.from[1] : p[0] - drag.from[0]))
+            : round2(original.offset + patch.offset - start.offset);
+        }
         if (patch.slide !== undefined && start.slide !== undefined && (original.kind === 'linear' || original.kind === 'angle')) patch.slide = round2((original.slide ?? 0) + patch.slide - start.slide);
         if (patch.arc !== undefined && start.arc !== undefined && 'arc' in original) patch.arc = round2(original.arc + patch.arc - start.arc);
       }

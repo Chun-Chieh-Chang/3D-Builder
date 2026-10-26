@@ -362,7 +362,7 @@ function buildSceneIn(
     const axes = view ? axesOf(pg.views, pg.sheet.projection, view) : null;
     if (!view || !own || !axes) continue; // nothing to draw it on yet
     const effective = d.kind === 'diameter' ? { ...d, calloutStyle: d.calloutStyle ?? pg.sheet.calloutStyle ?? 'text' } : d;
-    const outcome = evaluateDimension(effective, elements.get(d.id), axes, own, pg.sheet.unit ?? 'mm', resolveDimStyle(pg.sheet.dimStyle, d.style));
+    const outcome = evaluateDimension(effective, elements.get(d.id), axes, own, pg.sheet.unit ?? 'mm', resolveDimStyle(pg.sheet.dimStyle, d.style), resolved.get(d.view));
     dimensions.set(d.id, outcome);
     if (!('error' in outcome)) {
       items.push(...outcome.items.map((i) => ({ ...i, group: d.id })));

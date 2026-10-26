@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { DIM_STYLE_DEFAULT, dimensionRefs, fitDeviations, inUnit, rightOf, sheetUp, type CalloutStyle, type ThreadCallout, type DimStyle, type LengthUnit, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
 import { circlePolyline } from './geometry';
-import { toSheet, type PlacedView } from './layout';
+import { toSheet, type PlacedView, type ViewLines } from './layout';
 import type { SceneDimensionGeometry, SceneItem } from './scene';
 
 /**
@@ -245,7 +245,7 @@ const isBound = (e: ElementFacts) => e.type === 'plane' || e.type === 'line';
  * Evaluates a dimension of a view placed at `placed`: its value and text and the lines it is drawn with. `resolved` says what its elements are; without it (or with
  * an error) there is nothing to draw and the answer says why.
  */
-export function evaluateDimension(d: Dimension, resolved: ElementsResult | undefined, axes: ViewAxes, placed: PlacedView, unit: LengthUnit = 'mm', style: Style = DIM_STYLE_DEFAULT): DimensionOutcome {
+export function evaluateDimension(d: Dimension, resolved: ElementsResult | undefined, axes: ViewAxes, placed: PlacedView, unit: LengthUnit = 'mm', style: Style = DIM_STYLE_DEFAULT, viewLines?: ViewLines | null): DimensionOutcome {
   if (!resolved) return { error: t('drawing.dimPending') };
   if ('error' in resolved) return resolved;
   const refs = dimensionRefs(d);
@@ -274,7 +274,7 @@ export function evaluateDimension(d: Dimension, resolved: ElementsResult | undef
     if (!at || !at.every(Number.isFinite)) return { error: t('drawing.dimPointLost') };
     els.push({ kind: 'vertex', type: 'point', point: at });
   }
-  if (d.kind === 'linear') return linear(d, els[0]!, els[1]!, axes, placed, unit, style);
+  if (d.kind === 'linear') return linear(d, els[0]!, els[1]!, axes, placed, unit, style, viewLines);
   if (d.kind === 'angle') return angle(d, els[0]!, els[1]!, axes, placed, style);
   if (d.kind === 'ordinate') return ordinate(d, els, axes, placed, unit, style);
   if (d.kind === 'chamfer') return chamfer(d, els[0]!, axes, placed, unit, style);
@@ -461,7 +461,7 @@ function outlinePoint(e: ElementFacts, side: 1 | -1, axes: ViewAxes): P | null {
   return [p[0] + side * e.radius * n[0], p[1] + side * e.radius * n[1]];
 }
 
-function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb: ElementFacts, axes: ViewAxes, placed: PlacedView, unit: LengthUnit, st: Style): DimensionOutcome {
+function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb: ElementFacts, axes: ViewAxes, placed: PlacedView, unit: LengthUnit, st: Style, viewLines?: ViewLines | null): DimensionOutcome {
   const { line, dimensionLine, textOn } = pen(st);
   const DIM_TEXT = st.text;
   let A = inView(ea, axes);
@@ -484,15 +484,41 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
   }
   const value = d.orientation === 'horizontal' ? Math.abs(B[0] - A[0]) : d.orientation === 'vertical' ? Math.abs(B[1] - A[1]) : Math.hypot(B[0] - A[0], B[1] - A[1]);
   const text = dimensionText(d, value, undefined, unit);
-  const sA = toSheet(placed, A[0], A[1]);
-  const sB = toSheet(placed, B[0], B[1]);
+  // Extend from the referenced contour, never the overall view rectangle. Native
+  // face centres select the relevant interval when separate parts are coplanar.
+  const attach = (p: P, e: ElementFacts): P => {
+    if (!isBound(e) || d.orientation === 'aligned') return p;
+    const k = d.orientation === 'horizontal' ? 0 : 1, t = k === 0 ? 1 : 0;
+    const centre = e.center ? inView({ ...e, point: e.center }, axes) : p;
+    const intervals: [number, number][] = [];
+    for (const poly of viewLines?.visible ?? []) for (let i = 0; i + 3 < poly.length; i += 2) {
+      const a: P = [poly[i]!, poly[i + 1]!], b: P = [poly[i + 2]!, poly[i + 3]!];
+      if (Math.abs(a[k] - p[k]) > 1e-6 || Math.abs(b[k] - p[k]) > 1e-6) continue;
+      intervals.push([Math.min(a[t], b[t]), Math.max(a[t], b[t])]);
+    }
+    intervals.sort((a, b) => a[0] - b[0]);
+    const merged: [number, number][] = [];
+    for (const interval of intervals) {
+      const last = merged.at(-1);
+      if (last && interval[0] <= last[1] + 1e-6) last[1] = Math.max(last[1], interval[1]);
+      else merged.push([...interval]);
+    }
+    const distance = (range: P) => Math.max(range[0] - centre[t], centre[t] - range[1], 0);
+    merged.sort((a, b) => distance(a) - distance(b));
+    const q: P = [...p];
+    q[t] = merged.length ? merged[0]![d.offset > 0 ? 1 : 0] : centre[t];
+    return q;
+  };
+  const attachedA = attach(A, ea), attachedB = attach(B, eb);
+  const sA = toSheet(placed, attachedA[0], attachedA[1]);
+  const sB = toSheet(placed, attachedB[0], attachedB[1]);
   const box = { left: placed.at[0] - placed.w / 2, right: placed.at[0] + placed.w / 2, bottom: placed.at[1] - placed.h / 2, top: placed.at[1] + placed.h / 2 };
   const above = d.offset > 0;
   const off = Math.abs(d.offset);
   let n: P; // from the features toward the dimension line
   let u: P; // along the dimension line, from A toward B
   let c: number; // n · (a point of the dimension line)
-  let edge: number | null = null; // n · (the view's box edge on that side), where the extension lines of planes start
+  let edge: number | null = null; // view-box datum used only to position the dimension line
   if (d.orientation === 'horizontal') {
     n = above ? [0, 1] : [0, -1];
     u = [sB[0] >= sA[0] ? 1 : -1, 0];
@@ -513,9 +539,9 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
   const nd = (p: P) => n[0] * p[0] + n[1] * p[1];
   const onLine = (p: P): P => add(p, n, c - nd(p));
   const items: SceneItem[] = [];
-  for (const [s, e] of [[sA, ea], [sB, eb]] as const) {
-    // an extension line starts at the feature (a plane: at the edge of the view), a gap away, and passes the dimension line a little
-    const from: P = isBound(e) && edge !== null ? add(s, n, edge - nd(s) + GAP) : add(s, n, GAP);
+  for (const s of [sA, sB]) {
+    // Leave the usual paper-space gap at the actual referenced contour.
+    const from: P = add(s, n, GAP);
     const to = add(onLine(s), n, OVERSHOOT);
     if (nd(to) > nd(from)) items.push(line(from, to));
   }

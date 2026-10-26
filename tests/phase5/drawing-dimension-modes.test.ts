@@ -7,11 +7,11 @@
  * The part: a plate 10 thick, its outline (0,0) (40,0) (40,20) (30,30) (0,30) ??one slanted side ??with the corner at (0,0) rounded R5 and a ?8 hole at (12,12).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, page, parseDrawing, serializeDrawing, placementRows, placeElementFacts, sameDrawingRef, rightOf, sheetUp, viewVectors, type Dimension, type Feature, type DrawingRef, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, page, parseDrawing, serializeDrawing, placementRows, placeElementFacts, sameDrawingRef, DIM_STYLE_DEFAULT, rightOf, sheetUp, viewVectors, type Dimension, type Feature, type DrawingRef, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
 import { Kernel } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { elementFacts, placedViewFeatures, Regenerator, viewEdges, viewFeatures, type RebuildResult } from '@3db/regen';
-import { DIMENSION_MODES, chamferReferenceAt, autoDimensions, dimensionReferenceAt, dimensionModesFor, evaluateDimension, outlinesOf, featureAt, pickKind, planDimension, toSheet, visibleElements, type DimensionMode, type Pickable, type PlacedView, type ViewLines } from '@3db/drawing';
+import { DIMENSION_MODES, GAP, chamferReferenceAt, autoDimensions, dimensionReferenceAt, dimensionModesFor, evaluateDimension, outlinesOf, featureAt, pickKind, planDimension, toSheet, visibleElements, type DimensionMode, type Pickable, type PlacedView, type ViewLines } from '@3db/drawing';
 import { t } from '@3db/i18n';
 import { build, circle as circleProfile, edge, extrude, face, fillet, front, pin, sketch } from '../phase1/builders';
 
@@ -460,5 +460,59 @@ describe('chamfer mode line acquisition', () => {
       expect(make([f], sheetAt(45, 35), 'chamfer')).toMatchObject({ kind: 'chamfer', value: 10 });
     }
     expect(make([chamferReferenceAt(lines, features, [20, 0], 0.1, seen)!], sheetAt(45, 35), 'chamfer')).toEqual({ error: t('drawing.dimNeedsChamfer') });
+  });
+});
+
+
+describe('extension lines follow the referenced visible contour', () => {
+  it('starts a stepped top edge at its native endpoint rather than the wider view box, at 100 scales and offsets', () => {
+    const a = pickAt(20, 30), b = pickAt(20, 0);
+    const facts = [a, b].map(f => elementFacts(built.body!.topology, built.body!.names, f.ref));
+    expect(facts.every(f => !('error' in f))).toBe(true);
+    for (let i = 0; i < 100; i++) {
+      const scale = 0.5 + (i * 37 % 101) / 10;
+      const placed = { ...V.placed, scale, w: V.placed.w * scale, h: V.placed.h * scale };
+      const dim: Dimension = { id: 'extension', view: 'v', kind: 'linear', a: a.ref, b: b.ref, orientation: 'vertical', offset: 5 + i / 10 };
+      const result = evaluateDimension(dim, { elements: facts as never }, axes, placed, 'mm', DIM_STYLE_DEFAULT, V.lines);
+      expect('error' in result).toBe(false);
+      if ('error' in result) throw new Error(result.error);
+      expect(result.value).toBeCloseTo(30, 9);
+      const endpoint = toSheet(placed, ...cornerAt(30, 30));
+      const stroke = result.items[0];
+      expect(stroke?.kind).toBe('polyline');
+      if (!stroke || stroke.kind !== 'polyline') throw new Error('missing extension stroke');
+      expect(stroke.points[0]).toBeCloseTo(endpoint[0] + GAP, 9);
+      expect(stroke.points[1]).toBeCloseTo(endpoint[1], 9);
+      const dxf = result.dxf!.geometry;
+      expect(dxf.kind).toBe('linear');
+      if (dxf.kind === 'linear') expect(dxf.a).toEqual(endpoint);
+    }
+  });
+  it('left-side dimensions start on the actual endpoints and retain the fixed paper gap', () => {
+    const a = pickAt(20, 30), b = pickAt(20, 0);
+    const facts = [a, b].map(f => elementFacts(built.body!.topology, built.body!.names, f.ref));
+    const dim: Dimension = { id: 'leftExtension', view: 'v', kind: 'linear', a: a.ref, b: b.ref, orientation: 'vertical', offset: -12 };
+    const result = evaluateDimension(dim, { elements: facts as never }, axes, V.placed, 'mm', DIM_STYLE_DEFAULT, V.lines);
+    if ('error' in result) throw new Error(result.error);
+    const expected = toSheet(V.placed, ...cornerAt(5, 0));
+    const stroke = result.items[1];
+    if (!stroke || stroke.kind !== 'polyline') throw new Error('missing extension stroke');
+    expect(stroke.points[0]).toBeCloseTo(expected[0] - GAP, 9);
+    expect(stroke.points[1]).toBeCloseTo(expected[1], 9);
+    expect(result.value).toBeCloseTo(30, 9);
+  });
+  it('horizontal dimensions use the shorter side endpoint and keep the measured X coordinate', () => {
+    const a = pickAt(40, 10), b = pickAt(0, 20);
+    const facts = [a, b].map(f => elementFacts(built.body!.topology, built.body!.names, f.ref));
+    const dim: Dimension = { id: 'horizontalExtension', view: 'v', kind: 'linear', a: a.ref, b: b.ref, orientation: 'horizontal', offset: 12 };
+    const result = evaluateDimension(dim, { elements: facts as never }, axes, V.placed, 'mm', DIM_STYLE_DEFAULT, V.lines);
+    expect('error' in result).toBe(false);
+    if ('error' in result) throw new Error(result.error);
+    expect(result.value).toBeCloseTo(40, 9);
+    const expected = toSheet(V.placed, ...cornerAt(40, 20));
+    const stroke = result.items[0];
+    if (!stroke || stroke.kind !== 'polyline') throw new Error('missing extension stroke');
+    expect(stroke.points[0]).toBeCloseTo(expected[0], 9);
+    expect(stroke.points[1]).toBeCloseTo(expected[1] + GAP, 9);
   });
 });

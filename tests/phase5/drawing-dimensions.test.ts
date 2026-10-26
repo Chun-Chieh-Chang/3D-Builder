@@ -15,6 +15,7 @@ import {
   serializeDrawing,
   standardTolerance,
   viewVectors,
+  rightOf, sheetUp, DIM_STYLE_DEFAULT,
   type Dimension,
   type DrawingDoc,
   type ElementFacts,
@@ -222,7 +223,7 @@ describe('the locating plate dimensioned in its top view', () => {
       const facts = refs.map((r) => elementFacts(body.topology, body.names, r));
       const bad = facts.find((f) => 'error' in f) as { error: string } | undefined;
       const resolved: ElementsResult = bad ? { error: bad.error } : { elements: facts as never };
-      return { dimension: d, outcome: evaluateDimension(d, resolved, top, placed) };
+      return { dimension: d, outcome: evaluateDimension(d, resolved, top, placed, 'mm', DIM_STYLE_DEFAULT, kernel.projectView(body.shape, top) as ViewLines) };
     });
   }
 
@@ -293,9 +294,12 @@ describe('the locating plate dimensioned in its top view', () => {
     expect(arrows).toHaveLength(2);
     // the tips are at the ends of the dimension line
     expect(arrows.map((a) => [a.points![0], a.points![1]])).toEqual([[expect.closeTo(140, 6), yLine], [expect.closeTo(260, 6), yLine]]);
-    // two extension lines, from just under the view (1 mm gap) to 2 mm past the dimension line
+    // The R10 corners end each straight side above the overall view bottom.
+    // Use actual native vertices for the witness origin; the paper gap stays 1 mm.
+    const dot = (p: readonly number[], v: readonly number[]) => p.reduce((n, x, i) => n + x * v[i]!, 0);
+    const lowerEnd = (x: number) => Math.min(...body.topology.vertices.filter(v => Math.abs(dot(v.point, rightOf(top)) - x) < 1e-6).map(v => dot(v.point, sheetUp(top))));
     const ext = items.filter((i) => i.kind === 'polyline' && !i.closed && i.points!.length === 4 && i.points![0] === i.points![2]);
-    expect(ext.map((e) => e.points)).toEqual([[expect.closeTo(140, 6), 109, expect.closeTo(140, 6), yLine - 2], [expect.closeTo(260, 6), 109, expect.closeTo(260, 6), yLine - 2]]);
+    expect(ext.map((e) => e.points)).toEqual([[expect.closeTo(140, 6), expect.closeTo(150 + lowerEnd(-60) - 1, 6), expect.closeTo(140, 6), yLine - 2], [expect.closeTo(260, 6), expect.closeTo(150 + lowerEnd(60) - 1, 6), expect.closeTo(260, 6), yLine - 2]]);
     const text = items.find((i) => i.kind === 'text')!;
     expect(text).toMatchObject({ text: '120', height: 3.5, anchor: 'center' });
     expect(text.at).toEqual([expect.closeTo(200, 6), yLine + 1]);
