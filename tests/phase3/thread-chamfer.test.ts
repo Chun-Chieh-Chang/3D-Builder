@@ -80,7 +80,7 @@ it('records the unsupported simultaneous threaded inner rim, preserves the input
   expect(kernel.massProps(imported).volume).toBeCloseTo(kernel.massProps(cut).volume, 5);
 });
 
-for (const target of ['outer-edge-default', 'back-face-default', 'spline-edge-small'] as const) it(`rebuilds persistent model references after a thread: ${target}`, async () => {
+for (const target of ['outer-edge-default', 'back-face-default', 'spline-edge-small', 'front-face-error'] as const) it(`rebuilds persistent model references after a thread: ${target}`, async () => {
   const solver = await PlaneGcsSolver.create();
   const regen = new Regenerator(kernel, solver, new Map());
   const doc = build(
@@ -105,12 +105,22 @@ for (const target of ['outer-edge-default', 'back-face-default', 'spline-edge-sm
     expect(edge).toBeGreaterThanOrEqual(0);
     const f: ChamferFeature = {
       id: 'chamfer', type: 'chamfer', name: 'chamfer', suppressed: false,
-      edges: target === 'back-face-default' ? [] : [{ kind: 'edge', name: body.names.edges[edge]! }],
-      faces: target === 'back-face-default' ? [{ kind: 'face', name: body.names.faces[end]! }] : [],
-      mode: 'angleDistance', distance: target === 'spline-edge-small' ? '0.2' : '1', second: '45',
+      edges: target.endsWith('face-default') || target === 'front-face-error' ? [] : [{ kind: 'edge', name: body.names.edges[edge]! }],
+      faces: target.endsWith('face-default') || target === 'front-face-error' ? [{ kind: 'face', name: body.names.faces[end]! }] : [],
+      mode: 'angleDistance', distance: target === 'spline-edge-small' || target === 'front-face-error' ? '0.2' : '1', second: '45',
     };
     const changed = parsePart(serializePart(applyCommand(doc, { type: 'insertFeature', index: doc.features.length, feature: f })));
+    const beforeVolume = kernel.massProps(body.shape).volume;
     const result = regen.rebuild(changed);
+    if (target === 'front-face-error') {
+      const failed = result.features.find(f => f.id === 'chamfer')!;
+      expect(failed.status).toBe('error');
+      expect(failed.unresolved ?? []).toEqual([]);
+      expect(failed.message).toMatch(/錐孔|countersink/i);
+      expect(kernel.isValid(result.body!.shape)).toBe(true);
+      expect(kernel.massProps(result.body!.shape).volume).toBe(beforeVolume);
+      return;
+    }
     expect(statuses(result).at(-1)).toBe('chamfer=ok');
     expect(kernel.isValid(result.body!.shape)).toBe(true);
     expect(kernel.solidCount(result.body!.shape)).toBe(1);

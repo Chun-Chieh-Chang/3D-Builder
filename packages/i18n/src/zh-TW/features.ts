@@ -415,6 +415,7 @@ export const features = {
   'feature.sweepOverlap': '路徑轉折太急，掃出的結果自己疊在一起（體積 {volume} mm³，照輪廓面積與路徑長不該少於 {floor} mm³）：改緩路徑的轉折，或縮小輪廓',
   'feature.sweepInvalid': '掃出的結果不是有效的實體（路徑轉彎的半徑比輪廓小，輪廓掃過去自己疊在一起時常見）',
   'feature.filletInvalid': '圓角後的結果不是有效的實體(在壓花、螺牙這類自由曲面的波浪邊上倒圓角時常見):改小半徑,或用圓角以外的做法',
+  'feature.chamferFreeformFailed': '{why}。無法完成這組自由曲面邊的導角。若要修整螺紋孔口，請在入口面畫同軸中心點，使用「異型孔 → 錐孔（埋頭孔）」，以入口直徑與夾角定義加工錐面；這與沿牙邊等距導角不同。',
   'feature.threadSketchGone': '螺牙的牙型草圖不存在、已抑制或失敗',
   'feature.threadAxis': '螺牙的軸',
   'feature.threadNoProfile': '螺牙沒有可以用的封閉牙型輪廓',

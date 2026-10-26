@@ -4805,7 +4805,18 @@ export class Regenerator {
         return { edge, face };
       });
       const second = f.mode === 'distanceDistance' ? evalLength(f.second) : evalAngle(f.second);
-      const r = this.kernel.chamfer(body.shape, specs, f.mode, evalLength(f.distance), second);
+      let r: OpResult;
+      try {
+        r = this.kernel.chamfer(body.shape, specs, f.mode, evalLength(f.distance), second);
+      } catch (e) {
+        // An entry cone is a machining operation about the hole axis, not an offset of
+        // each wavy edge of a real thread. Offer the existing countersink workflow;
+        // never change the user's distances, selection or model on native failure.
+        if (e instanceof KernelError && edges.some(i => ['bsplinecurve', 'beziercurve'].includes(body.topology.edges[i]!.curve))) {
+          throw new FeatureError(t('feature.chamferFreeformFailed', { why: e.message }));
+        }
+        throw e;
+      }
       const topology = this.kernel.topology(r.shape);
       return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'chamfer', input: body.names }), by: f.id };
     });
