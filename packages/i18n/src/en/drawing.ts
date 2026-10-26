@@ -622,6 +622,7 @@ export const drawing: Translation = {
   'drawingUi.tree.dimKind.radius': 'Radius',
   'drawingUi.tree.dimKind.angle': 'Angle',
   'drawingUi.tree.dimKind.ordinate': 'Ordinate',
+  'drawingUi.tree.dimKind.chamfer': 'Chamfer',
   'drawingUi.menu.openPart': 'Open part ({name})',
   'drawingUi.menu.openAssembly': 'Open assembly ({name})',
   'drawingUi.menu.openLeaf': 'Open this part ({name})',

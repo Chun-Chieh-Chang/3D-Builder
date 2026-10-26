@@ -620,6 +620,7 @@ export const drawing = {
   'drawingUi.tree.dimKind.radius': '半徑',
   'drawingUi.tree.dimKind.angle': '角度',
   'drawingUi.tree.dimKind.ordinate': '座標',
+  'drawingUi.tree.dimKind.chamfer': '倒角',
   'drawingUi.menu.openPart': '開啟零件（{name}）',
   'drawingUi.menu.openAssembly': '開啟組合件（{name}）',
   'drawingUi.menu.openLeaf': '開啟這個零件（{name}）',

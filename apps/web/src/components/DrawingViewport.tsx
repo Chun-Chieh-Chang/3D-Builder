@@ -2,6 +2,7 @@ import { t } from '@3db/i18n';
 import { DrawingMenu, type DrawingMenuAt } from './DrawingViewMenu';
 import { SheetTabs } from './SheetTabs';
 import {
+  chamferReferenceAt,
   annotationItems,
   arrangementBase,
   BALLOON_RADIUS,
@@ -350,7 +351,7 @@ export function DrawingViewport() {
       if (only && v.id !== only) continue;
       const placed = basePlaced.get(v.id);
       if (!placed || placed.w <= 0) continue;
-      const acquire = referencePoints && (tool?.kind === 'dimension' || tool?.kind === 'ordinate') ? dimensionReferenceAt : featureAt;
+      const acquire = tool?.kind === 'dimension' && tool.mode === 'chamfer' ? chamferReferenceAt : referencePoints && (tool?.kind === 'dimension' || tool?.kind === 'ordinate') ? dimensionReferenceAt : featureAt;
       const pointSnaps = tool?.kind === 'ordinate' || (tool?.kind === 'dimension' && (!tool.mode || ['smart', 'horizontal', 'vertical', 'aligned'].includes(tool.mode)));
       const f = acquire(viewLines.get(v.id), drw.features.get(v.id) ?? [], toView(placed, p), reach / placed.scale, seenByView.get(v.id), pointSnaps);
       if (f) return { view: v.id, feature: f };
@@ -405,7 +406,17 @@ export function DrawingViewport() {
     const mode = tool.mode;
     const keep = mode ? { mode } : {};
     if (!first) {
-      if (hit) d.setTool({ kind: 'dimension', picks: [hit], ...keep });
+      if (hit) {
+        if (mode === 'chamfer') {
+          const view = curPage.views.find(v => v.id === hit.view);
+          const placed = basePlaced.get(hit.view);
+          const axes = view && axesOf(curPage.views, curPage.sheet.projection, view);
+          if (!placed || !axes) return;
+          const result = planDimension([hit.feature], p, placed, axes, mode);
+          if ('error' in result) return d.notifyInfo(result.error);
+        }
+        d.setTool({ kind: 'dimension', picks: [hit], ...keep });
+      }
       else d.notifyInfo(dimensionHint(mode, 0));
       return;
     }

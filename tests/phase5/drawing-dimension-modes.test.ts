@@ -11,7 +11,7 @@ import { applyDrawingCommand, createEmptyDrawing, page, parseDrawing, serializeD
 import { Kernel } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { elementFacts, placedViewFeatures, Regenerator, viewEdges, viewFeatures, type RebuildResult } from '@3db/regen';
-import { DIMENSION_MODES, autoDimensions, dimensionReferenceAt, dimensionModesFor, evaluateDimension, outlinesOf, featureAt, pickKind, planDimension, toSheet, visibleElements, type DimensionMode, type Pickable, type PlacedView, type ViewLines } from '@3db/drawing';
+import { DIMENSION_MODES, chamferReferenceAt, autoDimensions, dimensionReferenceAt, dimensionModesFor, evaluateDimension, outlinesOf, featureAt, pickKind, planDimension, toSheet, visibleElements, type DimensionMode, type Pickable, type PlacedView, type ViewLines } from '@3db/drawing';
 import { t } from '@3db/i18n';
 import { build, circle as circleProfile, edge, extrude, face, fillet, front, pin, sketch } from '../phase1/builders';
 
@@ -439,5 +439,26 @@ describe('persistent reference-point snaps on native geometry', () => {
     const circle = V.features.find(f => f.type === 'circle' && f.full)!;
     const wrong = evalPointDistance({ ...circle.ref, point: 'midpoint' } as DrawingRef, edge.ends[0]!, { elements: [elementFacts(built.body!.topology, built.body!.names, circle.ref), elementFacts(built.body!.topology, built.body!.names, edge.ends[0]!)] as never });
     expect(wrong).toHaveProperty('error');
+  });
+});
+
+
+describe('chamfer mode line acquisition', () => {
+  it('selects the real slanted edge inside overlapping endpoint hit areas instead of a vertex', () => {
+    const { lines, features, seen } = frontView();
+    const at: [number, number] = [35, 25];
+    // A short displayed chamfer has the same overlap at a smaller drawing scale.
+    expect(featureAt(lines, features, at, 8, seen)?.type).toBe('vertex');
+    const picked = chamferReferenceAt(lines, features, at, 8, seen)!;
+    expect(['slant', 'edge']).toContain(picked.type);
+    expect(make([picked], sheetAt(45, 35), 'chamfer')).toMatchObject({ kind: 'chamfer', value: 10 });
+    for (let i = 0; i < 100; i++) {
+      const k = 0.4 + 0.2 * ((i * 37 % 101) / 100);
+      const q: [number, number] = [40 - 10 * k, 20 + 10 * k];
+      const f = chamferReferenceAt(lines, features, q, 8, seen)!;
+      expect(['slant', 'edge']).toContain(f.type);
+      expect(make([f], sheetAt(45, 35), 'chamfer')).toMatchObject({ kind: 'chamfer', value: 10 });
+    }
+    expect(make([chamferReferenceAt(lines, features, [20, 0], 0.1, seen)!], sheetAt(45, 35), 'chamfer')).toEqual({ error: t('drawing.dimNeedsChamfer') });
   });
 });

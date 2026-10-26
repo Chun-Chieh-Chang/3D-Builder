@@ -250,7 +250,7 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
   const dimLabel = (id: string) => {
     const o = outcomes.get(id);
     const dim = curPage.dimensions.find((x) => x.id === id)!;
-    const kind = t(`drawingUi.tree.dimKind.${dim.kind}` as 'drawingUi.tree.dimKind.linear');
+    const kind = t(`drawingUi.tree.dimKind.${dim.kind}`);
     return o && !('error' in o) ? `${kind} ${o.text}` : kind;
   };
   const toggle = (id: string) => setClosed((c) => (c.has(id) ? new Set([...c].filter((x) => x !== id)) : new Set([...c, id])));

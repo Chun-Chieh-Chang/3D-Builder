@@ -147,6 +147,11 @@ export function dimensionReferenceAt(lines: ViewLines | null | undefined, featur
   return (best as { f: Pickable } | null)?.f ?? hit;
 }
 
+/** Chamfer mode targets a line, even when a short chamfer lies inside both endpoint hit areas. */
+export function chamferReferenceAt(lines: ViewLines | null | undefined, features: readonly ViewFeature[], p: P2, tol: number, seen?: VisibleElements): Pickable | null {
+  return featureAt(lines, features, p, tol, seen ? { ...seen, vertices: [] } : undefined);
+}
+
 /**
  * The element of a view under the pointer, or null: a straight line of the view that is where a plane seen edge-on is (a vertical one for a plane across x, a horizontal one
  * for y, a slanted one for a slanted face) or a circle or an arc of the view that is where a cylinder seen along its axis is, or where a fillet's tube is cut through. Only
