@@ -17,7 +17,7 @@ import { MeasurePanel } from './MeasurePanel';
 import { ViewCube, ViewOptions } from './Viewport';
 import { ComponentMenu } from './AssemblyTree';
 import { GraphicsMenu } from './GraphicsMenu';
-import { assemblyMenu, triadMenu, type MenuEntry } from '../contextMenus';
+import { assemblyMenu, triadMenu, withGrid, type MenuEntry } from '../contextMenus';
 import type { TriadHandle } from '@3db/assembly';
 
 
@@ -118,7 +118,7 @@ export function AssemblyViewport() {
         if (!key) {
           setMenu(null);
           const rect = host.current?.getBoundingClientRect();
-          if (rect) setSpaceMenu({ x: x - rect.left, y: y - rect.top, items: assemblyMenu(store.getState(), null) });
+          if (rect) setSpaceMenu({ x: x - rect.left, y: y - rect.top, items: withGrid(assemblyMenu(store.getState(), null), store.getState().options.showGrid) });
           return;
         }
         // the menu is the answer to a right click: the pick is the tree's kind, so the PropertyManager is not brought forward for it
@@ -154,7 +154,7 @@ export function AssemblyViewport() {
       onTriadContextMenu: (part, x, y) => {
         setMenu(null);
         const rect = host.current?.getBoundingClientRect();
-        if (rect) setSpaceMenu({ x: x - rect.left, y: y - rect.top, items: triadMenu(part), what: 'triad' });
+        if (rect) setSpaceMenu({ x: x - rect.left, y: y - rect.top, items: withGrid(triadMenu(part), store.getState().options.showGrid), what: 'triad' });
       },
     });
     viewer.setComponentPicking(true);

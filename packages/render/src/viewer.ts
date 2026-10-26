@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { referenceGrid } from './referenceGrid';
+import { referencePlaneCorners } from './referencePlane';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
@@ -2363,7 +2364,7 @@ export class Viewer {
 
   // ---------------------------------------------------------------- reference planes (D4.6)
 
-  /** Reference planes to show; each is a translucent square centered on the model's projection. */
+  /** Reference planes to show; finite sheets share their coordinate system's real origin. */
   setPlanes(planes: PlaneDisplay[]): void {
     this.planes = planes;
     const chosen = planes.filter(p => p.highlighted);
@@ -2407,24 +2408,9 @@ export class Viewer {
     }
     if (this.planes.length === 0) return this.requestRender();
     const box = this.contentBox();
-    const boxCorners = box.isEmpty()
-      ? []
-      : [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
     const group = new THREE.Group();
     for (const plane of this.planes) {
-      const o = new THREE.Vector3(...plane.frame.origin);
-      const x = new THREE.Vector3(...plane.frame.xDir);
-      const y = new THREE.Vector3(...plane.frame.yDir);
-      // Like SolidWorks, a plane is drawn as large as the model seen along its normal, plus a margin.
-      let [u0, u1, v0, v1] = [-50, 50, -50, 50];
-      if (boxCorners.length > 0) {
-        const us = boxCorners.map((c) => c.clone().sub(o).dot(x));
-        const vs = boxCorners.map((c) => c.clone().sub(o).dot(y));
-        const margin = Math.max(0.1 * Math.max(Math.max(...us) - Math.min(...us), Math.max(...vs) - Math.min(...vs)), 5);
-        [u0, u1, v0, v1] = [Math.min(...us) - margin, Math.max(...us) + margin, Math.min(...vs) - margin, Math.max(...vs) + margin];
-      }
-      const at = (u: number, v: number) => o.clone().addScaledVector(x, u).addScaledVector(y, v);
-      const corners = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)];
+      const corners = referencePlaneCorners(plane.frame, box);
       const fill = new THREE.BufferGeometry().setFromPoints([corners[0]!, corners[1]!, corners[2]!, corners[0]!, corners[2]!, corners[3]!]);
       const lit = plane.highlighted || this.hoveredPlane === plane.key;
       const color = lit ? COLORS.edgeHover : 0x6f9fd6;

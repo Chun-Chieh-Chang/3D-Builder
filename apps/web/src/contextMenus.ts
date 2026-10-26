@@ -18,7 +18,7 @@ import { RELATION_LABEL } from './strings';
 
 /** One line of a menu: a command, a line between groups, or one that opens more lines in its place. */
 export type MenuEntry =
-  | { kind: 'command'; id: string; label: string; disabled: boolean; run: () => void }
+  | { kind: 'command'; id: string; label: string; disabled: boolean; checked?: boolean; run: () => void }
   | { kind: 'submenu'; id: string; label: string; items: MenuEntry[] }
   | { kind: 'separator' };
 
@@ -43,6 +43,11 @@ export function tidy(items: MenuEntry[]): MenuEntry[] {
   }
   while (out.length > 0 && out[out.length - 1]!.kind === 'separator') out.pop();
   return out;
+}
+
+/** View preference shared by graphics menus; read current state at activation to avoid a stale toggle. */
+export function withGrid(items: MenuEntry[], shown: boolean): MenuEntry[] {
+  return tidy([...items, SEPARATOR, { kind: 'command', id: 'toggle-grid', label: t('ctx.showGrid'), disabled: false, checked: shown, run: () => store.setOptions({ showGrid: !store.getState().options.showGrid }) }]);
 }
 
 /** The ids of a menu's lines, submenus' lines after their own (what the e2e scripts and the tests compare). */

@@ -133,7 +133,7 @@ C.part = async () => {
     const dir = store.viewer.viewDirection();
     const front = Math.abs(dir[2]) > 0.999;
     await S.iso();
-    return { pass: what === 'empty' && same(ids, ['fit', 'view-normal', 'standard-views', 'filter-bar']) && same(sub, ['view-front', 'view-back', 'view-top', 'view-bottom', 'view-left', 'view-right', 'view-iso']) && front, what, ids, sub, dir };
+    return { pass: what === 'empty' && same(ids, ['fit', 'view-normal', 'standard-views', 'filter-bar', 'toggle-grid']) && same(sub, ['view-front', 'view-back', 'view-top', 'view-bottom', 'view-left', 'view-right', 'view-iso']) && front, what, ids, sub, dir };
   });
 
   await step('3 a vertex: 編輯特徵, 量測; 量測 starts measuring with that vertex picked', async () => {
@@ -149,7 +149,7 @@ C.part = async () => {
     const picked = m?.picks.length === 1 && m.picks[0].kind === 'vertex' && m.picks[0].index === v.index;
     store.stopMeasure();
     await H.wait(100);
-    return { pass: what === 'vertex' && same(ownIds(ids), ['edit-feature', 'measure-part']) && same(selected, [result().vertexNames[v.index]]) && picked, what, ids, selected, picks: m?.picks };
+    return { pass: what === 'vertex' && same(ownIds(ids), ['edit-feature', 'measure-part', 'toggle-grid']) && same(selected, [result().vertexNames[v.index]]) && picked, what, ids, selected, picks: m?.picks };
   });
 
   let edgeAt;
@@ -164,7 +164,7 @@ C.part = async () => {
     await H.settle();
     const e = state().editing;
     const f = e && feature(e.featureId);
-    return { pass: what === 'edge' && same(ownIds(ids), ['edit-feature', 'edit-feature-sketch', 'fillet', 'chamfer', 'toggle-visibility', 'suppress-feature', 'measure-part']) && f?.type === 'fillet' && same(f.edges.map((x) => x.name), [name]), what, ids, edges: f?.edges?.map((x) => x.name), name };
+    return { pass: what === 'edge' && same(ownIds(ids), ['edit-feature', 'edit-feature-sketch', 'fillet', 'chamfer', 'toggle-visibility', 'suppress-feature', 'measure-part', 'toggle-grid']) && f?.type === 'fillet' && same(f.edges.map((x) => x.name), [name]), what, ids, edges: f?.edges?.map((x) => x.name), name };
   });
 
   await step('5 inside the fillet the right click keeps its selection tools (相切的邊線, 迴圈) and offers no feature command; 取消 leaves no fillet', async () => {
@@ -215,7 +215,7 @@ C.part = async () => {
     await closeMenus(H);
     // 選取其他 (D5.6) stays at the end when there are faces behind this one (the bottom of the block is)
     const own = ids.filter((x) => !x.startsWith('select-other'));
-    return { pass: what === 'face' && same(own, ['edit-feature', 'edit-feature-sketch', 'sketch', 'toggle-visibility', 'appearance', 'suppress-feature', 'measure-part']) && ids.at(-1) === 'select-other' && chosen === result().faceNames[top], what, ids, chosen };
+    return { pass: what === 'face' && same(own, ['edit-feature', 'edit-feature-sketch', 'sketch', 'toggle-visibility', 'appearance', 'suppress-feature', 'measure-part', 'toggle-grid']) && ids.at(-2) === 'select-other' && ids.at(-1) === 'toggle-grid' && chosen === result().faceNames[top], what, ids, chosen };
   });
 
   await step('6b 外觀 on the face opens the appearance dialog on that face (not on the whole part)', async () => {
@@ -296,7 +296,7 @@ C.part = async () => {
     const what = gmenu()?.dataset.graphicsMenu;
     const ids = gids();
     await gclick(H, 'sketch-end-tool');
-    return { pass: what === 'sketch-tool' && same(ids, ['sketch-end-tool', 'quick-snap']) && H.view().tool === 'select' && !!line, what, ids, tool: H.view().tool, line };
+    return { pass: what === 'sketch-tool' && same(ids, ['sketch-end-tool', 'quick-snap', 'toggle-grid']) && H.view().tool === 'select' && !!line, what, ids, tool: H.view().tool, line };
   });
 
   await step('12 an entity: 加入限制條件 ▸, 智慧型尺寸, 構造線, 選擇鏈, 刪除, 正視於, 離開草圖; the entity is selected first', async () => {
@@ -307,7 +307,7 @@ C.part = async () => {
     const selection = [...H.view().selection];
     await closeMenus(H);
     // 移動／複製 ▸ (ADR 0178) between 構造線 and 選擇鏈; its lines are replayed in manual-c27.js
-    return { pass: what === 'sketch-entity' && same(ids, ['add-relation', 'tool-dimension', 'construction', 'transform-entities', 'sketch-select-chain', 'sketch-delete', 'view-normal', 'exit-sketch']) && same(selection, [line]), what, ids, selection };
+    return { pass: what === 'sketch-entity' && same(ids, ['add-relation', 'tool-dimension', 'construction', 'transform-entities', 'sketch-select-chain', 'sketch-delete', 'view-normal', 'exit-sketch', 'toggle-grid']) && same(selection, [line]), what, ids, selection };
   });
 
   await step('13 加入限制條件 ▸ 水平 adds a horizontal relation on the line', async () => {
@@ -378,7 +378,7 @@ C.part = async () => {
     const id = state().editing?.featureId;
     await gclick(H, 'exit-sketch');
     await H.settle();
-    return { pass: what === 'sketch-empty' && same(ids, ['tool-line', 'tool-rect', 'tool-circle', 'tool-arc', 'tool-dimension', 'view-normal', 'exit-sketch']) && state().editing === null && !!feature(id) && feature(id).entities.length >= 4, what, ids };
+    return { pass: what === 'sketch-empty' && same(ids, ['tool-line', 'tool-rect', 'tool-circle', 'tool-arc', 'tool-dimension', 'view-normal', 'exit-sketch', 'toggle-grid']) && state().editing === null && !!feature(id) && feature(id).entities.length >= 4, what, ids };
   });
 
   void sketch;
@@ -420,7 +420,7 @@ C.assembly = async () => {
     li.click();
     await H.wait(250);
   };
-  const ON_COMPONENT = ['open-component', 'relink-component', 'mate', 'move-component', 'rotate-component', 'move-with-triad', 'float-component', 'hide-component', 'transparent-component', 'suppress-component', 'delete-component'];
+  const ON_COMPONENT = ['open-component', 'relink-component', 'mate', 'move-component', 'rotate-component', 'move-with-triad', 'float-component', 'hide-component', 'transparent-component', 'suppress-component', 'delete-component', 'toggle-grid'];
   let block;
 
   await step('1 a new assembly with the plate (fixed) and the V-block (floating)', async () => {
@@ -504,7 +504,7 @@ C.assembly = async () => {
     const inserting = !!H.asm().insert;
     store.assembly.cancelInsert();
     await H.wait(200);
-    return { pass: what === 'assembly-empty' && same(ids, ['insert-component', 'mate', 'fit', 'view-normal', 'standard-views', 'filter-bar']) && inserting && !cmenu(), what, ids, inserting };
+    return { pass: what === 'assembly-empty' && same(ids, ['insert-component', 'mate', 'fit', 'view-normal', 'standard-views', 'filter-bar', 'toggle-grid']) && inserting && !cmenu(), what, ids, inserting };
   });
 
   return { name: 'context menus: assembly (ADR 0176)', steps: [...steps], pass: steps.length > 0 && steps.every((s) => s.pass) };

@@ -6,6 +6,7 @@ export const ctxmenu = {
   'ctx.selectChain': '選擇鏈',
   'ctx.endTool': '結束目前的工具',
   'ctx.addRelation': '加入限制條件',
+  'ctx.showGrid': '顯示網格',
   'ctx.standardViews': '標準視角',
   'ctx.openPart': '開啟零件',
   'ctx.relink': '重新指定零件檔…',

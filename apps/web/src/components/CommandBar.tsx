@@ -7,7 +7,7 @@ import { useDocumentTitle, useSketcherView, useStore } from '../state/store';
 import { ActionIcon } from './ActionIcon';
 import { ShutdownButton } from './ShutdownButton';
 
-type Tab = { id: string; label: string; groups: UiAction['group'][] };
+type Tab = { id: string; label: string; groups: UiAction['group'][]; actions?: readonly string[] };
 
 /** The CommandManager's tabs follow the open document, as in SolidWorks. */
 const PART_TABS: Tab[] = [
@@ -26,6 +26,7 @@ const DRAWING_TABS: Tab[] = [
 ];
 const ASSEMBLY_TABS: Tab[] = [
   { id: 'assembly', get label() { return t('tab.assembly'); }, groups: ['assembly', 'edit'] },
+  { id: 'tools', get label() { return t('tab.tools'); }, groups: ['tools'], actions: ['options', 'shortcuts'] },
   { id: 'file', get label() { return t('tab.file'); }, groups: ['file'] },
   { id: 'view', get label() { return t('tab.view'); }, groups: ['view'] },
 ];
@@ -110,7 +111,7 @@ export function CommandBar() {
               </button>
               {here && (
                 <div className={open ? 'tools menu-panel' : 'tools menu-panel folded'} role="menu">
-                  {ACTIONS.filter((a) => m.groups.includes(a.group) && !quick.includes(a) && !a.parent && !a.menuOnly).map((a) => {
+                  {ACTIONS.filter((a) => m.groups.includes(a.group) && (!m.actions || m.actions.includes(a.id)) && !quick.includes(a) && !a.parent && !a.menuOnly).map((a) => {
                     const button = (x: UiAction) => (
                       <button
                         key={x.id}

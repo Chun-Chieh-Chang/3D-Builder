@@ -8,7 +8,7 @@ import { DATUM_ITEMS, PART_STAGE_LABEL } from '../strings';
 import { Icon } from './Icon';
 import { ContextMenu } from './ContextMenu';
 import { treeFilterMatches, treeNeedle } from './treeFilter';
-import { assemblyMenu } from '../contextMenus';
+import { assemblyMenu, withGrid } from '../contextMenus';
 import { MenuEntries } from './GraphicsMenu';
 
 type Menu = { x: number; y: number } & ({ component: Component } | { mate: Mate } | { pattern: ComponentPattern });
@@ -52,7 +52,7 @@ export function ComponentMenu({ x, y, component, onClose }: { x: number; y: numb
   if (!store.assembly) return null;
   return (
     <ContextMenu x={x} y={y} onPointerDown={(e) => e.stopPropagation()} data-component-menu={component.id}>
-      <MenuEntries items={assemblyMenu(store.getState(), component.id)} onClose={onClose} />
+      <MenuEntries items={withGrid(assemblyMenu(store.getState(), component.id), store.getState().options.showGrid)} onClose={onClose} />
     </ContextMenu>
   );
 }

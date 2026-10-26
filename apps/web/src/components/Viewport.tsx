@@ -15,7 +15,7 @@ import { store, useSketcherView, useStore } from '../state/store';
 import { FEATURE_LABEL, PICK_FILTER_LABEL } from '../strings';
 import type { RebuildPayload } from '../worker/protocol';
 import { topologyOf } from '../state/selectionSets';
-import { entry, partMenu, sketchMenu, type MenuEntry, type PartTarget } from '../contextMenus';
+import { entry, partMenu, sketchMenu, withGrid, type MenuEntry, type PartTarget } from '../contextMenus';
 import { GraphicsMenu } from './GraphicsMenu';
 import { Icon } from './Icon';
 import { draftColors, thicknessColors, undercutColors } from '../state/analysis';
@@ -213,7 +213,7 @@ export function Viewport() {
           if (ref && at.kind === 'face' && s.selectedFace?.name !== ref.name) store.selectFace(ref);
           else if (ref && at.kind !== 'face' && !s.selectedElements.some((x) => x.kind === ref.kind && x.name === ref.name)) store.selectElement(ref, false);
         }
-        const items = partMenu(store.getState(), at, selection);
+        const items = withGrid(partMenu(store.getState(), at, selection), store.getState().options.showGrid);
         if (items.length > 0) setMenu({ x: x - rect.left, y: y - rect.top, items, what: at?.kind ?? 'empty' });
         else setMenu(null);
       },
@@ -227,7 +227,7 @@ export function Viewport() {
         if (!sketcher || !sketch || !frame || !rect) return setMenu(null);
         const p = viewer.planePoint(x, y, frame);
         const hit = p && sketcher.getView().tool === 'select' ? sketcher.contextPick({ p, px: viewer.pixelSize(), ctrl: false, shift: false }) : null;
-        const items = sketchMenu(store.getState(), sketcher, sketch, hit);
+        const items = withGrid(sketchMenu(store.getState(), sketcher, sketch, hit), store.getState().options.showGrid);
         setMenu({ x: x - rect.left, y: y - rect.top, items, what: sketcher.getView().tool !== 'select' ? 'sketch-tool' : hit ? 'sketch-entity' : 'sketch-empty' });
       },
       onVertexHover: setHoverVertex,

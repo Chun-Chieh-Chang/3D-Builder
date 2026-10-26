@@ -58,3 +58,10 @@
 - SolidWorks 的「孤立」不做（使用者裁決）。
 - 頂點沒有「隱藏本體」（使用者裁決不補）：頂點到本體沒有現成的對照（網格只給面的範圍與邊兩側的面）；要做得先在 rebuild 結果帶出頂點所在的本體。
 - 草圖空白處按右鍵不會清掉既有選取（與 SolidWorks 相同）；空白處的選單只列畫圖工具，要對既有選取下指令請在選取的圖元上按右鍵。
+
+
+### 2026-10-26：共用顯示網格開關
+
+零件／草圖／組合件圖形區與零組件右鍵經`withGrid`加入「顯示網格」，為原`options.showGrid`偏好的checkbox入口；不是新的CAD命令，不新增action registry項。`MenuEntry.checked`由圖形區button與樹li共用渲染，狀態以勾號及`aria-checked`表達；執行時讀最新store狀態，透過原`setOptions`持久化，與系統選項同步，不影響草圖工具／選取／交易／抓取。
+
+圖形區menu依自己的viewport限制邊界、內容與子選單尺寸改變時重新定位，避免新增的末列在畫面底部不可見。原`partMenu`／`sketchMenu`／`assemblyMenu`的CAD指令與啟用判定保留。5項新UI及原右鍵2項各有通過結果，詳[ADR0202補充](0202-viewport-grid-and-hidden-recovery.md)。原menu預期只加入toggle-grid，保留原模型與工具斷言；未重跑整套。已知兩項舊context-menus單元基準失敗仍見ADR0201，未在本批混修。

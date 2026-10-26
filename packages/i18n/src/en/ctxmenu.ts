@@ -8,6 +8,7 @@ export const ctxmenu: Translation = {
   'ctx.selectChain': 'Select Chain',
   'ctx.endTool': 'End the current tool',
   'ctx.addRelation': 'Add Relation',
+  'ctx.showGrid': 'Show Grid',
   'ctx.standardViews': 'Standard Views',
   'ctx.openPart': 'Open Part',
   'ctx.relink': 'Replace Part File…',

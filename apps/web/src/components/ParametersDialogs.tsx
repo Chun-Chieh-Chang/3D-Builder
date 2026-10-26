@@ -603,8 +603,8 @@ export function OptionsDialog() {
             value={options.autosaveSeconds}
             onChange={(e) => e.target.value !== '' && store.setOptions({ autosaveSeconds: Number(e.target.value) })}
           />
-          <label>{t('options.showGrid')}</label>
-          <input type="checkbox" data-option="showGrid" checked={options.showGrid} onChange={e => store.setOptions({ showGrid: e.target.checked })} />
+          <label htmlFor="option-show-grid">{t('options.showGrid')}</label>
+          <input type="checkbox" id="option-show-grid" data-option="showGrid" checked={options.showGrid} onChange={e => store.setOptions({ showGrid: e.target.checked })} />
           <label>{t('options.viewArrowStep')}</label>
           <input
             type="number"
