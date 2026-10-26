@@ -101,6 +101,8 @@ M.run = async () => {
     await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
     await H.newDrawing();
     await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3 && drw().features.size === 3, 30000, 'the three views and their elements');
+    // The section placement coordinates below explicitly assume the original first-angle arrangement.
+    d().setSheet({ projection: 'first' });
     await H.wait(300);
     front = viewOf('front').id;
     top = viewOf('top').id;

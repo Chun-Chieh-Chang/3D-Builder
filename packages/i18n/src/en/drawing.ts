@@ -6,7 +6,7 @@ export const drawing: Translation = {
   'drawingUi.viewName': 'View name',
   'drawingUi.viewLabel': 'Section/detail letter',
   'drawingUi.viewCaptionText': 'Caption text',
-  'drawingUi.viewCaptionTip': 'Drag the caption independently; double-click to edit. <NAME>, <LABEL> and <SCALE> follow the view.',
+  'drawingUi.viewCaptionTip': 'With no tool active, drag the caption independently; double-click to edit. <NAME>, <LABEL> and <SCALE> follow the view.',
   'drawingUi.viewCaptionReset': 'Reset caption text and position',
   'drawing.flatDimensionState': 'Flat and folded dimensions use different geometry; remove attached dimensions before switching view type and dimension the matching geometry',
   'drawing.badFlatBends': 'Bend annotations require boolean switches and finite paper coordinates',

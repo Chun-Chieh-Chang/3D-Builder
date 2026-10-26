@@ -379,6 +379,14 @@ export function DrawingViewport() {
     return null;
   };
 
+  /** Captions are drawn behind dimensions, annotations and tables: their hit order must match the scene. */
+  const captionUnder = (p: P): { id: string; text: boolean } | null => {
+    const hit = dimensionAt(captionItems, p, reach);
+    if (!hit || dimensionAt(dimensionItems, p, reach) || dimensionAt(annotationHit, p, reach) || finishUnder(p)) return null;
+    for (const box of built.tableBoxes.values()) if (p[0] >= box.x && p[0] <= box.x + box.w && p[1] >= box.y && p[1] <= box.y + box.h) return null;
+    return hit;
+  };
+
   /** Keeps the pointer while it is dragged outside the sheet (nothing to keep when the event is not from a real pointer). */
   const capture = (e: React.PointerEvent) => {
     try {
@@ -539,7 +547,8 @@ export function DrawingViewport() {
       setPanning({ x: e.clientX - pan.x, y: e.clientY - pan.y });
       return;
     }
-    const caption = dimensionAt(captionItems, p, reach);
+    // Active tools own their clicks; caption dragging belongs to selection mode.
+    const caption = tool ? null : captionUnder(p);
     if (caption) {
       const view = curPage.views.find(v => v.id === caption.id);
       if (view) {
@@ -736,7 +745,7 @@ export function DrawingViewport() {
 
   /** What a click with Ctrl adds to or takes from the choice: a dimension, a surface finish, a table, a view — in the order they are drawn over each other. */
   const pickUnder = (p: P): { kind: 'view' | 'dimension' | 'finish' | 'table' | 'annotation'; id: Id } | null => {
-    const caption = dimensionAt(captionItems, p, reach);
+    const caption = captionUnder(p);
     if (caption) return { kind: 'view', id: caption.id };
     const dim = dimensionAt(dimensionItems, p, reach);
     if (dim) return { kind: 'dimension', id: dim.id };
@@ -1315,7 +1324,7 @@ export function DrawingViewport() {
       onPointerLeave={() => setHover(null)}
       onContextMenu={(e) => e.preventDefault()}
       onDoubleClick={(e) => {
-        const caption = dimensionAt(captionItems, onSheet(e), reach);
+        const caption = captionUnder(onSheet(e));
         if (caption) {
           d.setTool(null); d.select(caption.id);
           setTimeout(() => document.querySelector<HTMLElement>('[data-field="viewCaptionText"]')?.focus(), 0);
