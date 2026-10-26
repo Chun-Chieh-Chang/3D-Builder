@@ -126,7 +126,7 @@ M.run = async () => {
     return { pass: sides.length === 4 && corners.length === 4 && !!slant && !!P && !!width && shared, sides, corners, slant, P, width, shared };
   });
 
-  await step('2 right click on a side: 移動／複製 ▸ lists the six tools and 鏡射圖元; 移動圖元 starts on the selection', async () => {
+  await step('2 right click on a side: 移動／複製 ▸ lists the seven tools and 鏡射圖元; 移動圖元 starts on the selection', async () => {
     if (!(await selectSides(sides))) return { pass: false, why: 'the sides could not be selected' };
     const [u, v] = H.onEntity(sides[0], 0.5);
     await rightAt(H.toClient(u, v));
@@ -135,7 +135,7 @@ M.run = async () => {
     const sub = gids();
     await gclick('tool-moveEntities');
     const view = H.view();
-    const want = ['tool-moveEntities', 'tool-copyEntities', 'tool-rotateEntities', 'tool-scaleEntities', 'tool-linearPattern', 'tool-circularPattern', 'tool-mirror'];
+    const want = ['tool-stretchEntities', 'tool-moveEntities', 'tool-copyEntities', 'tool-rotateEntities', 'tool-scaleEntities', 'tool-linearPattern', 'tool-circularPattern', 'tool-mirror'];
     return { pass: top.includes('transform-entities') && same(sub, want) && view.tool === 'moveEntities' && same([...view.picks].sort(), [...sides].sort()), top, sub, tool: view.tool, picks: view.picks };
   });
 

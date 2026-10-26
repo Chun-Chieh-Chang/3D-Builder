@@ -4,7 +4,7 @@
  * graphics area's are one set of commands from the registry. The real pointer in the real app is replayed in tests/e2e/manual-context-menus.js.
  */
 import { readFileSync } from 'node:fs';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { applyCommand, createEmptyPart, DocHistory, resolveSketch, type Command, type Feature, type PartDoc, type Ref, type SketchFeature } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import type { UiState } from '../../apps/web/src/state/store';
@@ -284,6 +284,7 @@ describe('the sketch menu', () => {
       'construction',
       // 移動／複製 (ADR 0178): the transforms, the patterns and the mirror
       'transform-entities',
+      'tool-stretchEntities',
       'tool-moveEntities',
       'tool-copyEntities',
       'tool-rotateEntities',
@@ -314,9 +315,18 @@ describe('the sketch menu', () => {
     expect(move?.kind === 'command' && !move.disabled).toBe(true);
     const was = store.sketcher;
     store.sketcher = c;
+    // Repeatable actions recheck the live store before running. Installing only a controller
+    // does not establish a sketch-editing session; the idle-state guard must still reject it.
+    const live = vi.spyOn(store, 'getState');
     try {
+      live.mockReturnValue({ ...store.getState(), ...sketchState(h), editing: null });
+      if (move?.kind === 'command') move.run();
+      expect(c.getView().tool).toBe('select');
+      expect(c.getView().selection).toEqual([hit]);
+      live.mockReturnValue({ ...store.getState(), ...sketchState(h) });
       if (move?.kind === 'command') move.run();
     } finally {
+      live.mockRestore();
       store.sketcher = was;
     }
     expect(c.getView().tool).toBe('moveEntities');

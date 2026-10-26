@@ -15,7 +15,7 @@ Phase 0–7範圍已有開發成果；原Phase 0–2閘門按當時較低範圍�
 | 零件建模 | 草圖驅動拉伸／旋轉／掃出／疊層拉伸、圓角／導角、薄殼、多本體與曲面 | 經文件命令與原生核心重建；輸入失敗須回報，不能以圖形假冒幾何；[藍圖](blueprint.md)與ADR |
 | 草圖關係 | 批次拘束、等距／比例、對稱、端點／內外相切、橢圓與Bézier G1、修復診斷 | 不含一般樣條G2或最小衝突集合；[ADR0195](adr/0195-sketch-constraint-expansion.md) |
 | 齒輪／齒條 | 參數式直齒齒輪、直齒齒條 | 不含斜齒、內齒、變位、滾刀齒根或運動結合；[ADR0193](adr/0193-gear-and-rack-builders.md) |
-| 選面圓角／導角 | 可預選面、多面與邊混選，重建時展開有效邊界 | 普通面使用者已確認；螺紋邊失敗仍缺原模型重現；[ADR0098](adr/0098-fillet-by-face.md) |
+| 選面圓角／導角 | 可預選面、多面與邊混選，重建時展開有效邊界 | 普通面使用者已確認；已重現範例螺紋孔口多邊同時導角失敗，原模型「任何選取都失敗」仍待檔案；[ADR0098](adr/0098-fillet-by-face.md) |
 | 模型互動 | 浮動參數、合法運算式預覽、建構拉伸拖曳／跨平面反向／對稱 | 操控器限有原生終端面的給定深度／對稱第一方向；運算式深度不強制覆寫；[ADR0203](adr/0203-floating-editor-assembly-source-and-live-extrusion.md) |
 | 組合件編輯 | 雙擊／右鍵來源零件草圖或特徵，儲存返回後更新來源實例 | 同時一份文件，不是組合件就地編輯；直接特徵編輯限3dbx；[ADR0203](adr/0203-floating-editor-assembly-source-and-live-extrusion.md) |
 | 顯示 | 固定工作平面的網格、正確深度、右鍵與系統選項同步、參考面共原點、隱藏恢復、透明塗彩 | 同一零件的三預設面共自身原點，實例保留位姿，自訂面保留偏移；[ADR0202](adr/0202-viewport-grid-and-hidden-recovery.md)、[ADR0197](adr/0197-transparent-shaded-view.md) |
@@ -29,10 +29,11 @@ Phase 0–7範圍已有開發成果；原Phase 0–2閘門按當時較低範圍�
 
 - 影片[ M5KOgtk9VfI ](https://www.youtube.com/watch?v=M5KOgtk9VfI)：尚未取得可讀內容。先前YouTube／oEmbed／搜尋連線403，需影片標題、操作說明或關鍵影像，不能猜功能。
 - 正式Ribbon配置／搜尋、投影線本體作掃出路徑、連動陣列事後群組編輯、其他特徵操控器、組合件就地編輯仍為後續工作；不得把規劃標為已完成。
-- 已知兩項`context-menus.test.ts`基準失敗：伸展工具未納入舊選單預期、移動工具啟動後仍為select。先前乾淨基準已重現，見[ADR0201](adr/0201-solidcraft-icons-and-menu-design.md)。不是本次清理的新增回歸，也不能隱藏它們宣稱全綠。
+- 兩項`context-menus.test.ts`舊失敗已於2026-10-26處理：清單納入伸展；移動案例補上真實的草圖編輯狀態，並保留閒置狀態應拒絕指令的斷言。實際瀏覽器驗證右鍵子選單與線段兩端移動通過，並納入CI；沒有移除產品的啟用檢查。歷史與修正見[ADR0201](adr/0201-solidcraft-icons-and-menu-design.md)。
+- 螺紋導角：原生與持久參照／存讀重建案例可成功處理外圓邊、未受螺紋影響的端面、小尺寸B-spline孔口單邊；範例的螺紋孔口多邊同時處理仍被OCCT拒絕。先入口導角再切螺紋已驗有效實體與STEP存讀，屬明確改變工序的替代流程，不是原操作的修復。使用者回覆原模型任何選取都失敗，仍須原始3dbx與完整錯誤才能定位，不能套用範例根因；[ADR0098](adr/0098-fillet-by-face.md)。
 - OCCT布林／投影的WASM Heap成長與Worker回收邊界見[AGENTS](../AGENTS.md)及[ADR0126](adr/0126-worker-heap-recycling.md)；handles不是零洩漏證據。
 - 私有樣本與本機資料不在版本庫；本機Windows仍需拉取正式提交、重啟與強制重新整理。雲端通過不等同使用者本機已驗收。
 
 ## 本輪清理的驗證範圍
 
-2026-10-26盤點覆蓋全部本地追蹤／待提交文件與資源；實際執行200項新／相關核心、6項瀏覽器流程，未重跑全套。新增[三平台CI](../.github/workflows/repository-integrity.yml)配置，但本輪只有Linux執行證據，不宣稱Windows／macOS runner已通過。GitHub API查詢wiki被403拒絕，wiki Git查詢未取得可存取倉庫，故僅能確認本地沒有wiki；未修改或假稱同步遠端wiki。
+2026-10-26清理盤點覆蓋全部本地追蹤／待提交文件與資源；當批實際執行200項新／相關核心、6項瀏覽器流程，未重跑全套。新增[三平台CI](../.github/workflows/repository-integrity.yml)後，使用者於同日後續追查確認三平台「通過」。此為使用者提供的結果，代理未取得run ID／各平台log：API查詢Forbidden、公開頁面404。後續新增右鍵測試至矩陣的版本，仍以新一輪CI實際結果為準。GitHub API查詢wiki被403拒絕，wiki Git查詢未取得可存取倉庫，故僅能確認本地沒有wiki；未修改或假稱同步遠端wiki。

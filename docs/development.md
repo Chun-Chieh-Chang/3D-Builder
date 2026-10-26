@@ -54,4 +54,4 @@ Windows桌面版沿[桌面README](../apps/desktop/README.md)安裝Rust／MSVC／
 
 ## 跨平台持續守門
 
-[Repository integrity](../.github/workflows/repository-integrity.yml)在Linux／Windows／macOS以同一Node版本、lockfile與npm指令檢查型別、依賴／文字／文件規則、路徑與發現契約、模型及原生幾何smoke、Web建置。這是新增的CI配置；雲端Linux本機結果不代表其他runner已執行通過，請查看實際CI紀錄。桌面NSIS安裝與實機操作不在此矩陣內。
+[Repository integrity](../.github/workflows/repository-integrity.yml)在Linux／Windows／macOS以同一Node版本、lockfile與npm指令檢查型別、依賴／文字／文件規則、路徑與發現契約、右鍵選單、模型及原生幾何smoke、Web建置。雲端Linux本機結果不代表其他runner已執行通過，請查看對應提交的實際CI紀錄；最近結果與來源只在[產品現況](project-state.md)維護。桌面NSIS安裝與實機操作不在此矩陣內。

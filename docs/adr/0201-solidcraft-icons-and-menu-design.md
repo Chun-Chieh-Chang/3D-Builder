@@ -29,3 +29,9 @@
 - UI首輪工具名稱誤用「伸長」而非真正的「伸長填料/基材」，改腳本後只重試workflow。檢視設計稿發現緊湊CSS隱藏完成草圖，修正並只重驗設計稿；已通過的drawing未重跑。原始失敗／基準重現／重試證據保留`out/action-icons/`與`out/action-icons-retry/`；自製尺寸線條的深底對比以line色角色修正後，4項檢查及僅設計稿UI再通過，證據`out/action-icons-final-design/`。
 
 紅隊四問：① ID明確映射，不認識的ID保留文字，不硬套無關圖示；原檔完整性與SVG靜態內容檢查，不讓外部資源或腳本進入；② 純UI不新增布林／幾何參數，仍用真實OCCT體積確認點選後原流程；③ 原registry→圖示→CommandBar／子選單／快速列→help與雙語接線，既有啟用、參數、快捷鍵與文件格式維持；④ 實際SVG載入／畫面／點選與native體積驗收，不把設計稿當已完成的CAD功能。未做新的Heap量測、不宣稱零洩漏。
+
+## 2026-10-26：兩項舊右鍵測試失敗處理
+
+清單明列已上線的`tool-stretchEntities`，同時更新C27的完整子選單預期。移動失敗的根因是測試只替換`store.sketcher`、未建立編輯狀態；`7805a57`加入重複指令的live enabled檢查後，這種閒置狀態正確被拒絕，並非產品不能移動。案例現在先斷言閒置拒絕且選取保留，再提供真實草圖編輯狀態啟動，finally還原store／spy。未繞過或刪除產品guard。
+
+僅重跑受影響草圖選單4項通過（其餘20項由篩選未執行，沒有改skip或期限）；新增[真實瀏覽器案例](../../tests/e2e/manual-context-transform.js)驗完整子選單、右鍵預選、兩次pointer click後兩個端點的原生求解位置＝原值＋指定向量，1項通過並檢視截圖。CI加入`context-menus.test.ts`，防止後續再次忽略這個契約。
