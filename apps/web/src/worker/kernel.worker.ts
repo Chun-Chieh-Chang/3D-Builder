@@ -3,11 +3,11 @@ import * as Comlink from 'comlink';
 import { setLocale as setWorkerLocale, t } from '@3db/i18n';
 import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
-import { bodyKey, combineMass, DATUM_PLANES, isDatumPlaneName, isShown, mirrorKey, modelRefOf, type PlaneFrame, MESH_QUALITY, placementRows, settingsOf, type ViewEdgeSet, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
+import { bodyKey, combineMass, DATUM_PLANES, isDatumPlaneName, isShown, mirrorKey, modelRefOf, type PlaneFrame, MESH_QUALITY, placementRows, settingsOf, type ViewFeature, type ViewEdgeSet, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { encodeShade, flatViewLines, rasterizeShade, withoutHiddenEdges, type ShadeImage, type ViewLines } from '@3db/drawing';
-import { findEntrance, silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, viewEdges, findClearance, findInterference, flatDrawingGeometry, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
+import { findEntrance, silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, placedViewFeatures, viewFeatures, viewEdges, findClearance, findInterference, flatDrawingGeometry, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
@@ -602,10 +602,11 @@ const api: KernelApi = {
 
   async drawingAssemblyEdges(requests) {
     await api.init();
-    const out: ({ edges: ViewEdgeSet } | { error: string })[] = [];
+    const out: ({ edges: ViewEdgeSet; features: ViewFeature[] } | { error: string })[] = [];
     for (const r of requests) {
       try {
         const edges: ViewEdgeSet = { edges: [], vertices: [] };
+        const features: ViewFeature[] = [];
         for (const p of r.parts) {
           const built = await parts.get(p.part)?.catch(() => null);
           const body = built?.result.body;
@@ -620,10 +621,11 @@ const api: KernelApi = {
             edgeMeshes.set(built, mesh);
           }
           const one = viewEdges(kernel, body.shape, body.topology, body.names, r.axes, allowed, mesh, { rows: placementRows(p.pose, p.mirrored), in: p.leaf });
+          features.push(...placedViewFeatures(kernel, body.shape, body.topology, body.names, r.axes, { rows: placementRows(p.pose, p.mirrored), in: p.leaf }, allowed, built.holes));
           edges.edges.push(...one.edges);
           edges.vertices.push(...one.vertices);
         }
-        out.push({ edges });
+        out.push({ edges, features });
       } catch (e) {
         out.push({ error: e instanceof Error ? e.message : String(e) });
       }

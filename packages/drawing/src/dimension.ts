@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { DIM_STYLE_DEFAULT, fitDeviations, inUnit, rightOf, sheetUp, type CalloutStyle, type ThreadCallout, type DimStyle, type LengthUnit, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
+import { DIM_STYLE_DEFAULT, dimensionRefs, fitDeviations, inUnit, rightOf, sheetUp, type CalloutStyle, type ThreadCallout, type DimStyle, type LengthUnit, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
 import { circlePolyline } from './geometry';
 import { toSheet, type PlacedView } from './layout';
 import type { SceneDimensionGeometry, SceneItem } from './scene';
@@ -248,7 +248,32 @@ const isBound = (e: ElementFacts) => e.type === 'plane' || e.type === 'line';
 export function evaluateDimension(d: Dimension, resolved: ElementsResult | undefined, axes: ViewAxes, placed: PlacedView, unit: LengthUnit = 'mm', style: Style = DIM_STYLE_DEFAULT): DimensionOutcome {
   if (!resolved) return { error: t('drawing.dimPending') };
   if ('error' in resolved) return resolved;
-  const els = resolved.elements;
+  const refs = dimensionRefs(d);
+  const els: ElementFacts[] = [];
+  for (let i = 0; i < resolved.elements.length; i++) {
+    const e = resolved.elements[i]!;
+    const point = refs[i]?.point;
+    if (!point || (e.kind === 'vertex' && e.type === 'point')) { els.push(e); continue; }
+    let at: [number, number, number] | undefined;
+    if (point === 'midpoint' && e.kind === 'edge' && e.type === 'line') at = e.point;
+    if (point.startsWith('quadrant') && (e.type === 'circle' || e.type === 'cylinder') && e.dir && e.radius !== undefined && Math.abs(dot(e.dir, axes.dir)) >= PARALLEL) {
+      const q = Number(point.slice(-1));
+      const direction = q % 2 === 0 ? rightOf(axes) : sheetUp(axes);
+      const sign = q < 2 ? 1 : -1;
+      at = e.point.map((v, j) => v + sign * e.radius! * direction[j]!) as [number, number, number];
+    }
+    if (point.startsWith('outline') && e.type === 'cylinder' && e.dir && e.radius !== undefined && e.ends && Math.abs(dot(e.dir, axes.dir)) <= PERPENDICULAR) {
+      const right = rightOf(axes), up = sheetUp(axes);
+      const x = dot(e.dir, right), y = dot(e.dir, up), len = Math.hypot(x, y);
+      if (len > 1e-9) {
+        const base = point.includes('Start') ? e.ends[0] : point.includes('End') ? e.ends[1] : e.ends[0].map((v, j) => (v + e.ends![1][j]!) / 2);
+        const side = point.endsWith('Positive') ? 1 : -1;
+        at = base.map((v, j) => v + side * e.radius! * (-y * right[j]! + x * up[j]!) / len) as [number, number, number];
+      }
+    }
+    if (!at || !at.every(Number.isFinite)) return { error: t('drawing.dimPointLost') };
+    els.push({ kind: 'vertex', type: 'point', point: at });
+  }
   if (d.kind === 'linear') return linear(d, els[0]!, els[1]!, axes, placed, unit, style);
   if (d.kind === 'angle') return angle(d, els[0]!, els[1]!, axes, placed, style);
   if (d.kind === 'ordinate') return ordinate(d, els, axes, placed, unit, style);

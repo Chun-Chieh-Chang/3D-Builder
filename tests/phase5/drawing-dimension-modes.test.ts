@@ -7,13 +7,13 @@
  * The part: a plate 10 thick, its outline (0,0) (40,0) (40,20) (30,30) (0,30) ??one slanted side ??with the corner at (0,0) rounded R5 and a ?8 hole at (12,12).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { rightOf, sheetUp, viewVectors, type Dimension, type Feature, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
+import { applyDrawingCommand, createEmptyDrawing, page, parseDrawing, serializeDrawing, placementRows, placeElementFacts, sameDrawingRef, rightOf, sheetUp, viewVectors, type Dimension, type Feature, type DrawingRef, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
 import { Kernel } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
-import { elementFacts, Regenerator, viewEdges, viewFeatures, type RebuildResult } from '@3db/regen';
-import { DIMENSION_MODES, autoDimensions, dimensionReferenceAt, dimensionModesFor, evaluateDimension, featureAt, pickKind, planDimension, toSheet, visibleElements, type DimensionMode, type Pickable, type PlacedView, type ViewLines } from '@3db/drawing';
+import { elementFacts, placedViewFeatures, Regenerator, viewEdges, viewFeatures, type RebuildResult } from '@3db/regen';
+import { DIMENSION_MODES, autoDimensions, dimensionReferenceAt, dimensionModesFor, evaluateDimension, outlinesOf, featureAt, pickKind, planDimension, toSheet, visibleElements, type DimensionMode, type Pickable, type PlacedView, type ViewLines } from '@3db/drawing';
 import { t } from '@3db/i18n';
-import { build, edge, extrude, face, fillet, front, pin, sketch } from '../phase1/builders';
+import { build, circle as circleProfile, edge, extrude, face, fillet, front, pin, sketch } from '../phase1/builders';
 
 let kernel: Kernel;
 let regen: Regenerator;
@@ -320,5 +320,124 @@ describe('dimension reference acquisition and automatic radius conversion on nat
     expect(dia.value).toBeCloseTo(2 * rad.value, 9);
     expect(dia.text).toContain('Ø');
     expect(rad.text).toContain('R');
+  });
+});
+
+
+describe('persistent reference-point snaps on native geometry', () => {
+  const evalPointDistance = (a: DrawingRef, b: DrawingRef, facts: Parameters<typeof evaluateDimension>[1], viewAxes = axes) => evaluateDimension({ id: 'pointDim', view: 'v', kind: 'linear', a, b, orientation: 'aligned', offset: 12 }, facts, viewAxes, V.placed);
+  it('100 pointer offsets acquire line midpoints without losing the one-edge length workflow', () => {
+    const e = V.seen.edges.find(e => Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) > 12)!;
+    expect(e).toBeDefined();
+    const mid: [number, number] = [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2];
+    for (let i = 0; i < 100; i++) {
+      const f = dimensionReferenceAt(V.lines, V.features, [mid[0] + (i % 7 - 3) * 0.02, mid[1] + (i % 11 - 5) * 0.02], 0.4, V.seen);
+      expect(f?.type).toBe('vertex');
+      expect((f?.ref as DrawingRef).point).toBe('midpoint');
+      const plan = planDimension([f!], sheetAt(50, -20), V.placed, axes, 'aligned');
+      expect(plan).toHaveProperty('draft');
+      const end = e.ends[0]!;
+      const fact = elementFacts(built.body!.topology, built.body!.names, f!.ref);
+      const endFact = elementFacts(built.body!.topology, built.body!.names, end);
+      expect('error' in fact || 'error' in endFact).toBe(false);
+      const out = evalPointDistance(f!.ref, end, { elements: [fact, endFact] as never });
+      expect(out).toHaveProperty('value');
+      if (!('error' in out)) expect(out.value).toBeCloseTo(Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) / 2, 7);
+    }
+  });
+  it('native circular quadrants are distinct persistent points and become a model-linked diameter', () => {
+    const c = V.features.find(f => f.type === 'circle' && f.full)!;
+    if (c.type !== 'circle') throw new Error('native circle required');
+    const a = dimensionReferenceAt(V.lines, V.features, [c.centre[0] + c.radius, c.centre[1]], 0.2, V.seen)!;
+    const b = dimensionReferenceAt(V.lines, V.features, [c.centre[0] - c.radius, c.centre[1]], 0.2, V.seen)!;
+    expect((a.ref as DrawingRef).point).toBe('quadrant0'); expect((b.ref as DrawingRef).point).toBe('quadrant2');
+    expect(sameDrawingRef(a.ref, b.ref)).toBe(false);
+    const fact = elementFacts(built.body!.topology, built.body!.names, c.ref);
+    const out = evalPointDistance(a.ref, b.ref, { elements: [fact, fact] as never });
+    if ('error' in out) throw new Error(out.error);
+    expect(out.value).toBeCloseTo(2 * c.radius, 8);
+    let doc = applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [{ id: 'v', name: 'front', source: 'part.3dbx', direction: 'front' }] });
+    doc = applyDrawingCommand(doc, { type: 'insertDimensions', dimensions: [{ id: 'pointDim', view: 'v', kind: 'linear', a: a.ref, b: b.ref, orientation: 'horizontal', offset: 12 }] });
+    expect(page(parseDrawing(serializeDrawing(doc))).dimensions[0]).toMatchObject({ a: { point: 'quadrant0' }, b: { point: 'quadrant2' } });
+  });
+  it('saved quadrant and silhouette references follow a real native radius rebuild', async () => {
+    const isolated = new Regenerator(kernel, await PlaneGcsSolver.create());
+    const shape = (r: number) => isolated.rebuild(build(sketch('s', front, circleProfile('ci', 0, 0, r)), extrude('e', 's', 'boss', { type: 'blind', depth: '8' })));
+    try {
+      const first = shape(4);
+      const c = viewFeatures(first.body!.topology, first.body!.names, axes).find(f => f.type === 'circle' && f.full)!;
+      const a: DrawingRef = { ...c.ref, point: 'quadrant0' }, b: DrawingRef = { ...c.ref, point: 'quadrant2' };
+      let doc = applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [{ id: 'v', name: 'front', source: 'round.3dbx', direction: 'front' }] });
+      doc = applyDrawingCommand(doc, { type: 'insertDimensions', dimensions: [{ id: 'd', view: 'v', kind: 'linear', a, b, orientation: 'horizontal', offset: 12 }] });
+      const saved = parseDrawing(serializeDrawing(doc));
+      const second = shape(6);
+      expect(second.features.every(f => f.status === 'ok')).toBe(true);
+      const d = page(saved).dimensions[0]!;
+      if (d.kind !== 'linear') throw new Error('persistent linear dimension required');
+      const facts = [d.a, d.b].map(ref => elementFacts(second.body!.topology, second.body!.names, ref));
+      const value = evaluateDimension(d, { elements: facts as never }, axes, V.placed);
+      if ('error' in value) throw new Error(value.error);
+      expect(value.value).toBeCloseTo(12, 8);
+      const sideAxes = viewVectors('right');
+      const features = viewFeatures(second.body!.topology, second.body!.names, sideAxes);
+      const side = features.find(f => f.type === 'axis')!;
+      const outlines = outlinesOf([side]);
+      const lineData = kernel.projectView(second.body!.shape, sideAxes) as ViewLines;
+      const withoutFaces = visibleElements(lineData, viewEdges(kernel, second.body!.shape, second.body!.topology, second.body!.names, sideAxes));
+      const mid = [(outlines[0]!.from[0] + outlines[0]!.to[0]) / 2, (outlines[0]!.from[1] + outlines[0]!.to[1]) / 2] as [number, number];
+      expect(featureAt(lineData, [], mid, 0.2, withoutFaces)).toBeNull();
+      const points = outlines.map(o => dimensionReferenceAt(lineData, features, o.from, 0.2));
+      expect(points.every(p => p?.type === 'vertex' && 'snap' in p)).toBe(true);
+      const sideFacts = points.map(p => elementFacts(second.body!.topology, second.body!.names, p!.ref));
+      const sideValue = evalPointDistance(points[0]!.ref, points[1]!.ref, { elements: sideFacts as never }, sideAxes);
+      if ('error' in sideValue) throw new Error(sideValue.error);
+      expect(sideValue.value).toBeCloseTo(12, 8);
+    } finally { isolated.dispose(); }
+  });
+  it('placed assembly features retain local references and distinguish identical component names', () => {
+    const body = built.body!;
+    const rows = placementRows({ position: [55, 18, 7], rotation: [0, 0, 0, 1] }, true);
+    const live = kernel.liveShapes;
+    const heap = (kernel as any).oc.wasmMemory.buffer.byteLength; expect(heap).toBeGreaterThan(0);
+    const placedFeatures = placedViewFeatures(kernel, body.shape, body.topology, body.names, axes, { rows, in: 'componentB' });
+    expect(kernel.liveShapes).toBe(live);
+    const native = V.features.find(f => f.type === 'circle' && f.full)!;
+    const moved = placedFeatures.find(f => f.ref.name === native.ref.name)!;
+    expect((moved.ref as DrawingRef).in).toBe('componentB');
+    const fact = elementFacts(body.topology, body.names, native.ref);
+    if ('error' in fact || moved.type !== 'circle' || native.type !== 'circle') throw new Error('native placed cylinder required');
+    const world = placeElementFacts(fact, rows);
+    expect(moved.centre[0]).toBeCloseTo(inView(world.point)[0], 8);
+    expect(moved.centre[1]).toBeCloseTo(inView(world.point)[1], 8);
+    for (let j = 0; j < 100; j++) {
+      const angle = (j * 71 % 360) * Math.PI / 180;
+      const rows = placementRows({ position: [j * 0.73 - 20, j * -0.41 + 9, j * 0.13], rotation: [0, 0, Math.sin(angle / 2), Math.cos(angle / 2)] }, j % 2 === 1);
+      const features = placedViewFeatures(kernel, body.shape, body.topology, body.names, axes, { rows, in: `part${j}` });
+      const circles = features.filter(f => f.type === 'circle');
+      expect(circles.length).toBeGreaterThan(0);
+      for (const f of circles) {
+        const local = elementFacts(body.topology, body.names, f.ref);
+        if ('error' in local) throw new Error(local.error);
+        const expected = inView(placeElementFacts(local, rows).point);
+        expect(f.centre[0]).toBeCloseTo(expected[0], 7); expect(f.centre[1]).toBeCloseTo(expected[1], 7);
+        expect((f.ref as DrawingRef).in).toBe(`part${j}`);
+      }
+      expect(kernel.liveShapes).toBe(live);
+    }
+    console.log('placed-feature native heap bytes', heap, (kernel as any).oc.wasmMemory.buffer.byteLength);
+    const a = { ...native.ref, in: 'componentA' }, b = { ...native.ref, in: 'componentB' };
+    expect(sameDrawingRef(a, b)).toBe(false);
+    expect(() => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [{ id: 'v', name: 'front', source: 'a.3dba', direction: 'front' }] }), { type: 'insertDimensions', dimensions: [{ id: 'd', view: 'v', kind: 'linear', a, b, orientation: 'horizontal', offset: 12 }] })).not.toThrow();
+  });
+  it('invalid selectors and geometry changes are refused rather than frozen as paper points', () => {
+    const doc = applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [{ id: 'v', name: 'front', source: 'part.3dbx', direction: 'front' }] });
+    const edge = V.seen.edges[0]!;
+    for (const point of ['noSuchPoint', NaN, { x: 4 }, 'outlineMidPositive']) {
+      const a = { ...edge.ref, point } as DrawingRef;
+      expect(() => applyDrawingCommand(doc, { type: 'insertDimensions', dimensions: [{ id: 'd', view: 'v', kind: 'linear', a, b: edge.ends[0]!, orientation: 'horizontal', offset: 12 }] })).toThrow();
+    }
+    const circle = V.features.find(f => f.type === 'circle' && f.full)!;
+    const wrong = evalPointDistance({ ...circle.ref, point: 'midpoint' } as DrawingRef, edge.ends[0]!, { elements: [elementFacts(built.body!.topology, built.body!.names, circle.ref), elementFacts(built.body!.topology, built.body!.names, edge.ends[0]!)] as never });
+    expect(wrong).toHaveProperty('error');
   });
 });

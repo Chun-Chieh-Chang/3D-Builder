@@ -51,7 +51,7 @@ import {
   type SceneItem,
   type ViewLines,
 } from '@3db/drawing';
-import { axesOf, oppositeSide, page, drawingFromPage, projectedAxes, type Annotation, type Attachment, type AuxiliaryDrawingView, type ClosedOutline, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide} from '@3db/model';
+import { sameDrawingRef, axesOf, oppositeSide, page, drawingFromPage, projectedAxes, type Annotation, type Attachment, type AuxiliaryDrawingView, type ClosedOutline, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide} from '@3db/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, useStore } from '../state/store';
 import type { DrawingPick } from '../state/drawing';
@@ -188,7 +188,7 @@ export function DrawingViewport() {
     if (!view || !placed || !axes) return null;
     const picks = tool.picks.map((x) => x.feature);
     // with one element chosen, an element under the pointer is the second one for now (a diameter or a radius has none)
-    const second = picks.length === 1 && takesSecond(tool.mode) && hover.feature && hover.feature.view === first.view && hover.feature.feature.ref.name !== picks[0]!.ref.name ? hover.feature.feature : null;
+    const second = picks.length === 1 && takesSecond(tool.mode) && hover.feature && hover.feature.view === first.view && !sameDrawingRef(hover.feature.feature.ref, picks[0]!.ref) ? hover.feature.feature : null;
     const result = planDimension(second ? [...picks, second] : picks, hover.p, placed, axes, tool.mode);
     return 'draft' in result ? { view: first.view, ...result } : null;
   }, [tool, hover, curPage, basePlaced]);
@@ -345,13 +345,14 @@ export function DrawingViewport() {
 
   /** The edges and vertices each view shows, by name (D-I2): worked out once per view from its lines and the worker's projected edges. */
   /** The element of a view under the point (the views in the order they are drawn, the last on top); when `only` is given, in that view only. */
-  const featureUnder = (p: P, only?: Id): { view: Id; feature: Pickable } | null => {
+  const featureUnder = (p: P, only?: Id, referencePoints = true): { view: Id; feature: Pickable } | null => {
     for (const v of [...curPage.views].reverse()) {
       if (only && v.id !== only) continue;
       const placed = basePlaced.get(v.id);
       if (!placed || placed.w <= 0) continue;
-      const acquire = tool?.kind === 'dimension' || tool?.kind === 'ordinate' ? dimensionReferenceAt : featureAt;
-      const f = acquire(viewLines.get(v.id), drw.features.get(v.id) ?? [], toView(placed, p), reach / placed.scale, seenByView.get(v.id));
+      const acquire = referencePoints && (tool?.kind === 'dimension' || tool?.kind === 'ordinate') ? dimensionReferenceAt : featureAt;
+      const pointSnaps = tool?.kind === 'ordinate' || (tool?.kind === 'dimension' && (!tool.mode || ['smart', 'horizontal', 'vertical', 'aligned'].includes(tool.mode)));
+      const f = acquire(viewLines.get(v.id), drw.features.get(v.id) ?? [], toView(placed, p), reach / placed.scale, seenByView.get(v.id), pointSnaps);
       if (f) return { view: v.id, feature: f };
     }
     return null;
@@ -413,7 +414,7 @@ export function DrawingViewport() {
     const axes = view && axesOf(curPage.views, curPage.sheet.projection, view);
     if (!view || !placed || !axes) return;
     // a second element pointed at (not the same one): then the place comes
-    if (tool.picks.length === 1 && takesSecond(mode) && hit && hit.feature.ref.name !== first.feature.ref.name) {
+    if (tool.picks.length === 1 && takesSecond(mode) && hit && !sameDrawingRef(hit.feature.ref, first.feature.ref)) {
       d.setTool({ kind: 'dimension', picks: [first, hit], ...keep });
       return;
     }
@@ -430,7 +431,7 @@ export function DrawingViewport() {
     const first = tool.picks[0];
     const hit = featureUnder(p, first?.view);
     if (hit) {
-      if (tool.picks.some((x) => x.feature.ref.name === hit.feature.ref.name && x.view === hit.view)) return;
+      if (tool.picks.some((x) => sameDrawingRef(x.feature.ref, hit.feature.ref) && x.view === hit.view)) return;
       d.setTool({ kind: 'ordinate', picks: [...tool.picks, hit] });
       return;
     }
@@ -469,7 +470,7 @@ export function DrawingViewport() {
     // 2. If initial offset not established yet:
     if (tool.lastOffset === undefined) {
       if (!tool.second) {
-        if (hit && (!tool.base || hit.feature.ref.name !== tool.base.feature.ref.name)) {
+        if (hit && (!tool.base || !sameDrawingRef(hit.feature.ref, tool.base.feature.ref))) {
           d.setTool({ ...tool, second: hit });
           d.notifyInfo(t('drawingUi.hint.baselinePlace'));
         }
@@ -501,7 +502,7 @@ export function DrawingViewport() {
     // 3. Continuous baseline stepping: each subsequent element pick immediately creates a stepped linear dimension!
     if (hit) {
       const baseRef = tool.baseRef ?? tool.base?.feature.ref;
-      if (!baseRef || hit.feature.ref.name === baseRef.name) return;
+      if (!baseRef || sameDrawingRef(hit.feature.ref, baseRef)) return;
       const stepDist = 8;
       const sign = tool.lastOffset >= 0 ? 1 : -1;
       const nextOffset = tool.lastOffset + sign * stepDist;
@@ -825,7 +826,7 @@ export function DrawingViewport() {
       // the same order a ctrl-click takes things in: a dimension, an annotation, a surface finish, a table, then a view under them
       // a line of a view on the edge of its box (its outline) is the view's, though the pointer is a hair outside the box (ADR 0177)
       const edgeOf = (): { kind: 'view'; id: Id } | null => {
-        const f = featureUnder(p);
+        const f = featureUnder(p, undefined, false);
         return f ? { kind: 'view', id: f.view } : null;
       };
       const hit = pickUnder(p) ?? edgeOf();
@@ -845,7 +846,7 @@ export function DrawingViewport() {
         setMenu({ ...at, kind: 'table', id: hit.id });
       } else if (hit?.kind === 'view') {
         take({ kind: 'view', id: hit.id });
-        const f = featureUnder(p, hit.id);
+        const f = featureUnder(p, hit.id, false);
         const leaf = (f?.feature.ref as { in?: string } | undefined)?.in ?? null;
         setMenu({ ...at, kind: 'view', view: hit.id, leaf, element: f?.feature ?? null });
       } else setMenu({ ...at, kind: 'sheet' });
@@ -1378,10 +1379,10 @@ export function DrawingViewport() {
             const at = toSheet(placed, q[0], q[1]);
             if (Math.hypot(at[0] - hover.p[0], at[1] - hover.p[1]) > reach) return null;
             const r = 5 / (pan.zoom * PX);
-            return <g data-dimension-snap={f.type === 'vertex' ? 'vertex' : 'centre'} stroke="var(--accent)" strokeWidth={1.5 / (pan.zoom * PX)} fill="var(--card)">
+            return <g data-dimension-snap={f.type === 'vertex' ? ('snap' in f && f.snap === 'midpoint' ? 'midpoint' : 'snap' in f && f.snap === 'quadrant' ? 'quadrant' : 'vertex') : 'centre'} stroke="var(--accent)" strokeWidth={1.5 / (pan.zoom * PX)} fill="var(--card)">
               <rect x={at[0] - r} y={sheet.height - at[1] - r} width={2 * r} height={2 * r} />
               <path d={`M ${at[0] - r} ${sheet.height - at[1]} h ${2 * r} M ${at[0]} ${sheet.height - at[1] - r} v ${2 * r}`} />
-              <text x={at[0] + 2 * r} y={sheet.height - at[1] - r} stroke="none" fill="var(--accent)" fontSize={11 / (pan.zoom * PX)}>{t(f.type === 'vertex' ? 'drawingUi.snapVertex' : 'drawingUi.snapCentre')}</text>
+              <text x={at[0] + 2 * r} y={sheet.height - at[1] - r} stroke="none" fill="var(--accent)" fontSize={11 / (pan.zoom * PX)}>{t(f.type !== 'vertex' ? 'drawingUi.snapCentre' : 'snap' in f && f.snap === 'midpoint' ? 'drawingUi.snapMidpoint' : 'snap' in f && f.snap === 'quadrant' ? 'drawingUi.snapQuadrant' : 'drawingUi.snapVertex')}</text>
             </g>;
           })()}
           {((tool?.kind === 'dimension' || tool?.kind === 'ordinate') || (!tool && !drag && hover?.feature)) &&

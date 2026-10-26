@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import { edgeFingerprint, faceFingerprint, resolveRef, vertexFingerprint, type ElementNames } from '@3db/naming';
-import type { Topology } from '@3db/kernel';
+import type { Kernel, ShapeId, Topology } from '@3db/kernel';
 import type { CosmeticThreadInfo, SourceProvider } from './engine';
 import { lookupThread, rightOf, sheetUp, type ElementFacts, type HoleInfo, type ThreadCallout, type PartDoc, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
 
@@ -189,7 +189,8 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Ref, 
     if (g?.type === 'cylinder') {
       const hole = holeInfo(topology, r.index);
       const thread = threadOnFace(topology, names, r.index, cosmeticThreads);
-      return { kind: 'face', type: 'cylinder', point: g.origin, center: f.center, dir: g.axis, radius: g.radius, ...(thread ? { thread } : {}), ...(hole ? { hole: withFeature(hole, names.faces[r.index]!, features) } : {}) };
+      const ends = cylinderEnds(topology, r.index);
+      return { kind: 'face', type: 'cylinder', point: g.origin, center: f.center, ...(ends.length === 2 ? { ends: ends.map(e => e.center) as [[number, number, number], [number, number, number]] } : {}), dir: g.axis, radius: g.radius, ...(thread ? { thread } : {}), ...(hole ? { hole: withFeature(hole, names.faces[r.index]!, features) } : {}) };
     }
     if (g?.type === 'sphere') return { kind: 'face', type: 'sphere', point: g.center, radius: g.radius };
     // a fillet or a round: its radius is the tube's, and its axis and the circle the tube's middle runs on are what say where the arc is
@@ -290,4 +291,30 @@ export function refOf(topology: Topology, names: ElementNames, kind: 'face' | 'e
     : kind === 'edge'
       ? { kind, name: names.edges[index]!, fingerprint: edgeFingerprint(topology, index) }
       : { kind, name: names.vertices[index]!, fingerprint: vertexFingerprint(topology, index) };
+}
+
+
+/** Exact placed analytic features for an assembly, with references retained in each source part's coordinates. */
+export function placedViewFeatures(kernel: Kernel, shape: ShapeId, topology: Topology, names: ElementNames, axes: ViewAxes, place: { rows: readonly number[]; in: string }, allowed: (face: number) => boolean = () => true, holes?: HoleFeatures): ViewFeature[] {
+  const moved = kernel.transformed(shape, place.rows);
+  try {
+    const world = kernel.topology(moved);
+    if (world.faces.length !== topology.faces.length) throw new Error('Placed view topology changed');
+    const indices = new Map(names.faces.map((name, i) => [name, i]));
+    return viewFeatures(world, names, axes, allowed, holes).map(f => {
+      const i = indices.get(f.ref.name);
+      if (i === undefined) throw new Error('Placed view face has no source reference');
+      const ref = { ...refOf(topology, names, 'face', i), in: place.in };
+      if (f.type === 'axis') {
+        const ends = cylinderEnds(topology, i);
+        const R = place.rows;
+        const project = (p: readonly number[]): [number, number] => {
+          const q = [R[0]! * p[0]! + R[1]! * p[1]! + R[2]! * p[2]! + R[3]!, R[4]! * p[0]! + R[5]! * p[1]! + R[6]! * p[2]! + R[7]!, R[8]! * p[0]! + R[9]! * p[1]! + R[10]! * p[2]! + R[11]!];
+          return [dot(q, rightOf(axes)), dot(q, sheetUp(axes))];
+        };
+        if (ends.length === 2) return { ...f, ref, from: project(ends[0]!.center), to: project(ends[1]!.center) };
+      }
+      return { ...f, ref };
+    });
+  } finally { kernel.release(moved); }
 }

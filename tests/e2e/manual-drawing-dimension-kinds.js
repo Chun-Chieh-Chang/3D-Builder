@@ -140,13 +140,14 @@ K.run = async () => {
     await H.wait(100);
     const n = page().dimensions.length;
     await leftClick(sheetOf(top.id, 0, far().coord));
-    const pick = drw().tool.picks[0]?.feature;
-    const along = pick?.along;
+    const acquired = drw().tool.picks[0]?.feature;
+    const pick = acquired?.source ?? acquired;
+    const along = pick?.type === 'edge' ? pick : pick?.along;
     await leftClick(above());
     await settle();
     const got = newest();
     const truth = along && Math.hypot(along.b[0] - along.a[0], along.b[1] - along.a[1]);
-    return { pass: got.n === n + 1 && pick?.type === 'plane' && !!along && got.dim.kind === 'linear' && got.dim.orientation === 'horizontal' && close(got.value, truth), got, truth };
+    return { pass: got.n === n + 1 && (pick?.type === 'plane' || (acquired?.snap === 'midpoint' && pick?.type === 'edge')) && !!along && got.dim.kind === 'linear' && got.dim.orientation === 'horizontal' && close(got.value, truth), got, truth };
   });
 
   await step('4 垂直尺寸 on a horizontal line is refused with the reason, and nothing is added', async () => {

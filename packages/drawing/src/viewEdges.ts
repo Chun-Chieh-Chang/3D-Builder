@@ -12,7 +12,7 @@ type P2 = [number, number];
 /** A straight edge of the model seen as a line: its ends in the view (full size), the names of the vertices there, and whether it lies in the sheet's plane. */
 export type EdgePick = { type: 'edge'; ref: Ref; a: P2; b: P2; ends: [Ref | null, Ref | null]; inPlane: boolean; depth: number };
 /** A vertex of the model the view shows. */
-export type VertexPick = { type: 'vertex'; ref: Ref; at: P2; depth: number };
+export type VertexPick = { type: 'vertex'; ref: DrawingRef; at: P2; depth: number };
 /** A circular edge seen in its true shape, as a circle that can be measured (its reference is the edge's). */
 export type CircleEdgePick = Extract<ViewFeature, { type: 'circle' }>;
 

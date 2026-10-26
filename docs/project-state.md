@@ -19,7 +19,7 @@ Phase 0–7範圍已有開發成果；原Phase 0–2閘門按當時較低範圍�
 | 模型互動 | 浮動參數、合法運算式預覽、建構拉伸拖曳／跨平面反向／對稱 | 操控器限有原生終端面的給定深度／對稱第一方向；運算式深度不強制覆寫；[ADR0203](adr/0203-floating-editor-assembly-source-and-live-extrusion.md) |
 | 組合件編輯 | 雙擊／右鍵來源零件草圖或特徵，儲存返回後更新來源實例 | 同時一份文件，不是組合件就地編輯；直接特徵編輯限3dbx；[ADR0203](adr/0203-floating-editor-assembly-source-and-live-extrusion.md) |
 | 顯示 | 固定工作平面的網格、正確深度、右鍵與系統選項同步、參考面共原點、隱藏恢復、透明塗彩 | 同一零件的三預設面共自身原點，實例保留位姿，自訂面保留偏移；[ADR0202](adr/0202-viewport-grid-and-hidden-recovery.md)、[ADR0197](adr/0197-transparent-shaded-view.md) |
-| 工程圖 | 新建預設第三角法、選取模式可拖曳／編輯視圖標籤與連動比例範本、多圖頁、孔／螺紋標註、樣式預設、側視引線、公差等級註記、尺寸線／文字拖曳、圓心／端點提示、固定像素高亮與畫布線寬、R↔Ø切換與去重 | 螺紋規格不從真實螺旋拓樸反推；公差等級註記不是極限尺寸求值；[ADR0185](adr/0185-drawing-thread-leaders-defaults-tolerances.md)、[ADR0192](adr/0192-dimension-line-drag.md)、[ADR0206](adr/0206-drawing-dimension-interaction.md)、[ADR0207](adr/0207-component-hatches-and-view-captions.md) |
+| 工程圖 | 新建預設第三角法、選取模式可拖曳／編輯視圖標籤與連動比例範本、多圖頁、孔／螺紋標註、樣式預設、側視引線、公差等級註記、尺寸線／文字拖曳、圓心／端點／中點／圓四分點提示與持久參照、組合件解析輪廓選取、固定像素高亮與畫布線寬、R↔Ø切換與去重 | 螺紋規格不從真實螺旋拓樸反推；公差等級註記不是極限尺寸求值；[ADR0185](adr/0185-drawing-thread-leaders-defaults-tolerances.md)、[ADR0192](adr/0192-dimension-line-drag.md)、[ADR0206](adr/0206-drawing-dimension-interaction.md)、[ADR0207](adr/0207-component-hatches-and-view-captions.md)、[ADR0208](adr/0208-drawing-reference-points.md) |
 | 剖面與剖面線 | 一般／斜向／階梯／對正／局部剖面，分零件實例填線、線距與角度 | 目前自動分件樣式，未提供逐件手動樣式；裁剪／放大繼承與母視圖限制仍有效；[ADR0198](adr/0198-section-hatch-regions-and-style.md)、[ADR0207](adr/0207-component-hatches-and-view-captions.md) |
 | 鈑金 | 多道與局部展開、相容的展開加工／摺回、原生展平尺寸與折彎表 | 封閉基材與單一本體；未展開曲面／變截面斜向加工／加料拒絕；任意STEP轉鈑金未開放；[ADR0199](adr/0199-sheet-manufacturing-workflow.md)、[ADR0200](adr/0200-sheet-partial-unfold-curved-machining.md) |
 | 圖示與選單 | SolidCraft授權圖示＋完整文字、現有CommandBar | 新Ribbon分組／搜尋仍是[獨立設計稿](design/menu-redesign/plan.md)，不能當正式介面；[ADR0201](adr/0201-solidcraft-icons-and-menu-design.md) |
@@ -28,7 +28,7 @@ Phase 0–7範圍已有開發成果；原Phase 0–2閘門按當時較低範圍�
 ## 待辦與已知問題
 
 - 兩項既有語系規則測試失敗：`instant3d.drag`不符舊key正規式、英文help搜尋keywords含中文。於未修改的`60bfd9a`語系來源重現；本批新增字典完整性4項通過，未改斷言，見[ADR0207](adr/0207-component-hatches-and-view-captions.md)。
-- 工程圖尺寸對照後續：導角參數隨模型重建求值、文字自由二維偏移、持久中點／交點參照及跨尺寸對齊磁吸。當前文字沿線／角度弧獨立拖曳，圓心與端點取得已驗；導角僅接受有實際端點的真實形狀投影，仍需確認可編輯註記值；不能宣稱全面辨識三維導角或與SW完全等效。依據見[ADR0206](adr/0206-drawing-dimension-interaction.md)。
+- 工程圖尺寸對照後續：導角參數隨模型重建求值、文字自由二維偏移、持久交點／虛交點參照及跨尺寸對齊磁吸。當前文字沿線／角度弧獨立拖曳，圓心、端點、中點、圓四分點與完整圓柱輪廓點已驗，舊格式v24／30／31零件與組合件冷啟動量測通過，尚未取得使用者實際舊工程圖；導角僅接受有實際端點的真實形狀投影，仍需確認可編輯註記值；不能宣稱全面辨識三維導角或與SW完全等效。依據見[ADR0206](adr/0206-drawing-dimension-interaction.md)。
 - 影片[ M5KOgtk9VfI ](https://www.youtube.com/watch?v=M5KOgtk9VfI)：尚未取得可讀內容。先前YouTube／oEmbed／搜尋連線403，需影片標題、操作說明或關鍵影像，不能猜功能。
 - 正式Ribbon配置／搜尋、投影線本體作掃出路徑、連動陣列事後群組編輯、其他特徵操控器、組合件就地編輯仍為後續工作；不得把規劃標為已完成。
 - 兩項`context-menus.test.ts`舊失敗已於2026-10-26處理：清單納入伸展；移動案例補上真實的草圖編輯狀態，並保留閒置狀態應拒絕指令的斷言。實際瀏覽器驗證右鍵子選單與線段兩端移動通過，並納入CI；沒有移除產品的啟用檢查。歷史與修正見[ADR0201](adr/0201-solidcraft-icons-and-menu-design.md)。

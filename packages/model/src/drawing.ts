@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 31;
+export const DRAWING_SCHEMA_VERSION = 32;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -388,7 +388,16 @@ export type TitleField = (typeof TITLE_FIELDS)[number];
  * An element a dimension points at. In a view of a part it is the part's (`Ref`); in a view of an assembly (v14, D-I2, ADR 0138) `in` says which part of it,
  * by the leaf's id ("comp2", "comp2/pa": the components gone through from the assembly down), and the element is that part's, put where the assembly has it.
  */
-export type DrawingRef = Ref & { in?: string };
+export const DRAWING_POINTS = ['midpoint', 'quadrant0', 'quadrant1', 'quadrant2', 'quadrant3', 'outlineStartPositive', 'outlineEndPositive', 'outlineMidPositive', 'outlineStartNegative', 'outlineEndNegative', 'outlineMidNegative'] as const;
+export type DrawingPoint = (typeof DRAWING_POINTS)[number];
+export type DrawingRef = Ref & { in?: string; /** Model-derived point on the referenced element, evaluated in the dimension view. */ point?: DrawingPoint };
+export const drawingRefKey = (r: DrawingRef): string => JSON.stringify([r.kind, r.name, r.in ?? null, r.point ?? null]);
+export const sameDrawingRef = (a: DrawingRef, b: DrawingRef): boolean => drawingRefKey(a) === drawingRefKey(b);
+export function validDrawingPointRef(r: DrawingRef): boolean {
+  if (r.point === undefined) return true;
+  if (!DRAWING_POINTS.includes(r.point) || r.kind === 'vertex') return false;
+  return r.point === 'midpoint' ? r.kind === 'edge' : r.point.startsWith('outline') ? r.kind === 'face' : true;
+}
 
 /**
  * The tolerance of a dimension: limits in mm (`upper` and `lower`, signed: 「+0.1/-0.05」, or 「±0.05」 when they are opposite), a class of ISO 286 (「H7」,
@@ -527,6 +536,8 @@ export interface ElementFacts {
   type: string;
   /** A vertex's place, a plane's origin, a cylinder's or circle's axis point (its middle), a line's middle, a torus's centre. */
   point: [number, number, number];
+  /** Native circular end centres of a whole cylindrical face. */
+  ends?: [[number, number, number], [number, number, number]];
   /** A plane's normal, an axis, a line's direction. */
   dir?: [number, number, number];
   radius?: number;
@@ -584,7 +595,7 @@ export function placeElementFacts(f: ElementFacts, rows: readonly number[]): Ele
   const R = rows;
   const put = (p: readonly number[]): [number, number, number] => [R[0]! * p[0]! + R[1]! * p[1]! + R[2]! * p[2]! + R[3]!, R[4]! * p[0]! + R[5]! * p[1]! + R[6]! * p[2]! + R[7]!, R[8]! * p[0]! + R[9]! * p[1]! + R[10]! * p[2]! + R[11]!];
   const turn = (v: readonly number[]): [number, number, number] => [R[0]! * v[0]! + R[1]! * v[1]! + R[2]! * v[2]!, R[4]! * v[0]! + R[5]! * v[1]! + R[6]! * v[2]!, R[8]! * v[0]! + R[9]! * v[1]! + R[10]! * v[2]!];
-  return { ...f, point: put(f.point), ...(f.dir ? { dir: turn(f.dir) } : {}), ...(f.center ? { center: put(f.center) } : {}),
+  return { ...f, point: put(f.point), ...(f.ends ? { ends: f.ends.map(put) as ElementFacts['ends'] } : {}), ...(f.dir ? { dir: turn(f.dir) } : {}), ...(f.center ? { center: put(f.center) } : {}),
     ...(f.thread ? { thread: { ...f.thread, ...(f.thread.origin ? { origin: put(f.thread.origin) } : {}), ...(f.thread.axis ? { axis: turn(f.thread.axis) } : {}) } } : {}) };
 }
 
@@ -850,9 +861,9 @@ export type DimensionPatch = {
   /** A diameter or a radius: the length of the leader; `null` puts it back to 8. */
   leader?: number | null;
   supplementary?: boolean | null;
-  a?: Ref;
-  b?: Ref;
-  ref?: Ref;
+  a?: DrawingRef;
+  b?: DrawingRef;
+  ref?: DrawingRef;
   /** An ordinate dimension (v16): the way it measures, its origin and what it measures. */
   axis?: 'x' | 'y';
   origin?: DrawingRef;
@@ -1086,7 +1097,7 @@ const isRefValue = (r: unknown): r is DrawingRef =>
   (r as Ref).name !== '' &&
   ['face', 'edge', 'vertex'].includes((r as Ref).kind) &&
   // the part of an assembly it is in: a leaf's id, never empty
-  ((r as DrawingRef).in === undefined || (typeof (r as DrawingRef).in === 'string' && (r as DrawingRef).in !== ''));
+  ((r as DrawingRef).in === undefined || (typeof (r as DrawingRef).in === 'string' && (r as DrawingRef).in !== '')) && validDrawingPointRef(r as DrawingRef);
 
 /** Geometry references belong to either manufacturing coordinates or folded model coordinates. */
 function flatViewOf(views: readonly DrawingView[], id: Id): boolean {
@@ -1110,17 +1121,17 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
       if (side === undefined) continue;
       if (side !== 1 && side !== -1) throw new CommandError(t('drawing.dimBadSide'));
       // an outline is a cylinder's, which is a face
-      if (r.kind !== 'face') throw new CommandError(t('drawing.dimBadSide'));
+      if (r.kind !== 'face' || r.point) throw new CommandError(t('drawing.dimBadSide'));
     }
     // one face measured to itself is a distance only between its two outlines
-    if (d.a.kind === d.b.kind && d.a.name === d.b.name && !(d.aSide !== undefined && d.bSide !== undefined && d.aSide !== d.bSide)) throw new CommandError(t('drawing.dimSameElement'));
+    if (sameDrawingRef(d.a, d.b) && !(d.aSide !== undefined && d.bSide !== undefined && d.aSide !== d.bSide)) throw new CommandError(t('drawing.dimSameElement'));
   } else if (d.kind === 'angle') {
-    if (!isRefValue(d.a) || !isRefValue(d.b) || d.a.kind === 'vertex' || d.b.kind === 'vertex') throw new CommandError(t('drawing.dimBadRef'));
+    if (!isRefValue(d.a) || !isRefValue(d.b) || d.a.kind === 'vertex' || d.b.kind === 'vertex' || d.a.point || d.b.point) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.arc) || !(d.arc > 0)) throw new CommandError(t('drawing.dimBadArc'));
     // an angle has no size for an ISO 286 fit to come from, so it takes limits or a one-sided limit, never a fit
     if (d.tolerance && d.tolerance.type === 'fit') throw new CommandError(t('drawing.dimAngleFit'));
   } else if (d.kind === 'diameter' || d.kind === 'radius') {
-    if (!isRefValue(d.ref) || d.ref.kind === 'vertex') throw new CommandError(t('drawing.dimBadRef'));
+    if (!isRefValue(d.ref) || d.ref.kind === 'vertex' || d.ref.point) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
     if (d.count !== undefined && !(Number.isInteger(d.count) && d.count >= 2)) throw new CommandError(t('drawing.dimBadCount'));
     if (d.kind === 'radius' && (d as { callout?: boolean }).callout) throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: d.kind }));
@@ -1130,12 +1141,12 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     if (d.refs.length > ORDINATE_MAX) throw new CommandError(t('drawing.ordinateTooMany', { max: String(ORDINATE_MAX) }));
     if (!Number.isFinite(d.offset) || d.offset === 0) throw new CommandError(t('drawing.dimBadOffset'));
     // the same element twice, or the origin measured from itself, says nothing
-    const key = (r: DrawingRef) => `${r.kind}|${r.name}|${r.in ?? ''}`;
+    const key = drawingRefKey;
     const all = [d.origin, ...d.refs].map(key);
     if (new Set(all).size !== all.length) throw new CommandError(t('drawing.ordinateTwice'));
     if (d.tolerance?.type === 'fit') throw new CommandError(t('drawing.ordinateFit'));
   } else if (d.kind === 'chamfer') {
-    if (!isRefValue(d.ref) || d.ref.kind === 'vertex') throw new CommandError(t('drawing.dimBadRef'));
+    if (!isRefValue(d.ref) || d.ref.kind === 'vertex' || d.ref.point) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
     if (!Number.isFinite(d.size) || d.size <= 0) throw new CommandError(t('drawing.dimBadOffset'));
     if (d.chamferAngle !== undefined && (!Number.isFinite(d.chamferAngle) || d.chamferAngle <= 0 || d.chamferAngle >= 90)) throw new CommandError(t('drawing.dimBadAngle'));

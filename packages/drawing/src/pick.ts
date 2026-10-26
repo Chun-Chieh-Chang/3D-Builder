@@ -1,4 +1,4 @@
-import { rightOf, sheetUp, type ElementFacts, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
+import { sameDrawingRef, rightOf, sheetUp, type ElementFacts, type DrawingPoint, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
 import { t } from '@3db/i18n';
 import type { DimensionDraft } from './autoDimension';
 import { arcAt, leaderAt, offsetAt, type DimensionHandle } from './dimension';
@@ -18,7 +18,9 @@ export type P2 = [number, number];
  * What a dimension can be attached to: everything the worker found except the sides of cylinders, and (D-I2) the straight edges and the vertices of the model the
  * view shows, by name.
  */
-export type Pickable = Exclude<ViewFeature, { type: 'axis' }> | LinePick | EdgePick | VertexPick | OutlinePick;
+export type Pickable = Exclude<ViewFeature, { type: 'axis' }> | LinePick | EdgePick | VertexPick | OutlinePick | SnapPointPick;
+export type SnapPointPick = VertexPick & { source: EdgePick | OutlinePick | Extract<ViewFeature, { type: 'circle' }>; snap: 'midpoint' | 'quadrant' | 'endpoint' };
+export const sourceOfPick = (p: Pickable): Pickable => p.type === 'vertex' && 'source' in p ? (p as SnapPointPick).source : p;
 
 /**
  * A line of a view that is a plane seen edge-on (or a slanted face), with the straight edge of the model drawn on it where it was pointed at, when there is one: what
@@ -102,15 +104,37 @@ export function segmentDistance(p: P2, a: P2, b: P2): number {
 const areaOf = (f: Pickable) => (f.type === 'circle' || f.type === 'torus' ? Math.PI * f.radius * f.radius : f.type === 'edge' || f.type === 'vertex' || f.type === 'outline' ? 0 : f.area);
 
 /** Dimension tools also acquire the exact centre of a visible circle/arc. Keep its persistent circular reference: never invent a vertex at the centre. */
-export function dimensionReferenceAt(lines: ViewLines | null | undefined, features: readonly ViewFeature[], p: P2, tol: number, seen?: VisibleElements): Pickable | null {
+export function dimensionReferenceAt(lines: ViewLines | null | undefined, features: readonly ViewFeature[], p: P2, tol: number, seen?: VisibleElements, pointSnaps = true): Pickable | null {
   const hit = featureAt(lines, features, p, tol, seen);
   if (!lines || hit?.type === 'vertex') return hit;
-  let best: { f: Extract<ViewFeature, { type: 'circle' }>; d: number } | null = null;
+  const onDrawing = (q: P2) => lines.visible.some(poly => {
+    for (let i = 0; i + 3 < poly.length; i += 2) if (segmentDistance(q, [poly[i]!, poly[i + 1]!], [poly[i + 2]!, poly[i + 3]!]) <= EDGE_TOLERANCE) return true;
+    return false;
+  });
+  let best: { f: Pickable; d: number } | null = null;
+  const offer = (f: Pickable, q: P2) => {
+    const d = hyp(p[0] - q[0], p[1] - q[1]);
+    if (d <= tol && (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) <= 1e-9 && areaOf(f) > areaOf(best.f)))) best = { f, d };
+  };
+  const point = (source: SnapPointPick['source'], at: P2, selector: DrawingPoint, snap: SnapPointPick['snap']) => {
+    if (onDrawing(at)) offer({ type: 'vertex', ref: { ...source.ref, point: selector }, at, depth: source.type === 'edge' ? source.depth : 0, source, snap }, at);
+  };
+  if (pointSnaps) {
+    for (const e of seen?.edges ?? []) point(e, [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2], 'midpoint', 'midpoint');
+    for (const o of outlinesOf(features)) {
+      const side = o.side === 1 ? 'Positive' : 'Negative';
+      point(o, o.from, `outlineStart${side}`, 'endpoint');
+      point(o, o.to, `outlineEnd${side}`, 'endpoint');
+      point(o, [(o.from[0] + o.to[0]) / 2, (o.from[1] + o.to[1]) / 2], `outlineMid${side}`, 'midpoint');
+    }
+  }
   for (const f of [...features, ...(seen?.circles ?? [])]) {
     if (f.type !== 'circle') continue;
-    const d = hyp(p[0] - f.centre[0], p[1] - f.centre[1]);
-    if (d > tol || (best && (d > best.d + 1e-9 || (Math.abs(d - best.d) <= 1e-9 && f.radius <= best.f.radius)))) continue;
-    // A hidden circular feature is not a reference target. Use the projected visible geometry, with the same chord tolerance as visibleElements.
+    if (pointSnaps) for (let q = 0; q < 4; q++) {
+      const at: P2 = [f.centre[0] + (q === 0 ? f.radius : q === 2 ? -f.radius : 0), f.centre[1] + (q === 1 ? f.radius : q === 3 ? -f.radius : 0)];
+      point(f, at, `quadrant${q}` as DrawingPoint, 'quadrant');
+    }
+    if (hyp(p[0] - f.centre[0], p[1] - f.centre[1]) > tol) continue;
     const visible = lines.visible.some(poly => {
       for (let i = 0; i + 3 < poly.length; i += 2) {
         const radial = (x: number, y: number) => Math.abs(hyp(x - f.centre[0], y - f.centre[1]) - f.radius) <= EDGE_TOLERANCE;
@@ -118,9 +142,9 @@ export function dimensionReferenceAt(lines: ViewLines | null | undefined, featur
       }
       return false;
     });
-    if (visible) best = { f, d };
+    if (visible) offer(f, f.centre);
   }
-  return best?.f ?? hit;
+  return (best as { f: Pickable } | null)?.f ?? hit;
 }
 
 /**
@@ -280,6 +304,7 @@ export function dragDimension(handle: DimensionHandle, onText: boolean, p: P2): 
 export type Plan = { draft: DimensionDraft; refs: Pickable[]; facts: ElementFacts[] } | { need: 'second' } | { error: string };
 
 export function planDimension(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: ViewAxes, mode: DimensionMode = 'smart'): Plan {
+  if (picks.length === 1 && sourceOfPick(picks[0]!) !== picks[0]) return planDimension([sourceOfPick(picks[0]!)], p, placed, axes, mode);
   if (!DIMENSION_MODES.includes(mode)) return { error: t('drawing.dimBadMode', { mode: String(mode) }) };
   if (!p.every(Number.isFinite)) return { error: t('drawing.badPosition') };
   if (mode === 'chamfer') return planChamfer(picks, p, placed, axes);
@@ -379,7 +404,7 @@ function planSmart(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: 
     return { draft: { ...(plan.draft as Extract<DimensionDraft, { kind: 'linear' }>), aSide: o.side, bSide: other.side, prefix: 'Ø' }, refs: [o, other], facts: [facts[0]!, facts[0]!] };
   }
   const [a, b] = picks as [Pickable, Pickable];
-  if (a.type === 'outline' && b.type === 'outline' && a.ref.name === b.ref.name && a.side === b.side) return { error: t('drawing.dimZero') };
+  if (a.type === 'outline' && b.type === 'outline' && sameDrawingRef(a.ref, b.ref) && a.side === b.side) return { error: t('drawing.dimZero') };
   // measured with something else, an outline is the line it is drawn as: square to x or y like a plane seen edge-on, else a slanted line
   const asLine = (f: Pickable): Pickable => {
     if (f.type !== 'outline') return f;

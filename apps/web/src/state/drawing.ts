@@ -38,6 +38,7 @@ import {
   type ViewAxes,
   type ViewFeature,
   type ViewEdgeSet,
+  sameDrawingRef,
   type DrawingRef,
   type ClosedOutline,
   placementRows,
@@ -1122,7 +1123,7 @@ export class DrawingStore {
           if (this.closed) return;
           wantedAsm.forEach((w, i) => {
             const r = results[i]!;
-            this.featureCache.set(w.id, 'error' in r ? { error: r.error } : { features: [], edges: r.edges });
+            this.featureCache.set(w.id, 'error' in r ? { error: r.error } : { features: r.features ?? [], edges: r.edges });
           });
         }
         if (need.size > 0) {
@@ -1419,7 +1420,7 @@ export class DrawingStore {
       return 0;
     }
     const doc = this.history.doc;
-    const same = (a: Ref, b: Ref) => a.kind === b.kind && a.name === b.name;
+    const same = sameDrawingRef;
     const have = page(doc).dimensions.filter((d) => d.view === viewId);
     const isNew = (d: ReturnType<typeof autoDimensions>[number]) =>
       !have.some(
