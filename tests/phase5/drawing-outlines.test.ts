@@ -32,7 +32,7 @@ function top() {
   const placed: PlacedView = { id: 'v', at: [200, 150], scale: 1, w: b.max[0] - b.min[0], h: b.max[1] - b.min[1], centre: [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2] };
   return { axes, lines, features, placed };
 }
-const facts = (refs: Ref[]) => ({ elements: refs.map((r) => elementFacts(built.body!.topology, built.body!.names, r) as never) });
+const facts = (refs: Parameters<typeof elementFacts>[2][]) => ({ elements: refs.map((r) => elementFacts(built.body!.topology, built.body!.names, r) as never) });
 
 describe('the outlines of a cylinder seen from the side', () => {
   it('the top view sees the pin from the side: two outlines, 6 either side of the axis at x = 20, each on a line of the view', () => {

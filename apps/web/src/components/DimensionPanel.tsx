@@ -95,7 +95,7 @@ export function NumberBox({ value, onCommit, field, validate, disabled }: { disa
   );
 }
 
-const toleranceKind = (tol: DimensionTolerance | undefined) => tol?.type ?? 'none';
+const toleranceKind = (tol: DimensionTolerance | undefined) => tol?.type === 'bilateral' && tol.upper !== -tol.lower ? 'asymmetric' : tol?.type ?? 'none';
 
 /**
  * The dimensions of the selected view (C16.4): all of them at once (overall size, holes, where the holes are), one between two elements or of one circle, and
@@ -434,8 +434,8 @@ export function DimensionPanel() {
                     const kind = e.target.value;
                     d.setDimension(current.id, {
                       tolerance:
-                        kind === 'bilateral'
-                          ? { type: 'bilateral', upper: 0.05, lower: -0.05 }
+                        (kind === 'bilateral' || kind === 'asymmetric')
+                          ? { type: 'bilateral', upper: 0.05, lower: kind === 'asymmetric' ? -0.02 : -0.05 }
                           : kind === 'fit'
                           ? { type: 'fit', fit: current.kind === 'linear' ? 'h7' : 'H7' }
                           : kind === 'max'
@@ -448,6 +448,7 @@ export function DimensionPanel() {
                 >
                   <option value="none">{t('drawingUi.dimTolNone')}</option>
                   <option value="bilateral">{t('drawingUi.dimTolBilateral')}</option>
+                  <option value="asymmetric">{t('drawingUi.dimTolAsymmetric')}</option>
                   <option value="max">{t('drawingUi.dimTolMax')}</option>
                   <option value="min">{t('drawingUi.dimTolMin')}</option>
                   {/* an angle or chamfer has no size for an ISO 286 fit to come from */}
@@ -456,6 +457,7 @@ export function DimensionPanel() {
               </label>
               {current.tolerance?.type === 'bilateral' && (
                 <>
+                  <p className="pm-hint">{t('drawingUi.dimTolDeviationHint')}</p>
                   <label className="pm-row">
                     <span>{t('drawingUi.dimUpper')}</span>
                     <NumberBox field="dimUpper" value={shownTol(current.tolerance.upper)} onCommit={(v) => d.setDimension(current.id, { tolerance: { type: 'bilateral', upper: v * perUnit, lower: (current.tolerance as { lower: number }).lower } })} />
@@ -605,13 +607,14 @@ function BatchDimensions({ dims, perUnit }: { dims: readonly Dimension[]; perUni
             const k = e.target.value;
             if (k === 'mixed') return;
             set({
-              tolerance: k === 'bilateral' ? { type: 'bilateral', upper: 0.05, lower: -0.05 } : k === 'fit' ? { type: 'fit', fit: 'H7' } : k === 'max' ? { type: 'max' } : k === 'min' ? { type: 'min' } : null,
+              tolerance: k === 'bilateral' || k === 'asymmetric' ? { type: 'bilateral', upper: 0.05, lower: k === 'asymmetric' ? -0.02 : -0.05 } : k === 'fit' ? { type: 'fit', fit: 'H7' } : k === 'max' ? { type: 'max' } : k === 'min' ? { type: 'min' } : null,
             });
           }}
         >
           {kind === 'mixed' && <option value="mixed">{t('drawingUi.mixed')}</option>}
           <option value="none">{t('drawingUi.dimTolNone')}</option>
           <option value="bilateral">{t('drawingUi.dimTolBilateral')}</option>
+          <option value="asymmetric">{t('drawingUi.dimTolAsymmetric')}</option>
           <option value="max">{t('drawingUi.dimTolMax')}</option>
           <option value="min">{t('drawingUi.dimTolMin')}</option>
           {/* an angle has no size for an ISO 286 fit to come from: with one among them the class is not offered at all, rather than refused afterwards */}
@@ -619,8 +622,9 @@ function BatchDimensions({ dims, perUnit }: { dims: readonly Dimension[]; perUni
         </select>
       </label>
       {hasAngle && <p className="muted">{t('drawingUi.dimBatchNoFit')}</p>}
-      {kind === 'bilateral' && (
+      {(kind === 'bilateral' || kind === 'asymmetric') && (
         <>
+          <p className="pm-hint">{t('drawingUi.dimTolDeviationHint')}</p>
           <label className="pm-row">
             <span>{t('drawingUi.dimUpper')}</span>
             <MixedNumber field="batchUpper" value={upper === undefined || Number.isNaN(upper) ? undefined : shown(upper)} onCommit={(v) => d.setDimensionsEach(ids, (x) => (x.tolerance?.type === 'bilateral' ? { tolerance: { ...x.tolerance, upper: v * perUnit } } : null))} />

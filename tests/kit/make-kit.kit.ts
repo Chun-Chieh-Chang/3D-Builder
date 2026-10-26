@@ -165,7 +165,7 @@ describe('B. a jig made from a master model (checklist D, E, F)', () => {
     drawing = applyDrawingCommand(drawing, { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1', fits: { '6': 'H7' } }] });
     const elements = new Map<string, ElementsResult>(
       page(drawing).dimensions.map((d) => {
-        const refs: Ref[] = dimensionRefs(d);
+        const refs = dimensionRefs(d);
         return [d.id, { elements: refs.map((r) => elementFacts(part.mate.topology, part.mate.names, r, part.holes)) as never }];
       }),
     );

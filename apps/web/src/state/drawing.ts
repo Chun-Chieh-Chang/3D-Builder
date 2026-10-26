@@ -1103,6 +1103,7 @@ export class DrawingStore {
         for (const d of allDocDims) {
           const key = keyOfDim(d);
           for (const ref of refsOf(d)) {
+            if (ref.kind === 'projection') continue;
             // in a view of an assembly the element is its part's, asked of that part
             const part = key ?? (ref.in ? leafOf(d, ref)?.key : null);
             if (!part) continue;
@@ -1156,23 +1157,24 @@ export class DrawingStore {
             const view = p.views.find((v) => v.id === d.view);
             if (view && this.assemblyData(this.ancestor(p.views, view) ?? view)) {
               // a view of an assembly (D-I2): each element is its part's, put where the assembly has the part
-              const got = refsOf(d).map((ref): ElementFacts | { error: string } | undefined => {
+              const got = refsOf(d).map((ref): ElementFacts | null | { error: string } | undefined => {
+                if (ref.kind === 'projection') return null;
                 const at = ref.in ? leafOf(d, ref) : null;
                 if (!at) return { error: t('drawing.dimNoPart', { name: ref.name }) };
                 const facts = this.elementCache.get(`${at.key}|${ref.kind}|${ref.name}`);
                 return facts && !('error' in facts) ? placeElementFacts(facts, placementRows(at.leaf.pose, !!at.leaf.mirrored)) : facts;
               });
-              if (got.some((g) => !g)) continue;
+              if (got.some((g) => g === undefined)) continue;
               const bad = got.find((g) => g && 'error' in g) as { error: string } | undefined;
-              elements.set(d.id, bad ? { error: bad.error } : { elements: got as ElementFacts[] });
+              elements.set(d.id, bad ? { error: bad.error } : { elements: got as (ElementFacts | null)[] });
               continue;
             }
             const key = keyOfDim(d);
             if (!key) continue;
-            const got = refsOf(d).map((ref) => this.elementCache.get(`${key}|${ref.kind}|${ref.name}`));
-            if (got.some((g) => !g)) continue;
+            const got = refsOf(d).map((ref) => ref.kind === 'projection' ? null : this.elementCache.get(`${key}|${ref.kind}|${ref.name}`));
+            if (got.some((g) => g === undefined)) continue;
             const bad = got.find((g) => g && 'error' in g) as { error: string } | undefined;
-            elements.set(d.id, bad ? { error: bad.error } : { elements: got as ElementFacts[] });
+            elements.set(d.id, bad ? { error: bad.error } : { elements: got as (ElementFacts | null)[] });
           }
         }
         this.set({ features, edges, elements });

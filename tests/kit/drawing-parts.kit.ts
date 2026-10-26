@@ -390,7 +390,7 @@ async function sheet(o: {
 
   const elements = new Map<string, ElementsResult>(
     page(drawing).dimensions.map((d) => {
-      const refs: Ref[] = dimensionRefs(d);
+      const refs = dimensionRefs(d);
       return [d.id, { elements: refs.map((r) => elementFacts(o.r.body!.topology, o.r.body!.names, r, holes)) as never }];
     }),
   );

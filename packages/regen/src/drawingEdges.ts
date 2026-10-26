@@ -1,6 +1,6 @@
 import type { Kernel, MeshData, ShapeId, Topology } from '@3db/kernel';
 import type { ElementNames } from '@3db/naming';
-import { rightOf, sheetUp, type ViewAxes, type ViewEdge, type ViewEdgeSet, type ViewVertex } from '@3db/model';
+import { normalizedViewAxes, rightOf, sheetUp, type ViewAxes, type ViewEdge, type ViewEdgeSet, type ViewVertex } from '@3db/model';
 import { refOf } from './drawingDimensions';
 
 type V3 = readonly [number, number, number];
@@ -25,6 +25,7 @@ export function viewEdges(
   /** A part of an assembly (D-I2): where the assembly puts it (row-major 3 × 4, `placementRows`) and the leaf's id its references carry. */
   place?: { rows: readonly number[]; in: string },
 ): ViewEdgeSet {
+  axes = normalizedViewAxes(axes);
   const m = mesh ?? kernel.mesh(shape, { tolerance: 0.01, angular: 0.1 });
   const R = place?.rows;
   const put = (p: V3): V3 => (R ? [R[0]! * p[0] + R[1]! * p[1] + R[2]! * p[2] + R[3]!, R[4]! * p[0] + R[5]! * p[1] + R[6]! * p[2] + R[7]!, R[8]! * p[0] + R[9]! * p[1] + R[10]! * p[2] + R[11]!] : p);

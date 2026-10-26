@@ -4,7 +4,7 @@
  * edge — in any view, the isometric too — and its number is the model's: worked out here by hand from the part's own corners, never from the drawing's lines.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { rightOf, sheetUp, viewVectors, type Dimension, type Feature, type Ref, type ViewAxes, type ViewEdgeSet } from '@3db/model';
+import { rightOf, sheetUp, viewVectors, type Dimension, type Feature, type ViewAxes, type ViewEdgeSet } from '@3db/model';
 import { Kernel, type ShapeId } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { elementFacts, Regenerator, viewEdges, viewFeatures, type RebuildResult } from '@3db/regen';
@@ -155,7 +155,7 @@ describe('what is not offered', () => {
 });
 
 describe('dimensions on vertices and edges', () => {
-  const facts = (refs: Ref[]) => ({ elements: refs.map((r) => elementFacts(built.body!.topology, built.body!.names, r) as never) });
+  const facts = (refs: Parameters<typeof elementFacts>[2][]) => ({ elements: refs.map((r) => elementFacts(built.body!.topology, built.body!.names, r) as never) });
 
   it('the front view: a horizontal edge alone is its length, 40, as the model has it', () => {
     const { axes, lines, seen } = view('front');

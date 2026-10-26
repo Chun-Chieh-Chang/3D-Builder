@@ -1,5 +1,6 @@
 import { t } from '@3db/i18n';
-import { DIM_STYLE_DEFAULT, dimensionRefs, fitDeviations, inUnit, rightOf, sheetUp, type CalloutStyle, type ThreadCallout, type DimStyle, type LengthUnit, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
+import { DIM_STYLE_DEFAULT, normalizedViewAxes, dimensionRefs, fitDeviations, inUnit, rightOf, sheetUp, type CalloutStyle, type ThreadCallout, type DimStyle, type LengthUnit, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
+import { projectionFacts } from './projectionRefs';
 import { circlePolyline } from './geometry';
 import { toSheet, type PlacedView, type ViewLines } from './layout';
 import type { SceneDimensionGeometry, SceneItem } from './scene';
@@ -10,7 +11,7 @@ import type { SceneDimensionGeometry, SceneItem } from './scene';
  */
 
 /** The elements a dimension points at, as the worker found them (in the order of the dimension's references), or why not. */
-export type ElementsResult = { elements: ElementFacts[] } | { error: string };
+export type ElementsResult = { elements: (ElementFacts | null)[] } | { error: string };
 
 /**
  * What the pointer needs to move a dimension (sheet mm): for a linear one where its line is and which way (so the offset and the slide of the text follow from where the
@@ -246,12 +247,21 @@ const isBound = (e: ElementFacts) => e.type === 'plane' || e.type === 'line';
  * an error) there is nothing to draw and the answer says why.
  */
 export function evaluateDimension(d: Dimension, resolved: ElementsResult | undefined, axes: ViewAxes, placed: PlacedView, unit: LengthUnit = 'mm', style: Style = DIM_STYLE_DEFAULT, viewLines?: ViewLines | null): DimensionOutcome {
+  axes = normalizedViewAxes(axes);
+  const refs = dimensionRefs(d);
+  if (!resolved && refs.every(r => r.kind === 'projection')) resolved = { elements: refs.map(() => null) };
   if (!resolved) return { error: t('drawing.dimPending') };
   if ('error' in resolved) return resolved;
-  const refs = dimensionRefs(d);
   const els: ElementFacts[] = [];
-  for (let i = 0; i < resolved.elements.length; i++) {
-    const e = resolved.elements[i]!;
+  for (let i = 0; i < refs.length; i++) {
+    const ref = refs[i]!;
+    if (ref.kind === 'projection') {
+      const e = projectionFacts(ref, viewLines, axes);
+      if (!e) return { error: t('drawing.projectedRefLost') };
+      els.push(e); continue;
+    }
+    const e = resolved.elements[i];
+    if (!e) return { error: t('drawing.dimPending') };
     const point = refs[i]?.point;
     if (!point || (e.kind === 'vertex' && e.type === 'point')) { els.push(e); continue; }
     let at: [number, number, number] | undefined;

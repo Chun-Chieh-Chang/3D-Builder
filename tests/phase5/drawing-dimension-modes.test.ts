@@ -96,7 +96,7 @@ function make(picks: Pickable[], at: [number, number], mode?: DimensionMode) {
   const plan = planDimension(picks, at, V.placed, axes, mode);
   if (!('draft' in plan)) return plan;
   const d = { ...plan.draft, id: 'd', view: 'v' } as Dimension;
-  const refs: Ref[] = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : d.kind === 'ordinate' ? [] : [d.ref];
+  const refs = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : d.kind === 'ordinate' ? [] : [d.ref];
   const elements = refs.map((r) => elementFacts(built.body!.topology, built.body!.names, r));
   expect(elements.every((e) => !('error' in e)), JSON.stringify(elements)).toBe(true);
   const out = evaluateDimension(d, { elements: elements as never }, axes, V.placed);

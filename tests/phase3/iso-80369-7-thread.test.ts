@@ -19,7 +19,6 @@ import {
   type DrawingDoc,
   type Feature,
   type PartDoc,
-  type Ref,
   type SketchEntity,
   type ThreadFeature,
   type ViewAxes,
@@ -476,7 +475,7 @@ describe('ISO 80369-7 Luer Reference Parts & Drawing Verification (T-4)', () => 
       // Real elements dynamically resolved via elementFacts on the real part bodies:
       const elements = new Map<string, ElementsResult>(
         page(doc).dimensions.map((d) => {
-          const refs: Ref[] = dimensionRefs(d);
+          const refs = dimensionRefs(d);
           const facts = refs.map((r) => {
             const inCollar = elementFacts(collarBody.topology, collarBody.names, r);
             if (!('error' in inCollar)) return inCollar;

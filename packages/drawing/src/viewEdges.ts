@@ -1,4 +1,4 @@
-import type { DrawingRef, Ref, ViewEdgeSet, ViewFeature } from '@3db/model';
+import type { DrawingRef, ViewEdgeSet, ViewFeature } from '@3db/model';
 import type { ViewLines } from './layout';
 
 /**
@@ -10,11 +10,11 @@ import type { ViewLines } from './layout';
 type P2 = [number, number];
 
 /** A straight edge of the model seen as a line: its ends in the view (full size), the names of the vertices there, and whether it lies in the sheet's plane. */
-export type EdgePick = { type: 'edge'; ref: Ref; a: P2; b: P2; ends: [Ref | null, Ref | null]; inPlane: boolean; depth: number };
+export type EdgePick = { type: 'edge'; ref: DrawingRef; a: P2; b: P2; ends: [DrawingRef | null, DrawingRef | null]; inPlane: boolean; depth: number };
 /** A vertex of the model the view shows. */
-export type VertexPick = { type: 'vertex'; ref: DrawingRef; at: P2; depth: number };
+export type VertexPick = { type: 'vertex'; ref: DrawingRef; at: P2; depth: number; /** Actual projected curve highlighted when its point is selected. */ curve?: number[] };
 /** A circular edge seen in its true shape, as a circle that can be measured (its reference is the edge's). */
-export type CircleEdgePick = Extract<ViewFeature, { type: 'circle' }>;
+export type CircleEdgePick = Omit<Extract<ViewFeature, { type: 'circle' }>, 'ref'> & { ref: DrawingRef };
 
 export interface VisibleElements {
   edges: EdgePick[];
@@ -126,7 +126,7 @@ export function visibleElements(lines: ViewLines | null | undefined, set: ViewEd
   out.vertices = [...vertexAt.values()];
   // an edge kept is given the ends that are seen: where a near vertex hides a far one, the near one is what the end is on the sheet
   for (const e of out.edges) {
-    const shown = (at: P2, r: Ref | null) => vertexAt.get(cellOf(at))?.ref ?? r;
+    const shown = (at: P2, r: DrawingRef | null) => vertexAt.get(cellOf(at))?.ref ?? r;
     e.ends = [shown(e.a, e.ends[0]), shown(e.b, e.ends[1])];
   }
   return out;

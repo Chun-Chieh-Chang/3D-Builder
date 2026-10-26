@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 33;
+export const DRAWING_SCHEMA_VERSION = 34;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -390,10 +390,14 @@ export type TitleField = (typeof TITLE_FIELDS)[number];
  */
 export const DRAWING_POINTS = ['midpoint', 'quadrant0', 'quadrant1', 'quadrant2', 'quadrant3', 'outlineStartPositive', 'outlineEndPositive', 'outlineMidPositive', 'outlineStartNegative', 'outlineEndNegative', 'outlineMidNegative'] as const;
 export type DrawingPoint = (typeof DRAWING_POINTS)[number];
-export type DrawingRef = Ref & { in?: string; /** Model-derived point on the referenced element, evaluated in the dimension view. */ point?: DrawingPoint };
-export const drawingRefKey = (r: DrawingRef): string => JSON.stringify([r.kind, r.name, r.in ?? null, r.point ?? null]);
+/** A generated view contour, distinct from an original B-rep edge. Identity is matched against regenerated HLR geometry, never used as measurement coordinates. */
+export type ProjectionRef = { kind: 'projection'; name: string; at?: number; in?: never; point?: never; fingerprint?: never };
+export type DrawingRef = (Ref & { in?: string; /** Model-derived point on the referenced element, evaluated in the dimension view. */ point?: DrawingPoint }) | ProjectionRef;
+export const validProjectionRef = (r: ProjectionRef): boolean => typeof r.name === 'string' && r.name.startsWith('projection:') && r.name.length > 11 && r.in === undefined && r.point === undefined && r.fingerprint === undefined && (r.at === undefined || (Number.isFinite(r.at) && r.at >= 0 && r.at <= 1));
+export const drawingRefKey = (r: DrawingRef): string => JSON.stringify([r.kind, r.name, r.in ?? null, r.point ?? null, r.kind === 'projection' ? r.at ?? null : null]);
 export const sameDrawingRef = (a: DrawingRef, b: DrawingRef): boolean => drawingRefKey(a) === drawingRefKey(b);
 export function validDrawingPointRef(r: DrawingRef): boolean {
+  if (r.kind === 'projection') return validProjectionRef(r);
   if (r.point === undefined) return true;
   if (!DRAWING_POINTS.includes(r.point) || r.kind === 'vertex') return false;
   return r.point === 'midpoint' ? r.kind === 'edge' : r.point.startsWith('outline') ? r.kind === 'face' : true;
@@ -1099,7 +1103,7 @@ const isRefValue = (r: unknown): r is DrawingRef =>
   r !== null &&
   typeof (r as Ref).name === 'string' &&
   (r as Ref).name !== '' &&
-  ['face', 'edge', 'vertex'].includes((r as Ref).kind) &&
+  ['face', 'edge', 'vertex', 'projection'].includes((r as DrawingRef).kind) &&
   // the part of an assembly it is in: a leaf's id, never empty
   ((r as DrawingRef).in === undefined || (typeof (r as DrawingRef).in === 'string' && (r as DrawingRef).in !== '')) && validDrawingPointRef(r as DrawingRef);
 
@@ -1135,7 +1139,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     // an angle has no size for an ISO 286 fit to come from, so it takes limits or a one-sided limit, never a fit
     if (d.tolerance && d.tolerance.type === 'fit') throw new CommandError(t('drawing.dimAngleFit'));
   } else if (d.kind === 'diameter' || d.kind === 'radius') {
-    if (!isRefValue(d.ref) || d.ref.kind === 'vertex' || d.ref.point) throw new CommandError(t('drawing.dimBadRef'));
+    if (!isRefValue(d.ref) || d.ref.kind === 'vertex' || d.ref.kind === 'projection' || d.ref.point) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
     if (d.count !== undefined && !(Number.isInteger(d.count) && d.count >= 2)) throw new CommandError(t('drawing.dimBadCount'));
     if (d.kind === 'radius' && (d as { callout?: boolean }).callout) throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: d.kind }));
@@ -1150,7 +1154,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     if (new Set(all).size !== all.length) throw new CommandError(t('drawing.ordinateTwice'));
     if (d.tolerance?.type === 'fit') throw new CommandError(t('drawing.ordinateFit'));
   } else if (d.kind === 'chamfer') {
-    if (!isRefValue(d.ref) || d.ref.kind === 'vertex' || d.ref.point) throw new CommandError(t('drawing.dimBadRef'));
+    if (!isRefValue(d.ref) || d.ref.kind === 'vertex' || d.ref.kind === 'projection' || d.ref.point) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
     if (d.coneSide !== undefined && (d.ref.kind !== 'face' || (d.coneSide !== 1 && d.coneSide !== -1))) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.size) || d.size <= 0) throw new CommandError(t('drawing.dimBadOffset'));
@@ -1176,7 +1180,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
       if (!parseFit(tol.fit)) throw new CommandError(t('drawing.dimBadFit', { fit: String(tol.fit) }));
     } else if (tol.type !== 'max' && tol.type !== 'min') throw new CommandError(t('drawing.dimBadLimits'));
   }
-  if (dimensionRefs(d).some(ref => flatViewOf(views, d.view) !== ref.name.includes('@flat:'))) throw new CommandError(t('drawing.flatDimensionState'));
+  if (dimensionRefs(d).some(ref => ref.kind !== 'projection' && flatViewOf(views, d.view) !== ref.name.includes('@flat:'))) throw new CommandError(t('drawing.flatDimensionState'));
 }
 
 /** Checks a table against the views it may be on. */
@@ -1759,6 +1763,12 @@ const unit = (a: V3): V3 => {
 export interface ViewAxes {
   dir: V3;
   up: V3;
+}
+
+/** Analytic angle tests need a unit direction; named isometric views may supply [-1,-1,-1]. */
+export function normalizedViewAxes(axes: ViewAxes): ViewAxes {
+  if (![...axes.dir, ...axes.up].every(Number.isFinite) || !(Math.hypot(...axes.dir) > 0) || !(Math.hypot(...cross(axes.dir, axes.up)) > 0)) throw new Error(t('drawing.invalidAxes'));
+  return { dir: unit(axes.dir), up: axes.up };
 }
 
 /** The sheet's x of a view: to the right of a viewer who looks along `dir` with `up` above. */

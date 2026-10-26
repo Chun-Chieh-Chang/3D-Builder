@@ -1,9 +1,10 @@
-import { sameDrawingRef, rightOf, sheetUp, type ElementFacts, type DrawingPoint, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
+import { sameDrawingRef, rightOf, sheetUp, type DrawingRef, type ElementFacts, type DrawingPoint, type ViewAxes, type ViewFeature } from '@3db/model';
 import { t } from '@3db/i18n';
+import { projectedAt } from './projectionRefs';
 import type { DimensionDraft } from './autoDimension';
 import { arcAt, leaderAt, offsetAt, type DimensionHandle } from './dimension';
 import { itemsBounds } from './fit';
-import { toSheet, type PlacedView, type ViewLines } from './layout';
+import { fromSheet, toSheet, type PlacedView, type ViewLines } from './layout';
 import type { SceneItem } from './scene';
 import { EDGE_TOLERANCE, type EdgePick, type VertexPick, type VisibleElements } from './viewEdges';
 
@@ -18,15 +19,16 @@ export type P2 = [number, number];
  * What a dimension can be attached to: everything the worker found except the sides of cylinders, and (D-I2) the straight edges and the vertices of the model the
  * view shows, by name.
  */
-export type Pickable = Exclude<ViewFeature, { type: 'axis' }> | LinePick | EdgePick | VertexPick | OutlinePick | SnapPointPick;
-export type SnapPointPick = VertexPick & { source: EdgePick | OutlinePick | Extract<ViewFeature, { type: 'circle' }>; snap: 'midpoint' | 'quadrant' | 'endpoint' };
+type PickFeature = { [K in ViewFeature['type']]: Omit<Extract<ViewFeature, { type: K }>, 'ref'> & { ref: DrawingRef } }[ViewFeature['type']];
+export type Pickable = Exclude<PickFeature, { type: 'axis' }> | LinePick | EdgePick | VertexPick | OutlinePick | SnapPointPick;
+export type SnapPointPick = VertexPick & { source: EdgePick | OutlinePick | Extract<PickFeature, { type: 'circle' }>; snap: 'midpoint' | 'quadrant' | 'endpoint' };
 export const sourceOfPick = (p: Pickable): Pickable => p.type === 'vertex' && 'source' in p ? (p as SnapPointPick).source : p;
 
 /**
  * A line of a view that is a plane seen edge-on (or a slanted face), with the straight edge of the model drawn on it where it was pointed at, when there is one: what
  * a line pointed at alone is measured by — its length, between the edge's two ends, as SolidWorks's Smart Dimension does.
  */
-export type LinePick = Extract<ViewFeature, { type: 'plane' | 'slant' }> & { along?: EdgePick };
+export type LinePick = Extract<PickFeature, { type: 'plane' | 'slant' }> & { along?: EdgePick };
 
 /**
  * What kind of dimension the tool makes: `smart` works it out from what was pointed at (SolidWorks's Smart Dimension); the others are the kinds asked for by name,
@@ -46,6 +48,7 @@ export const pickKind = (f: Pickable): PickKind =>
  * whatever the second one is.
  */
 export function dimensionModesFor(f: Pickable): DimensionMode[] {
+  if (f.ref.kind === 'projection' && f.type === 'edge') return ['smart', 'horizontal', 'vertical', 'aligned', 'angle'];
   if (f.type === 'slant' && f.cone) return ['chamfer'];
   switch (pickKind(f)) {
     case 'line':
@@ -67,10 +70,10 @@ export function dimensionModesFor(f: Pickable): DimensionMode[] {
  * One of the two outlines of a whole cylinder seen from the side (D-I2, ADR 0138): the line drawn `radius` off its axis, left (1) or right (-1) of it. It is the
  * cylinder's face, measured from that side; the axis's point and direction are kept so that the facts can be made without asking the model.
  */
-export type OutlinePick = { type: 'outline'; ref: Ref; from: P2; to: P2; side: 1 | -1; axisAt: P2; axisDir: P2; radius: number };
+export type OutlinePick = { type: 'outline'; ref: DrawingRef; from: P2; to: P2; side: 1 | -1; axisAt: P2; axisDir: P2; radius: number };
 
 /** The two outlines of the whole cylinders of a view seen from the side. */
-export function outlinesOf(features: readonly ViewFeature[]): OutlinePick[] {
+export function outlinesOf(features: readonly PickFeature[]): OutlinePick[] {
   const out: OutlinePick[] = [];
   for (const f of features) {
     if (f.type !== 'axis') continue;
@@ -90,7 +93,7 @@ export function outlinesOf(features: readonly ViewFeature[]): OutlinePick[] {
 const hyp = Math.hypot;
 
 /** A point of the sheet in a view's own coordinates (full size): the other way round from `toSheet`. */
-export const toView = (placed: PlacedView, p: P2): P2 => [(p[0] - placed.at[0]) / placed.scale + placed.centre[0], (p[1] - placed.at[1]) / placed.scale + placed.centre[1]];
+export const toView = (placed: PlacedView, p: P2): P2 => fromSheet(placed, p[0], p[1]);
 
 /** The distance from `p` to the segment from `a` to `b`. */
 export function segmentDistance(p: P2, a: P2, b: P2): number {
@@ -105,7 +108,7 @@ export function segmentDistance(p: P2, a: P2, b: P2): number {
 const areaOf = (f: Pickable) => (f.type === 'circle' || f.type === 'torus' ? Math.PI * f.radius * f.radius : f.type === 'edge' || f.type === 'vertex' || f.type === 'outline' ? 0 : f.area);
 
 /** Dimension tools also acquire the exact centre of a visible circle/arc. Keep its persistent circular reference: never invent a vertex at the centre. */
-export function dimensionReferenceAt(lines: ViewLines | null | undefined, features: readonly ViewFeature[], p: P2, tol: number, seen?: VisibleElements, pointSnaps = true): Pickable | null {
+export function dimensionReferenceAt(lines: ViewLines | null | undefined, features: readonly PickFeature[], p: P2, tol: number, seen?: VisibleElements, pointSnaps = true): Pickable | null {
   const hit = featureAt(lines, features, p, tol, seen);
   if (!lines || hit?.type === 'vertex') return hit;
   const onDrawing = (q: P2) => lines.visible.some(poly => {
@@ -118,6 +121,7 @@ export function dimensionReferenceAt(lines: ViewLines | null | undefined, featur
     if (d <= tol && (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) <= 1e-9 && areaOf(f) > areaOf(best.f)))) best = { f, d };
   };
   const point = (source: SnapPointPick['source'], at: P2, selector: DrawingPoint, snap: SnapPointPick['snap']) => {
+    if (source.ref.kind === 'projection') return;
     if (onDrawing(at)) offer({ type: 'vertex', ref: { ...source.ref, point: selector }, at, depth: source.type === 'edge' ? source.depth : 0, source, snap }, at);
   };
   if (pointSnaps) {
@@ -148,8 +152,23 @@ export function dimensionReferenceAt(lines: ViewLines | null | undefined, featur
   return (best as { f: Pickable } | null)?.f ?? hit;
 }
 
+/** Keep exact native references and explicit point snaps; a nearby unrelated analytic feature must not steal a generated contour. */
+export function withProjectedReference(native: Pickable | null, lines: ViewLines | null | undefined, p: P2, tol: number, snaps = true): Pickable | null {
+  const projected = projectedAt(lines, p, tol, snaps);
+  if (!native) return projected;
+  if (!projected || native.type === 'vertex') return native;
+  if (native.type === 'circle' && hyp(p[0] - native.centre[0], p[1] - native.centre[1]) <= tol) return native;
+  let distance: number;
+  if (native.type === 'edge') distance = segmentDistance(p, native.a, native.b);
+  else if (native.type === 'outline') distance = segmentDistance(p, native.from, native.to);
+  else if (native.type === 'plane') distance = Math.abs(p[native.axis === 'x' ? 0 : 1] - native.coord);
+  else if (native.type === 'slant') distance = Math.abs((p[0] - native.at[0]) * native.dir[1] - (p[1] - native.at[1]) * native.dir[0]);
+  else { const at = native.type === 'circle' ? native.centre : native.at; distance = Math.abs(hyp(p[0] - at[0], p[1] - at[1]) - native.radius); }
+  return distance > EDGE_TOLERANCE ? projected : native;
+}
+
 /** Chamfer mode targets a line, even when a short chamfer lies inside both endpoint hit areas. */
-export function chamferReferenceAt(lines: ViewLines | null | undefined, features: readonly ViewFeature[], p: P2, tol: number, seen?: VisibleElements): Pickable | null {
+export function chamferReferenceAt(lines: ViewLines | null | undefined, features: readonly PickFeature[], p: P2, tol: number, seen?: VisibleElements): Pickable | null {
   return featureAt(lines, features, p, tol, seen ? { ...seen, vertices: [] } : undefined);
 }
 
@@ -158,7 +177,7 @@ export function chamferReferenceAt(lines: ViewLines | null | undefined, features
  * for y, a slanted one for a slanted face) or a circle or an arc of the view that is where a cylinder seen along its axis is, or where a fillet's tube is cut through. Only
  * what is drawn counts: a plane at an x that has no line there is not picked by pointing at the empty place. `p` and `tol` are in the view's coordinates.
  */
-export function featureAt(lines: ViewLines | null | undefined, features: readonly ViewFeature[], p: P2, tol: number, seen?: VisibleElements): Pickable | null {
+export function featureAt(lines: ViewLines | null | undefined, features: readonly PickFeature[], p: P2, tol: number, seen?: VisibleElements): Pickable | null {
   if (!lines) return null;
   // a vertex near the pointer is what is meant there, before the lines that meet at it (SolidWorks picks the end point)
   if (seen) {
@@ -169,7 +188,7 @@ export function featureAt(lines: ViewLines | null | undefined, features: readonl
     }
     if (v) return v.f;
   }
-  const pickable: Pickable[] = [...features.filter((f): f is Exclude<ViewFeature, { type: 'axis' }> => f.type !== 'axis'), ...(seen?.circles ?? [])];
+  const pickable: Pickable[] = [...features.filter((f): f is Exclude<PickFeature, { type: 'axis' }> => f.type !== 'axis'), ...(seen?.circles ?? [])];
   let best: { f: Pickable; d: number } | null = null;
   const offer = (f: Pickable, d: number) => {
     if (d > tol) return;
@@ -223,7 +242,7 @@ export function featureAt(lines: ViewLines | null | undefined, features: readonl
 }
 
 /** Whether a straight edge of the view lies on the line a plane seen edge-on (or a slanted face) is drawn as. */
-function onLine(e: EdgePick, f: Extract<ViewFeature, { type: 'plane' | 'slant' }>): boolean {
+function onLine(e: EdgePick, f: Extract<PickFeature, { type: 'plane' | 'slant' }>): boolean {
   // an edge seen end-on is a point on the line, with no length to measure
   if (hyp(e.b[0] - e.a[0], e.b[1] - e.a[1]) < 1e-6) return false;
   if (f.type === 'plane') {
@@ -338,6 +357,7 @@ function planChamfer(picks: readonly Pickable[], p: P2, placed: PlacedView, axes
   if (picks.length === 0) return { need: 'second' };
   if (picks.length > 1) return { error: t('drawing.dimModeChamferSingle') };
   const f = picks[0]!;
+  if (f.ref.kind === 'projection') return { error: t('drawing.dimNeedsChamfer') };
   let a: P2 | undefined;
   let b: P2 | undefined;
   const along = 'along' in f ? (f as LinePick).along : undefined;
@@ -673,7 +693,7 @@ export function rectInBox(b: { x: number; y: number; w: number; h: number }, r: 
  * Where a cutting line drawn at `coord` (along the view's x for a vertical line, its y for a horizontal one, in view coordinates at full size) snaps to (D-V), as
  * SolidWorks infers it: the middle of a circle, an edge-on plane, or the middle of the view's box, whichever is nearest within `tol`; else `coord` itself.
  */
-export function snapCut(features: readonly ViewFeature[], box: { min: [number, number]; max: [number, number] } | null, coord: number, vertical: boolean, tol: number): { coord: number; snapped: boolean } {
+export function snapCut(features: readonly PickFeature[], box: { min: [number, number]; max: [number, number] } | null, coord: number, vertical: boolean, tol: number): { coord: number; snapped: boolean } {
   if (!Number.isFinite(coord)) throw new Error(t('drawing.badPosition'));
   const k = vertical ? 0 : 1;
   const candidates: number[] = [];

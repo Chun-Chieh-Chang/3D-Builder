@@ -3,6 +3,7 @@ import { DrawingMenu, type DrawingMenuAt } from './DrawingViewMenu';
 import { SheetTabs } from './SheetTabs';
 import {
   chamferReferenceAt,
+  projectionReferenceLines, withProjectedReference, showsHidden,
   annotationItems,
   arrangementBase,
   BALLOON_RADIUS,
@@ -178,7 +179,15 @@ export function DrawingViewport() {
 
   // a detail view's lines are its parent's, cut by its circle: what can be pointed at in it is what is drawn in it (its features and edges are its parent's)
   const viewLines = useMemo(() => resolveLines(pageDoc, drw.lines), [pageDoc, drw.lines]);
-  const seenByView = useMemo(() => new Map(curPage.views.map((v) => [v.id, visibleElements(viewLines.get(v.id), drw.edges.get(v.id), drw.features.get(v.id) ?? [])])), [curPage.views, viewLines, drw.edges, drw.features]);
+  const selectionLines = useMemo(() => new Map(curPage.views.map(v => {
+    const own = basePlaced.get(v.id);
+    const lines = own ? projectionReferenceLines(viewLines.get(v.id), own) : viewLines.get(v.id);
+    if (!lines) return [v.id, lines] as const;
+    const shaded = v.display === 'shaded';
+    const visible = [...(!shaded ? lines.visible : []), ...(showsHidden(v) ? lines.hidden : []), ...(!shaded && v.showTangentEdges !== false ? lines.tangent ?? [] : []), ...(showsHidden(v) && v.showTangentEdges !== false ? lines.tangentHidden ?? [] : [])];
+    return [v.id, { ...lines, visible, hidden: [] as number[][], tangent: [] as number[][], tangentHidden: [] as number[][] }] as const;
+  })), [curPage.views, viewLines, basePlaced]);
+  const seenByView = useMemo(() => new Map(curPage.views.map((v) => [v.id, visibleElements(selectionLines.get(v.id), drw.edges.get(v.id), drw.features.get(v.id) ?? [])])), [curPage.views, selectionLines, drw.edges, drw.features]);
   /** The dimension the tool would make from what is pointed at and where the pointer is (it is drawn while the pointer moves). */
   const plan = useMemo(() => {
     if (tool?.kind !== 'dimension' || !hover || tool.picks.length === 0) return null;
@@ -353,7 +362,9 @@ export function DrawingViewport() {
       if (!placed || placed.w <= 0) continue;
       const acquire = tool?.kind === 'dimension' && tool.mode === 'chamfer' ? chamferReferenceAt : referencePoints && (tool?.kind === 'dimension' || tool?.kind === 'ordinate') ? dimensionReferenceAt : featureAt;
       const pointSnaps = tool?.kind === 'ordinate' || (tool?.kind === 'dimension' && (!tool.mode || ['smart', 'horizontal', 'vertical', 'aligned'].includes(tool.mode)));
-      const f = acquire(viewLines.get(v.id), drw.features.get(v.id) ?? [], toView(placed, p), reach / placed.scale, seenByView.get(v.id), pointSnaps);
+      const q = toView(placed, p), tolerance = reach / placed.scale;
+      const native = acquire(selectionLines.get(v.id), drw.features.get(v.id) ?? [], q, tolerance, seenByView.get(v.id), pointSnaps);
+      const f = !tool || tool.kind === 'dimension' || tool.kind === 'ordinate' || tool.kind === 'baseline' ? withProjectedReference(native, selectionLines.get(v.id), q, tolerance, referencePoints && pointSnaps) : native;
       if (f) return { view: v.id, feature: f };
     }
     return null;
@@ -1399,7 +1410,7 @@ export function DrawingViewport() {
             return <g data-dimension-snap={f.type === 'vertex' ? ('snap' in f && f.snap === 'midpoint' ? 'midpoint' : 'snap' in f && f.snap === 'quadrant' ? 'quadrant' : 'vertex') : 'centre'} stroke="var(--accent)" strokeWidth={1.5 / (pan.zoom * PX)} fill="var(--card)">
               <rect x={at[0] - r} y={sheet.height - at[1] - r} width={2 * r} height={2 * r} />
               <path d={`M ${at[0] - r} ${sheet.height - at[1]} h ${2 * r} M ${at[0]} ${sheet.height - at[1] - r} v ${2 * r}`} />
-              <text x={at[0] + 2 * r} y={sheet.height - at[1] - r} stroke="none" fill="var(--accent)" fontSize={11 / (pan.zoom * PX)}>{t(f.type !== 'vertex' ? 'drawingUi.snapCentre' : 'snap' in f && f.snap === 'midpoint' ? 'drawingUi.snapMidpoint' : 'snap' in f && f.snap === 'quadrant' ? 'drawingUi.snapQuadrant' : 'drawingUi.snapVertex')}</text>
+              <text x={at[0] + 2 * r} y={sheet.height - at[1] - r} stroke="none" fill="var(--accent)" fontSize={11 / (pan.zoom * PX)}>{t(f.type === 'vertex' && f.ref.kind === 'projection' ? 'drawingUi.snapProjectedPoint' : f.type !== 'vertex' ? 'drawingUi.snapCentre' : 'snap' in f && f.snap === 'midpoint' ? 'drawingUi.snapMidpoint' : 'snap' in f && f.snap === 'quadrant' ? 'drawingUi.snapQuadrant' : 'drawingUi.snapVertex')}</text>
             </g>;
           })()}
           {((tool?.kind === 'dimension' || tool?.kind === 'ordinate') || (!tool && !drag && hover?.feature)) &&
@@ -1416,6 +1427,7 @@ export function DrawingViewport() {
                 return <circle key={k} data-pick={f.type} cx={c[0]} cy={sheet.height - c[1]} r={f.radius * placed.scale} fill="none" stroke={colour} strokeWidth={1.5 / (pan.zoom * PX)} />;
               }
               if (f.type === 'vertex') {
+                if (f.curve) return <polyline key={k} data-pick="curve" points={Array.from({length:f.curve.length/2}, (_,i) => { const q=toSheet(placed,f.curve![2*i]!,f.curve![2*i+1]!); return `${q[0]},${sheet.height-q[1]}`; }).join(' ')} fill="none" stroke={colour} strokeWidth={1.5/(pan.zoom*PX)} />;
                 const c = toSheet(placed, f.at[0], f.at[1]);
                 return <circle key={k} data-pick="vertex" cx={c[0]} cy={sheet.height - c[1]} r={3 / (pan.zoom * PX)} fill={colour} stroke="var(--card)" strokeWidth={1 / (pan.zoom * PX)} />;
               }

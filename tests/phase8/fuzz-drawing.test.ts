@@ -121,7 +121,7 @@ describe('drawings of parts made at random', () => {
     doc = applyDrawingCommand(doc, { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1' }] });
     const elements = new Map<string, ElementsResult>(
       page(doc).dimensions.map((d) => {
-        const refs: Ref[] = dimensionRefs(d);
+        const refs = dimensionRefs(d);
         return [d.id, { elements: refs.map((x) => elementFacts(body.topology, body.names, x)) as never }];
       }),
     );

@@ -2,7 +2,7 @@ import { t } from '@3db/i18n';
 import { edgeFingerprint, faceFingerprint, resolveRef, vertexFingerprint, type ElementNames } from '@3db/naming';
 import type { Kernel, ShapeId, Topology } from '@3db/kernel';
 import type { CosmeticThreadInfo, SourceProvider } from './engine';
-import { lookupThread, rightOf, sheetUp, type ElementFacts, type HoleInfo, type ThreadCallout, type PartDoc, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
+import { lookupThread, normalizedViewAxes, rightOf, sheetUp, type DrawingRef, type ElementFacts, type HoleInfo, type ThreadCallout, type PartDoc, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
 
 /**
  * What a drawing's dimensions need to know of the part a view shows (C16.4): the elements a dimension points at, by persistent name, as numbers; and the
@@ -182,7 +182,8 @@ function threadOnFace(topology: Topology, names: ElementNames, face: number, thr
 }
 
 /** What the element a reference points at is (a face, edge or vertex of the part), or why it cannot be told: it is gone, or the name fits more than one. */
-export function elementFacts(topology: Topology, names: ElementNames, ref: Ref, features?: HoleFeatures, cosmeticThreads?: readonly CosmeticThreadInfo[]): ElementFacts | { error: string } {
+export function elementFacts(topology: Topology, names: ElementNames, ref: DrawingRef, features?: HoleFeatures, cosmeticThreads?: readonly CosmeticThreadInfo[]): ElementFacts | { error: string } {
+  if (ref.kind === 'projection') return { error: t('drawing.projectedRefLost') };
   const r = resolveRef(ref, names, topology);
   if (!r.ok) return { error: t(r.reason === 'missing' ? 'drawing.refMissing' : 'drawing.refAmbiguous', { name: ref.name }) };
   if (ref.kind === 'vertex') return { kind: 'vertex', type: 'point', point: topology.vertices[r.index]!.point };
@@ -224,6 +225,7 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Ref, 
  * view's x or y, and the cylinders along its direction. `faceAllowed` leaves out faces (those of a workpiece that is only there for reference).
  */
 export function viewFeatures(topology: Topology, names: ElementNames, axes: ViewAxes, faceAllowed: (face: number) => boolean = () => true, features?: HoleFeatures, cosmeticThreads?: readonly CosmeticThreadInfo[]): ViewFeature[] {
+  axes = normalizedViewAxes(axes);
   const right = rightOf(axes);
   const up = sheetUp(axes);
   const out: ViewFeature[] = [];

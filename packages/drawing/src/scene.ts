@@ -1,3 +1,4 @@
+import { projectionReferenceLines } from './projectionRefs';
 import { bendTableItems } from './bendTable';
 import { getLocale, t, withLocale } from '@3db/i18n';
 import { axesOf, hatchStyleOf, displayOf, isShaded, page, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type HatchStyle, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
@@ -362,7 +363,7 @@ function buildSceneIn(
     const axes = view ? axesOf(pg.views, pg.sheet.projection, view) : null;
     if (!view || !own || !axes) continue; // nothing to draw it on yet
     const effective = d.kind === 'diameter' ? { ...d, calloutStyle: d.calloutStyle ?? pg.sheet.calloutStyle ?? 'text' } : d;
-    const outcome = evaluateDimension(effective, elements.get(d.id), axes, own, pg.sheet.unit ?? 'mm', resolveDimStyle(pg.sheet.dimStyle, d.style), resolved.get(d.view));
+    const outcome = evaluateDimension(effective, elements.get(d.id), axes, own, pg.sheet.unit ?? 'mm', resolveDimStyle(pg.sheet.dimStyle, d.style), projectionReferenceLines(resolved.get(d.view), own));
     dimensions.set(d.id, outcome);
     if (!('error' in outcome)) {
       items.push(...outcome.items.map((i) => ({ ...i, group: d.id })));

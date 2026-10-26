@@ -1,6 +1,6 @@
 # 產品現況與能力邊界
 
-更新日期：2026-10-26。現況以本檔維護；版本與可重算數量見[自動盤點](repository-inventory.md)，每次交付的證據見[DEV_LOG](../DEV_LOG.md)。此處不將舊階段文件的測試數冒充本版全量結果。
+更新日期：2026-10-27。現況以本檔維護；版本與可重算數量見[自動盤點](repository-inventory.md)，每次交付的證據見[DEV_LOG](../DEV_LOG.md)。此處不將舊階段文件的測試數冒充本版全量結果。
 
 ## 交付與驗收分開
 
@@ -20,6 +20,7 @@ Phase 0–7範圍已有開發成果；原Phase 0–2閘門按當時較低範圍�
 | 組合件編輯 | 雙擊／右鍵來源零件草圖或特徵，儲存返回後更新來源實例 | 同時一份文件，不是組合件就地編輯；直接特徵編輯限3dbx；[ADR0203](adr/0203-floating-editor-assembly-source-and-live-extrusion.md) |
 | 顯示 | 固定工作平面的網格、正確深度、右鍵與系統選項同步、參考面共原點、隱藏恢復、透明塗彩 | 同一零件的三預設面共自身原點，實例保留位姿，自訂面保留偏移；[ADR0202](adr/0202-viewport-grid-and-hidden-recovery.md)、[ADR0197](adr/0197-transparent-shaded-view.md) |
 | 工程圖 | 新建預設第三角法、選取模式可拖曳／編輯視圖標籤與連動比例範本、多圖頁、孔／螺紋標註、樣式預設、側視引線、公差等級註記、解析錐面側視倒角標註與模型連動、尺寸線／文字拖曳、延伸線從可見輪廓引出、圓心／端點／中點／圓四分點提示與持久參照、組合件解析輪廓選取、固定像素高亮與畫布線寬、R↔Ø切換與去重 | 螺紋規格不從真實螺旋拓樸反推；公差等級註記不是極限尺寸求值；[ADR0185](adr/0185-drawing-thread-leaders-defaults-tolerances.md)、[ADR0192](adr/0192-dimension-line-drag.md)、[ADR0206](adr/0206-drawing-dimension-interaction.md)、[ADR0207](adr/0207-component-hatches-and-view-captions.md)、[ADR0208](adr/0208-drawing-reference-points.md)、[ADR0209](adr/0209-conical-chamfer-dimensions.md) |
+| 投影參照與偏差 | 實際顯示 HLR 直線參照、自由曲線投影取點；剖切／細部／折斷共用幾何；單一及批次非對稱／單向偏差 | 投影簽名匹配目前輪廓，幾何變更失配需重選；不從自由曲線猜 R／Ø／倒角；偏差仍行內排版；[ADR0210](adr/0210-projected-references-and-asymmetric-tolerances.md) |
 | 剖面與剖面線 | 一般／斜向／階梯／對正／局部剖面，分零件實例填線、線距與角度 | 目前自動分件樣式，未提供逐件手動樣式；裁剪／放大繼承與母視圖限制仍有效；[ADR0198](adr/0198-section-hatch-regions-and-style.md)、[ADR0207](adr/0207-component-hatches-and-view-captions.md) |
 | 鈑金 | 多道與局部展開、相容的展開加工／摺回、原生展平尺寸與折彎表 | 封閉基材與單一本體；未展開曲面／變截面斜向加工／加料拒絕；任意STEP轉鈑金未開放；[ADR0199](adr/0199-sheet-manufacturing-workflow.md)、[ADR0200](adr/0200-sheet-partial-unfold-curved-machining.md) |
 | 圖示與選單 | SolidCraft授權圖示＋完整文字、現有CommandBar | 新Ribbon分組／搜尋仍是[獨立設計稿](design/menu-redesign/plan.md)，不能當正式介面；[ADR0201](adr/0201-solidcraft-icons-and-menu-design.md) |
