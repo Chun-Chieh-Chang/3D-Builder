@@ -47,7 +47,10 @@ d.run = async () => {
   H.check(!!svg.querySelector('[stroke-dasharray="3 1"]'), 'hidden lines are dashed');
   H.check([...svg.querySelectorAll('text')].some((t) => t.textContent === '定位板'), 'the title block says the part');
 
-  // first angle: the top view is below the front view, the right view to its left (the middle of each, from the lines and the layout)
+  H.check(page().sheet.projection === 'third', 'new drawings default to third angle');
+  store.drawingStore.setSheet({ projection: 'first' });
+  await H.wait(100);
+  // Explicit first angle: the top view is below the front view, the right view to its left (the middle of each, from the lines and the layout)
   const placed = store.drawingStore.scene().placed;
   const at = (dir) => placed.get(page().views.find((v) => v.direction === dir).id).at;
   H.check(at('top')[1] < at('front')[1] && near(at('top')[0], at('front')[0], 1e-6), 'the top view is below the front view');

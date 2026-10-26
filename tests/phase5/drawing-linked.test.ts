@@ -10,7 +10,7 @@ import { arrangementBase, layoutViews, scaleFromRatio, scaleTarget, slideAxis, t
 
 const view = (id: string, direction: ModelDrawingView['direction'], extra: Partial<ModelDrawingView> = {}): DrawingView => ({ id, name: id, source: 'x.3dbx', direction, ...extra });
 const doc = (views: DrawingView[], sheet: Parameters<typeof applyDrawingCommand>[1] extends infer C ? (C extends { type: 'setSheet'; sheet: infer S } ? S : never) : never = {}): DrawingDoc =>
-  applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet }), { type: 'insertViews', views });
+  applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet: { projection: 'first', ...sheet } }), { type: 'insertViews', views });
 const box = (w: number, h: number): ViewLines => ({ visible: [[0, 0, w, h]], hidden: [], box: { min: [0, 0], max: [w, h] } });
 const lines = new Map<string, ViewLines>([['f', box(100, 60)], ['t', box(100, 40)], ['r', box(40, 60)], ['p', box(100, 40)]]);
 const views = [view('f', 'front'), view('t', 'top'), view('r', 'right')];

@@ -8,7 +8,7 @@ import { applyDrawingCommand, createEmptyDrawing, type DrawingDoc, type DrawingP
 import { buildScene, layoutViews, sheetMetrics, STANDARD_SCALES, titleCells, toSvg, VIEW_GAP, type SceneText, type ViewLines } from '@3db/drawing';
 
 const view = (id: string, direction: ModelDrawingView['direction'], extra: Partial<ModelDrawingView> = {}): DrawingView => ({ id, name: id, source: 'x.3dbx', direction, ...extra });
-const doc = (views: DrawingView[], sheet: Partial<DrawingPage['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet }), { type: 'insertViews', views });
+const doc = (views: DrawingView[], sheet: Partial<DrawingPage['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet: { projection: 'first', ...sheet } }), { type: 'insertViews', views });
 const box = (w: number, h: number, x = 0, y = 0): ViewLines => ({ visible: [[x, y, x + w, y + h]], hidden: [], box: { min: [x, y], max: [x + w, y + h] } });
 
 describe('the sheet (ISO 5457, ISO 7200)', () => {
@@ -52,8 +52,8 @@ describe('laying out the views (C16.2)', () => {
     expect(p.get('r')!.at).toEqual([expect.closeTo(152.5, 9), expect.closeTo(205, 9)]); // 50 + 25 + 20 to the left
   });
 
-  it('third angle: the top view above, the right view to the right', () => {
-    const p = layoutViews(doc(views, { projection: 'third' }), lines);
+  it('default third angle: the top view above, the right view to the right', () => {
+    const p = layoutViews(applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views }), lines);
     const f = p.get('f')!.at;
     expect([p.get('t')!.at[0] - f[0], p.get('t')!.at[1] - f[1]]).toEqual([expect.closeTo(0, 9), expect.closeTo(75, 9)]);
     expect([p.get('r')!.at[0] - f[0], p.get('r')!.at[1] - f[1]]).toEqual([expect.closeTo(95, 9), expect.closeTo(0, 9)]);

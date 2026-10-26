@@ -11,9 +11,9 @@ const view = (id: string, direction: ModelDrawingView['direction'] = 'front', ex
 const withViews = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [view('view1'), view('view2', 'top'), view('view3', 'right')] });
 
 describe('the drawing document', () => {
-  it('starts as an A3 landscape sheet at 1:1 in first angle, with no views and an empty title block', () => {
+  it('starts as an A3 landscape sheet at 1:1 in third angle, with no views and an empty title block', () => {
     const d = createEmptyDrawing();
-    expect(d).toMatchObject({ kind: 'drawing', schemaVersion: DRAWING_SCHEMA_VERSION, pages: [{ id: 'page1', name: '', sheet: { size: 'A3', orientation: 'landscape', projection: 'first', scale: [1, 1] }, views: [], title: {} }] });
+    expect(d).toMatchObject({ kind: 'drawing', schemaVersion: DRAWING_SCHEMA_VERSION, pages: [{ id: 'page1', name: '', sheet: { size: 'A3', orientation: 'landscape', projection: 'third', scale: [1, 1] }, views: [], title: {} }] });
   });
 
   it('inserts views with their ids kept apart, and refuses what is not a view', () => {
@@ -74,8 +74,8 @@ describe('the drawing document', () => {
 });
 
 describe('the drawing file (.3dbd)', () => {
-  it('is saved as canonical text and read back as the same document', () => {
-    const d = applyDrawingCommand(withViews(), { type: 'setTitle', field: 'drawingName', value: '基板' });
+  it.each(['first', 'third'] as const)('preserves stored %s projection when saved and reopened', (projection) => {
+    const d = applyDrawingCommand(applyDrawingCommand(withViews(), { type: 'setSheet', sheet: { projection } }), { type: 'setTitle', field: 'drawingName', value: '基板' });
     const text = serializeDrawing(d);
     expect(text.indexOf('"kind"')).toBeLessThan(text.indexOf('"views"')); // sorted keys: a stable text
     expect(parseDrawing(text)).toEqual(d);

@@ -752,7 +752,7 @@ export function createEmptyDrawing(): DrawingDoc {
   return {
     kind: 'drawing',
     schemaVersion: DRAWING_SCHEMA_VERSION,
-    pages: [{ id: 'page1', name: '', sheet: { size: 'A3', orientation: 'landscape', projection: 'first', scale: [1, 1] }, title: {}, views: [], dimensions: [], tables: [], surfaceFinishes: [], annotations: [] }],
+    pages: [{ id: 'page1', name: '', sheet: { size: 'A3', orientation: 'landscape', projection: 'third', scale: [1, 1] }, title: {}, views: [], dimensions: [], tables: [], surfaceFinishes: [], annotations: [] }],
     properties: {},
     idCounters: {},
   };

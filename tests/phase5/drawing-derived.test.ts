@@ -265,7 +265,7 @@ describe('the plate cut through a hole (C16.3)', () => {
 
 describe('where the derived views go and what is drawn on the parent', () => {
   const lines = (w: number, h: number, x = 0, y = 0): ViewLines => ({ visible: [[x, y, x + w, y + h]], hidden: [], box: { min: [x, y], max: [x + w, y + h] } });
-  const doc = (views: DrawingView[], sheet: Partial<DrawingPage['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet }), { type: 'insertViews', views });
+  const doc = (views: DrawingView[], sheet: Partial<DrawingPage['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet: { projection: 'first', ...sheet } }), { type: 'insertViews', views });
   const front: DrawingView = { id: 'f', name: 'f', source: 'a.3dbx', direction: 'front' };
 
   it('a projected view goes on its side, a gap from the parent, in line with it: the origin of the model at the same height', () => {
