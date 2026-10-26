@@ -74,6 +74,7 @@ export const drawing = {
   'drawingUi.dimChamferAngle': '距離 × 角度（例如 2 × 45°）',
   'drawingUi.dimChamferSize': '倒角大小',
   'drawingUi.dimChamferAngleVal': '倒角角度',
+  'drawing.dimModelChamfer': '此導角尺寸由模型錐面決定；請編輯模型導角。',
   'drawing.dimNeedsChamfer': '請選擇以真實形狀投影的導角直邊（須有實際端點及兩方向退距）；不可由斜面方向推測尺寸',
   'drawing.dimModeChamferSingle': '倒角尺寸一次只能標註一個倒角',
   'drawingUi.hint.baseline0': '點選基準元素作為基線',

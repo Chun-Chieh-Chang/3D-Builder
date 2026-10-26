@@ -55,6 +55,21 @@ function neighbour(topology: Topology, g: { origin: readonly number[]; axis: rea
   return null;
 }
 
+/** Full coaxial circular ends of a native conical frustum; trimmed cones and drill tips are not chamfer profiles. */
+function coneEnds(topology: Topology, face: number) {
+  const g = topology.faces[face]!.geometry;
+  if (g?.type !== 'cone') return [];
+  const ends = topology.edges.flatMap(e => {
+    const c = e.geometry;
+    if (c?.type !== 'circle' || !e.faces.includes(face) || !parallel(c.normal, g.axis) || Math.abs(e.length - 2 * Math.PI * c.radius) > 1e-5 * Math.max(1, c.radius)) return [];
+    const rel = c.center.map((v, i) => v - g.apex[i]!);
+    const t = dot(rel, g.axis);
+    if (Math.hypot(...rel.map((v, i) => v - t * g.axis[i]!)) > 1e-6 * Math.max(1, c.radius)) return [];
+    return [{ center: c.center, radius: c.radius, t }];
+  });
+  return ends.filter((e, i) => ends.findIndex(o => Math.abs(o.t - e.t) < 1e-7) === i).sort((a, b) => a.t - b.t);
+}
+
 /** The countersink at a cylinder's end, when the face beyond it is a cone whose other circular edge is bigger and about the same axis: its diameter and included angle (degrees). */
 function countersinkAt(topology: Topology, g: { origin: readonly number[]; axis: readonly number[]; radius: number }, end: { edge: Topology['edges'][number]; t: number }, own: number): { callout: NonNullable<HoleInfo['countersink']>; depth: number } | null {
   const f = end.edge.faces.find((x) => x !== own);
@@ -192,6 +207,10 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Ref, 
       const ends = cylinderEnds(topology, r.index);
       return { kind: 'face', type: 'cylinder', point: g.origin, center: f.center, ...(ends.length === 2 ? { ends: ends.map(e => e.center) as [[number, number, number], [number, number, number]] } : {}), dir: g.axis, radius: g.radius, ...(thread ? { thread } : {}), ...(hole ? { hole: withFeature(hole, names.faces[r.index]!, features) } : {}) };
     }
+    if (g?.type === 'cone') {
+      const ends = coneEnds(topology, r.index);
+      if (ends.length === 2) return { kind: 'face', type: 'cone', point: f.center, dir: g.axis, ends: [ends[0]!.center, ends[1]!.center], endRadii: [ends[0]!.radius, ends[1]!.radius] };
+    }
     if (g?.type === 'sphere') return { kind: 'face', type: 'sphere', point: g.center, radius: g.radius };
     // a fillet or a round: its radius is the tube's, and its axis and the circle the tube's middle runs on are what say where the arc is
     if (g?.type === 'torus') return { kind: 'face', type: 'torus', point: g.center, dir: g.axis, radius: g.minor, major: g.major };
@@ -253,6 +272,17 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
         out.push({ type: 'axis', ref: ref(), from: at(ends[0]!), to: at(ends[1]!), radius: g.radius,
           ...(thread ? { thread } : {}), ...(hole ? { hole: withFeature(hole, names.faces[i]!, features) } : {}) });
       }
+    } else if (g.type === 'cone' && Math.abs(dot(g.axis, axes.dir)) < 1e-6) {
+      const ends = coneEnds(topology, i);
+      if (ends.length === 2) {
+        const dx = dot(g.axis, right), dy = dot(g.axis, up), len = Math.hypot(dx, dy);
+        const axial = Math.abs(ends[1]!.t - ends[0]!.t), radial = Math.abs(ends[1]!.radius - ends[0]!.radius);
+        if (axial > 1e-9 && radial > 1e-9) for (const side of [1, -1] as const) {
+          const at = (e: (typeof ends)[number]): [number, number] => [dot(e.center, right) - side * e.radius * dy / len, dot(e.center, up) + side * e.radius * dx / len];
+          const from = at(ends[0]!), to = at(ends[1]!), l = Math.hypot(to[0] - from[0], to[1] - from[1]);
+          out.push({ type: 'slant', ref: ref(), at: [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2], dir: [(to[0] - from[0]) / l, (to[1] - from[1]) / l], area: f.area, cone: { side, from, to, axial, radial } });
+        }
+      }
     } else if (g.type === 'torus' && Math.abs(dot(g.axis, axes.dir)) < 1e-6 && g.major > 1e-9) {
       // a fillet or a round seen in its true shape (E1a): its axis lies in the sheet, so the view cuts its tube and the cut is the arc. The same condition
       // `circleCentre` uses to accept one — the two have to agree or a feature would be offered and then refused.
@@ -305,6 +335,14 @@ export function placedViewFeatures(kernel: Kernel, shape: ShapeId, topology: Top
       const i = indices.get(f.ref.name);
       if (i === undefined) throw new Error('Placed view face has no source reference');
       const ref = { ...refOf(topology, names, 'face', i), in: place.in };
+      if (f.type === 'slant' && f.cone) {
+        const local = topology.faces[i]!.geometry, worldGeometry = world.faces[i]!.geometry;
+        if (local?.type === 'cone' && worldGeometry?.type === 'cone') {
+          const R = place.rows, a = local.axis;
+          const axis = [R[0]! * a[0] + R[1]! * a[1] + R[2]! * a[2], R[4]! * a[0] + R[5]! * a[1] + R[6]! * a[2], R[8]! * a[0] + R[9]! * a[1] + R[10]! * a[2]];
+          return { ...f, ref, cone: { ...f.cone, side: dot(axis, worldGeometry.axis) < 0 ? (f.cone.side === 1 ? -1 : 1) : f.cone.side } };
+        }
+      }
       if (f.type === 'axis') {
         const ends = cylinderEnds(topology, i);
         const R = place.rows;

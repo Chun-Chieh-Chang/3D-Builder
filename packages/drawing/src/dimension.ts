@@ -21,7 +21,7 @@ export type DimensionHandle =
   | { kind: 'round'; centre: [number, number]; radius: number }
   | { kind: 'angle'; centre: [number, number]; radius: number; /** where the middle of the arc is, in radians */ mid: number };
 
-export type DimensionOutcome = { value: number; text: string; items: SceneItem[]; handle?: DimensionHandle; dxf?: { textAt: [number, number]; geometry: SceneDimensionGeometry } } | { error: string };
+export type DimensionOutcome = { value: number; text: string; items: SceneItem[]; chamfer?: { size: number; angle: number }; handle?: DimensionHandle; dxf?: { textAt: [number, number]; geometry: SceneDimensionGeometry } } | { error: string };
 
 /**
  * Height of the text of a dimension (mm) and the length of an arrowhead, as ISO's style has them (a drawing's own are in `sheet.dimStyle`, ADR 0146), the gap between a
@@ -146,7 +146,7 @@ function base(d: Dimension, value: number, facts: ElementFacts | undefined, unit
     const places = d.precision !== undefined ? d.precision : (unit === 'in' ? 3 : 2);
     const sizeStr = d.precision !== undefined ? formatNumber(inUnit(d.size, unit), places) : lengthNumber(d.size, places, unit);
     const angle = d.chamferAngle ?? 45;
-    const body = d.chamferFormat === 'distanceAngle' ? `${sizeStr} × ${angle}°` : `C${sizeStr}`;
+    const body = d.chamferFormat === 'distanceAngle' ? `${sizeStr} × ${formatNumber(angle, d.precision ?? 2)}°` : `C${sizeStr}`;
     const text = `${count}${body}${tol}`;
     return d.reference ? `(${text})` : text;
   }
@@ -644,15 +644,29 @@ function chamfer(d: Extract<Dimension, { kind: 'chamfer' }>, e: ElementFacts, ax
   const right = rightOf(axes);
   const up = sheetUp(axes);
   const to = (v: readonly number[]): P => [dot(v, right), dot(v, up)];
-  const ptModel = e.center ?? e.point;
-  const ptView = to(ptModel);
+  let ptView = to(e.center ?? e.point);
+  let size = d.size, measuredAngle = d.chamferAngle ?? 45;
+  if (d.coneSide !== undefined && e.type !== 'conePreview') {
+    if (e.type !== 'cone' || !e.dir || !e.ends || !e.endRadii || Math.abs(dot(e.dir, axes.dir)) > PERPENDICULAR) return { error: t('drawing.dimNeedsChamfer') };
+    const dx = dot(e.dir, right), dy = dot(e.dir, up), length = Math.hypot(dx, dy);
+    const axial = Math.abs(dot(e.ends[1].map((v, i) => v - e.ends![0][i]!), e.dir));
+    const radial = Math.abs(e.endRadii[1] - e.endRadii[0]);
+    if (length < 1e-9 || axial <= 1e-9 || radial <= 1e-9) return { error: t('drawing.dimNeedsChamfer') };
+    const a = to(e.ends[0]), b = to(e.ends[1]);
+    const radius = (e.endRadii[0] + e.endRadii[1]) / 2;
+    ptView = [(a[0] + b[0]) / 2 - d.coneSide * radius * dy / length, (a[1] + b[1]) / 2 + d.coneSide * radius * dx / length];
+    size = axial;
+    measuredAngle = Math.atan2(radial, axial) * 180 / Math.PI;
+  }
+
   const centre = toSheet(placed, ptView[0], ptView[1]);
   const th = (d.angle * Math.PI) / 180;
   const u: P = [Math.cos(th), Math.sin(th)];
   const leader = d.leader ?? LEADER;
   const outer = add(centre, u, leader);
-  const value = d.size;
-  const text = dimensionText(d, value, e, unit);
+  const value = size;
+  const effective = { ...d, size, chamferAngle: measuredAngle, ...(d.coneSide !== undefined && Math.abs(measuredAngle - 45) > 1e-6 ? { chamferFormat: 'distanceAngle' as const } : {}) };
+  const text = dimensionText(effective, value, e, unit);
   const dir = u[0] >= 0 ? 1 : -1;
   const shelfEnd: P = [outer[0] + dir * (textWidth(text, DIM_TEXT) + 2), outer[1]];
   const items: SceneItem[] = [];
@@ -663,6 +677,7 @@ function chamfer(d: Extract<Dimension, { kind: 'chamfer' }>, e: ElementFacts, ax
   return {
     value,
     text,
+    chamfer: { size, angle: measuredAngle },
     items,
     handle: { kind: 'round', centre, radius: 0 },
     dxf: { textAt: middle, geometry: { kind: 'radius', centre, near: centre, leader } },

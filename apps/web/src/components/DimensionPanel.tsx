@@ -36,7 +36,7 @@ const featureLabel = (f: Pickable): string =>
  * marked and the reason shown. Whatever the reason — a guard here or a command that refused — the box then says what the document says, so a frame never holds
  * a number that is not drawn.
  */
-export function NumberBox({ value, onCommit, field, validate }: { value: number; onCommit: (v: number) => void; field: string; validate?: (v: number) => string | null }) {
+export function NumberBox({ value, onCommit, field, validate, disabled }: { disabled?: boolean; value: number; onCommit: (v: number) => void; field: string; validate?: (v: number) => string | null }) {
   const [text, setText] = useState(String(value));
   const [shown, setShown] = useState(value);
   const [reason, setReason] = useState<string | null>(null);
@@ -47,6 +47,7 @@ export function NumberBox({ value, onCommit, field, validate }: { value: number;
     setReason(null);
   }
   const commit = () => {
+    if (disabled) return;
     const v = Number(text);
     if (text.trim() === '' || !Number.isFinite(v)) {
       setText(String(value));
@@ -69,7 +70,7 @@ export function NumberBox({ value, onCommit, field, validate }: { value: number;
   }, [sent, value]);
   return (
     <>
-      <input
+      <input disabled={disabled}
         data-field={field}
         inputMode="decimal"
         className={reason ? 'invalid' : undefined}
@@ -132,6 +133,9 @@ export function DimensionPanel() {
   const chosenDims = curPage.dimensions.filter((x) => chosenIds.includes(x.id));
   const batch = chosenDims.length > 1;
   const current = batch ? null : (mine.find((x) => x.id === selected) ?? null);
+  const currentOutcome = current ? outcomes.get(current.id) : undefined;
+  const measuredChamfer = currentOutcome && !('error' in currentOutcome) ? currentOutcome.chamfer : undefined;
+  const nonEqualCone = current?.kind === 'chamfer' && current.coneSide !== undefined && measuredChamfer && Math.abs(measuredChamfer.angle - 45) > 1e-6;
   // the numbers of a tolerance are typed and shown in the unit of the sheet; the document holds millimetres
   const perUnit = curPage.sheet.unit === 'in' ? MM_PER_INCH : 1;
   const shownTol = (mm: number) => Math.round((mm / perUnit) * 1e6) / 1e6;
@@ -351,18 +355,18 @@ export function DimensionPanel() {
                 <>
                   <label className="pm-row">
                     <span>{t('drawingUi.dimChamferFormat')}</span>
-                    <select data-field="dimChamferFormat" value={current.chamferFormat ?? 'c'} onChange={(e) => d.setDimension(current.id, { chamferFormat: e.target.value as 'c' | 'distanceAngle' })}>
-                      <option value="c">{t('drawingUi.dimChamferC')}</option>
+                    <select data-field="dimChamferFormat" value={nonEqualCone ? 'distanceAngle' : current.chamferFormat ?? 'c'} onChange={(e) => d.setDimension(current.id, { chamferFormat: e.target.value as 'c' | 'distanceAngle' })}>
+                      <option value="c" disabled={!!nonEqualCone}>{t('drawingUi.dimChamferC')}</option>
                       <option value="distanceAngle">{t('drawingUi.dimChamferAngle')}</option>
                     </select>
                   </label>
                   <label className="pm-row">
                     <span>{t('drawingUi.dimChamferSize')}</span>
-                    <NumberBox field="dimChamferSize" value={current.size} onCommit={(v) => v > 0 && d.setDimension(current.id, { size: v })} />
+                    <NumberBox field="dimChamferSize" disabled={current.coneSide !== undefined} value={current.coneSide !== undefined ? measuredChamfer?.size ?? current.size : current.size} onCommit={(v) => v > 0 && d.setDimension(current.id, { size: v })} />
                   </label>
                   <label className="pm-row">
                     <span>{t('drawingUi.dimChamferAngleVal')}</span>
-                    <NumberBox field="dimChamferAngleVal" value={current.chamferAngle ?? 45} onCommit={(v) => v > 0 && v < 90 && d.setDimension(current.id, { chamferAngle: v })} />
+                    <NumberBox field="dimChamferAngleVal" disabled={current.coneSide !== undefined} value={current.coneSide !== undefined ? measuredChamfer?.angle ?? current.chamferAngle ?? 45 : current.chamferAngle ?? 45} onCommit={(v) => v > 0 && v < 90 && d.setDimension(current.id, { chamferAngle: v })} />
                   </label>
                   <label className="pm-row">
                     <span>{t('drawingUi.dimAngle')}</span>

@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 32;
+export const DRAWING_SCHEMA_VERSION = 33;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -518,6 +518,8 @@ export interface ChamferDimension extends DimensionCommon {
   ref: DrawingRef;
   angle: number;
   size: number;
+  /** Associative side of a native conical face seen in profile. */
+  coneSide?: 1 | -1;
   chamferAngle?: number;
   chamferFormat?: 'c' | 'distanceAngle';
   leader?: number;
@@ -536,8 +538,9 @@ export interface ElementFacts {
   type: string;
   /** A vertex's place, a plane's origin, a cylinder's or circle's axis point (its middle), a line's middle, a torus's centre. */
   point: [number, number, number];
-  /** Native circular end centres of a whole cylindrical face. */
+  /** Native circular end centres of a whole cylindrical or conical face. */
   ends?: [[number, number, number], [number, number, number]];
+  endRadii?: [number, number];
   /** A plane's normal, an axis, a line's direction. */
   dir?: [number, number, number];
   radius?: number;
@@ -620,7 +623,7 @@ export type ViewFeature =
    */
   | { type: 'torus'; ref: Ref; centre: [number, number]; at: [number, number]; radius: number; major: number; axis: [number, number]; convex: boolean; outward: number }
   /** A plane seen edge-on that is neither square to the view's x nor to its y (a slanted face): the middle of the face and the direction of the line it is seen as (a unit vector), in the view's coordinates. */
-  | { type: 'slant'; ref: Ref; at: [number, number]; dir: [number, number]; area: number };
+  | { type: 'slant'; ref: Ref; at: [number, number]; dir: [number, number]; area: number; cone?: { side: 1 | -1; from: [number, number]; to: [number, number]; axial: number; radial: number } };
 
 /** Transient native section boundaries, kept separate by assembly instance; never saved as drawing geometry. */
 export interface SectionHatchRegion { component: string; order: number; cut: number[][] }
@@ -874,6 +877,7 @@ export type DimensionPatch = {
   kind?: 'diameter' | 'radius';
   /** Chamfer dimension fields (v26, E5). */
   size?: number;
+  coneSide?: 1 | -1;
   chamferAngle?: number | null;
   chamferFormat?: 'c' | 'distanceAngle' | null;
 };
@@ -1148,6 +1152,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
   } else if (d.kind === 'chamfer') {
     if (!isRefValue(d.ref) || d.ref.kind === 'vertex' || d.ref.point) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
+    if (d.coneSide !== undefined && (d.ref.kind !== 'face' || (d.coneSide !== 1 && d.coneSide !== -1))) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.size) || d.size <= 0) throw new CommandError(t('drawing.dimBadOffset'));
     if (d.chamferAngle !== undefined && (!Number.isFinite(d.chamferAngle) || d.chamferAngle <= 0 || d.chamferAngle >= 90)) throw new CommandError(t('drawing.dimBadAngle'));
     if (d.chamferFormat !== undefined && d.chamferFormat !== 'c' && d.chamferFormat !== 'distanceAngle') throw new CommandError(t('drawing.dimBadKind', { kind: String(d.chamferFormat) }));
@@ -1366,6 +1371,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
         if (d.kind !== 'diameter' && d.kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'kind', kind: d.kind }));
         if (kind !== 'diameter' && kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'kind', kind }));
       }
+      if (d.kind === 'chamfer' && d.coneSide !== undefined && (size !== undefined || chamferAngle !== undefined)) throw new CommandError(t('drawing.dimModelChamfer'));
       const targetKind = kind ?? d.kind;
       const belongs: Record<Dimension['kind'], string[]> = {
         linear: ['offset', 'orientation', 'a', 'b'],
@@ -1373,7 +1379,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
         radius: ['angle', 'ref'],
         angle: ['arc', 'a', 'b'],
         ordinate: ['offset', 'axis', 'origin', 'refs'],
-        chamfer: ['angle', 'ref', 'size', 'chamferAngle', 'chamferFormat'],
+        chamfer: ['angle', 'ref', 'size', 'chamferAngle', 'chamferFormat', 'coneSide'],
       };
       if (slide !== undefined && targetKind !== 'linear' && targetKind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'slide', kind: targetKind }));
       if (leader !== undefined && targetKind !== 'diameter' && targetKind !== 'radius' && targetKind !== 'chamfer') throw new CommandError(t('drawing.notForKind', { field: 'leader', kind: targetKind }));

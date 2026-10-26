@@ -6,9 +6,9 @@
 
 | 項目 | 程式來源值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 84／7／32 |
-| ADR 文件 | 207 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 191／187／234 |
+| 零件／組合件／工程圖 Schema | 84／7／33 |
+| ADR 文件 | 208 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 192／188／235 |
 | 實機清單項目 | 92 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -437,6 +437,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0206：工程圖尺寸選點、顯示與位置互動](<adr/0206-drawing-dimension-interaction.md>)
 - [ADR 0207：分零件剖面線與可編輯視圖標籤](<adr/0207-component-hatches-and-view-captions.md>)
 - [ADR 0208：工程圖持久磁吸點與組合件解析參照](<adr/0208-drawing-reference-points.md>)
+- [ADR 0209：錐面側視輪廓的連動導角尺寸](<adr/0209-conical-chamfer-dimensions.md>)
 
 ### 歷史驗證
 

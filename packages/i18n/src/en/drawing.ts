@@ -76,6 +76,7 @@ export const drawing: Translation = {
   'drawingUi.dimChamferAngle': 'Distance × Angle (e.g. 2 × 45°)',
   'drawingUi.dimChamferSize': 'Chamfer size',
   'drawingUi.dimChamferAngleVal': 'Chamfer angle',
+  'drawing.dimModelChamfer': 'This chamfer dimension follows the model cone; edit the model chamfer.',
   'drawing.dimNeedsChamfer': 'Select a true-shape straight chamfer edge with actual endpoints and two setbacks; a face direction cannot determine its size',
   'drawing.dimModeChamferSingle': 'A chamfer dimension measures one chamfer at a time',
   'drawingUi.hint.baseline0': 'Click a base element to start baseline dimensioning',

@@ -46,6 +46,7 @@ export const pickKind = (f: Pickable): PickKind =>
  * whatever the second one is.
  */
 export function dimensionModesFor(f: Pickable): DimensionMode[] {
+  if (f.type === 'slant' && f.cone) return ['chamfer'];
   switch (pickKind(f)) {
     case 'line':
       return ['smart', 'horizontal', 'vertical', 'aligned', 'angle', 'chamfer'];
@@ -192,7 +193,7 @@ export function featureAt(lines: ViewLines | null | undefined, features: readonl
         } else if (f.type === 'slant') {
           const across = Math.abs(u[0] * f.dir[1] - u[1] * f.dir[0]);
           const off = Math.abs((f.at[0] - a[0]) * u[1] - (f.at[1] - a[1]) * u[0]);
-          if (across < 1e-3 && off < 1e-2) offer(f, d);
+          if (across < 1e-3 && off < 1e-2 && (!f.cone || segmentDistance(p, f.cone.from, f.cone.to) <= tol)) offer(f, d);
         }
       }
     }
@@ -248,6 +249,7 @@ export function factsOf(f: Pickable, axes: ViewAxes): ElementFacts {
     return { kind: 'edge', type: 'line', point: at((f.a[0] + f.b[0]) / 2, (f.a[1] + f.b[1]) / 2), dir: at((f.b[0] - f.a[0]) / l, (f.b[1] - f.a[1]) / l) };
   }
   if (f.type === 'plane') return f.axis === 'x' ? { kind: 'face', type: 'plane', point: at(f.coord, 0), dir: at(1, 0) } : { kind: 'face', type: 'plane', point: at(0, f.coord), dir: at(0, 1) };
+  if (f.type === 'slant' && f.cone) return { kind: 'face', type: 'conePreview', point: at(f.at[0], f.at[1]) };
   if (f.type === 'slant') return { kind: 'face', type: 'plane', point: at(f.at[0], f.at[1]), dir: at(-f.dir[1], f.dir[0]) };
   // a fillet: the point is the torus's own centre and the direction its axis, both in the part's frame; `major` is what lets the dimension find the arc (its own axis
   // lies in the sheet, which is the case this is offered in)
@@ -343,7 +345,8 @@ function planChamfer(picks: readonly Pickable[], p: P2, placed: PlacedView, axes
     a = f.a;
     b = f.b;
   } else if (f.type === 'slant') {
-    if (along) {
+    if (f.cone) { a = f.cone.from; b = f.cone.to; }
+    else if (along) {
       a = along.a;
       b = along.b;
     }
@@ -354,10 +357,11 @@ function planChamfer(picks: readonly Pickable[], p: P2, placed: PlacedView, axes
   if (!a || !b || (along && !along.inPlane)) return { error: t('drawing.dimNeedsChamfer') };
   const dx = Math.abs(b[0] - a[0]);
   const dy = Math.abs(b[1] - a[1]);
-  if (!Number.isFinite(dx + dy) || dx <= 1e-9 || dy <= 1e-9) return { error: t('drawing.dimNeedsChamfer') };
+  const cone = f.type === 'slant' ? f.cone : undefined;
+  if (!Number.isFinite(dx + dy) || (!cone && (dx <= 1e-9 || dy <= 1e-9))) return { error: t('drawing.dimNeedsChamfer') };
   const equalLegs = Math.abs(dx - dy) <= 1e-7;
-  const c = Math.max(dx, dy);
-  const chamferAngle = Math.atan2(Math.min(dx, dy), c) * 180 / Math.PI;
+  const c = cone ? cone.axial : Math.max(dx, dy);
+  const chamferAngle = Math.atan2(cone ? cone.radial : Math.min(dx, dy), c) * 180 / Math.PI;
   const midPoint: P2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   const sheetMid = toSheet(placed, midPoint[0], midPoint[1]);
   const g = leaderAt({ kind: 'round', centre: sheetMid, radius: 0 }, p);
@@ -371,7 +375,8 @@ function planChamfer(picks: readonly Pickable[], p: P2, placed: PlacedView, axes
       angle,
       size,
       chamferAngle,
-      chamferFormat: equalLegs ? 'c' : 'distanceAngle',
+      chamferFormat: (cone ? Math.abs(cone.axial - cone.radial) <= 1e-7 : equalLegs) ? 'c' : 'distanceAngle',
+      ...(cone ? { coneSide: cone.side } : {}),
       leader,
     },
     refs: [f],

@@ -423,6 +423,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   30: (doc) => doc,
   // v32: persistent model-derived midpoint, quadrant and silhouette point references.
   31: (doc) => doc,
+  // v33: associative conical chamfer side references.
+  32: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {
@@ -440,6 +442,7 @@ export function parseDrawing(text: string): DrawingDoc {
     p.surfaceFinishes ??= [];
     p.annotations ??= [];
     for (const v of p.views as Json[]) if (v.caption !== undefined) checkViewCaption(v.caption);
+    for (const d of p.dimensions as unknown as Dimension[]) if (d.kind === 'chamfer' && d.coneSide !== undefined && (d.ref.kind !== 'face' || (d.coneSide !== 1 && d.coneSide !== -1))) throw new FormatError(t('drawing.dimBadRef'));
     for (const d of p.dimensions as unknown as Dimension[]) for (const ref of dimensionRefs(d)) if (ref?.point !== undefined && !validDrawingPointRef(ref)) throw new FormatError(t('drawing.dimBadRef'));
   }
   // As for parts: counters cover every id in the file, even one edited by hand or by a script.
