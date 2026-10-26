@@ -2361,6 +2361,11 @@ function HolePanel({ f }: { f: HoleFeature }) {
       )}
       {f.kind === 'countersink' && (
         <>
+          <details className="hint" data-entrance-guidance>
+            <summary>{t('entrance.guidanceTitle')}</summary>
+            <p>{t('entrance.order')}</p>
+            <p>{t('entrance.geometry')}</p>
+          </details>
           <label className="pm-row">
             <span>{t('pm.hole.csDiameter')}</span>
             <ValueInput value={f.csDiameter ?? '0'} toCommand={(csDiameter) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, csDiameter } })} />

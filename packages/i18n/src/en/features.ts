@@ -2,6 +2,17 @@ import type { Translation } from '../index';
 
 /** Messages of the features of Phase 3a-5 to 3a-7 (C4.1–C4.3, C5.4, C5.5, C6, C3): end conditions, draft, thin features, shell, patterns. */
 export const features: Translation = {
+  'entrance.circleChanged': "The edge used for this circle center is no longer circular. Select a circular edge again.",
+  "entrance.guidanceTitle": "Thread entrance: operation order and geometry",
+  "entrance.order": "For cut threads, an entry chamfer may precede thread cutting. For teeth modeled by adding material, finish the entrance after the teeth so the cone is not filled back in.",
+  "entrance.geometry": "Use a coaxial cone defined by entry diameter D, retained bore diameter d and included angle A: cone depth h=(D-d)/[2 tan(A/2)]. A 90° included angle means 45° per side. Blind depth must exceed cone depth; recheck it after changing diameter or angle. Trim sharp starting teeth; choose bore diameter and blind depth to retain the working thread. Confirm dimensions from the tooth profile rather than applying equal-distance chamfers to individual helical edges.",
+  'entrance.title': 'Thread entrance cone',
+  'entrance.center': 'Entrance center',
+  'entrance.position': 'Entrance position',
+  'entrance.pick': 'Select one planar hole mouth, or edges of that mouth. A persistent coaxial circular arc is required; outside rims do not qualify.',
+  'entrance.ambiguous': 'The face has multiple holes or no unique mouth; select edges of the intended hole.',
+  'entrance.lost': 'The mouth reference is missing; select it again.',
+  'entrance.stale': 'The model has changed. Wait for rebuilding, then select the mouth again.',
   'feature.sheetPartialUnfold': 'Partial unfold',
   'pm.sheetUnfold.hint': 'Choose bend features to unfold; other bends remain folded. A jog is selected as a two-bend group.',
   'pm.sheetUnfold.all': 'All bends',
@@ -418,7 +429,7 @@ export const features: Translation = {
   'feature.sweepOverlap': 'The path turns too sharply and the sweep folds over itself (volume {volume} mm³, where the profile area and the path length call for at least {floor} mm³): ease the turn of the path or make the profile smaller',
   'feature.sweepInvalid': 'The result of the sweep is not a valid solid (common when the path turns with a radius smaller than the profile, so the profile overlaps itself)',
   'feature.filletInvalid': 'The result of the fillet is not a valid solid (common on the wavy edges of free-form surfaces such as knurls and threads): use a smaller radius, or a method other than a fillet',
-  'feature.chamferFreeformFailed': '{why}. The chamfer could not be built on this set of free-form edges. To finish a threaded hole entrance, sketch a coaxial center point on the entry face and use Hole Wizard → Countersink, specifying the entry diameter and included angle. This machining cone differs from an equal-distance chamfer along the thread edges.',
+  'feature.chamferFreeformFailed': '{why}. The chamfer could not be built on this set of free-form edges. To finish a threaded hole entrance, select the mouth and use Thread entrance cone, or use Hole Wizard → Countersink, specifying the entry diameter and included angle. This machining cone differs from an equal-distance chamfer along the thread edges.',
   'feature.threadSketchGone': 'The profile sketch of the thread does not exist, is suppressed or failed',
   'feature.threadAxis': 'axis of thread',
   'feature.threadNoProfile': 'The thread has no closed profile to use',

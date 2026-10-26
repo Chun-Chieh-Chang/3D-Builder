@@ -7,8 +7,8 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 84／7／30 |
-| ADR 文件 | 203 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 186／182／229 |
+| ADR 文件 | 204 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 187／183／230 |
 | 實機清單項目 | 92 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -433,6 +433,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0202：視窗預設網格與隱藏恢復入口](<adr/0202-viewport-grid-and-hidden-recovery.md>)
 - [ADR 0203：浮動參數窗、組合件來源編輯與動態拉伸](<adr/0203-floating-editor-assembly-source-and-live-extrusion.md>)
 - [ADR0204：可重算盤點、文件責任與無功能變更清理](<adr/0204-repository-maintenance-and-document-ownership.md>)
+- [ADR 0205：由孔口選取建立加工入口錐面的通用工具](<adr/0205-thread-entrance-tool.md>)
 
 ### 歷史驗證
 

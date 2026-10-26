@@ -7,7 +7,7 @@ import { bodyKey, combineMass, DATUM_PLANES, isDatumPlaneName, isShown, mirrorKe
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { encodeShade, flatViewLines, rasterizeShade, withoutHiddenEdges, type ShadeImage, type ViewLines } from '@3db/drawing';
-import { silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, viewEdges, findClearance, findInterference, flatDrawingGeometry, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
+import { findEntrance, silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, viewFeatures, viewEdges, findClearance, findInterference, flatDrawingGeometry, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SourcePart, SourceProvider } from '@3db/regen';
@@ -54,6 +54,7 @@ const blobs = new Map<string, Uint8Array>();
 let solverReady: Promise<PlaneGcsSolver> | null = null;
 /** What the last rebuild of the open part gave: the shape that measuring reads (E1.1). */
 let lastResult: RebuildResult | null = null;
+let lastPartSeq = -1;
 /** The kernel's Emscripten heap when it was loaded, before any geometry was built: what `HEAP_GROWTH_LIMIT` is measured from. */
 let heapBase: number | null = null;
 
@@ -220,6 +221,10 @@ async function viewEdgesOf(r: DrawingViewRequest): Promise<ViewEdgeSet> {
 }
 
 const api: KernelApi = {
+  async entranceTarget(refs, seq) {
+    if (!lastResult || seq !== lastPartSeq) throw new Error(t('entrance.stale'));
+    return findEntrance(kernel, lastResult.body, refs);
+  },
   async setLocale(locale) {
     setWorkerLocale(locale);
   },
@@ -245,6 +250,7 @@ const api: KernelApi = {
     const r = regen.rebuild(doc, until === undefined ? {} : { until });
     const body = r.body;
     lastResult = r;
+    lastPartSeq = seq;
     lastModel = { names: body?.names ?? NO_NAMES, topology: body?.topology ?? NO_TOPOLOGY, frames: r.frames, axes: r.axes, points: r.points, sketches: r.sketches, hasBody: !!body, ...(body ? { shape: body.shape } : {}) };
     const shown = r.bodies.map((b) => isShown(doc, bodyKey(b.id)));
     const mesh = meshOf(r, shown, MESH_QUALITY[settingsOf(doc).meshQuality]);

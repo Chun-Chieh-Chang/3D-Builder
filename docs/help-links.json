@@ -278,7 +278,8 @@
   ],
   "C23": [
     "fillet",
-    "chamfer"
+    "chamfer",
+    "thread-entrance"
   ],
   "C24": [
     "fillet"

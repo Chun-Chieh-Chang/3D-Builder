@@ -16,3 +16,4 @@ export * from './drawingDimensions';
 export * from './drawingEdges';
 
 export * from './flatDrawing';
+export * from './entrance';

@@ -117,6 +117,7 @@ for (const target of ['outer-edge-default', 'back-face-default', 'spline-edge-sm
       expect(failed.status).toBe('error');
       expect(failed.unresolved ?? []).toEqual([]);
       expect(failed.message).toMatch(/錐孔|countersink/i);
+      expect(failed.message).toMatch(/切螺紋|cut threads/i);
       expect(kernel.isValid(result.body!.shape)).toBe(true);
       expect(kernel.massProps(result.body!.shape).volume).toBe(beforeVolume);
       return;

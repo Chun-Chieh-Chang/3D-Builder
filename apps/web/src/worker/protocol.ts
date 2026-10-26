@@ -252,6 +252,7 @@ export type DrawingFeaturesResult = { features: ViewFeature[]; edges?: ViewEdgeS
 export type DrawingElementsResult = { elements: (ElementFacts | { error: string })[] } | { error: string };
 
 export interface KernelApi {
+  entranceTarget(refs: Ref[], seq: number): Promise<import('@3db/regen').EntranceTarget>;
   init(): Promise<{ occtMs: number; gcsMs: number }>;
   /** The language of the messages the worker makes (errors, warnings); what it made before keeps its language. */
   setLocale(locale: Locale): Promise<void>;

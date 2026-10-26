@@ -1,3 +1,4 @@
+import { entranceFeatures } from '../entrance';
 import { activeSheetUnfold } from '@3db/model';
 import { initialLoftSections } from './loftSections';
 import * as Comlink from 'comlink';
@@ -1716,7 +1717,28 @@ class AppStore {
     this.openNew({ id, type: 'extrude', name: nextName(this.history.doc, base), suppressed: false, sketch: sketch.id, op, dir1: { type: 'blind', depth: '10' } }, base);
   }
 
-  /** 「異型孔」 (C4.8): a straight hole of Ø6 and 10 deep at the free points of the selected sketch, to be set in the PropertyManager. */
+  /** One cancellable session: persistent mouth center, attached point sketch, countersink editor. */
+  async newEntrance(): Promise<void> {
+    const before = this.state;
+    if (before.active !== 'part' || before.editing || !before.result) return;
+    const doc = this.history.doc, result = before.result;
+    const refs = [...before.selectedElements, ...(before.selectedFace ? [before.selectedFace] : [])];
+    try {
+      const target = await this.api.entranceTarget(refs, result.seq);
+      if (this.history.doc !== doc || this.state.result !== result || this.state.documentSerial !== before.documentSerial || this.state.active !== 'part' || this.state.editing) return;
+      const features = entranceFeatures(doc, target).map(feature => ({ ...feature, name: nextName(doc, feature.name) })), hole = features.at(-1)!;
+      this.history.begin(t('entrance.title'));
+      try {
+        const index = doc.rollbackIndex ?? doc.features.length;
+        features.forEach((feature, i) => this.history.execute({ type: 'insertFeature', feature, index: index + i }));
+        this.history.markSessionBase();
+        this.set({ editing: { featureId: hole.id, kind: 'feature' }, selected: hole.id, selectedFace: null, selectedElements: [], canUndo: this.history.canUndo, canRedo: this.history.canRedo });
+        this.requestRebuild();
+      } catch (e) { this.history.rollback(); throw e; }
+    } catch (e) { if(this.state.documentSerial===before.documentSerial)this.notify(e instanceof Error ? e.message : String(e), 'error'); }
+  }
+
+  /** 「異型孔」: holes at the selected sketch's free points. */
   newHole(): void {
     const sketch = this.selectedSketch();
     if (!sketch) return;

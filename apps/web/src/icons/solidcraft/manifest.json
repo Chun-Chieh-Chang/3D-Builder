@@ -709,7 +709,8 @@
     "extrude-cut": "extrude",
     "revolve-cut": "revolve",
     "sweep-cut": "sweep",
-    "loft-cut": "loft"
+    "loft-cut": "loft",
+    "thread-entrance": "hole"
   },
   "roles": {
     "ink": {

@@ -2068,10 +2068,47 @@ export class Kernel {
     }
   }
 
-  /**
-   * Chamfer (C5.3). Each edge names the adjacent face its first distance is measured on:
-   * distance–distance takes two lengths, angle–distance a length and an angle (radians).
-   */
+  /** Native inner boundary wires, excluding the face's actual outer wire. */
+  innerFaceLoops(target: ShapeId, faceIndex: number): number[][] {
+    const oc = this.oc, arena = new Arena();
+    const faces = ShapeIndex.of(oc, this.get(target), T.FACE, arena);
+    const edges = ShapeIndex.of(oc, this.get(target), T.EDGE, arena);
+    try {
+      const key = faces.keys[faceIndex];
+      if (!key) throw new KernelError(t('entrance.pick'));
+      const face = arena.own(oc.TopoDS.Face(key));
+      const outer = arena.own(oc.BRepTools.OuterWire(face));
+      const loops: number[][] = [];
+      const wires = arena.own(new oc.TopExp_Explorer(face, 'TopAbs_WIRE', 'TopAbs_SHAPE'));
+      for (; wires.More(); wires.Next()) {
+        const wire = arena.own(wires.Current());
+        if (wire.IsSame(outer)) continue;
+        const own = ShapeIndex.of(oc, wire, T.EDGE, arena);
+        try { loops.push(own.keys.map(e => edges.indexOf(e))); } finally { own.dispose(); }
+      }
+      return loops;
+    } finally { faces.dispose(); edges.dispose(); arena.dispose(); }
+  }
+
+  /** Exact native distance to a planar rim; used to seed, never infer a thread standard. */
+  distanceToEdges(target: ShapeId, indices: number[], point: Vec3): number {
+    const oc = this.oc, arena = new Arena();
+    const edges = ShapeIndex.of(oc, this.get(target), T.EDGE, arena);
+    try {
+      if (!indices.length || !point.every(Number.isFinite)) throw new KernelError(t('entrance.pick'));
+      const compound = arena.own(new oc.TopoDS_Compound());
+      const builder = arena.own(new oc.BRep_Builder()); builder.MakeCompound(compound);
+      for (const i of indices) {
+        const edge = edges.keys[i]; if (!edge) throw new KernelError(t('entrance.pick'));
+        builder.Add(compound, edge);
+      }
+      const vertex = arena.own(arena.own(new oc.BRepBuilderAPI_MakeVertex(this.pnt(arena, point))).Vertex());
+      const distance = arena.own(new (oc.BRepExtrema_DistShapeShape as unknown as new (a: TopoDS_Shape, b: TopoDS_Shape) => InstanceType<OC['BRepExtrema_DistShapeShape']>)(vertex, compound));
+      if (!distance.IsDone() || !(distance.Value() > 0) || !Number.isFinite(distance.Value())) throw new KernelError(t('entrance.pick'));
+      return distance.Value();
+    } finally { edges.dispose(); arena.dispose(); }
+  }
+
   chamfer(target: ShapeId, specs: { edge: number; face: number }[], mode: 'distanceDistance' | 'angleDistance', d1: number, d2: number): OpResult {
     if (specs.length === 0) throw new KernelError(t('kernel.chamferNeedsEdge'));
     const oc = this.oc;

@@ -1210,6 +1210,7 @@ export class Regenerator {
         const index = this.resolve(d.element, body, t('datum.centerOf'));
         if (d.element.kind === 'edge') {
           const edge = body.topology.edges[index]!;
+          if (d.element.fingerprint?.type === 'circle' && edge.geometry?.type !== 'circle') throw new FeatureError(t('entrance.circleChanged'));
           return edge.geometry?.type === 'circle' ? edge.geometry.center : edge.mid;
         }
         const face = body.topology.faces[index]!;
@@ -4813,7 +4814,7 @@ export class Regenerator {
         // each wavy edge of a real thread. Offer the existing countersink workflow;
         // never change the user's distances, selection or model on native failure.
         if (e instanceof KernelError && edges.some(i => ['bsplinecurve', 'beziercurve'].includes(body.topology.edges[i]!.curve))) {
-          throw new FeatureError(t('feature.chamferFreeformFailed', { why: e.message }));
+          throw new FeatureError(t('feature.chamferFreeformFailed', { why: e.message }) + ' ' + t('entrance.order'));
         }
         throw e;
       }
