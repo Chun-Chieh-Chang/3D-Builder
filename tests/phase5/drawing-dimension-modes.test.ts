@@ -11,7 +11,7 @@ import { rightOf, sheetUp, viewVectors, type Dimension, type Feature, type Ref, 
 import { Kernel } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { elementFacts, Regenerator, viewEdges, viewFeatures, type RebuildResult } from '@3db/regen';
-import { DIMENSION_MODES, dimensionModesFor, evaluateDimension, featureAt, pickKind, planDimension, toSheet, visibleElements, type DimensionMode, type Pickable, type PlacedView, type ViewLines } from '@3db/drawing';
+import { DIMENSION_MODES, autoDimensions, dimensionReferenceAt, dimensionModesFor, evaluateDimension, featureAt, pickKind, planDimension, toSheet, visibleElements, type DimensionMode, type Pickable, type PlacedView, type ViewLines } from '@3db/drawing';
 import { t } from '@3db/i18n';
 import { build, edge, extrude, face, fillet, front, pin, sketch } from '../phase1/builders';
 
@@ -290,5 +290,35 @@ describe('fuzz: 200 random picks, kinds and places (0 throws, each answer is a d
     }
     // the fuzz makes real dimensions too, not only refusals
     expect(made).toBeGreaterThan(20);
+  });
+});
+
+
+describe('dimension reference acquisition and automatic radius conversion on native geometry', () => {
+  it('acquires the exact circular centre and keeps its persistent reference; visible vertices take priority', () => {
+    const f = V.features.find(f => f.type === 'circle' && f.full)!;
+    expect(f?.type).toBe('circle');
+    if (f.type !== 'circle') throw new Error('native circular feature required');
+    const hit = dimensionReferenceAt(V.lines, V.features, [f.centre[0] + 0.1, f.centre[1] - 0.1], 0.4, V.seen);
+    expect(hit?.ref).toEqual(f.ref);
+    const vertex = V.seen.vertices[0]!;
+    expect(vertex).toBeDefined();
+    expect(dimensionReferenceAt(V.lines, V.features, vertex.at, 0.4, V.seen)?.ref).toEqual(vertex.ref);
+    expect(dimensionReferenceAt({ ...V.lines, visible: [] }, V.features, f.centre, 0.4)?.type).not.toBe('circle');
+  });
+
+  it('an automatically generated R becomes a true doubled Ø using the same native circular geometry', () => {
+    const draft = autoDimensions(V.features, { overall: false, holes: true, positions: false }).find(d => d.kind === 'radius');
+    expect(draft?.kind).toBe('radius');
+    if (!draft || draft.kind !== 'radius') throw new Error('native automatic radius required');
+    const fact = elementFacts(built.body!.topology, built.body!.names, draft.ref)!;
+    const rad = evaluateDimension({ ...draft, id: 'dim1', view: 'v' }, { elements: [fact] as never }, axes, V.placed);
+    const dia = evaluateDimension({ ...draft, kind: 'diameter', id: 'dim1', view: 'v' }, { elements: [fact] as never }, axes, V.placed);
+    expect('error' in rad).toBe(false);
+    expect('error' in dia).toBe(false);
+    if ('error' in rad || 'error' in dia) throw new Error('valid native round dimensions required');
+    expect(dia.value).toBeCloseTo(2 * rad.value, 9);
+    expect(dia.text).toContain('Ø');
+    expect(rad.text).toContain('R');
   });
 });

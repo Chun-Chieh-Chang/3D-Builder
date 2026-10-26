@@ -1,0 +1,27 @@
+# ADR 0206：工程圖尺寸選點、顯示與位置互動
+
+2026-10-26。採用。工程圖 Schema 30 不變；目前能力與待辦統一見[產品現況](../project-state.md)。本文件記錄本次決策與驗證，不宣稱完整複製其他 CAD。
+
+## 對照依據與操作決定
+
+讀取 FreeCAD 官方文件來源的 [RadiusDimension](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/TechDraw_RadiusDimension.md)、[DiameterDimension](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/TechDraw_DiameterDimension.md)、[LengthDimension](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/TechDraw_LengthDimension.md)：圓／圓弧使用 R 或 Ø，尺寸可拖曳、編輯屬性，投影量與真實三維量應區分；橢圓及 B-spline 不可假作圓。讀取使用者指定 [SolidCraft](https://github.com/tangency-labs/solidcraft) README，確認其草圖參數與建模介面參考價值，但不足以證明其有相同工程圖功能。SolidWorks 2025 Dimension Display Options 官方說明連線回傳 403；SW 操作慣例只作設計參考，未取得桌面軟體做逐功能認證。抓取證據在忽略的 `out/dimension-references/`。
+
+| 使用者問題 | 決策與正式路徑 |
+|---|---|
+| 剖面側視的兩邊間尺寸需要 Ø | 尺寸屬性「前綴」旁提供 Ø 快捷按鈕，保留現有數值及前綴、不重複加入符號；單加符號不把普通距離偽裝成原生圓直徑參照 |
+| 自動 R 想改 Ø | 保留既有「顯示方式」選單與模型圓形參照；實際重新求值為 2R。再次自動標註不因 kind 切換而建立同一圓的重複尺寸 |
+| 端點／圓心難以定位 | 尺寸及座標尺寸工具新增圓心取得；端點保留優先，圓心保留原生圓參照，不捏造頂點。只取投影可見輪廓；懸停顯示端點／圓心方框十字及文字 |
+| 高亮與圖紙線條縮放變粗 | 線、點及選中尺寸輪廓依 CSS 縮放換算成固定螢幕像素，線寬 1.5 px、端點半徑 3 px，避免以圖紙 mm 造成放大後肥厚；畫布另傳 strokeScale 補償 CSS 縮放，輪廓、剖面及尺寸線的螢幕寬度不隨滾輪增加；SVG匯出不傳此選項、PDF／DXF沿用圖紙設定，不改輸出的製圖線寬 |
+| 尺寸數字無法調整相對位置 | 線性文字只改 slide，角度文字只改弧上的 slide；拖標註線／延伸線改 offset 或 arc。啟用尺寸工具但尚未選幾何時也能抓既有數字，結束工具並開始拖曳；保留抓取差、預覽及一次復原 |
+| 圓角／導角標註 | 既有半徑與導角工具可用。導角選點不再以無端點的斜面方向假造 10 mm 線段，不把小退距強制改成 0.1 mm；拒絕非真實形狀投影及無兩方向退距的邊。等退距用 C，非等退距以長退距及相對該方向的銳角輸出距離×角度 |
+
+本批工程圖文字位置操作取代 [ADR0192](0192-dimension-line-drag.md) 的「文字同時改 offset／arc」決策；草圖操作不變。沿用持久 Ref、命令、歷史及模型尺寸求值，沒有新增像素座標真值或把量測值存成可任意拖改的製造尺寸。
+
+## 驗證與限制
+
+- 相關 Vitest 共 82 個獨立案例各有通過紀錄；包含真實原生投影的端點／圓心選取、自動半徑與直徑數值，以及 100 組純排版退距／角度計算。後者是數值演算法測試，不冒充 100 個原生加工實體。
+- 4 個瀏覽器流程各有通過紀錄：草圖尺寸線拖曳、工程圖標註線／文字與 Ø、既有註記屬性流程、尺寸類型與磁吸。實測原生投影與尺寸值；縮放前後用 SVG 螢幕比例驗證高亮 1.5 px及輪廓線寬固定，另以100種縮放係數驗證螢幕補償與未補償匯出的線寬／原場景不變。`out/drawing-zoom-width-ui.json`、`out/drawing-reference-ui-final.json`、`out/drawing-reference-ui.json` 合併看各流程最終結果，不能把含失敗的整輪說成全過。
+- 新增原生求值測試初次誤用 evaluateDimension 參數已修正；圓心瀏覽器初次選到覆蓋位置的其他視圖，改用真實可見性確認未遮住的測點；新增自動標註測試須清理已有尺寸才能驗建立。保留失敗紀錄；只重跑失敗或新增／改動案例。另一次瀏覽器啟動頁載入失敗，重啟後驗證。未放寬期限或容差。
+- typecheck、build、規則／依賴／i18n 守門通過。不新增原生布林，無記憶體認證宣稱；未重跑全套或操作 SW／FreeCAD 桌面版。
+- 此次文字獨立位置限沿直線／角度弧；任意二維文字偏移、中點／交點的持久參照、跨尺寸對齊磁吸未加入。
+- 導角標註仍是由所選投影邊建立可編輯註記；不是辨識任意三維導角工序，也尚未把既有 size／chamferAngle 欄位改為隨模型重建自動求值。既有檔案的導角文字不自動改寫，使用者須確認。

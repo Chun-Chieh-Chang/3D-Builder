@@ -305,6 +305,86 @@ K.run = async () => {
     return { pass: undone && again.dim.id === last.dim.id && close(again.value, last.value), n, last, again };
   });
 
+  await step('14 visible circle centre acquires a persistent reference with a thin snap marker; endpoints keep priority', async () => {
+    d().setTool({ kind: 'dimension', picks: [] });
+    await H.wait(100);
+    const { visibleElements } = await import(root + 'packages/drawing/src/viewEdges.ts');
+    const { dimensionReferenceAt, toView } = await import(root + 'packages/drawing/src/pick.ts');
+    // Views can overlap. Test a native hole centre whose visible topmost hit belongs to this view.
+    const h = F.filter(f => f.type === 'circle' && f.full).find(f => {
+      const p = sheetOf(top.id, ...f.centre);
+      for (const v of [...page().views].reverse()) {
+        const placed = placedOf(v.id);
+        const features = drw().features.get(v.id) ?? [];
+        const lines = drw().lines.get(v.id);
+        const seen = visibleElements(lines, drw().edges.get(v.id), features);
+        const hit = dimensionReferenceAt(lines, features, toView(placed, p), 6 / (document.querySelector('[data-svg] svg').getBoundingClientRect().width / 420) / placed.scale, seen);
+        if (hit) return v.id === top.id && hit.ref.name === f.ref.name;
+      }
+      return false;
+    });
+    if (!h) throw new Error('unobscured native circular centre required');
+    const at = sheetOf(top.id, h.centre[0], h.centre[1]);
+    send('pointermove', at, 0, 0);
+    await H.wait(100);
+    const marker = !!document.querySelector('[data-dimension-snap="centre"]');
+    const highlight = document.querySelector('[data-pick="circle"]');
+    const pixelWidth = node => Number(node?.getAttribute('stroke-width')) * document.querySelector('[data-overlay]').getBoundingClientRect().width / 420;
+    const thin = Math.abs(pixelWidth(highlight) - 1.5) < 0.01;
+    const paperLinePx = () => Number(document.querySelector('[data-svg] polyline').getAttribute('stroke-width')) * document.querySelector('[data-svg] svg').getBoundingClientRect().width / 420;
+    const lineBeforeZoom = paperLinePx();
+    const [cx, cy] = toClient(at);
+    canvas().dispatchEvent(new WheelEvent('wheel', { clientX: cx, clientY: cy, deltaY: -120, bubbles: true, cancelable: true }));
+    await H.wait(150);
+    send('pointermove', at, 0, 0); await H.wait(100);
+    const paperWidthStable = Math.abs(paperLinePx() - lineBeforeZoom) < 0.01;
+    const thinAfterZoom = Math.abs(pixelWidth(document.querySelector('[data-pick="circle"]')) - 1.5) < 0.01;
+    await leftClick(at);
+    const acquiredRef = drw().tool?.picks[0]?.feature.ref;
+    const selectedAfterCentre = drw().dimension;
+    const acquired = acquiredRef?.name === h.ref.name;
+    // Worker vertices have `point`, not all are visible. Use the pure visibility filter on the real native projection.
+    const seen = visibleElements(drw().lines.get(top.id), drw().edges.get(top.id), F);
+    if (!seen.vertices.length) throw new Error('native visible endpoint required');
+    const endpoint = seen.vertices[0];
+    d().setTool({ kind: 'dimension', picks: [] });
+    await H.wait(100);
+    send('pointermove', sheetOf(top.id, ...endpoint.at), 0, 0);
+    await H.wait(100);
+    const endpointMarker = !!document.querySelector('[data-dimension-snap="vertex"]');
+    await leftClick(sheetOf(top.id, ...endpoint.at));
+    const endpointRef = drw().tool?.picks[0]?.feature.ref.name === endpoint.ref.name;
+    await esc(); await esc();
+    return { pass: marker && thin && thinAfterZoom && paperWidthStable && acquired && endpointMarker && endpointRef, marker, thin, thinAfterZoom, paperWidthStable, acquired, acquiredRef, wanted: h.ref, selectedAfterCentre, endpointMarker, endpointRef };
+  });
+
+  await step('15 an automatic radius switches to diameter via the property panel and doubles the native measurement', async () => {
+    d().setTool(null);
+    d().deleteDimensions(page().dimensions.filter(x => x.view === top.id).map(x => x.id));
+    const before = new Set(page().dimensions.map(x => x.id));
+    d().autoDimension(top.id, { overall: false, holes: true, positions: false });
+    await H.wait(150);
+    const rad = page().dimensions.find(x => x.kind === 'radius' && !before.has(x.id));
+    if (!rad) throw new Error('automatic native radius required');
+    d().selectDimension(rad.id);
+    await H.waitFor(() => d().scene().dimensions.get(rad.id)?.value !== undefined, 15000, 'automatic native radius');
+    const value = d().scene().dimensions.get(rad.id).value;
+    await H.wait(100);
+    const input = document.querySelector('[data-field="dimDisplayKind"]');
+    if (!input) throw new Error('dimension display selector missing');
+    input.value = 'diameter'; input.dispatchEvent(new Event('change', { bubbles: true }));
+    await H.waitFor(() => page().dimensions.find(x => x.id === rad.id)?.kind === 'diameter', 5000, 'diameter conversion');
+    const got = d().scene().dimensions.get(rad.id);
+    const refKept = page().dimensions.find(x => x.id === rad.id).ref.name === rad.ref.name;
+    const doubled = close(got.value, 2 * value) && got.text.includes('Ø');
+    const count = page().dimensions.length;
+    const added = d().autoDimension(top.id, { overall: false, holes: true, positions: false });
+    const noDuplicates = added === 0 && count === page().dimensions.length;
+    d().undo(); await H.wait(100);
+    const undone = page().dimensions.find(x => x.id === rad.id).kind === 'radius';
+    return { pass: refKept && doubled && undone && noDuplicates, refKept, doubled, undone, noDuplicates };
+  });
+
   const pass = steps.every((s) => s.pass);
   return { name: 'drawing dimension kinds and right-click menu (ADR 0177)', steps, pass };
 };

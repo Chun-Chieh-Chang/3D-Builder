@@ -5,7 +5,7 @@ import { arcAt, leaderAt, offsetAt, type DimensionHandle } from './dimension';
 import { itemsBounds } from './fit';
 import { toSheet, type PlacedView, type ViewLines } from './layout';
 import type { SceneItem } from './scene';
-import type { EdgePick, VertexPick, VisibleElements } from './viewEdges';
+import { EDGE_TOLERANCE, type EdgePick, type VertexPick, type VisibleElements } from './viewEdges';
 
 /**
  * Pointing at a drawing (the mouse, in sheet mm): which element of a view is under the pointer, which dimension, and what a dimension that the user makes from elements
@@ -100,6 +100,28 @@ export function segmentDistance(p: P2, a: P2, b: P2): number {
 
 /** How big what a feature is drawn as is, for telling two apart that are the same distance from the pointer: the area of the circle an arc or a fillet is part of. */
 const areaOf = (f: Pickable) => (f.type === 'circle' || f.type === 'torus' ? Math.PI * f.radius * f.radius : f.type === 'edge' || f.type === 'vertex' || f.type === 'outline' ? 0 : f.area);
+
+/** Dimension tools also acquire the exact centre of a visible circle/arc. Keep its persistent circular reference: never invent a vertex at the centre. */
+export function dimensionReferenceAt(lines: ViewLines | null | undefined, features: readonly ViewFeature[], p: P2, tol: number, seen?: VisibleElements): Pickable | null {
+  const hit = featureAt(lines, features, p, tol, seen);
+  if (!lines || hit?.type === 'vertex') return hit;
+  let best: { f: Extract<ViewFeature, { type: 'circle' }>; d: number } | null = null;
+  for (const f of [...features, ...(seen?.circles ?? [])]) {
+    if (f.type !== 'circle') continue;
+    const d = hyp(p[0] - f.centre[0], p[1] - f.centre[1]);
+    if (d > tol || (best && (d > best.d + 1e-9 || (Math.abs(d - best.d) <= 1e-9 && f.radius <= best.f.radius)))) continue;
+    // A hidden circular feature is not a reference target. Use the projected visible geometry, with the same chord tolerance as visibleElements.
+    const visible = lines.visible.some(poly => {
+      for (let i = 0; i + 3 < poly.length; i += 2) {
+        const radial = (x: number, y: number) => Math.abs(hyp(x - f.centre[0], y - f.centre[1]) - f.radius) <= EDGE_TOLERANCE;
+        if (radial(poly[i]!, poly[i + 1]!) && radial(poly[i + 2]!, poly[i + 3]!) && radial((poly[i]! + poly[i + 2]!) / 2, (poly[i + 1]! + poly[i + 3]!) / 2)) return true;
+      }
+      return false;
+    });
+    if (visible) best = { f, d };
+  }
+  return best?.f ?? hit;
+}
 
 /**
  * The element of a view under the pointer, or null: a straight line of the view that is where a plane seen edge-on is (a vertical one for a plane across x, a horizontal one
@@ -233,7 +255,7 @@ export function dimensionAt(items: readonly SceneItem[], p: P2, tol: number): { 
 /** What the pointer does to a dimension that is dragged: the changes to make, from where the pointer is (sheet mm). */
 export function dragDimension(handle: DimensionHandle, onText: boolean, p: P2): { offset?: number; slide?: number; angle?: number; leader?: number; arc?: number } {
   if (handle.kind === 'linear') {
-    if (onText) return { offset: Math.round(offsetAt(handle, p) * 100) / 100, slide: Math.round((handle.u[0] * (p[0] - handle.mid[0]) + handle.u[1] * (p[1] - handle.mid[1])) * 100) / 100 };
+    if (onText) return { slide: Math.round((handle.u[0] * (p[0] - handle.mid[0]) + handle.u[1] * (p[1] - handle.mid[1])) * 100) / 100 };
     return { offset: Math.round(offsetAt(handle, p) * 100) / 100 };
   }
   if (handle.kind === 'round') {
@@ -244,7 +266,7 @@ export function dragDimension(handle: DimensionHandle, onText: boolean, p: P2): 
     let turn = Math.atan2(p[1] - handle.centre[1], p[0] - handle.centre[0]) - handle.mid;
     while (turn > Math.PI) turn -= 2 * Math.PI;
     while (turn <= -Math.PI) turn += 2 * Math.PI;
-    return { arc: Math.round(arcAt(handle, p) * 100) / 100, slide: Math.round(turn * handle.radius * 100) / 100 };
+    return { slide: Math.round(turn * handle.radius * 100) / 100 };
   }
   return { arc: Math.round(arcAt(handle, p) * 100) / 100 };
 }
@@ -287,39 +309,39 @@ function planChamfer(picks: readonly Pickable[], p: P2, placed: PlacedView, axes
   let a: P2 | undefined;
   let b: P2 | undefined;
   const along = 'along' in f ? (f as LinePick).along : undefined;
-  if (f.type === 'edge') {
+  if (f.type === 'edge' && f.inPlane) {
     a = f.a;
     b = f.b;
   } else if (f.type === 'slant') {
     if (along) {
       a = along.a;
       b = along.b;
-    } else {
-      a = [f.at[0] - f.dir[0] * 5, f.at[1] - f.dir[1] * 5];
-      b = [f.at[0] + f.dir[0] * 5, f.at[1] + f.dir[1] * 5];
     }
   } else if (f.type === 'plane' && along) {
     a = along.a;
     b = along.b;
   }
-  if (!a || !b) return { error: t('drawing.dimNeedsChamfer') };
+  if (!a || !b || (along && !along.inPlane)) return { error: t('drawing.dimNeedsChamfer') };
   const dx = Math.abs(b[0] - a[0]);
   const dy = Math.abs(b[1] - a[1]);
-  const c = dx > 1e-4 && dy > 1e-4 ? Math.min(dx, dy) : hyp(dx, dy) / Math.SQRT2;
+  if (!Number.isFinite(dx + dy) || dx <= 1e-9 || dy <= 1e-9) return { error: t('drawing.dimNeedsChamfer') };
+  const equalLegs = Math.abs(dx - dy) <= 1e-7;
+  const c = Math.max(dx, dy);
+  const chamferAngle = Math.atan2(Math.min(dx, dy), c) * 180 / Math.PI;
   const midPoint: P2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   const sheetMid = toSheet(placed, midPoint[0], midPoint[1]);
   const g = leaderAt({ kind: 'round', centre: sheetMid, radius: 0 }, p);
   const angle = Math.round(g.angle * 10) / 10;
   const leader = Math.round(g.leader * 100) / 100;
-  const size = Math.max(0.1, Math.round(c * 100) / 100);
+  const size = c;
   return {
     draft: {
       kind: 'chamfer',
       ref: f.ref,
       angle,
       size,
-      chamferAngle: 45,
-      chamferFormat: 'c',
+      chamferAngle,
+      chamferFormat: equalLegs ? 'c' : 'distanceAngle',
       leader,
     },
     refs: [f],

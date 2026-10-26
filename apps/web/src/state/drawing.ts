@@ -1424,7 +1424,7 @@ export class DrawingStore {
     const isNew = (d: ReturnType<typeof autoDimensions>[number]) =>
       !have.some(
         (h) =>
-          h.kind === d.kind &&
+          (h.kind === d.kind || ((h.kind === 'diameter' || h.kind === 'radius') && (d.kind === 'diameter' || d.kind === 'radius'))) &&
           (h.kind === 'linear' && d.kind === 'linear'
             ? h.orientation === d.orientation && same(h.a, d.a) && same(h.b, d.b)
             : h.kind === 'ordinate' && d.kind === 'ordinate'

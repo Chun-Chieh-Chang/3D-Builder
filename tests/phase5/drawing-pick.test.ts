@@ -191,12 +191,12 @@ describe('where a dimension is drawn, and what the pointer does to it', () => {
     expect(at(o({ leader: 20 })) - at(o({}))).toBeCloseTo(12, 9); // 8 is the default
   });
 
-  it('dragging the line of a linear dimension gives the offset, its text both offset and slide; a diameter the direction and the leader; an angle the arc', () => {
+  it('dragging the line of a linear dimension gives the offset, its text only slide; a diameter the direction and the leader; an angle the arc', () => {
     const o = run(base);
     if (!('handle' in o) || !o.handle) throw new Error('no handle');
     expect(dragDimension(o.handle, false, [200, 200])).toEqual({ offset: 20 });
     expect(dragDimension(o.handle, false, [200, 100])).toEqual({ offset: -20 });
-    expect(dragDimension(o.handle, true, [215, 195])).toEqual({ offset: 15, slide: 15 });
+    expect(dragDimension(o.handle, true, [215, 195])).toEqual({ slide: 15 });
     const c = evaluateDimension({ id: 'd', view: 'v', kind: 'radius', ref: ref('c'), angle: 0 } as Dimension, { elements: [factsOf(circle(50, 30, 10), axes)] }, axes, placed);
     if (!('handle' in c) || !c.handle) throw new Error('no handle');
     expect(dragDimension(c.handle, false, [200, 180])).toEqual({ angle: 90, leader: 20 });

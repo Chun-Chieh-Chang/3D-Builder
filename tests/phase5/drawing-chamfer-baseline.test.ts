@@ -351,3 +351,26 @@ describe('E5 Phase 2: Baseline Dimension (Staggering & Continuation)', () => {
     expect(pageDims.every((d) => (d as LinearDimension).a.name === 'base_edge')).toBe(true);
   });
 });
+
+
+describe('chamfer acquisition refuses guessed geometry and preserves actual projected setbacks', () => {
+  const edgePick = (a: [number, number], b: [number, number], inPlane = true): Pickable => ({ type: 'edge', ref: { kind: 'edge', name: 'edge' }, a, b, inPlane, depth: 0, ends: [null, null] });
+  it('rejects a face direction without endpoints, a foreshortened edge and axis-aligned edges', () => {
+    const slant: Pickable = { type: 'slant', ref: { kind: 'face', name: 'slant' }, at: [0, 0], dir: [0.8, 0.6], area: 10 };
+    for (const f of [slant, edgePick([0, 0], [2, 1], false), edgePick([0, 0], [2, 0]), edgePick([0, 0], [0, 0])]) {
+      expect(planDimension([f], [15, 15], PLACED, AXES, 'chamfer')).toHaveProperty('error');
+    }
+  });
+  it('uses the actual setback and acute angle, with C only for equal legs; never clamps tiny chamfers to 0.1', () => {
+    for (let i = 1; i <= 100; i++) {
+      const dx = i * 0.00037;
+      const dy = i % 2 === 0 ? dx : dx * 0.57;
+      const plan = planDimension([edgePick([0, 0], [dx, dy])], [15, 15], PLACED, AXES, 'chamfer');
+      expect(plan).toHaveProperty('draft');
+      if (!('draft' in plan) || plan.draft.kind !== 'chamfer') throw new Error('valid chamfer draft required');
+      expect(plan.draft.size).toBeCloseTo(dx, 12);
+      expect(plan.draft.chamferAngle).toBeCloseTo(Math.atan2(dy, dx) * 180 / Math.PI, 12);
+      expect(plan.draft.chamferFormat).toBe(i % 2 === 0 ? 'c' : 'distanceAngle');
+    }
+  });
+});

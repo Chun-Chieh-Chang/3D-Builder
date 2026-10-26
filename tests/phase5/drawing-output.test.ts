@@ -24,6 +24,7 @@ import {
   readTrueType,
   subsetTrueType,
   toDxf,
+  toSvg,
   toPdf,
   DxfError,
   PdfError,
@@ -387,4 +388,26 @@ describe('a real Chinese font (when this machine has one)', () => {
     });
   }
   it.skipIf(files.length > 0)('(no Chinese font found on this machine: the synthetic font above stands in)', () => undefined);
+});
+
+
+describe('screen line widths stay constant while manufacturing SVG keeps paper millimetres', () => {
+  it('compensates real drawing lines over 100 zoom factors without changing exported widths or the scene', () => {
+    const original = JSON.stringify(scene);
+    const exported = toSvg(scene);
+    const widths = (s: string) => [...s.matchAll(/<(?:polyline|polygon) [^>]*stroke-width="([^"]+)"/g)].map(m => Number(m[1]));
+    const base = widths(exported);
+    expect(base.length).toBeGreaterThan(100);
+    for (let i = 1; i <= 100; i++) {
+      const zoom = i * 0.13;
+      const screen = widths(toSvg(scene, { strokeScale: zoom }));
+      expect(screen.length).toBe(base.length);
+      screen.forEach((width, j) => expect(width * zoom).toBeCloseTo(base[j]!, 9));
+    }
+    expect(toSvg(scene)).toBe(exported);
+    expect(JSON.stringify(scene)).toBe(original);
+  });
+  it('rejects invalid screen scales instead of producing invalid or invisible lines', () => {
+    for (const strokeScale of [0, -1, NaN, Infinity]) expect(() => toSvg(scene, { strokeScale })).toThrow(/finite and positive/);
+  });
 });

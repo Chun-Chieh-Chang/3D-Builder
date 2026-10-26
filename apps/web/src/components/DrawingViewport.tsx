@@ -26,6 +26,7 @@ import {
   sideAt,
   cornerAt,
   snapCut,
+  dimensionReferenceAt,
   lineAcrossBox,
   alignedTo,
   finishSectionLine,
@@ -126,14 +127,14 @@ function dragRectangle(placed: { at: [number, number]; scale: number; centre: [n
 }
 
 /** The shape a dimension chosen on the sheet is drawn over in, so that it can be seen which one it is. */
-function Highlight({ items, height, color }: { items: readonly SceneItem[]; height: number; color: string }) {
+function Highlight({ items, height, color, pixel }: { items: readonly SceneItem[]; height: number; color: string; pixel: number }) {
   return (
     <>
       {items.map((i, k) =>
         i.kind === 'polyline' ? (
-          <polyline key={k} points={Array.from({ length: i.points.length / 2 }, (_, j) => `${i.points[2 * j]},${height - i.points[2 * j + 1]!}`).join(' ') + (i.closed ? ` ${i.points[0]},${height - i.points[1]!}` : '')} fill={i.filled ? color : 'none'} stroke={color} strokeWidth={0.55} />
+          <polyline key={k} points={Array.from({ length: i.points.length / 2 }, (_, j) => `${i.points[2 * j]},${height - i.points[2 * j + 1]!}`).join(' ') + (i.closed ? ` ${i.points[0]},${height - i.points[1]!}` : '')} fill={i.filled ? color : 'none'} stroke={color} strokeWidth={1.5 / pixel} />
         ) : (
-          <text key={k} x={i.at[0]} y={height - i.at[1]} fontSize={i.height * 1.4} textAnchor={i.anchor === 'center' ? 'middle' : i.anchor === 'right' ? 'end' : 'start'} fill={color} transform={i.angle ? `rotate(${-i.angle} ${i.at[0]} ${height - i.at[1]})` : undefined}>
+          <text key={k} fontFamily="sans-serif" x={i.at[0]} y={height - i.at[1]} fontSize={i.height * 1.4} textAnchor={i.anchor === 'center' ? 'middle' : i.anchor === 'right' ? 'end' : 'start'} fill={color} transform={i.angle ? `rotate(${-i.angle} ${i.at[0]} ${height - i.at[1]})` : undefined}>
             {i.text}
           </text>
         ),
@@ -229,7 +230,7 @@ export function DrawingViewport() {
   const attached = useMemo(() => attachedAnnotations(shown.annotations ?? [], new Map(curPage.views.map((v) => [v.id, { seen: seenByView.get(v.id), features: drw.features.get(v.id) ?? [] }]))), [shown, seenByView, curPage.views, drw.features]);
   const shownDoc = useMemo(() => drawingFromPage({ ...shown, annotations: attached.annotations }, drw.doc.properties), [drw.doc.properties, shown, attached]);
   const built = useMemo(() => buildScene(shownDoc, drw.lines, elements, drw.features, drw.boms), [shownDoc, drw.lines, elements, drw.features, drw.boms]);
-  const svg = useMemo(() => toSvg(built.scene), [built]);
+  const svg = useMemo(() => toSvg(built.scene, { strokeScale: pan.zoom }), [built, pan.zoom]);
   /** The items of the dimensions that are there (not the one being made): what the pointer can take hold of. */
   const dimensionItems = useMemo(() => built.scene.items.filter((i) => i.group && i.group !== 'preview'), [built]);
   /** What each annotation draws, marked with its id: what the pointer takes hold of, and what a choice is shown with (D-I3). */
@@ -346,7 +347,8 @@ export function DrawingViewport() {
       if (only && v.id !== only) continue;
       const placed = basePlaced.get(v.id);
       if (!placed || placed.w <= 0) continue;
-      const f = featureAt(viewLines.get(v.id), drw.features.get(v.id) ?? [], toView(placed, p), reach / placed.scale, seenByView.get(v.id));
+      const acquire = tool?.kind === 'dimension' || tool?.kind === 'ordinate' ? dimensionReferenceAt : featureAt;
+      const f = acquire(viewLines.get(v.id), drw.features.get(v.id) ?? [], toView(placed, p), reach / placed.scale, seenByView.get(v.id));
       if (f) return { view: v.id, feature: f };
     }
     return null;
@@ -533,6 +535,18 @@ export function DrawingViewport() {
       capture(e);
       setPanning({ x: e.clientX - pan.x, y: e.clientY - pan.y });
       return;
+    }
+    // An idle dimension tool must not swallow a drag of an existing numeric label.
+    if (tool?.kind === 'dimension' && tool.picks.length === 0) {
+      const hit = dimensionAt(dimensionItems, p, reach);
+      const outcome = hit && built.dimensions.get(hit.id);
+      if (hit?.text && outcome && !('error' in outcome) && outcome.handle) {
+        d.setTool(null);
+        d.selectDimension(hit.id);
+        capture(e);
+        setDrag({ kind: 'dimension', id: hit.id, from: p, onText: curPage.dimensions.find(x => x.id === hit.id)?.kind !== 'ordinate', handle: outcome.handle, patch: {} });
+        return;
+      }
     }
     // the tools
     if (tool?.kind === 'placeView') {
@@ -1292,9 +1306,9 @@ export function DrawingViewport() {
       <div className="drawing-stage" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${pan.zoom})` }}>
         <div className="drawing-paper" data-svg dangerouslySetInnerHTML={{ __html: svg }} />
         <svg className="drawing-overlay" data-overlay width={sheet.width * PX} height={sheet.height * PX} viewBox={`0 0 ${sheet.width} ${sheet.height}`}>
-          {chosen.length > 0 && <Highlight items={chosen} height={sheet.height} color="var(--accent)" />}
-          {chosenFinishItems.length > 0 && <Highlight items={chosenFinishItems} height={sheet.height} color="var(--accent)" />}
-          {chosenAnnotationItems.length > 0 && <Highlight items={chosenAnnotationItems} height={sheet.height} color="var(--accent)" />}
+          {chosen.length > 0 && <Highlight pixel={pan.zoom * PX} items={chosen} height={sheet.height} color="var(--accent)" />}
+          {chosenFinishItems.length > 0 && <Highlight pixel={pan.zoom * PX} items={chosenFinishItems} height={sheet.height} color="var(--accent)" />}
+          {chosenAnnotationItems.length > 0 && <Highlight pixel={pan.zoom * PX} items={chosenAnnotationItems} height={sheet.height} color="var(--accent)" />}
           {annotateFrom && (
             <g data-annotate-preview>
               <circle cx={annotateFrom[0]} cy={sheet.height - annotateFrom[1]} r={1} fill="var(--warn)" />
@@ -1320,6 +1334,20 @@ export function DrawingViewport() {
               strokeDasharray={boxing.crossing ? '2 1' : undefined}
             />
           )}
+          {(tool?.kind === 'dimension' || tool?.kind === 'ordinate') && hover?.feature && (() => {
+            const f = hover.feature.feature;
+            const placed = basePlaced.get(hover.feature.view);
+            if (!placed || (f.type !== 'vertex' && f.type !== 'circle')) return null;
+            const q = f.type === 'vertex' ? f.at : f.centre;
+            const at = toSheet(placed, q[0], q[1]);
+            if (Math.hypot(at[0] - hover.p[0], at[1] - hover.p[1]) > reach) return null;
+            const r = 5 / (pan.zoom * PX);
+            return <g data-dimension-snap={f.type === 'vertex' ? 'vertex' : 'centre'} stroke="var(--accent)" strokeWidth={1.5 / (pan.zoom * PX)} fill="var(--card)">
+              <rect x={at[0] - r} y={sheet.height - at[1] - r} width={2 * r} height={2 * r} />
+              <path d={`M ${at[0] - r} ${sheet.height - at[1]} h ${2 * r} M ${at[0]} ${sheet.height - at[1] - r} v ${2 * r}`} />
+              <text x={at[0] + 2 * r} y={sheet.height - at[1] - r} stroke="none" fill="var(--accent)" fontSize={11 / (pan.zoom * PX)}>{t(f.type === 'vertex' ? 'drawingUi.snapVertex' : 'drawingUi.snapCentre')}</text>
+            </g>;
+          })()}
           {((tool?.kind === 'dimension' || tool?.kind === 'ordinate') || (!tool && !drag && hover?.feature)) &&
             [...(tool ? tool.picks.map((x) => x.feature) : []), ...(hover?.feature && (!tool || tool.kind === 'ordinate' || tool.picks.length < 2) ? [hover.feature.feature] : [])].map((f, k) => {
               const view = (tool?.picks[0]?.view ?? hover?.feature?.view)!;
@@ -1331,28 +1359,28 @@ export function DrawingViewport() {
                 // a circle is drawn about its own middle, a fillet's arc about `at` (which is `major` off the torus's centre), both of the radius written
                 const [fx, fy] = f.type === 'circle' ? f.centre : f.at;
                 const c = toSheet(placed, fx, fy);
-                return <circle key={k} data-pick={f.type} cx={c[0]} cy={sheet.height - c[1]} r={f.radius * placed.scale} fill="none" stroke={colour} strokeWidth={0.8} />;
+                return <circle key={k} data-pick={f.type} cx={c[0]} cy={sheet.height - c[1]} r={f.radius * placed.scale} fill="none" stroke={colour} strokeWidth={1.5 / (pan.zoom * PX)} />;
               }
               if (f.type === 'vertex') {
                 const c = toSheet(placed, f.at[0], f.at[1]);
-                return <circle key={k} data-pick="vertex" cx={c[0]} cy={sheet.height - c[1]} r={1.1} fill={colour} stroke="var(--card)" strokeWidth={0.3} />;
+                return <circle key={k} data-pick="vertex" cx={c[0]} cy={sheet.height - c[1]} r={3 / (pan.zoom * PX)} fill={colour} stroke="var(--card)" strokeWidth={1 / (pan.zoom * PX)} />;
               }
               if (f.type === 'outline') {
                 const sa = toSheet(placed, f.from[0], f.from[1]);
                 const sb = toSheet(placed, f.to[0], f.to[1]);
-                return <line key={k} data-pick="outline" x1={sa[0]} y1={sheet.height - sa[1]} x2={sb[0]} y2={sheet.height - sb[1]} stroke={colour} strokeWidth={1} />;
+                return <line key={k} data-pick="outline" x1={sa[0]} y1={sheet.height - sa[1]} x2={sb[0]} y2={sheet.height - sb[1]} stroke={colour} strokeWidth={1.5 / (pan.zoom * PX)} />;
               }
               if (f.type === 'edge') {
                 const sa = toSheet(placed, f.a[0], f.a[1]);
                 const sb = toSheet(placed, f.b[0], f.b[1]);
-                return <line key={k} data-pick="edge" x1={sa[0]} y1={sheet.height - sa[1]} x2={sb[0]} y2={sheet.height - sb[1]} stroke={colour} strokeWidth={1} />;
+                return <line key={k} data-pick="edge" x1={sa[0]} y1={sheet.height - sa[1]} x2={sb[0]} y2={sheet.height - sb[1]} stroke={colour} strokeWidth={1.5 / (pan.zoom * PX)} />;
               }
               const [a, b] = f.type === 'plane' ? (f.axis === 'x' ? [[f.coord, box?.min[1] ?? 0], [f.coord, box?.max[1] ?? 0]] : [[box?.min[0] ?? 0, f.coord], [box?.max[0] ?? 0, f.coord]]) : [[f.at[0] - f.dir[0] * 15, f.at[1] - f.dir[1] * 15], [f.at[0] + f.dir[0] * 15, f.at[1] + f.dir[1] * 15]];
               const sa = toSheet(placed, a![0]!, a![1]!);
               const sb = toSheet(placed, b![0]!, b![1]!);
-              return <line key={k} data-pick={f.type} x1={sa[0]} y1={sheet.height - sa[1]} x2={sb[0]} y2={sheet.height - sb[1]} stroke={colour} strokeWidth={0.8} />;
+              return <line key={k} data-pick={f.type} x1={sa[0]} y1={sheet.height - sa[1]} x2={sb[0]} y2={sheet.height - sb[1]} stroke={colour} strokeWidth={1.5 / (pan.zoom * PX)} />;
             })}
-          {plan && <Highlight items={built.scene.items.filter((i) => i.group === 'preview')} height={sheet.height} color="var(--accent)" />}
+          {plan && <Highlight pixel={pan.zoom * PX} items={built.scene.items.filter((i) => i.group === 'preview')} height={sheet.height} color="var(--accent)" />}
           {drawn && drawnPlaced && drawn.tool === 'detail' && <circle cx={drawn.from[0]} cy={sheet.height - drawn.from[1]} r={Math.hypot(drawn.to[0] - drawn.from[0], drawn.to[1] - drawn.from[1])} fill="none" stroke="var(--accent)" strokeWidth={0.5} strokeDasharray="2 1" />}
           {pathDraw && (() => {
             // the stepped or aligned line so far, and what the next click would add (D-I5)

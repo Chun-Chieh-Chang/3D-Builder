@@ -399,6 +399,7 @@ export function DimensionPanel() {
               <label className="pm-row">
                 <span>{t('drawingUi.dimPrefix')}</span>
                 <TextField field="dimPrefix" value={current.prefix ?? ''} onCommit={(v) => d.setDimension(current.id, { prefix: v })} />
+                {current.kind === 'linear' && <button type="button" data-action="dimDiameterPrefix" title={t('drawingUi.dimDiameterPrefix')} aria-label={t('drawingUi.dimDiameterPrefix')} onClick={() => d.setDimension(current.id, { prefix: current.prefix?.includes('Ø') ? current.prefix : `Ø${current.prefix ?? ''}` })}>Ø</button>}
               </label>
               <label className="pm-row">
                 <span>{t('drawingUi.dimSuffix')}</span>
