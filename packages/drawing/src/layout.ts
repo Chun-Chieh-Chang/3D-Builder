@@ -1,4 +1,4 @@
-import { BREAK_GAP, isCorner, isDerived, page, rightOf, sectionArrow, sectionSide, withPage, type ClosedOutline, type ViewAxes, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewCorner, type ViewName, type ViewSide } from '@3db/model';
+import { BREAK_GAP, isCorner, isDerived, page, rightOf, sectionArrow, sectionSide, withPage, type SectionHatchRegion, type ClosedOutline, type ViewAxes, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewCorner, type ViewName, type ViewSide } from '@3db/model';
 import { clipToCircle, clipToOutline, outlineBox } from './geometry';
 import type { ShadeImage } from './shade';
 import { sheetMetrics} from './sheet';
@@ -13,6 +13,7 @@ export interface ViewLines {
   center?: number[][];
   box: { min: [number, number]; max: [number, number] } | null;
   cut?: number[][];
+  cutRegions?: SectionHatchRegion[];
   /** Clip generated hatch segments, retaining the original closed cut boundaries. */
   hatchClip?: ClosedOutline[];
   /** A view of an assembly: where each part of it is (the middle of its mass), in the view's coordinates, in the order the parts were asked for (C16.6: the balloons point there). */
@@ -194,6 +195,7 @@ export function resolveLines(doc: Pick<DrawingDoc, 'pages'>, lines: ReadonlyMap<
         visible: clip(parent.visible),
         hidden: clip(parent.hidden),
         box: outlineBox(v.outline),
+        ...(parent.cutRegions ? { cutRegions: parent.cutRegions } : {}),
         ...(parent.cut ? { cut: parent.cut, hatchClip: [...(parent.hatchClip ?? []), v.outline] } : {}),
         ...(parent.center ? { center: clip(parent.center) } : {}),
         ...(parent.tangent ? { tangent: clip(parent.tangent) } : {}),
@@ -214,7 +216,8 @@ export function resolveLines(doc: Pick<DrawingDoc, 'pages'>, lines: ReadonlyMap<
     out.set(v.id, {
       visible: clip(parent.visible),
       hidden: clip(parent.hidden),
-      ...(parent.cut ? { cut: parent.cut, hatchClip: [...(parent.hatchClip ?? []), { kind: 'circle' as const, centre: v.centre, radius: v.radius }] } : {}),
+      ...(parent.cutRegions ? { cutRegions: parent.cutRegions } : {}),
+        ...(parent.cut ? { cut: parent.cut, hatchClip: [...(parent.hatchClip ?? []), { kind: 'circle' as const, centre: v.centre, radius: v.radius }] } : {}),
       box: { min: [v.centre[0] - v.radius, v.centre[1] - v.radius], max: [v.centre[0] + v.radius, v.centre[1] + v.radius] },
       ...(parent.shade ? { shade: parent.shade, shadeClip: { centre: [v.centre[0], v.centre[1]], radius: v.radius } } : {}),
       ...(parent.tangent ? { tangent: clip(parent.tangent) } : {}),

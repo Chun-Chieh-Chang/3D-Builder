@@ -1,7 +1,7 @@
 import type { Locale } from '@3db/i18n';
 import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, SectionCut, ViewAxes, ViewEdgeSet, ViewFeature, DrawingRef } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Feature, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
-import type { DraftReport, ThicknessReport, UndercutReport, GeometryReport, MassProps, MeshData, ProjectedView } from '@3db/kernel';
+import type { DraftReport, ThicknessReport, UndercutReport, GeometryReport, MassProps, MeshData } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, FlatReport, SheetCheck, SheetCheckLimits, SnapItem, SweepResult, CosmeticThreadInfo } from '@3db/regen';
 import type { MateGeometry } from '@3db/assembly';
 import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
@@ -242,7 +242,7 @@ export interface DrawingViewRequest {
 }
 
 /** What a view of a drawing looks like: its lines at full size (and, when asked, its shading), or why they could not be made. */
-export type DrawingViewResult = { lines: ProjectedView & { bends?: import('@3db/drawing').ViewLines['bends'] }; /** Where each part is, in the order asked, when asked for. */ anchors?: [number, number][]; shade?: ShadeImage | { error: string }; ms: number } | { error: string };
+export type DrawingViewResult = { lines: import('@3db/regen').DrawingProjection & { bends?: import('@3db/drawing').ViewLines['bends'] }; /** Where each part is, in the order asked, when asked for. */ anchors?: [number, number][]; shade?: ShadeImage | { error: string }; ms: number } | { error: string };
 
 /** What a view of a drawing can be dimensioned from, or why not (C16.4). */
 /** What a view can be dimensioned from: its features, and (D-I2) the edges and vertices of the part by name, projected, for the drawing to see which are drawn. */

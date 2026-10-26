@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import { countersFor } from './ids';
-import { DRAWING_SCHEMA_VERSION, type DrawingDoc } from './drawing';
+import { checkViewCaption, DRAWING_SCHEMA_VERSION, type DrawingDoc } from './drawing';
 import { ASSEMBLY_SCHEMA_VERSION, SCHEMA_VERSION, type AssemblyDoc, type PartDoc } from './schema';
 
 /**
@@ -419,6 +419,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   28: (doc) => doc,
   // v30: flat-pattern bend annotations and table placement.
   29: (doc) => doc,
+  // v31: movable view captions and associative caption templates.
+  30: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {
@@ -435,6 +437,7 @@ export function parseDrawing(text: string): DrawingDoc {
     p.tables ??= [];
     p.surfaceFinishes ??= [];
     p.annotations ??= [];
+    for (const v of p.views as Json[]) if (v.caption !== undefined) checkViewCaption(v.caption);
   }
   // As for parts: counters cover every id in the file, even one edited by hand or by a script.
   const ids = pages.flatMap((p) => [...(p.views as Json[]), ...(p.dimensions as Json[]), ...(p.tables as Json[]), ...(p.surfaceFinishes as Json[]), ...(p.annotations as Json[])].map((v) => v.id as string));

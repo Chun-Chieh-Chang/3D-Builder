@@ -1,6 +1,6 @@
 import { t, type Locale } from '@3db/i18n';
 import { BREAK_GAP, DIM_STYLE_DEFAULT, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, canHatch, hatchStyleOf, displayOf, isCorner, isDerived, isShaded, page, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
-import { STANDARD_SCALES, arrangementBase, lineAcrossBox, scaleText, type ViewLines } from '@3db/drawing';
+import { STANDARD_SCALES, viewCaptionTemplate, arrangementBase, lineAcrossBox, scaleText, type ViewLines } from '@3db/drawing';
 import { ACTIONS, openDrawingPart, shortcutOf } from '../actions';
 import { DimStyleFields } from './DimStyleFields';
 import { TitleStyleFields } from './TitleStyleFields';
@@ -590,6 +590,11 @@ export function DrawingPanel() {
         <PMGroup title={t('drawingUi.group.viewProps')} icon={view ? VIEW_ICON(view) : 'view'} open={isOpen('view')} onToggle={() => toggle('view')} hidden={!view}>
           {view && (
             <>
+              <label className="pm-row"><span>{t('drawingUi.viewName')}</span><TextBox field="viewName" value={view.name} onCommit={name => d.setView(view.id, { name })} /></label>
+              {'label' in view && <label className="pm-row"><span>{t('drawingUi.viewLabel')}</span><TextBox field="viewLabel" value={view.label} onCommit={label => d.setView(view.id, { label })} /></label>}
+              <label className="pm-row" title={t('drawingUi.viewCaptionTip')}><span>{t('drawingUi.viewCaptionText')}</span><TextBox field="viewCaptionText" value={view.caption?.text ?? viewCaptionTemplate(view)} onCommit={text => d.setView(view.id, { caption: { ...view.caption, text: text.trim() ? text : undefined } })} /></label>
+              <button className="pm-button" data-action="resetViewCaption" disabled={!view.caption} onClick={() => d.setView(view.id, { caption: null })}>{t('drawingUi.viewCaptionReset')}</button>
+              <p className="muted">{t('drawingUi.viewCaptionTip')}</p>
               {!isDerived(view) && (
                 <label className="pm-row">
                   <span>{t('drawingUi.direction')}</span>

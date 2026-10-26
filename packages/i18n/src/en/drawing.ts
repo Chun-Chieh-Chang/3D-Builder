@@ -2,6 +2,12 @@ import type { Translation } from '../index';
 
 /** drawing: the drawing document (Phase 5). */
 export const drawing: Translation = {
+  'drawing.badCaption': 'A view caption needs nonempty text and a finite two-coordinate offset',
+  'drawingUi.viewName': 'View name',
+  'drawingUi.viewLabel': 'Section/detail letter',
+  'drawingUi.viewCaptionText': 'Caption text',
+  'drawingUi.viewCaptionTip': 'Drag the caption independently; double-click to edit. <NAME>, <LABEL> and <SCALE> follow the view.',
+  'drawingUi.viewCaptionReset': 'Reset caption text and position',
   'drawing.flatDimensionState': 'Flat and folded dimensions use different geometry; remove attached dimensions before switching view type and dimension the matching geometry',
   'drawing.badFlatBends': 'Bend annotations require boolean switches and finite paper coordinates',
   'drawingUi.bendNotes': 'Bend numbers and directions',

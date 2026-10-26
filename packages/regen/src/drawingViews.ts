@@ -1,9 +1,11 @@
 import type { Kernel, ProjectedView, ShapeId } from '@3db/kernel';
-import { placementRows, rightOf, sheetUp, type Pose, type SectionCut, type ViewAxes } from '@3db/model';
+import { placementRows, rightOf, sheetUp, type Pose, type SectionHatchRegion, type SectionCut, type ViewAxes } from '@3db/model';
 
 /** A part of what a view shows: its shape as built, where it is (identity for a part drawn alone) and whether it is the mirror of the file's part. */
 export interface ViewPart {
   shape: ShapeId;
+  /** Stable assembly leaf identity. */
+  component?: string;
   pose: Pose;
   mirrored: boolean;
 }
@@ -13,7 +15,9 @@ export interface ViewPart {
  * by a plane first and the outlines of the faces it cut given with them. With `mesh`, the faces of what is seen too, in the view's coordinates (a shaded view,
  * ADR 0146). Nothing made here outlives the call.
  */
-export function projectDrawingView(kernel: Kernel, parts: readonly ViewPart[], axes: ViewAxes, cut?: SectionCut, mesh = false): ProjectedView {
+export interface DrawingProjection extends ProjectedView { cutRegions?: SectionHatchRegion[] }
+
+export function projectDrawingView(kernel: Kernel, parts: readonly ViewPart[], axes: ViewAxes, cut?: SectionCut, mesh = false): DrawingProjection {
   const made: ShapeId[] = [];
   try {
     const placed = parts.map((p) => {
@@ -23,11 +27,19 @@ export function projectDrawingView(kernel: Kernel, parts: readonly ViewPart[], a
     });
     const whole = placed.length === 1 ? placed[0]! : kernel.join(placed);
     if (placed.length !== 1) made.push(whole);
-    // a stepped or aligned section (D-I5) is cut along its whole line; a straight one by the plane of its line
-    const options = mesh ? { mesh: true } : {};
-    if (cut?.path) return kernel.sectionViewPath(whole, { normal: cut.normal, path: cut.path, ...(cut.aligned ? { aligned: true } : {}) }, axes.up, options);
-    if (cut?.local) return kernel.sectionViewLocal(whole, cut.local.outline, cut.local.depth, { origin: cut.origin, normal: cut.normal }, axes.up, options);
-    return cut ? kernel.sectionView(whole, cut, axes.up, options) : kernel.projectView(whole, axes, options);
+    // Keep whole-assembly hidden-line removal: separately drawn component outlines would expose occluded edges.
+    const project = (shape: ShapeId, withMesh: boolean): ProjectedView => {
+      const options = withMesh ? { mesh: true } : {};
+      if (cut?.path) return kernel.sectionViewPath(shape, { normal: cut.normal, path: cut.path, ...(cut.aligned ? { aligned: true } : {}) }, axes.up, options);
+      if (cut?.local) return kernel.sectionViewLocal(shape, cut.local.outline, cut.local.depth, { origin: cut.origin, normal: cut.normal }, axes.up, options);
+      return cut ? kernel.sectionView(shape, cut, axes.up, options) : kernel.projectView(shape, axes, options);
+    };
+    const result = project(whole, mesh);
+    if (!cut || parts.length < 2) return result;
+    // A single even-odd scan of all components loses ownership and can continue a hatch through a mating boundary.
+    // Retain the full native boundaries for each placed instance, including empty cuts so pattern orders never shift between views.
+    const cutRegions = placed.map((shape, order) => ({ component: parts[order]!.component ?? String(order), order, cut: project(shape, false).cut ?? [] }));
+    return { ...result, cut: cutRegions.flatMap(r => r.cut), cutRegions };
   } finally {
     for (const id of made) kernel.release(id);
   }

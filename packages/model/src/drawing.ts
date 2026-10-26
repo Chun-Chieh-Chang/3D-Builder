@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 30;
+export const DRAWING_SCHEMA_VERSION = 31;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -216,7 +216,13 @@ export function hatchStyleOf(view: DrawingView, views: readonly DrawingView[] = 
 }
 
 export interface FlatBendStyle { notes: boolean; table: boolean; at?: [number, number] }
+export interface ViewCaption { text?: string; /** Paper millimetres from the automatic label location. */ offset?: [number, number] }
+export function checkViewCaption(value: unknown): asserts value is ViewCaption {
+  const c = value as ViewCaption | null;
+  if (!c || typeof c !== 'object' || Array.isArray(c) || (c.text !== undefined && (typeof c.text !== 'string' || !c.text.trim())) || (c.offset !== undefined && (!Array.isArray(c.offset) || c.offset.length !== 2 || !c.offset.every(Number.isFinite)))) throw new CommandError(t('drawing.badCaption'));
+}
 interface ViewCommon {
+  caption?: ViewCaption;
   /** Flat-pattern manufacturing annotations; coordinates are paper millimetres. */
   flatBends?: FlatBendStyle;
   /** Absent: 3 mm / 45 degrees, inherited by section details and crops. */
@@ -605,6 +611,9 @@ export type ViewFeature =
   /** A plane seen edge-on that is neither square to the view's x nor to its y (a slanted face): the middle of the face and the direction of the line it is seen as (a unit vector), in the view's coordinates. */
   | { type: 'slant'; ref: Ref; at: [number, number]; dir: [number, number]; area: number };
 
+/** Transient native section boundaries, kept separate by assembly instance; never saved as drawing geometry. */
+export interface SectionHatchRegion { component: string; order: number; cut: number[][] }
+
 // ---------------------------------------------------------------- the edges and vertices of a view, by name (D-I2, ADR 0138)
 
 /**
@@ -860,6 +869,7 @@ export type DimensionPatch = {
 
 /** What `setView` may change: the fields every view has, and those of its kind; a field that does not belong to the view's kind is refused. */
 export type ViewPatch = {
+  caption?: ViewCaption | null;
   flatBends?: FlatBendStyle | null;
   hatch?: HatchStyle | null;
   name?: string;
@@ -929,6 +939,7 @@ function checkBreak(b: ViewBreak): void {
 /** Checks a view against the views it may refer to (its parent has to be one of them, and not the view itself). */
 function checkView(v: DrawingView, views: readonly DrawingView[]): void {
   if (!v.id) throw new CommandError(t('drawing.idMissing'));
+  if (v.caption !== undefined) checkViewCaption(v.caption);
   if (!v.name.trim()) throw new CommandError(t('drawing.nameEmpty'));
   if (v.flatBends !== undefined) {
     if (isDerived(v) || v.direction !== 'flat') throw new CommandError(t('drawing.notForKind', { field: 'flatBends', kind: v.kind ?? 'model' }));
@@ -1240,7 +1251,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       const { page: vPage, view: v } = pageOfView(draft, cmd.viewId);
       // a locked view (B2.1) keeps its place and its scale: moving or rescaling it is refused, however it is asked for
       if (v.locked && (cmd.patch.at !== undefined || cmd.patch.scale !== undefined || cmd.patch.slide !== undefined)) throw new CommandError(t('drawing.viewLocked'));
-      const { at, scale, slide, flip, aligned, centreMarks, display, locked, hiddenEdges, showTangentEdges, hatch, flatBends, break: brk, ...rest } = cmd.patch;
+      const { at, scale, slide, flip, aligned, centreMarks, display, locked, hiddenEdges, showTangentEdges, hatch, flatBends, caption, break: brk, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
       const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'], sectionLocal: ['outline', 'depth', 'label'], crop: ['outline'], auxiliary: ['line', 'label'] };
       for (const k of Object.keys(rest)) if (k !== 'name' && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
@@ -1282,6 +1293,8 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (showTangentEdges === false) next.showTangentEdges = false;
       if (flatBends === null) delete next.flatBends;
       else if (flatBends !== undefined) next.flatBends = flatBends;
+      if (caption === null) delete next.caption;
+      else if (caption !== undefined) next.caption = caption;
       if (hatch === null) delete next.hatch;
       else if (hatch !== undefined) next.hatch = hatch;
       if (brk === null) delete next.break;

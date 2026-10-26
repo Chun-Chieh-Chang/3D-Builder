@@ -542,7 +542,7 @@ const api: KernelApi = {
             shape = own.length === 1 ? own[0]!.shape : kernel.join(own.map((b) => b.shape));
             if (own.length > 1) made.push(shape);
           }
-          viewParts.push({ shape, pose: p.pose, mirrored: p.mirrored });
+          viewParts.push({ shape, pose: p.pose, mirrored: p.mirrored, ...(p.leaf ? { component: p.leaf } : {}) });
         }
         const { mesh, ...lines } = projectDrawingView(kernel, viewParts, r.axes, r.cut, !!r.shade);
         // the edges this view hides are not drawn (B2.2): their lines are taken out of what the view shows, by the view's own lines (withoutHiddenEdges)

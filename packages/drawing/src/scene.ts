@@ -56,6 +56,7 @@ export interface SceneImage {
 }
 
 export interface SceneText {
+  viewCaption?: Id;
   kind: 'text';
   /** The dimension (by id) this text is drawn for. */
   group?: string;
@@ -203,9 +204,14 @@ export function viewItems(view: DrawingView, lines: ViewLines | null | undefined
   // any other style they would be lines across the faces in front of them — on a shaded view, lines that the shading says are not there
   if (showsHidden(view) && view.showTangentEdges !== false) draw(lines.tangentHidden, display === 'wireframe' ? 'thin' : 'hidden');
   if (lines.cut) {
-    let strokes = hatch(lines.cut, hatchStyle.spacing / placed.scale, hatchStyle.angle * Math.PI / 180);
-    for (const outline of lines.hatchClip ?? []) strokes = strokes.flatMap(l => clipToOutline(l, outline));
-    draw(strokes, 'thin');
+    const regions = lines.cutRegions ?? [{ component: '', order: 0, cut: lines.cut }];
+    for (const region of regions) {
+      const angle = hatchStyle.angle + (region.order % 2) * 90;
+      const spacing = hatchStyle.spacing * (1 + Math.floor(region.order / 2) * 0.25);
+      let strokes = hatch(region.cut, spacing / placed.scale, angle * Math.PI / 180);
+      for (const outline of lines.hatchClip ?? []) strokes = strokes.flatMap(l => clipToOutline(l, outline));
+      draw(strokes, 'thin');
+    }
   }
   items.push(...breakItems(placed, lines.box));
   return items;
@@ -226,10 +232,10 @@ export function viewImage(view: DrawingView, lines: ViewLines | null | undefined
 }
 
 /**
- * The line of a section or the fold line of an auxiliary view on its parent view, with the arrows at its ends and the letter beside each; and the view's own
- * title. A section's line is where it cuts the part (C16.3); an auxiliary view's (B2.7) is the fold it is turned about, drawn the same way (ISO 128-30).
+ * The line of a section or the fold line of an auxiliary view on its parent view, with the arrows at its ends and the letter beside each.
+ * A section's line is where it cuts the part (C16.3); an auxiliary view's (B2.7) is the fold it is turned about, drawn the same way (ISO 128-30).
  */
-function sectionItems(v: Pick<SectionDrawingView, 'line' | 'label' | 'flip'>, parent: PlacedView, own: PlacedView): SceneItem[] {
+function sectionItems(v: Pick<SectionDrawingView, 'line' | 'label' | 'flip'>, parent: PlacedView): SceneItem[] {
   // the whole line (a stepped or aligned one bends, D-I5), an arrow at each end square to its own segment
   const pts = v.line.map(([x, y]) => toSheet(parent, x, y));
   const a = pts[0]!;
@@ -246,12 +252,20 @@ function sectionItems(v: Pick<SectionDrawingView, 'line' | 'label' | 'flip'>, pa
     items.push({ kind: 'polyline', points: [...back(0.35), ...tip, ...back(-0.35)], style: 'visible' });
     items.push({ kind: 'text', at: [tip[0] + dir[0] * 2 - (dir[0] < 0 ? 3 : 0), tip[1] + dir[1] * 2 - (dir[1] < 0 ? 5 : 0)], text: v.label, height: 5 });
   }
-  items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: `${v.label}-${v.label}`, height: 5, anchor: 'center' });
   return items;
 }
 
-/** The cutting outline of a local section on its parent view with its letter beside it, and the section's own title. */
-function localSectionItems(v: LocalSectionDrawingView, parent: PlacedView, own: PlacedView): SceneItem[] {
+/** Caption templates retain the model label and scale; an offset moves text without moving the view. */
+export const viewCaptionTemplate = (v: DrawingView): string => v.kind === 'detail' ? '<LABEL> (<SCALE>)' : v.kind === 'section' || v.kind === 'sectionLocal' || v.kind === 'auxiliary' ? '<LABEL>-<LABEL>' : '<NAME>';
+export function viewCaptionItem(v: DrawingView, own: PlacedView, scale: Scale): SceneText {
+  const tokens: Record<string, string> = { NAME: v.name, LABEL: 'label' in v ? v.label : v.name, SCALE: scaleText(scale) };
+  const text = (v.caption?.text ?? viewCaptionTemplate(v)).replace(/<(NAME|LABEL|SCALE)>/g, (_, token: string) => tokens[token]!);
+  const offset = v.caption?.offset ?? [0, 0];
+  return { kind: 'text', viewCaption: v.id, at: [own.at[0] + offset[0], own.at[1] - own.h / 2 - 8 + offset[1]], text, height: 5, anchor: 'center' };
+}
+
+/** The cutting outline of a local section on its parent view with its letter beside it. */
+function localSectionItems(v: LocalSectionDrawingView, parent: PlacedView): SceneItem[] {
   const pts = outlinePoints(v.outline);
   const sheetPts = pts.map(([x, y]) => toSheet(parent, x, y));
   const items: SceneItem[] = [{ kind: 'polyline', points: sheetPts.flat(), style: 'center', closed: true }];
@@ -265,7 +279,6 @@ function localSectionItems(v: LocalSectionDrawingView, parent: PlacedView, own: 
     const len = Math.hypot(dx, dy) || 1;
     items.push({ kind: 'text', at: [corner[0] + (dx / len) * 3, corner[1] + (dy / len) * 3], text: v.label, height: 5 });
   }
-  items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: `${v.label}-${v.label}`, height: 5, anchor: 'center' });
   return items;
 }
 
@@ -275,15 +288,14 @@ function cropItems(v: CropDrawingView, parent: PlacedView): SceneItem[] {
   return pts.length >= 2 ? [{ kind: 'polyline', points: pts.flat(), style: 'thin', closed: true }] : [];
 }
 
-/** The circle of a detail on its parent view with its letter, and the detail's own title (the letter and its scale). */
-function detailItems(v: DetailDrawingView, parent: PlacedView, own: PlacedView, scale: Scale): SceneItem[] {
+/** The circle of a detail on its parent view with its letter. Its caption is emitted centrally. */
+function detailItems(v: DetailDrawingView, parent: PlacedView): SceneItem[] {
   const centre = toSheet(parent, v.centre[0], v.centre[1]);
   const r = v.radius * parent.scale;
   const ring = circlePolyline(centre, r);
   return [
     { kind: 'polyline', points: ring, style: 'thin', closed: true },
     { kind: 'text', at: [centre[0] + r * 0.72 + 1, centre[1] + r * 0.72 + 1], text: v.label, height: 5 },
-    { kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: `${v.label} (${scaleText(scale)})`, height: 5, anchor: 'center' },
   ];
 }
 
@@ -329,18 +341,17 @@ function buildSceneIn(
     if (image) images.push(image);
     items.push(...viewItems(v, resolved.get(v.id), own, hatchStyleOf(v, pg.views)));
     if (!resolved.get(v.id)) continue;
-    // The view's name under it. A section, a local section, a detail and an auxiliary view are named by the letter they carry (ISO 128-30: 「A–A」, 「L」), which
-    // their own items already write, so only the rest are named here; without it a reader has the lines and no way to tell which view is which.
-    if (v.kind !== 'section' && v.kind !== 'sectionLocal' && v.kind !== 'detail' && v.kind !== 'auxiliary') items.push({ kind: 'text', at: [own.at[0], own.at[1] - own.h / 2 - 8], text: v.name, height: 5, anchor: 'center' });
+    // Exactly one caption per view; section/detail markers remain attached to their parent geometry.
+    items.push(viewCaptionItem(v, own, scaleOf(doc, v)));
     items.push(...bendTableItems(v, resolved.get(v.id), own));
     items.push(...centreItems(v, features.get(v.id) ?? [], own));
     items.push(...surfaceFinishItems(pg.surfaceFinishes.filter((f) => f.view === v.id), own));
     items.push(...threadItems(v, features.get(v.id) ?? [], own));
     items.push(...annotationItems((pg.annotations ?? []).filter((a) => a.view === v.id), own, lookup, pg.sheet.unit ?? 'mm'));
     const parent = v.kind === 'section' || v.kind === 'sectionLocal' || v.kind === 'detail' || v.kind === 'crop' || v.kind === 'auxiliary' ? placed.get(v.parent) : undefined;
-    if ((v.kind === 'section' || v.kind === 'auxiliary') && parent) items.push(...sectionItems(v, parent, own));
-    if (v.kind === 'sectionLocal' && parent) items.push(...localSectionItems(v, parent, own));
-    if (v.kind === 'detail' && parent) items.push(...detailItems(v, parent, own, scaleOf(doc, v)));
+    if ((v.kind === 'section' || v.kind === 'auxiliary') && parent) items.push(...sectionItems(v, parent));
+    if (v.kind === 'sectionLocal' && parent) items.push(...localSectionItems(v, parent));
+    if (v.kind === 'detail' && parent) items.push(...detailItems(v, parent));
     if (v.kind === 'crop' && parent) items.push(...cropItems(v, parent));
   }
   const dimensions = new Map<Id, DimensionOutcome>();

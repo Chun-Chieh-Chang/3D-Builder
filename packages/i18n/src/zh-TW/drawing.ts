@@ -1,5 +1,11 @@
 /** drawing: the drawing document (Phase 5). */
 export const drawing = {
+  'drawing.badCaption': '視圖標籤須為非空文字，位移須為兩個有限數值',
+  'drawingUi.viewName': '視圖名稱',
+  'drawingUi.viewLabel': '剖面／細部代號',
+  'drawingUi.viewCaptionText': '標籤文字',
+  'drawingUi.viewCaptionTip': '拖曳標籤可獨立移位，雙擊可編輯。<NAME>、<LABEL>、<SCALE> 會跟隨視圖名稱、代號及比例。',
+  'drawingUi.viewCaptionReset': '恢復標籤文字與位置',
   'drawing.flatDimensionState': '展平與折疊視圖的尺寸來源不同；請先移除相關尺寸再切換視圖，並以相符的幾何重新標註',
   'drawing.badFlatBends': '折彎註記設定必須使用開關與有效的紙面座標',
   'drawingUi.bendNotes': '折彎編號／方向註記',

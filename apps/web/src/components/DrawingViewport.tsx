@@ -76,6 +76,7 @@ function dimensionHint(mode: Exclude<DimensionMode, 'smart'> | undefined, picked
  * moved across. A `table`: a table (the parts list, the hole table) is moved by its upper left corner; a `balloon`: the circle of a balloon is moved, its leader stays on the part. A `draw`: the line of a section or the circle of a detail is being drawn on a view, with the tool.
  */
 type Drag =
+  | { kind: 'caption'; id: string; from: P; origin: P; delta: P }
   | { kind: 'move'; id: string; mode: 'shift' | 'slide' | 'free'; axis: 0 | 1 | null; from: P; origin: P; delta: P }
   | { kind: 'scale'; id: string; target: ReturnType<typeof scaleTarget>; centre: P; r0: number; ratio0: number; scale: Scale }
   | { kind: 'dimension'; id: string; from: P; onText: boolean; handle: DimensionHandle; patch: ReturnType<typeof dragDimension> }
@@ -200,6 +201,7 @@ export function DrawingViewport() {
     if (drag.kind === 'draw') return pg;
     if (drag.kind === 'placeDraw') return pg;
     if (drag.kind === 'box') return pg;
+    if (drag.kind === 'caption') return { ...pg, views: pg.views.map(v => v.id === drag.id ? { ...v, caption: { ...v.caption, offset: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } } : v) };
     if (drag.kind === 'dimension') return { ...pg, dimensions: pg.dimensions.map((x) => (x.id === drag.id ? ({ ...x, ...drag.patch } as Dimension) : x)) };
     if (drag.kind === 'table') return { ...pg, tables: pg.tables.map((x) => (x.id === drag.id ? { ...x, at: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } : x)) };
     if (drag.kind === 'balloon') return { ...pg, tables: pg.tables.map((x) => (x.id === drag.id && x.kind === 'bom' ? { ...x, balloonAt: { ...x.balloonAt, [drag.item]: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } } : x)) };
@@ -232,6 +234,7 @@ export function DrawingViewport() {
   const built = useMemo(() => buildScene(shownDoc, drw.lines, elements, drw.features, drw.boms), [shownDoc, drw.lines, elements, drw.features, drw.boms]);
   const svg = useMemo(() => toSvg(built.scene, { strokeScale: pan.zoom }), [built, pan.zoom]);
   /** The items of the dimensions that are there (not the one being made): what the pointer can take hold of. */
+  const captionItems = useMemo(() => built.scene.items.filter(i => i.kind === 'text' && i.viewCaption).map(i => ({ ...i, group: i.kind === 'text' ? i.viewCaption : undefined })), [built]);
   const dimensionItems = useMemo(() => built.scene.items.filter((i) => i.group && i.group !== 'preview'), [built]);
   /** What each annotation draws, marked with its id: what the pointer takes hold of, and what a choice is shown with (D-I3). */
   const annotationHit = useMemo(() => {
@@ -536,6 +539,17 @@ export function DrawingViewport() {
       setPanning({ x: e.clientX - pan.x, y: e.clientY - pan.y });
       return;
     }
+    const caption = dimensionAt(captionItems, p, reach);
+    if (caption) {
+      const view = curPage.views.find(v => v.id === caption.id);
+      if (view) {
+        if (e.ctrlKey || e.metaKey) { d.pick([{ kind: 'view', id: view.id }], 'toggle'); return; }
+        d.setTool(null); d.select(view.id); capture(e);
+        const offset = view.caption?.offset ?? [0, 0];
+        setDrag({ kind: 'caption', id: view.id, from: p, origin: [...offset], delta: [0, 0] });
+        return;
+      }
+    }
     // An idle dimension tool must not swallow a drag of an existing numeric label.
     if (tool?.kind === 'dimension' && tool.picks.length === 0) {
       const hit = dimensionAt(dimensionItems, p, reach);
@@ -722,6 +736,8 @@ export function DrawingViewport() {
 
   /** What a click with Ctrl adds to or takes from the choice: a dimension, a surface finish, a table, a view — in the order they are drawn over each other. */
   const pickUnder = (p: P): { kind: 'view' | 'dimension' | 'finish' | 'table' | 'annotation'; id: Id } | null => {
+    const caption = dimensionAt(captionItems, p, reach);
+    if (caption) return { kind: 'view', id: caption.id };
     const dim = dimensionAt(dimensionItems, p, reach);
     if (dim) return { kind: 'dimension', id: dim.id };
     const ann = dimensionAt(annotationHit, p, reach);
@@ -781,7 +797,7 @@ export function DrawingViewport() {
     } else {
       // what is under the pointer: for the tool's preview, and for the cursor (and hover highlight when no tool)
       const feature = tool?.kind === 'dimension' || tool?.kind === 'ordinate' ? featureUnder(p, tool.picks[0]?.view) : tool?.kind === 'hideEdge' ? featureUnder(p) : !tool ? featureUnder(p) : null;
-      const dimension = tool ? null : (dimensionAt(dimensionItems, p, reach)?.id ?? null);
+      const dimension = tool ? null : (dimensionAt(dimensionItems, p, reach)?.id ?? dimensionAt(captionItems, p, reach)?.id ?? null);
       setHover((h) => (tool || h?.dimension !== dimension || h?.feature || feature ? { p, feature, dimension, ctrl: e.ctrlKey || e.metaKey } : h));
     }
   };
@@ -847,6 +863,11 @@ export function DrawingViewport() {
       }
     } else if (drag?.kind === 'dimension') {
       if (Object.keys(drag.patch).length > 0) d.setDimension(drag.id, drag.patch);
+    } else if (drag?.kind === 'caption') {
+      if (Math.hypot(...drag.delta) > 0.05) {
+        const view = curPage.views.find(v => v.id === drag.id)!;
+        d.setView(drag.id, { caption: { ...view.caption, offset: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])] } });
+      }
     } else if (drag?.kind === 'sectionLine') {
       if (Math.abs(drag.delta) > 0.005) d.setView(drag.id, { line: movedLine(drag.line, drag.vertical, round2(drag.delta)) });
     } else if (drag?.kind === 'table') {
@@ -1223,7 +1244,7 @@ export function DrawingViewport() {
       : curPage.views.length === 0
       ? t('drawingUi.mainViewFirst')
       : null;
-  const cursor = tool ? 'crosshair' : hover?.dimension || drag?.kind === 'dimension' || drag?.kind === 'surface' || drag?.kind === 'annotation' ? 'move' : undefined;
+  const cursor = tool ? 'crosshair' : hover?.dimension || drag?.kind === 'dimension' || drag?.kind === 'surface' || drag?.kind === 'annotation' || drag?.kind === 'caption' ? 'move' : undefined;
   // the symbol of the surface finish chosen, drawn over in its own colour so that it can be seen which one it is
   const chosenAnnotations = new Set(drw.selection.filter((x) => x.kind === 'annotation').map((x) => x.id));
   const chosenAnnotationItems = chosenAnnotations.size > 0 ? annotationHit.filter((i) => chosenAnnotations.has(i.group)) : [];
@@ -1294,6 +1315,12 @@ export function DrawingViewport() {
       onPointerLeave={() => setHover(null)}
       onContextMenu={(e) => e.preventDefault()}
       onDoubleClick={(e) => {
+        const caption = dimensionAt(captionItems, onSheet(e), reach);
+        if (caption) {
+          d.setTool(null); d.select(caption.id);
+          setTimeout(() => document.querySelector<HTMLElement>('[data-field="viewCaptionText"]')?.focus(), 0);
+          return;
+        }
         if (tool) return;
         const dim = dimensionAt(dimensionItems, onSheet(e), reach);
         if (!dim) return;
