@@ -3891,3 +3891,12 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 - 驗證過程曾把平板樣本雜湊中的 `...32883a4a071...` 輸入為 `...32883a8a071...`；雜湊斷言立即攔截，已依 README 與檔案的實測值修正。樣本內容與原有 README 基準表均未變更。
 - 補入 `scripts/freecad-step-report.py` 與 `npm run verify:freecad-sheet-metal`：代理可用另一個 CAD 應用程式 FreeCAD 的命令列實際開啟兩個公開 STEP，擷取物件／實體／拓樸／質量特性後寫入合併 JSON。2026-10-23 實測 FreeCAD 26 兩檔各讀得 1 個實體，折疊與平板材料體積相對差 `7.32e-15`；FreeCAD 同樣採 OCCT，故紀錄為「外部應用程式匯入」而非跨核心或 SolidWorks 等價性證明。
 
+# 2026-10-27：STEP 輸出的圓角在 eDrawings 顯示錯誤
+
+- **現象**（使用者截圖）：階梯軸的圓角在 eDrawings 2026 中，內圓角像一圈 O 形環，外圓角往外翻成喇叭口。
+- **RCA**：OCCT 把整圈圓角寫成單一 `TOROIDAL_SURFACE` 面，以 `SEAM_CURVE` 閉合；環面兩個方向都封閉，兩個邊界圓把環面分成兩塊，eDrawings 選錯了那一塊。SolidWorks 寫的檔案（`SW樣本`）每個環面都分成兩半、沒有縫合邊（每半 4 條圓弧邊）。OCCT 自己讀回完全正確，所以讀回測試抓不到。
+- **裁定**：產生 A 原樣、B 不寫 PCURVE、C 分割全部封閉面、D 分割且不寫 PCURVE 四個對照檔，使用者在 eDrawings 開啟：**C、D 正常，A、B 不正常**，因此問題在縫合邊，與 PCURVE 無關。
+- **修正**：`Kernel.seamless`（`packages/kernel/src/kernel.ts`），零件與組合件輸出都經過：只把**環面與球面**的封閉面用 `ShapeUpgrade_ClosedFaceDivide` 在同一個 `ShapeBuild_ReShape` 中分成兩半；圓柱、圓錐兩個邊界圓之間只有一塊，不會有歧義，所以保持不動，讀回的面數只增加環面、球面的數目。面的顏色經 context 對到分割後的每一片。分割失敗或結果不通過 BRepCheck 時照原樣輸出，並以 `kernel.stepSeamKept` 警告（`StepExportOptions.warnings`／`exportAssemblyStep` 的 `warnings` 傳到 worker 的輸出通知）。
+- **紅隊**：輸入：沒有環面、球面的形狀不變（面數相同）；半圈環面（不封閉）`Perform` 為 false，不動。幾何：讀回體積、面積相對差 < 1e-9，BRepCheck 有效。依賴鏈：零件、組合件兩個輸出路徑都接上，顏色對應有測試。零 mock：測試解析實際寫出的 STEP 實體，斷言環面每片 4 條邊、沒有 `SEAM_CURVE`，圓柱仍保有縫合邊。
+- **驗證**：`packages/kernel/test/step-seamless.test.ts` 4 項通過；把分割關掉時 4 項全部失敗（確認測試真的會攔）。所有呼叫 STEP 輸出的測試檔：36 檔通過、2 檔略過（需要 SW 樣本）；在本機設好 `SW_SAMPLE_DIR` 補跑這 2 檔：`step-roundtrip` 通過，`real-sample` 的「組合件輸出與零件輸出體積差」失敗（3.65e-6 > 1e-9）。**關掉分割仍失敗，數值完全相同，是先前就有的問題，與本次無關**，未處理。`typecheck` 只有已被 gitignore 的 `zz-hlr-spike.test.ts`（10-16 留下）一個錯誤；`lint:rules`／`lint:deps`／`lint:i18n`／`lint:repo` 通過。只分割環面、球面的版本（E-fix.step）已由使用者在 eDrawings 確認顯示正常（2026-10-27）。
+

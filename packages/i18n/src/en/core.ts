@@ -46,6 +46,7 @@ export const core: Translation = {
   'kernel.chamferNeedsEdge': 'A chamfer needs at least one edge',
   'kernel.edgeFaceOutOfRange': 'The edge or face index is out of range: {edge}/{face}',
   'kernel.stepFailedWhy': 'STEP export failed: {why}',
+  'kernel.stepSeamKept': 'Closed faces (whole cylinders, tori, fillets of round edges) could not be split in two, so they were written as they are; some viewers, such as eDrawings, may draw them wrong ({why})',
   'kernel.stepFailed': 'STEP export failed',
   'kernel.noComponents': 'The assembly has no components to export',
   'kernel.noPartForComponent': 'The part of component "{name}" does not exist',

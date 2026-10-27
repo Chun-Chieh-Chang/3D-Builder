@@ -454,8 +454,9 @@ const api: KernelApi = {
         if (fit.failed) stuck++;
         shapes.push({ shape: fit.shape, name: u.name, faceColors: part.colors }); // a mirror keeps the order of the faces, so the same colors
       }
-      const text = exportAssemblyStep(kernel, name, shapes, instances, subs);
-      return { text, warnings: stuck > 0 ? [t('export.offsetKept', { n: String(stuck) })] : [] };
+      const warnings = stuck > 0 ? [t('export.offsetKept', { n: String(stuck) })] : [];
+      const text = exportAssemblyStep(kernel, name, shapes, instances, subs, warnings);
+      return { text, warnings };
     } finally {
       for (const id of made) kernel.release(id);
     }

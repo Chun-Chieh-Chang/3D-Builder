@@ -44,6 +44,7 @@ export const core = {
   'kernel.chamferNeedsEdge': '導角至少需要一條邊線',
   'kernel.edgeFaceOutOfRange': '邊線或面索引超出範圍：{edge}/{face}',
   'kernel.stepFailedWhy': 'STEP 輸出失敗：{why}',
+  'kernel.stepSeamKept': '封閉的面（整圈的圓柱、環面、圓邊的圓角）無法分成兩半，已照原樣輸出；eDrawings 等檢視器可能顯示錯誤（{why}）',
   'kernel.stepFailed': 'STEP 輸出失敗',
   'kernel.noComponents': '組合件沒有可輸出的零組件',
   'kernel.noPartForComponent': '零組件「{name}」的零件不存在',

@@ -367,6 +367,8 @@ export interface StepExportOptions {
   schema?: 'AP214' | 'AP242';
   /** "#rrggbb" or null for each face, in the order of `Kernel.topology`. */
   faceColors?: readonly (string | null)[];
+  /** What the writer could not do as it should and wrote anyway (for the caller to tell the user). */
+  warnings?: string[];
 }
 
 /** One sample along a curve or 3D edge (C6.4, ADR 0166). */

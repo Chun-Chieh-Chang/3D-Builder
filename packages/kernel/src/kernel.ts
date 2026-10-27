@@ -5347,9 +5347,10 @@ export class Kernel {
       oc.Interface_Static.SetCVal('write.step.schema', options.schema === 'AP242' ? 'AP242DIS' : 'AP214IS');
       // Attribute and tool wrappers are owned by the document; only the document itself is deleted.
       const shapeTool = oc.XCAFDoc_DocumentTool.ShapeTool(doc.Main());
-      const label = shapeTool.AddShape(this.get(id), false, true);
+      const written = this.seamless(id, arena, options.warnings);
+      const label = shapeTool.AddShape(written.shape, false, true);
       oc.TDataStd_Name.Set(label, arena.own(new oc.TCollection_ExtendedString(productName, true)));
-      this.colorFaces(doc, label, id, options.faceColors ?? [], arena);
+      this.colorFaces(doc, label, id, options.faceColors ?? [], arena, written.piecesOf);
       w.SetNameMode(true);
       w.SetColorMode(true);
       let ok: boolean;
@@ -5372,8 +5373,61 @@ export class Kernel {
     }
   }
 
-  /** Gives faces their colors in a document about to be written (F1.3): `colors[i]` is "#rrggbb" for face i of the shape in the order of `topology`, or null. */
-  private colorFaces(doc: InstanceType<OC['TDocStd_Document']>, root: Parameters<OC['TDataStd_Name']['Set']>[0], id: ShapeId, colors: readonly (string | null)[], arena: Arena): void {
+  /**
+   * The shape as it is written to STEP: every closed torus or sphere face cut in two, as SolidWorks writes them. eDrawings 2026 draws a whole
+   * torus closed by a seam edge (what OCCT makes of a fillet of a round edge) as the wrong part of the tube: a concave fillet comes out as three
+   * quarters of a ring, a convex one flares outwards (checked by the user in eDrawings, 2026-10-27: the same file with its closed faces cut in two is
+   * drawn right). A torus or a sphere is closed both ways, so two circles bound two pieces of it and the reader has to pick one; a cylinder or a cone
+   * between two circles is one piece only, and is left whole, so that a file read back has the faces it had. The geometry is the same; only faces are
+   * cut. `piecesOf` gives the written faces a face of the given shape became. If the cut fails or makes an invalid shape, the shape is written as it
+   * is and `warnings` says so.
+   */
+  private seamless(id: ShapeId, arena: Arena, warnings?: string[]): { shape: TopoDS_Shape; piecesOf: (face: TopoDS_Shape) => TopoDS_Shape[] } {
+    const oc = this.oc;
+    const shape = this.get(id);
+    const keep = { shape, piecesOf: (face: TopoDS_Shape) => [face] };
+    const closedBothWays = new Set(['GeomAbs_Torus', 'GeomAbs_Sphere']);
+    let cut: TopoDS_Shape;
+    const context = arena.own(new oc.ShapeBuild_ReShape());
+    try {
+      // what ShapeUpgrade_ShapeDivideClosed does, for these faces only: each face cut in one context, which also cuts the edges the neighbours share
+      let any = false;
+      for (const ex = arena.own(new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) {
+        const face = arena.own(oc.TopoDS.Face(ex.Current()));
+        if (!closedBothWays.has(String(arena.own(new oc.BRepAdaptor_Surface(face, true)).GetType()))) continue;
+        const divide = arena.own(new oc.ShapeUpgrade_ClosedFaceDivide(face));
+        divide.SetNbSplitPoints(1);
+        divide.SetContext(context);
+        if (!divide.Perform()) continue; // not closed: a fillet that is not a whole turn
+        context.Replace(face, arena.own(divide.Result()));
+        any = true;
+      }
+      if (!any) return keep;
+      cut = arena.own(context.Apply(shape, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
+    } catch (e) {
+      warnings?.push(t('kernel.stepSeamKept', { why: this.errorText(e) }));
+      return keep;
+    }
+    if (!this.valid(cut)) {
+      warnings?.push(t('kernel.stepSeamKept', { why: t('surface.invalid') }));
+      return keep;
+    }
+    return {
+      shape: cut,
+      piecesOf: (face) => {
+        const pieces: TopoDS_Shape[] = [];
+        const value = arena.own(context.Value(face));
+        for (const ex = arena.own(new oc.TopExp_Explorer(value, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) pieces.push(arena.own(ex.Current()));
+        return pieces;
+      },
+    };
+  }
+
+  /**
+   * Gives faces their colors in a document about to be written (F1.3): `colors[i]` is "#rrggbb" for face i of the shape in the order of `topology`, or null.
+   * `piecesOf` gives the faces face i is written as (`seamless`: a closed face is written in two).
+   */
+  private colorFaces(doc: InstanceType<OC['TDocStd_Document']>, root: Parameters<OC['TDataStd_Name']['Set']>[0], id: ShapeId, colors: readonly (string | null)[], arena: Arena, piecesOf: (face: TopoDS_Shape) => TopoDS_Shape[]): void {
     if (!colors.some(Boolean)) return;
     const oc = this.oc;
     const shapeTool = oc.XCAFDoc_DocumentTool.ShapeTool(doc.Main());
@@ -5387,8 +5441,7 @@ export class Kernel {
       // the numbers of a hex colour are sRGB, as STEP files write them (the other type would take them for linear light and brighten them)
       const rgb = m.slice(1).map((h) => parseInt(h, 16) / 255) as [number, number, number];
       const color = arena.own(new oc.Quantity_Color(rgb[0], rgb[1], rgb[2], oc.Quantity_TypeOfColor.Quantity_TOC_sRGB));
-      const sub = shapeTool.AddSubShape(root, face);
-      colorTool.SetColor(sub, color, oc.XCAFDoc_ColorType.XCAFDoc_ColorSurf);
+      for (const piece of piecesOf(face)) colorTool.SetColor(shapeTool.AddSubShape(root, piece), color, oc.XCAFDoc_ColorType.XCAFDoc_ColorSurf);
     });
   }
 
@@ -5407,6 +5460,8 @@ export class Kernel {
     instances: readonly StepComponent[],
     unit: 'MM' | 'INCH' = 'MM',
     subs: readonly { name: string; instances: readonly StepComponent[] }[] = [],
+    /** What the writer could not do as it should and wrote anyway (StepExportOptions.warnings). */
+    warnings?: string[],
   ): string {
     if (instances.length === 0) throw new KernelError(t('kernel.noComponents'));
     const oc = this.oc;
@@ -5420,9 +5475,10 @@ export class Kernel {
       const root = tool.NewShape();
       label(root, name);
       const prototypes = parts.map((p) => {
-        const l = tool.AddShape(this.get(p.shape), false, true);
+        const written = this.seamless(p.shape, arena, warnings);
+        const l = tool.AddShape(written.shape, false, true);
         label(l, p.name);
-        this.colorFaces(doc, l, p.shape, p.faceColors ?? [], arena); // the colors of the part's faces (F1.3), the same in every use of the product
+        this.colorFaces(doc, l, p.shape, p.faceColors ?? [], arena, written.piecesOf); // the colors of the part's faces (F1.3), the same in every use of the product
         return l;
       });
       // `parent`: the label the component goes into; `before`: how many sub-assemblies it may use (all of them for the top level)

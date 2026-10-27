@@ -40,7 +40,7 @@ export function exportPartStep(kernel: Kernel, bodies: ShapeId | readonly ShapeI
       shape = kernel.transformed(shape, options.place);
       made.push(shape);
     }
-    const { place: _place, warnings: _warnings, ...step } = options;
+    const { place: _place, ...step } = options;
     return kernel.exportStep(shape, name, 'MM', step);
   } finally {
     for (const id of made) kernel.release(id);
@@ -75,13 +75,14 @@ export interface StepSub {
 const component = (i: StepInstance) => ({ ...(i.part !== undefined ? { part: i.part } : {}), ...(i.sub !== undefined ? { sub: i.sub } : {}), name: i.name, position: i.pose.position, rotation: i.pose.rotation });
 
 /** STEP AP214 export of an assembly (F1.2): one product per part and per sub-assembly, one placed component per instance, down through the sub-assemblies. */
-export function exportAssemblyStep(kernel: Kernel, name: string, parts: readonly StepPart[], instances: readonly StepInstance[], subs: readonly StepSub[] = []): string {
+export function exportAssemblyStep(kernel: Kernel, name: string, parts: readonly StepPart[], instances: readonly StepInstance[], subs: readonly StepSub[] = [], warnings?: string[]): string {
   return kernel.exportAssemblyStep(
     name,
     parts,
     instances.map(component),
     'MM',
     subs.map((s) => ({ name: s.name, instances: s.instances.map(component) })),
+    warnings,
   );
 }
 
