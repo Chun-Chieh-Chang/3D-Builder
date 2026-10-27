@@ -160,7 +160,8 @@ describe('① the base plate\'s drawing (5-6)', () => {
   it('the dowel holes are through holes with a chamfer: a cone with two circular edges does not close a hole (found by drawing the jig: it said 深 14.5)', () => {
     const circles = d.features.get('view1')!.flatMap((f) => (f.type === 'circle' && f.full && !f.convex ? [f] : []));
     expect(circles).toHaveLength(2);
-    for (const c of circles) expect(c.hole).toMatchObject({ through: true, depth: expect.closeTo(14.5, 6) });
+    // the depth is measured from the mouth, the chamfer included (7805a57): 14.5 of straight wall + the C0.5 = the 15 of the plate
+    for (const c of circles) expect(c.hole).toMatchObject({ through: true, depth: expect.closeTo(15, 6) });
   });
 
   it('the dimensions: 100 and 80 overall, the dowel holes 2×Ø6 H7 (+0.012/0) 貫穿, the holes 10 and 90 from the left and 40 from the bottom', () => {
@@ -319,9 +320,9 @@ describe('③ the base plate made 20 thick in the master: the drawing follows (5
       ['B1', 10, 40, 'Ø6 H7 (+0.012/0) 貫穿'],
       ['B2', 90, 40, 'Ø6 H7 (+0.012/0) 貫穿'],
     ]);
-    // the dowel holes are still through, now 19.5 of straight wall
+    // the dowel holes are still through: 19.5 of straight wall + the C0.5 at the mouth = the 20 of the plate, the depth being measured from the mouth
     const holes = d.features.get('view1')!.flatMap((f) => (f.type === 'circle' && f.full && !f.convex ? [f.hole!] : []));
-    expect(holes.filter((h) => h.through).map((h) => round(h.depth, 6))).toEqual([19.5, 19.5]);
+    expect(holes.filter((h) => h.through).map((h) => round(h.depth, 6))).toEqual([20, 20]);
     expect(holes.filter((h) => !h.through).map((h) => round(h.depth, 6))).toEqual([5]);
   });
 });

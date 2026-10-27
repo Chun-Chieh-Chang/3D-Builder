@@ -66,7 +66,8 @@ describe('what the model says of a hole', () => {
     expect(holes).toHaveLength(3);
     expect(holes).toContainEqual({ radius: 4, through: false, depth: expect.closeTo(10, 6) });
     expect(holes).toContainEqual({ radius: 3, through: true, depth: expect.closeTo(20, 6) });
-    expect(holes).toContainEqual({ radius: 3, through: true, depth: expect.closeTo(16, 6), counterbore: { diameter: expect.closeTo(12, 6), depth: expect.closeTo(4, 6) } });
+    // under the counterbore: 16 of straight wall + the 4 of the counterbore = the 20 of the plate (the depth is measured from the mouth, 7805a57)
+    expect(holes).toContainEqual({ radius: 3, through: true, depth: expect.closeTo(20, 6), counterbore:{ diameter: expect.closeTo(12, 6), depth: expect.closeTo(4, 6) } });
     expect(infos.filter((x) => !x.info).map((x) => x.radius)).toEqual([6]);
   });
 
