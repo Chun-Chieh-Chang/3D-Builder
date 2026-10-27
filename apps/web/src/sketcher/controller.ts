@@ -627,7 +627,7 @@ export class SketchController {
     this.pending=this.host.trial({...s,constraints:[...s.constraints,...relations]})
       .then(result=>{
         if(this.host.doc()!==base) {this.host.notify(t('sketch.relationStale'),'info');return;}
-        if(result.status==='over'||result.status==='failed') {this.host.notify(t('sketch.overDefinedRelation'),'error');return;}
+        if(result.status==='over'||result.status==='failed') {this.host.notify(result.collapsed?.length?result.message!:t('sketch.overDefinedRelation'),'error');return;}
         accepted=this.host.execute({type:'addSketchItems',featureId:this.host.featureId,entities:[],constraints:relations});
       })
       .catch((error:unknown)=>this.host.notify(t('sketch.opFailed',{reason:error instanceof Error?error.message:String(error)}),'error'))
@@ -1736,7 +1736,7 @@ export class SketchController {
     const s = this.sketch();
     void this.host.trial({ ...s, constraints: [...s.constraints, dimension] }).then((r) => {
       const add = (c: SketchConstraint) => this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities: [], constraints: [c] });
-      if (r.status === 'failed') this.host.notify(t('sketch.opOverDefined'), 'error');
+      if (r.status === 'failed') this.host.notify(r.collapsed?.length ? r.message! : t('sketch.opOverDefined'), 'error');
       else if (r.status === 'over') {
         if (add({ ...dimension, driving: false } as SketchConstraint)) this.host.notify(t('sketch.dimensionDriven'), 'info');
       } else if (add(dimension)) this.host.editDimension(id);

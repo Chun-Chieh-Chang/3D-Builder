@@ -29,6 +29,8 @@ export interface SolvedSketch {
   /** Present when the solve was asked to analyze (see SolveOptions.analyze). */
   entityStatus?: Map<Id, EntityStatus>;
   message?: string;
+  /** The lines the sketch's relations could only be met by shrinking to a point (ADR 0211): the solve is then `failed`. */
+  collapsed?: Id[];
 }
 
 export interface SolveOptions {

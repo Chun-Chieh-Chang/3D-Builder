@@ -4,6 +4,7 @@ import type { Translation } from '../index';
 export const core: Translation = {
   'regen.sketchOver': 'The sketch is over defined',
   'regen.sketchUnsolved': 'The sketch cannot be solved',
+  'regen.sketchCollapsed': 'This would shrink the line "{names}" to a point (length 0), so the sketch does not accept it; use another relation or dimension',
   'regen.internal': 'Internal error: {why}',
   'regen.lostWhat': 'Lost reference: the {what} was not found; pick it again',
   'regen.fingerprintNote': 'The {what} was found by its geometric fingerprint as "{found}" (several have this name); check that it is the right one',

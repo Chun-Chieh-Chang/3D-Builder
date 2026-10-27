@@ -38,6 +38,47 @@ function startValues(initial: SolveOptions['initial']): Start {
   };
 }
 
+/**
+ * What a relation may not do (ADR 0211): parallel, perpendicular, collinear, a midpoint and the like are met just as well by a line of no length, and the
+ * solver, taking the shortest way, shrank a line to a point and called the sketch solved. A line that had a length and has none at the end was lost.
+ */
+const HAD_LENGTH = 1e-2;
+const NO_LENGTH = 1e-4;
+/** How far the first held line is turned off where it is, in radians (about a degree); the next more, to start the held solve away from a singular direction. */
+const NUDGE = 0.02;
+
+/** The length of each line at the start of a solve: where it is stored, or where `initial` puts it. */
+function lineLengths(sketch: SketchFeature, start: Start): Map<Id, number> {
+  const points = new Map(sketch.entities.flatMap((e): [Id, [number, number]][] => (e.type === 'point' ? [[e.id, start.points.get(e.id) ?? [e.x, e.y]]] : [])));
+  const out = new Map<Id, number>();
+  for (const e of sketch.entities) {
+    if (e.type !== 'line') continue;
+    const [a, b] = [points.get(e.p1), points.get(e.p2)];
+    if (a && b) out.set(e.id, Math.hypot(b[0] - a[0], b[1] - a[1]));
+  }
+  return out;
+}
+
+/** The lines that had a length at the start and have none now. */
+function lostLines(geometry: Map<Id, SolvedGeometry>, before: Map<Id, number>): Id[] {
+  const lost: Id[] = [];
+  for (const [id, was] of before) {
+    const g = geometry.get(id);
+    if (g?.type === 'line' && was > HAD_LENGTH && Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1]) < NO_LENGTH) lost.push(id);
+  }
+  return lost;
+}
+
+/** Where a solution put the points and the circles, as the start of the next solve. */
+function startOf(geometry: Map<Id, SolvedGeometry>): Start {
+  const out: Start = { points: new Map(), radii: new Map() };
+  for (const [id, g] of geometry) {
+    if (g.type === 'point') out.points.set(id, g.p);
+    else if (g.type === 'circle') out.radii.set(id, g.r);
+  }
+  return out;
+}
+
 type CurveShape = Extract<SolvedGeometry, { type: 'line' | 'circle' | 'arc' }>;
 
 /**
@@ -718,13 +759,70 @@ export class PlaneGcsSolver implements SketchSolver {
 
   solve(sketch: SketchFeature, options: SolveOptions = {}): SolvedSketch {
     const w = this.w;
+    const begin = startValues(options.initial);
     let prims: Prim[];
     try {
-      prims = toPrimitives(sketch, startValues(options.initial));
+      prims = toPrimitives(sketch, begin);
     } catch (e) {
       return { geometry: new Map(), status: 'failed', dof: 0, conflicting: [], redundant: [], message: (e as Error).message };
     }
-    const ok = this.run([...prims, ...dragPrimitives(sketch, options.drag)]);
+    const pull = dragPrimitives(sketch, options.drag);
+    let ok = this.run([...prims, ...pull]);
+    // a line the relations shrank to a point is not a solution (ADR 0211): the solve is made again with each such line held at the length it had, which
+    // makes the relations turn it or move it; then the sketch is solved once more as it is, from where that left it, for its own freedoms and conflicts
+    const before = lineLengths(sketch, begin);
+    let lost = ok ? lostLines(readGeometry(w, sketch), before) : [];
+    let answer: Map<Id, SolvedGeometry> | null = null;
+    if (lost.length > 0) {
+      const lines = new Map(sketch.entities.flatMap((e): [Id, Extract<SketchEntity, { type: 'line' }>][] => (e.type === 'line' ? [[e.id, e]] : [])));
+      // every line that has a length is held at it: held only the lost one, the relation is met by shrinking another instead. A line whose length the
+      // sketch itself decides (a dimension) refuses the hold, and the hold is let go of for that one
+      let holds = [...before].filter(([, length]) => length > HAD_LENGTH).map(([id]) => id);
+      // a line that is horizontal and is to be made vertical, or two that are parallel and are to be made perpendicular, have, where they are, one direction
+      // for the held length and for the relation: the solver takes the two for a conflict. Each held line is turned a little about its first end (its length
+      // is the same) so that the start is not that point
+      const nudged: Start = { points: new Map(begin.points), radii: new Map(begin.radii) };
+      const stored = new Map(sketch.entities.flatMap((e): [Id, [number, number]][] => (e.type === 'point' ? [[e.id, begin.points.get(e.id) ?? [e.x, e.y]]] : [])));
+      holds.forEach((id, i) => {
+        const line = lines.get(id)!;
+        const a = nudged.points.get(line.p1) ?? stored.get(line.p1)!;
+        const b = nudged.points.get(line.p2) ?? stored.get(line.p2)!;
+        // not by the same angle for every line: two that were parallel would still be
+        const turn = NUDGE * (1 + (i % 7));
+        const [c, s] = [Math.cos(turn), Math.sin(turn)];
+        nudged.points.set(line.p2, [a[0] + (b[0] - a[0]) * c - (b[1] - a[1]) * s, a[1] + (b[0] - a[0]) * s + (b[1] - a[1]) * c]);
+      });
+      const start = toPrimitives(sketch, nudged);
+      let placed: Map<Id, SolvedGeometry> | null = null;
+      for (let round = 0, rounds = holds.length + 1; round < rounds && holds.length > 0 && !placed; round++) {
+        const keep: Prim[] = holds.map((id) => ({ id: `@keep:${id}`, type: 'p2p_distance', p1_id: lines.get(id)!.p1, p2_id: lines.get(id)!.p2, distance: before.get(id)! }));
+        const held = this.run([...start, ...pull, ...keep]);
+        const refused = [...w.get_gcs_conflicting_constraints(), ...w.get_gcs_redundant_constraints()].filter((id) => id.startsWith('@keep:')).map((id) => id.slice('@keep:'.length));
+        if (held && refused.length === 0) placed = readGeometry(w, sketch);
+        else if (refused.length === 0) break; // not the holds: the solver did not get there
+        else {
+          // one at a time: the solver names every hold that is in the conflict, and letting go of all of them leaves nothing held. The line that was lost is
+          // the last to be let go of
+          const let_go = refused.find((id) => !lost.includes(id)) ?? refused[0]!;
+          holds = holds.filter((id) => id !== let_go);
+        }
+      }
+      if (placed && lostLines(placed, before).length === 0) {
+        // the freedoms and conflicts are those of the sketch as it is, without the holds; the answer is the held one, which meets all of it: solved again
+        // from there, a sketch that leaves the length free (two lines made one) slides along it
+        this.run(toPrimitives(sketch, startOf(placed)));
+        ok = true;
+        answer = placed;
+        lost = [];
+      }
+      if (lost.length > 0) {
+        // refused: the sketch is shown where it was stored (as for any solve that does not get there), not as solved and not as nothing
+        w.clear_data();
+        w.push_primitives_and_params(prims);
+        const names = lost.join(', ');
+        return { geometry: readGeometry(w, sketch), status: 'failed', dof: 0, conflicting: [], redundant: [], message: t('regen.sketchCollapsed', { names }), collapsed: lost };
+      }
+    }
     const conflicting = unique(w.get_gcs_conflicting_constraints());
     const redundant = unique(w.get_gcs_redundant_constraints());
     const dof = w.gcs.dof();
@@ -733,7 +831,7 @@ export class PlaneGcsSolver implements SketchSolver {
     else if (!ok) status = 'failed';
     else status = dof === 0 ? 'fully' : 'under';
     const result: SolvedSketch = {
-      geometry: readGeometry(w, sketch),
+      geometry: answer ?? readGeometry(w, sketch),
       status,
       dof,
       conflicting,

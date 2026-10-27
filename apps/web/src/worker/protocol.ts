@@ -170,6 +170,8 @@ export interface SketchSolvePayload {
   /** Why the sketch cannot make a closed profile yet (open ends, branches); empty when it can. */
   problems: string[];
   message?: string;
+  /** The lines the relations could only be met by shrinking to a point (ADR 0211): the solve is then `failed`, with `message` saying so. */
+  collapsed?: Id[];
   ms: number;
 }
 

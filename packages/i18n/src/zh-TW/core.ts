@@ -2,6 +2,7 @@
 export const core = {
   'regen.sketchOver': '草圖過多定義',
   'regen.sketchUnsolved': '草圖無法求解',
+  'regen.sketchCollapsed': '這會把直線「{names}」壓成一個點（長度為 0），草圖不接受；請改用其他關係或尺寸',
   'regen.internal': '內部錯誤：{why}',
   'regen.lostWhat': '遺失參考：{what}找不到，請重新選擇',
   'regen.fingerprintNote': '{what}依幾何指紋找到「{found}」（同名的有好幾個），請確認位置正確',
