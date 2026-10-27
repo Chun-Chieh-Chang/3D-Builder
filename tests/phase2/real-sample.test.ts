@@ -162,17 +162,23 @@ describe.skipIf(!ready)('two real SolidWorks STEP files as the parts of a small 
   it('volumes across a STEP round trip: how far the assembly export is from the part export', () => {
     const r = solveAssembly(doc, partOf);
     const stepParts = [parts.base, parts.piece];
-    const both = readAssemblyStep(kernel.oc, exportAssemblyStep(kernel, 'A', stepParts.map((p) => ({ shape: p.shape, name: p.name })), doc.components.map((c, i) => ({ part: i, name: c.id, pose: r.poses.get(c.id)! }))));
+    // Both files are read back by the kernel's own reader: OCCT's plain reader gives another volume for the same file (4.8e-6 against 3.5e-6 of the
+    // product part, 2026-10-27), so comparing the part read one way with the assembly read the other measures the readers, not the writers.
+    const both = kernel.readAssemblyStep(exportAssemblyStep(kernel, 'A', stepParts.map((p) => ({ shape: p.shape, name: p.name })), doc.components.map((c, i) => ({ part: i, name: c.id, pose: r.poses.get(c.id)! }))));
     for (const p of stepParts) {
       const v0 = kernel.massProps(p.shape).volume;
       const single = kernel.importStep(kernel.exportStep(p.shape, p.name));
       const v1 = kernel.massProps(single.shape).volume;
       kernel.release(single.shape);
-      const v2 = both.volumes.get(p.name)!;
+      const read = both.prototypes.find((x) => x.name === p.name)?.shape;
+      expect(read).toBeDefined();
+      const v2 = kernel.massProps(read!).volume;
+      expect(v2).toBeGreaterThan(0);
       summary[`${p.name} volume: original / part round trip / assembly round trip (rel. drift)`] = `${v0.toFixed(6)} / ${v1.toFixed(6)} / ${v2.toFixed(6)} (${((v1 - v0) / v0).toExponential(2)} / ${((v2 - v0) / v0).toExponential(2)})`;
       // The assembly writer must add nothing to what the part writer does.
       expect(Math.abs(v2 - v1) / v0).toBeLessThan(1e-9);
     }
+    for (const x of both.prototypes) if (x.shape) kernel.release(x.shape);
   });
 
   it('saved and reopened to the same poses', async () => {
