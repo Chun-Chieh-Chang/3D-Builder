@@ -1,0 +1,27 @@
+// await __sketchSession.run();
+const here = import.meta.url.slice(0, import.meta.url.lastIndexOf('/') + 1);
+await import(here + 'manual-support.js?' + Date.now());
+const S = window.__man, { H, store } = S;
+const check = (ok, message) => { if (!ok) throw new Error(message); };
+window.__sketchSession = { run: async () => {
+  await S.fresh(); await H.treeClick('前基準面'); await H.action('草圖', '草圖');
+  await H.frameSketch(0, 0, 8); await H.tool('邊角矩形'); await H.sk(0,0); await H.sk(20,10); await H.solved();
+  const bottom = H.lineWhere(g => Math.abs(g.a[1]-g.b[1]) < 1e-4 && g.a[1] < 1);
+  await H.dim([bottom], [10,-4], 20);
+  const id = H.sketch().id, name = H.sketch().name;
+  await H.exitSketch();
+  const sketch = () => store.getState().doc.features.find(f => f.id === id);
+  const original = JSON.stringify(sketch());
+  await S.treeEdit(name); await H.frameSketch(10,5,8);
+  await H.tool('圓'); await H.sk(30,10); await H.sk(33,10); await H.solved();
+  check(JSON.stringify(sketch()) !== original, 'edit changes sketch before cancel');
+  document.querySelector('.confirm-corner .pm-cancel').click(); await H.settle();
+  check(JSON.stringify(sketch()) === original, 'cancel restores original entities and dimensions');
+  await S.treeEdit(name); await H.frameSketch(10,5,8);
+  await H.tool('圓'); await H.sk(30,10); await H.sk(33,10); await H.solved(); await H.exitSketch();
+  const committed = JSON.stringify(sketch());
+  check(committed !== original && sketch().entities.some(e => e.type === 'circle'), 'commit keeps new geometry');
+  store.undo(); await H.settle(); check(JSON.stringify(sketch()) === original, 'undo restores pre-edit sketch');
+  store.redo(); await H.settle(); check(JSON.stringify(sketch()) === committed, 'redo restores committed sketch');
+  return {pass:true};
+}};
