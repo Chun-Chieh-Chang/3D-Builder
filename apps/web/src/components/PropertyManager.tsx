@@ -5,6 +5,7 @@ import { currentTopicId } from '../help/context';
 import {
   canBeSeed,
   entityPoints,
+  modelRefOf,
   gearParameters, gearDimensions, type SpurGearFeature, type RackFeature,
   evalLength,
   evalNumber,
@@ -631,6 +632,15 @@ function SketchPanel({ f }: { f: SketchFeature }) {
           {view.message}
         </p>
       )}
+      {view && (
+        <section className="pm-group" data-sketch-tool-status>
+          <h4>{f.name} · {TOOL_LABEL[view.tool]}</h4>
+          <p className="hint">{view.hint}</p>
+          {view.picks.length > 0 && <ul className="selection-box">{view.picks.map(id => <li key={id}>{describe(f, id)}</li>)}</ul>}
+          {sketcher && <ToolOptionsBox view={view} sketcher={sketcher} />}
+          <p className="hint">{view.tool !== 'select' && t('pm.escTool')}</p>
+        </section>
+      )}
       <section className="pm-group">
         <h4>{t('pm.sketchStatus')}</h4>
         {solve ? (
@@ -643,6 +653,16 @@ function SketchPanel({ f }: { f: SketchFeature }) {
         )}
         {conflicting.length > 0 && <p className="error-text">{t('pm.conflict', { ids: conflicting.join(t('cmd.listSeparator')) })}</p>}
       </section>
+
+      {view?.tool === 'select' && sketcher && (view.candidates?.length ?? 0) > 1 && (
+        <section className="pm-group" data-sketch-candidates>
+          <h4>{t('sketch.pick.title')}</h4>
+          <p className="hint">{t('sketch.pick.hint')}</p>
+          <ul className="selection-box">
+            {view.candidates!.map(hit => <li key={hit.id}><button type="button" data-sketch-candidate={hit.id} aria-pressed={selection.includes(hit.id)} data-preview={view.hover === hit.id} onMouseEnter={() => sketcher.previewCandidate(hit.id)} onFocus={() => sketcher.previewCandidate(hit.id)} onClick={e => sketcher.chooseCandidate(hit.id, e.ctrlKey || e.shiftKey)}>{describe(f, hit.id)}{(() => { const entity = f.entities.find(e => e.id === hit.id); const ref = entity && modelRefOf(entity); return ref ? ` · ${ref.name}` : ''; })()}</button></li>)}
+          </ul>
+        </section>
+      )}
 
       <PicturesBox f={f} />
       {sketcher && solve && <DiagnosisBox f={f} solve={solve} sketcher={sketcher} />}
@@ -659,14 +679,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
         </section>
       )}
 
-      {view && view.tool !== 'select' && (
-        <section className="pm-group">
-          <h4>{TOOL_LABEL[view.tool]}</h4>
-          <p className="hint">{view.hint}</p>
-          {sketcher && <ToolOptionsBox view={view} sketcher={sketcher} />}
-          <p className="hint">{t('pm.escTool')}</p>
-        </section>
-      )}
+
 
       {sketcher && selection.length > 0 && (
         <section className="pm-group">

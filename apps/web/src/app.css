@@ -828,3 +828,7 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .extrude-preview-handle button { touch-action: none; position: absolute; transform: translate(-50%,-50%); white-space: nowrap; pointer-events: auto; padding: 6px 9px; border-radius: 9px; border: 1px solid var(--accent); background: var(--card); color: var(--accent); cursor: ns-resize; box-shadow: 0 2px 8px color-mix(in oklab,var(--text) 12%,transparent); }
 .extrude-preview-handle button[aria-invalid=true] { color: var(--error); border-color: var(--error); }
 .extrude-preview-handle button:disabled { color: var(--muted); border-color: var(--line); cursor: default; }
+
+.sw-panel [data-sketch-candidates] .selection-box li button { visibility: visible; color: var(--text); width: 100%; text-align: start; overflow-wrap: anywhere; padding: 4px 6px; }
+.sw-panel [data-sketch-candidates] .selection-box li button[data-preview="true"] { outline: 1px solid var(--accent); background: var(--accent-faint); }
+.sw-panel [data-sketch-candidates] .selection-box li button[aria-pressed="true"] { font-weight: 600; }

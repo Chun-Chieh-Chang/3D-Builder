@@ -2910,6 +2910,7 @@ class AppStore {
       execute: (cmd) => this.execute(cmd),
       dragPreview: (o) => {
         if (o) this.requestSketchSolve({ drag: o.drag, initial: o.initial, analyze: false });
+        else this.requestSketchSolve(); // Cancel restores the committed sketch, not the last drag preview.
       },
       trial: (sketch, doc, options) => this.api.solveSketch({ seq: -1, sketch: resolveSketch(sketch, doc ?? this.history.doc), ...(options ? { drag: options.drag, initial: options.initial } : {}) }),
       notify: (text, kind) => this.notify(text, kind),

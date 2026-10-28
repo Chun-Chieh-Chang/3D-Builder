@@ -1,8 +1,10 @@
 # 交接與接續工作
 
-更新日期：2026-10-27。接手先讀本檔、[產品現況](docs/project-state.md)與[AGENTS](AGENTS.md)，再看`git status --short --branch`、`git log -5 --oneline`。保留現有修改，乾淨時才`git pull --ff-only origin main`。
+更新日期：2026-10-28。接手先讀本檔、[產品現況](docs/project-state.md)與[AGENTS](AGENTS.md)，再看`git status --short --branch`、`git log -5 --oneline`。保留現有修改，乾淨時才`git pull --ff-only origin main`。
 
 ## 本批工作
+
+最新進行中：[草圖互動方案](docs/design/sketch-interaction/plan.md)已獲使用者明確核准執行。P0第一批交付候選清單／Tab選取、工具狀態與Esc拖曳還原（[ADR0215](docs/adr/0215-sketch-selection-candidates.md)）。精確進度及失敗只維護於[驗收表](docs/design/sketch-interaction/acceptance.md)：整合遠端6019692後175項相關測試通過，新增候選及交點UI三流程通過，候選截圖已檢視；舊平面流程3項失敗在乾淨78faeda重現，下一步追查。P0尚未整階段通過、P1尚未開始，不能跳過待驗項宣稱完成。
 
 最新交付：[ADR0210](docs/adr/0210-projected-references-and-asymmetric-tolerances.md)。工程圖 Schema34；實際投影直線可作尺寸參照，自由曲線可取投影點，補剖切／細部漏選；等角方向正規化與折斷反變換修正。單一／批次尺寸明列非對稱／單向偏差，同正或同負可用，沿用 bilateral。206 個不同相關案例各有通過紀錄，新流程冷重開與舊兩流程各自通過；未全量重跑。投影簽名只作定位，必須從目前原生 HLR 求值；幾何／切面／離散化改變可能明示失效需重選，不能宣稱完整拓樸歷史追蹤。新原生測試已列入 CI，遠端結果待確認。
 

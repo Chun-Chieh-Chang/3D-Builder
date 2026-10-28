@@ -7,8 +7,8 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 84／7／34 |
-| ADR 文件 | 213 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 194／190／239 |
+| ADR 文件 | 214 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 195／191／240 |
 | 實機清單項目 | 92 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -443,6 +443,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0212：兩條線的交點可作為智慧型尺寸的參考點](<adr/0212-line-crossing-as-dimension-reference.md>)
 - [ADR 0213：已經成立的關係不再被要求一次；被拒絕時說清楚為什麼](<adr/0213-relations-that-already-hold.md>)
 - [ADR 0214：圓角結果的容差閘門](<adr/0214-fillet-tolerance-gate.md>)
+- [ADR 0215：草圖選取候選與取消預覽](<adr/0215-sketch-selection-candidates.md>)
 
 ### 歷史驗證
 
@@ -485,6 +486,8 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 ### 設計提案
 
 - [3D-Builder 選單與工具圖示重新規劃](<design/menu-redesign/plan.md>)
+- [草圖互動方案：執行驗收表](<design/sketch-interaction/acceptance.md>)
+- [草圖建構互動比較與改進計畫](<design/sketch-interaction/plan.md>)
 
 ### 設計歷史
 

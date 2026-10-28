@@ -1,5 +1,7 @@
 /** Messages and wording of the sketch operations (C1.8–C1.19): why one cannot be done, and what its tool says. */
 export const sketch = {
+  'sketch.pick.title': '選取其他圖元',
+  'sketch.pick.hint': '游標處有多個候選。Tab／Shift+Tab 預覽下一個／上一個，再點畫布選取；也可點下列項目，Ctrl 加選。',
   'sketch.fixInvalid': '修復須指定一或兩個不同拘束，且只有尺寸可改為被動。',
   'sketch.diagnose.apply': '套用已驗證修復',
   'sketch.analysis.run': '分析自由度／拘束',

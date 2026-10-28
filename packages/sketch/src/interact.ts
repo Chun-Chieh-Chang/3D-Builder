@@ -228,14 +228,13 @@ export interface Hit {
  * the user picks a reference (select, smart dimension, a mirror line), never in the snaps of drawing, where an infinite line along x = 0 or y = 0 would
  * take the place of the model's edges there and of horizontal and vertical.
  */
-export function hitTest(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), axes = false): Hit | null {
-  let point: Hit | null = null;
-  let curve: Hit | null = null;
+export function hitCandidates(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), axes = false): Hit[] {
+  const hits: Hit[] = [];
+  let hasCurve = false;
   const consider = (h: Hit) => {
     if (h.d > tol) return;
-    if (h.kind === 'point' || h.kind === 'origin') {
-      if (!point || h.d < point.d) point = h;
-    } else if (!curve || h.d < curve.d) curve = h;
+    hits.push(h);
+    if (h.kind !== 'point' && h.kind !== 'origin') hasCurve = true;
   };
   for (const [id, g] of geometry) {
     if (exclude.has(id)) continue;
@@ -248,7 +247,7 @@ export function hitTest(geometry: Geometry, p: P2, tol: number, exclude: Readonl
   // Last, so a sketch point lying on the origin wins the tie: merging with it beats a new relation.
   if (!exclude.has(SKETCH_ORIGIN)) consider({ id: SKETCH_ORIGIN, kind: 'origin', q: [0, 0], d: len(p) });
   // the axes (ADR 0170), infinite, only where no curve of the sketch is: what the user drew comes first
-  if (axes && !curve) {
+  if (axes && !hasCurve) {
     for (const id of [SKETCH_AXIS_H, SKETCH_AXIS_V]) {
       if (exclude.has(id)) continue;
       const d = sketchAxisDir(id)!;
@@ -256,7 +255,13 @@ export function hitTest(geometry: Geometry, p: P2, tol: number, exclude: Readonl
       consider({ id, kind: 'line', q, d: dist(p, q) });
     }
   }
-  return point ?? curve;
+  const rank = (h: Hit) => h.kind === 'point' || h.kind === 'origin' ? 0 : 1;
+  return hits.sort((a, b) => rank(a) - rank(b) || a.d - b.d);
+}
+
+/** Default selection keeps the established point-first order; callers may expose all candidates. */
+export function hitTest(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), axes = false): Hit | null {
+  return hitCandidates(geometry, p, tol, exclude, axes)[0] ?? null;
 }
 
 /** Entities whose drawing lies completely inside a box (window selection, D5.1). */

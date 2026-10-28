@@ -2,6 +2,8 @@ import type { Translation } from '../index';
 
 /** Messages and wording of the sketch operations (C1.8–C1.19): why one cannot be done, and what its tool says. */
 export const sketch: Translation = {
+  'sketch.pick.title': 'Select another entity',
+  'sketch.pick.hint': 'Several entities are under the pointer. Tab / Shift+Tab previews the next / previous candidate; click to select. Or choose below; Ctrl adds to the selection.',
   'sketch.fixInvalid': 'A repair must name one or two distinct constraints; only dimensions can become driven.',
   'sketch.diagnose.apply': 'Apply verified repair',
   'sketch.analysis.run': 'Analyze freedom / constraints',

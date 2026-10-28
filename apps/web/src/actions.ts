@@ -586,6 +586,7 @@ export function installShortcuts(): () => void {
     } else if (s.editing?.kind === 'sketch') {
       // Inside a sketch, Esc ends the current tool and Delete removes the selection (SolidWorks);
       // leaving the sketch is the confirmation corner or 「離開草圖」.
+      if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey && store.sketcher?.cycleCandidate(e.shiftKey)) { e.preventDefault(); return; }
       if (e.key === 'Escape') return void store.sketcher?.escape();
       if (e.key === 'Delete') return void store.sketcher?.deleteSelection();
     } else if (s.editing) {

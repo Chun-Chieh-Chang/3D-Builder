@@ -29,6 +29,7 @@ import {
   expandRelation,
   conditionEnds,
   hitTest,
+  hitCandidates,
   inBox,
   inferDirection,
   inferLine,
@@ -237,6 +238,8 @@ export type PreviewShape =
   | { kind: 'box'; a: P2; b: P2 };
 
 export interface ControllerView {
+  candidates?: { id: Id; kind: Hit['kind'] }[];
+  candidate?: Id | null;
   dimensionDrag?: { id: Id; position: P2 };
   tool: ToolId;
   selection: Id[];
@@ -309,6 +312,9 @@ export class SketchController {
   private tool: ToolId = 'select';
   private selection = new Set<Id>();
   private hover: Hit | null = null;
+  private candidates: Hit[] = [];
+  private candidate: { id: Id; p: P2; doc: PartDoc } | null = null;
+  private candidateDoc: PartDoc | null = null;
   private snapTarget: Snap | null = null;
   /** Inferred relation shown next to the cursor while drawing. */
   private inference: 'coincident' | 'midpoint' | 'onCurve' | 'tangent' | 'horizontal' | 'vertical' | 'horizontalPoint' | 'verticalPoint' | 'alignedPoints' | 'collinear' | 'parallel' | 'perpendicular' | 'modelPoint' | 'modelMid' | 'modelCenter' | 'modelEdge' | 'modelPierce' | 'modelVertex' | 'intersection' | 'quadrant' | 'onExtension' | null = null;
@@ -367,11 +373,15 @@ export class SketchController {
   }
 
   private snapshot(): ControllerView {
+    if (this.candidateDoc !== this.host.doc()) { this.candidates = []; this.candidate = null; }
+
     if (this.message && (this.tool !== 'select' || this.message.selection !== [...this.selection].join(','))) this.message = null;
     const drawingLine = this.tool === 'line' || this.tool === 'centerline';
     const step = this.tool === 'dimension' ? Math.min(this.picks.length, 2) : drawingLine && this.chain ? 1 : this.clicks.length;
     return {
       dimensionDrag: this.dimensionDrag?.moved ? { id: this.dimensionDrag.id, position: this.dimensionDrag.position } : undefined,
+      candidates: this.candidates.map(({ id, kind }) => ({ id, kind })),
+      candidate: this.candidate?.id ?? null,
       tool: this.tool,
       selection: [...this.selection],
       hover: this.hover?.id ?? null,
@@ -508,6 +518,8 @@ export class SketchController {
   }
 
   private resetTool(): void {
+    this.candidates = [];
+    this.candidate = null;
     this.clicks = [];
     this.chain = null;
     this.picks = [];
@@ -520,7 +532,9 @@ export class SketchController {
 
   /** Esc: ends the current chain or pick, then returns to selection (SolidWorks behaviour). */
   escape(): void {
-    if (this.dimensionDrag) { this.dimensionDrag = null; this.press = null; }
+    if (this.drag || this.box) { this.drag = null; this.box = null; this.press = null; this.host.dragPreview(null); }
+    else if (this.candidate) { this.candidate = null; this.hover = null; this.candidates = []; this.press = null; }
+    else if (this.dimensionDrag) { this.dimensionDrag = null; this.press = null; }
     else if (this.tool === 'mirror' || this.tool === 'offset' || isTransformTool(this.tool)) this.setTool('select');
     else if (this.clicks.length > 0 || this.chain || this.picks.length > 0) this.resetTool();
     else if (this.tool !== 'select') this.tool = 'select';
@@ -543,7 +557,7 @@ export class SketchController {
    * Returns what was under the pointer.
    */
   contextPick(e: PointerInput): Id | null {
-    const hit = hitTest(this.geometry(), e.p, PICK_PX * e.px) ?? this.axisAt(e);
+    const hit = (this.tool === 'select' ? this.selectionHit(e) : hitTest(this.geometry(), e.p, PICK_PX * e.px)) ?? this.axisAt(e);
     if (hit && !this.selection.has(hit.id)) {
       this.selection.clear();
       this.selection.add(hit.id);
@@ -675,7 +689,7 @@ export class SketchController {
         return;
       }
     }
-    let hit = hitTest(this.geometry(), e.p, PICK_PX * e.px);
+    let hit = this.tool === 'select' ? this.selectionHit(e) : hitTest(this.geometry(), e.p, PICK_PX * e.px);
     const modelSnap = !hit && this.tool === 'select' && this.host.modelItems ? snapModel(this.host.modelItems(), e.p, PICK_PX * e.px) : null;
     // the sketch's axes last of all (ADR 0170): what was drawn and the model's edges come first
     if (!hit && !modelSnap && this.tool === 'select') hit = this.axisAt(e);
@@ -749,10 +763,44 @@ export class SketchController {
     return hitTest(geometry, e.p, PICK_PX * e.px) ? null : best;
   }
 
+  /** Candidates remain available when moving into the panel, but never survive a document edit. */
+  private selectionHit(e: PointerInput): Hit | null {
+    this.candidates = hitCandidates(this.geometry(), e.p, PICK_PX * e.px);
+    this.candidateDoc = this.host.doc();
+    const lock = this.candidate;
+    if (lock && (lock.doc !== this.host.doc() || dist(lock.p, e.p) > DRAG_PX * e.px || !this.candidates.some(h => h.id === lock.id))) this.candidate = null;
+    return this.candidates.find(h => h.id === this.candidate?.id) ?? this.candidates[0] ?? null;
+  }
+
+  /** Tab previews the next candidate; clicking commits it. Shift+Tab reverses. */
+  cycleCandidate(reverse = false): boolean {
+    if (this.tool !== 'select' || !this.cursor || this.press || this.candidateDoc !== this.host.doc() || this.candidates.length < 2) return false;
+    const at = this.candidates.findIndex(h => h.id === (this.candidate?.id ?? this.hover?.id));
+    const hit = this.candidates[(Math.max(0, at) + (reverse ? -1 : 1) + this.candidates.length) % this.candidates.length]!;
+    this.candidate = { id: hit.id, p: [...this.cursor], doc: this.host.doc() };
+    this.hover = hit;
+    this.changed();
+    return true;
+  }
+
+  previewCandidate(id: Id): void {
+    if (this.tool !== 'select' || this.candidateDoc !== this.host.doc()) return;
+    const hit = this.candidates.find(h => h.id === id);
+    if (!hit) return;
+    this.hover = hit;
+    this.changed();
+  }
+
+  chooseCandidate(id: Id, additive = false): void {
+    if (this.tool !== 'select' || this.candidateDoc !== this.host.doc() || !this.candidates.some(h => h.id === id)) return;
+    this.hover = this.candidates.find(h => h.id === id)!;
+    this.select([id], additive);
+  }
+
   private selectMove(e: PointerInput, pressed: boolean): void {
     const press = this.press;
     if (!pressed || !press) {
-      this.hover = hitTest(this.geometry(), e.p, PICK_PX * e.px);
+      this.hover = this.selectionHit(e);
       if (!this.hover && this.host.modelItems) {
         const snap = snapModel(this.host.modelItems(), e.p, PICK_PX * e.px);
         this.snapTarget = snap;

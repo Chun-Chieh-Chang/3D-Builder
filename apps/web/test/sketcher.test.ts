@@ -61,6 +61,7 @@ class Host implements SketchHost {
   };
   dragPreview: SketchHost['dragPreview'] = (o) => {
     if (o) this.last = this.payload(this.sketch(), { drag: o.drag, initial: o.initial });
+    else this.resolve();
   };
   trial = async (s: SketchFeature, doc?: PartDoc) => this.payload(s, {}, doc);
   notify = (text: string) => void this.notices.push(text);
@@ -1367,5 +1368,85 @@ describe('Ctrl while sketching (SolidWorks: hold Ctrl to keep relations from bei
     expect(c.getView().snap).toMatchObject({ kind: 'free' });
     c.pointerMove(at(10.05, 5.05), false);
     expect(c.getView().snap).toMatchObject({ kind: 'point' });
+  });
+});
+
+describe('P0 explicit sketch selection candidates', () => {
+  function overlapping() {
+    const h = new Host();
+    h.execute({ type: 'addSketchItems', featureId: h.featureId, entities: [
+      { id: 'p1', type: 'point', x: 10, y: 10 }, { id: 'p2', type: 'point', x: 20, y: 10 },
+      { id: 'p3', type: 'point', x: 10, y: 10 }, { id: 'p4', type: 'point', x: 20, y: 10 },
+      { id: 'p5', type: 'point', x: 10, y: 10.2 }, { id: 'p6', type: 'point', x: 10.3, y: 10.2 },
+      { id: 'l1', type: 'line', p1: 'p1', p2: 'p2' }, { id: 'l2', type: 'line', p1: 'p3', p2: 'p4' },
+      { id: 'short', type: 'line', p1: 'p5', p2: 'p6' },
+    ], constraints: [] });
+    expect(h.last!.status).not.toBe('failed');
+    return { h, c: new SketchController(h) };
+  }
+
+  it('cycles every overlapping candidate without changing native geometry, then clicks the chosen short edge at three zooms', () => {
+    for (const px of [0.025, 0.1, 0.4]) {
+      const { h, c } = overlapping();
+      const e = { p: [10.15, 10.2] as [number, number], px, ctrl: false, shift: false };
+      const original = h.doc();
+      c.pointerMove(e, false);
+      const candidates = c.getView().candidates!;
+      expect(candidates.some(x => x.id === 'short')).toBe(true);
+      const seen = new Set([c.getView().hover]);
+      for (let i = 0; i < candidates.length; i++) { expect(c.cycleCandidate()).toBe(true); seen.add(c.getView().hover); }
+      expect(seen.size).toBe(candidates.length);
+      expect(h.doc()).toBe(original);
+      for (let i = 0; i < candidates.length && c.getView().hover !== 'short'; i++) c.cycleCandidate();
+      c.pointerDown(e); c.pointerUp(e);
+      expect(c.getView().selection).toEqual(['short']);
+      expect(h.doc()).toBe(original);
+    }
+  });
+
+  it('panel candidates survive pointer leave, support Ctrl selection, and cannot select stale IDs after editing', () => {
+    const { h, c } = overlapping();
+    c.pointerMove({ p: [15, 10], px: 0.1, ctrl: false, shift: false }, false);
+    expect(c.getView().candidates!.map(x => x.id)).toEqual(['l1', 'l2']);
+    c.leave(); c.previewCandidate('l2');
+    expect(c.getView().hover).toBe('l2');
+    c.chooseCandidate('l1'); c.chooseCandidate('l2', true);
+    expect(c.getView().selection).toEqual(['l1', 'l2']);
+    c.chooseCandidate('l1', true);
+    expect(c.getView().selection).toEqual(['l2']);
+    c.deleteSelection();
+    expect(h.sketch().entities.some(e => e.id === 'l2')).toBe(false);
+    c.chooseCandidate('l2');
+    expect(c.getView().selection).toEqual([]);
+    expect(c.getView().candidates).toEqual([]);
+    h.history.undo(); h.resolve();
+    expect(h.sketch().entities.some(e => e.id === 'l2')).toBe(true);
+  });
+
+  it('releases explicit candidates on Escape, movement and tool change without clearing the previous selection', () => {
+    const { h, c } = overlapping();
+    const e = { p: [15, 10] as [number, number], px: 0.1, ctrl: false, shift: false };
+    c.select(['short']); c.pointerMove(e, false); c.cycleCandidate(); c.escape();
+    expect(c.getView().selection).toEqual(['short']);
+    expect(c.getView().candidate).toBeNull();
+    c.pointerMove(e, false); c.cycleCandidate();
+    c.pointerMove({ ...e, p: [16, 10] }, false);
+    expect(c.getView().candidate).toBeNull();
+    c.cycleCandidate(); c.setTool('line');
+    expect(c.getView().candidates).toEqual([]);
+    expect(c.cycleCandidate()).toBe(false);
+    expect(h.sketch().entities.filter(e => e.type === 'line')).toHaveLength(3);
+  });
+
+  it('Escape during a geometry drag or selection box does not commit on mouse release', () => {
+    const { h, c } = overlapping();
+    const original = h.doc();
+    for (const p of [[20, 10], [30, 30]] as [number, number][]) {
+      const e = { p, px: 0.1, ctrl: false, shift: false };
+      const moved = { ...e, p: [p[0] + 5, p[1] + 4] as [number, number] };
+      c.pointerDown(e); c.pointerMove(moved, true); c.escape(); c.pointerUp(moved);
+      expect(h.doc()).toBe(original);
+      h.resolve();
+    }
   });
 });
