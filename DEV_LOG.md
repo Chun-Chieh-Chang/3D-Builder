@@ -3,6 +3,10 @@
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
 
+## 2026-10-28：P0平面入口驗收追查
+
+舊流程正視圖使z31模型頂點與z25支撐面重疊，選到支撐面導致後續草圖未退出及兩項連鎖失敗。改測試前置等角視圖，保留原原點、軸臂、rollback等待等斷言及容差；只重跑失敗流程，全部通過（out/sketch-plane-isometric.json）。這不證明正視圖重疊模型選取已消歧，P0其餘驗收仍待完成。
+
 ## 2026-10-28：草圖互動P0第一批（ADR0215）
 
 使用者審核方案後明確授權執行。補重疊／短線候選清單及Tab／Shift+Tab循環預覽、選取模式確認與Ctrl多選，保留點優先。工具狀態及參照前移；Esc取消拖曳／框選，host以原文件重新求解還原畫面。Schema不變，功能邊界及下一步見[驗收表](docs/design/sketch-interaction/acceptance.md)。

@@ -52,6 +52,7 @@ M.run = async () => {
     return { pass: selected === plane && opened, selected, plane };
   });
   await step('4 「座標系統」 can be sketched on: at the corner of the block picked for its origin', async () => {
+    await H.action('檢視', '等角'); // separate the top vertex from its projection on the support plane
     await H.action('特徵', '座標系統');
     await H.at([5, 3, 31]);
     await H.pmOk();
