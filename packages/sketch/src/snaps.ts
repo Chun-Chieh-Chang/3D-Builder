@@ -104,10 +104,13 @@ export function parseSnapSettings(raw: unknown): SnapSettings {
 
 // ---------------------------------------------------------------- crossings and quarter points
 
-/** Where two curves of the sketch cross, if the cursor is within `tol` of it: the nearest one, with the two curves. */
-export function intersectionSnap(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set()): { p: P2; a: Id; b: Id } | null {
+/**
+ * Where two curves of the sketch cross, if the cursor is within `tol` of it: the nearest one, with the two curves. With `linesOnly` only lines
+ * count (the dimension tool, ADR 0212: a crossing of a line and a circle has two places and tangency to settle, which it does not take on yet).
+ */
+export function intersectionSnap(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), linesOnly = false): { p: P2; a: Id; b: Id } | null {
   const near = [...geometry].flatMap(([id, g]) => {
-    if (exclude.has(id) || !isCurve(g)) return [];
+    if (exclude.has(id) || !isCurve(g) || (linesOnly && g.type !== 'line')) return [];
     const q = closestOn(g, p);
     return q && dist(p, q) <= tol ? [{ id, g }] : [];
   });

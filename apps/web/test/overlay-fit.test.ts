@@ -13,7 +13,7 @@ import type { ControllerView } from '../src/sketcher/controller';
 const FRONT: PlaneFrame = { origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 1, 0], normal: [0, 0, 1] };
 const sketch = (): SketchFeature => ({ ...(createEmptyPart().features[0] as SketchFeature), entities: [], constraints: [] });
 const view = (grid: number | null): ControllerView =>
-  ({ tool: 'select', selection: [], hover: null, snap: null, inference: null, inferLine: null, quickSnap: null, grid, preview: [], picks: [], cursor: null, hint: '', message: null, options: {} }) as unknown as ControllerView;
+  ({ tool: 'select', selection: [], hover: null, snap: null, inference: null, inferLine: null, quickSnap: null, grid, preview: [], picks: [], pickedCrossings: [], cursor: null, hint: '', message: null, options: {} }) as unknown as ControllerView;
 
 describe('what 「全部顯示」 takes in while a sketch is edited', () => {
   it('the axes and the grid, as large as the view, are marked to be left out', () => {

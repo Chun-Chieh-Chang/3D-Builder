@@ -100,6 +100,8 @@ export function Viewport() {
   const host = useRef<HTMLDivElement>(null);
   const displayed = useRef<RebuildPayload | null>(null);
   const overlay = useRef<SketchOverlay | null>(null);
+  /** The overlay the dimension box reads while it is open: state, since the ref is built after the render and the box would otherwise be one build behind (ADR 0212). */
+  const [editorOverlay, setEditorOverlay] = useState<SketchOverlay | null>(null);
   const sketchingRef = useRef(false);
   /** The fitRequest the view was last fitted for: a new or opened part is fitted once its model arrives. */
   const fittedFor = useRef(-1);
@@ -489,6 +491,8 @@ export function Viewport() {
     const visible = onPlane.length === 4 ? { min: [Math.min(...onPlane.map((c) => c[0])), Math.min(...onPlane.map((c) => c[1]))] as [number, number], max: [Math.max(...onPlane.map((c) => c[0])), Math.max(...onPlane.map((c) => c[1]))] as [number, number] } : undefined;
     overlay.current = buildOverlay(frame, sketch, sketchSolve, { ...view, grid: gridVisible ? gridSpacing : null }, v.pixelSize(), { showRelations: true, values, dimensionPreview: sketcher.dimensionPreview(), precision: settingsOf(doc).dimensionPrecision, visible });
     v.setOverlay(overlay.current);
+    // a dimension that brings a point of its own (a crossing, ADR 0212) has no label until the solver has answered with that point: the box is shown then
+    setEditorOverlay(store.getState().dimensionEdit ? overlay.current : null);
   }, [sketching, doc, sketchSolve, view, viewTick, gridVisible, gridSpacing]);
 
   const shown = displayed.current;
@@ -539,7 +543,7 @@ export function Viewport() {
           </button>
         </div>
       )}
-      {sketching && dimensionEdit && <DimensionEditor id={dimensionEdit} overlay={overlay.current} key={dimensionEdit} />}
+      {sketching && dimensionEdit && <DimensionEditor id={dimensionEdit} overlay={editorOverlay ?? overlay.current} key={dimensionEdit} />}
       {!bootMs && (
         <div className="boot-overlay">{bootError ? t('boot.failed', { why: bootError }) : t('boot.loading')}</div>
       )}
@@ -596,11 +600,13 @@ function DimensionEditor({ id, overlay }: { id: string; overlay: SketchOverlay |
   const [text, setText] = useState(c && isDimension(c) ? c.value : '');
   const [invalid, setInvalid] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const label = overlay?.labels.find((l) => l.key === `dim:${id}`);
+  const shown = !!label;
   useEffect(() => {
+    if (!shown) return;
     input.current?.focus();
     input.current?.select();
-  }, []);
-  const label = overlay?.labels.find((l) => l.key === `dim:${id}`);
+  }, [shown]);
   const v = store.viewer;
   if (!c || !isDimension(c) || !label || !v || !overlay) return null;
   const at = v.screenOf(overlay.frame, label.p);

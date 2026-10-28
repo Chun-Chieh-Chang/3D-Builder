@@ -212,6 +212,8 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   }
 
   curves.push(...previewCurves(view.preview, px));
+  // a crossing the dimension tool has picked is not a point of the sketch yet (ADR 0212)
+  for (const p of view.pickedCrossings) points.push({ p, color: SKETCH_COLORS.hover, size: 8 });
   if (view.snap && view.snap.kind !== 'free') points.push({ p: view.snap.p, color: SKETCH_COLORS.hover, size: 9 });
   // the model edge the cursor is on (D5.3b), lit like a sketch element under the cursor; dashed when it is projected from outside the plane (C1 2026-10-14).
   // A pierce point is only the point drawn above.

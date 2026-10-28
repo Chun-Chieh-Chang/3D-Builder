@@ -255,6 +255,8 @@ export interface ControllerView {
   preview: PreviewShape[];
   /** Entities picked so far by the dimension tool. */
   picks: Id[];
+  /** Where the dimension tool has picked a crossing of two lines: not a point of the sketch yet, so it is drawn from here (ADR 0212). */
+  pickedCrossings: P2[];
   cursor: P2 | null;
   hint: string;
   /** Why the last button press did nothing (a tool that needs a selection pressed with none): shown in the sketch panel until the selection changes or a tool starts. */
@@ -324,6 +326,8 @@ export class SketchController {
   /** Center-point arc: accumulated sweep of the cursor around the center (sign = direction). */
   private sweep = { total: 0, last: 0 };
   private picks: Id[] = [];
+  /** Crossings of two lines picked by the dimension tool, by the id a pick stands for them with. They become a point and an `intersection` relation only with the dimension (ADR 0212). */
+  private crossings = new Map<Id, { p: P2; a: Id; b: Id }>();
   private press: { p: P2; hit: Hit | null; modelSnap?: Extract<Snap, { kind: 'model' }> | null; moved: boolean } | null = null;
   private drag: { kind: 'points'; ids: Id[]; origin: P2; from: P2[] } | { kind: 'radius'; id: Id } | null = null;
   private dimensionDrag: { id: Id; from: P2; text: P2; position: P2; moved: boolean } | null = null;
@@ -378,6 +382,7 @@ export class SketchController {
       grid: this.gridShown(),
       preview: this.previewShapes(),
       picks: [...this.picks],
+      pickedCrossings: this.picks.flatMap((id) => (this.crossings.has(id) ? [this.crossings.get(id)!.p] : [])),
       cursor: this.cursor,
       hint: this.hint(step),
       message: this.message?.text ?? null,
@@ -506,6 +511,7 @@ export class SketchController {
     this.clicks = [];
     this.chain = null;
     this.picks = [];
+    this.crossings.clear();
     this.snapTarget = null;
     this.inference = null;
     this.tangentTo = null;
@@ -877,9 +883,18 @@ export class SketchController {
   private updateSnap(e: PointerInput): void {
     const geometry = this.geometry();
     if (PICK_TOOLS.has(this.tool)) {
-      this.hover = hitTest(geometry, e.p, PICK_PX * e.px, undefined, AXIS_TOOLS.has(this.tool) && (this.tool !== 'dimension' || this.axisPickable(geometry, e.p)));
       this.snapTarget = null;
       this.inference = null;
+      if (this.tool === 'dimension') {
+        const found = this.dimensionPick(e);
+        this.hover = found.hit;
+        if (found.crossing) {
+          this.snapTarget = { kind: 'intersection', p: found.crossing.p, a: found.crossing.a, b: found.crossing.b };
+          this.inference = 'intersection';
+        }
+        return;
+      }
+      this.hover = hitTest(geometry, e.p, PICK_PX * e.px, undefined, AXIS_TOOLS.has(this.tool));
       return;
     }
     const cfg = this.settings();
@@ -1709,33 +1724,86 @@ export class SketchController {
     return this.picks.length === 0 || smartDimension(geometry, [this.picks[0]!], p) === null;
   }
 
-  private dimensionClick(e: PointerInput): void {
+  /** The sketch's geometry with a point where the dimension tool has picked a crossing of two lines: smart dimension then treats it like any point (ADR 0212). */
+  private dimensionGeometry(): ReturnType<SketchController['geometry']> {
     const geometry = this.geometry();
-    const hit = hitTest(geometry, e.p, PICK_PX * e.px, undefined, this.axisPickable(geometry, e.p));
+    if (this.picks.every((id) => !this.crossings.has(id))) return geometry;
+    const withCrossings = new Map(geometry);
+    for (const id of this.picks) if (this.crossings.has(id)) withCrossings.set(id, { type: 'point', p: this.crossings.get(id)!.p });
+    return withCrossings;
+  }
+
+  /**
+   * What a click or the cursor means to the dimension tool. A point of the sketch comes first (a crossing that already has one is that point), then the
+   * crossing of two lines, then any curve or axis: near a crossing it is the point that is wanted, not one of the lines. Only a crossing of two drawn
+   * parts of lines counts, never one on their extensions (ADR 0212).
+   */
+  private dimensionPick(e: PointerInput): { id: Id | null; hit: Hit | null; crossing: { p: P2; a: Id; b: Id } | null } {
+    const geometry = this.dimensionGeometry();
+    const tol = PICK_PX * e.px;
+    const hit = hitTest(geometry, e.p, tol, undefined, this.axisPickable(geometry, e.p));
+    if (hit && (hit.kind === 'point' || hit.kind === 'origin')) return { id: hit.id, hit, crossing: null };
+    const x = intersectionSnap(geometry, e.p, tol, undefined, true);
+    if (x) {
+      const id = `@x:${[x.a, x.b].sort().join(':')}`;
+      return { id, hit: { id, kind: 'point', q: x.p, d: dist(e.p, x.p) }, crossing: x };
+    }
+    return { id: hit?.id ?? null, hit, crossing: null };
+  }
+
+  private dimensionClick(e: PointerInput): void {
+    const found = this.dimensionPick(e);
+    const id = found.id;
     if (this.picks.length === 0) {
-      if (hit) this.picks = [hit.id];
+      if (id) {
+        if (found.crossing) this.crossings.set(id, found.crossing);
+        this.picks = [id];
+      }
       return;
     }
-    if (this.picks.length === 1 && hit && hit.id !== this.picks[0] && smartDimension(geometry, [this.picks[0]!, hit.id], e.p)) {
-      this.picks.push(hit.id);
-      return;
+    const geometry = this.dimensionGeometry();
+    if (this.picks.length === 1 && id && id !== this.picks[0]) {
+      const trial = found.crossing ? new Map(geometry).set(id, { type: 'point', p: found.crossing.p }) : geometry;
+      if (smartDimension(trial, [this.picks[0]!, id], e.p)) {
+        if (found.crossing) this.crossings.set(id, found.crossing);
+        this.picks.push(id);
+        return;
+      }
     }
     const proposal = smartDimension(geometry, this.picks, e.p);
+    const picked = this.picks;
     this.picks = [];
-    if (!proposal) return this.host.notify(t('sketch.cannotDimension'), 'info');
-    this.placeDimension(proposal.body as SketchConstraint, proposal.value);
+    if (!proposal) {
+      this.crossings.clear();
+      return this.host.notify(t('sketch.cannotDimension'), 'info');
+    }
+    this.placeDimension(proposal.body as SketchConstraint, proposal.value, picked);
   }
 
   /**
    * Adds a driving dimension, refused (like a relation) when the solver says it over-defines the sketch; in that case it
    * is added as a driven one instead, a reference that shows the measured value (C1.29), as SolidWorks offers.
    */
-  private placeDimension(body: SketchConstraint, value: number): void {
+  private placeDimension(body: SketchConstraint, value: number, picked: Id[] = []): void {
+    // a crossing picked on the way becomes a point on both lines, made in the same command as the dimension (one undo step; Esc before this leaves nothing behind)
+    const made = new Map<Id, Id>();
+    const entities: SketchEntity[] = [];
+    const relations: SketchConstraint[] = [];
+    for (const pick of picked) {
+      const x = this.crossings.get(pick);
+      if (!x || made.has(pick)) continue;
+      const point = this.allocator().take('p');
+      made.set(pick, point);
+      entities.push({ id: point, type: 'point', x: x.p[0], y: x.p[1] });
+      relations.push({ id: this.allocator().take('c'), type: 'intersection', point, a: x.a, b: x.b } as SketchConstraint);
+    }
+    this.crossings.clear();
     const id = this.allocator().take('d');
-    const dimension = { ...body, id, value: fmt(value) } as SketchConstraint;
+    const renamed = Object.fromEntries(Object.entries(body).map(([k, v]) => [k, typeof v === 'string' && made.has(v) ? made.get(v)! : v]));
+    const dimension = { ...renamed, id, value: fmt(value) } as SketchConstraint;
     const s = this.sketch();
-    void this.host.trial({ ...s, constraints: [...s.constraints, dimension] }).then((r) => {
-      const add = (c: SketchConstraint) => this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities: [], constraints: [c] });
+    void this.host.trial({ ...s, entities: [...s.entities, ...entities], constraints: [...s.constraints, ...relations, dimension] }).then((r) => {
+      const add = (c: SketchConstraint) => this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities, constraints: [...relations, c] });
       if (r.status === 'failed') this.host.notify(r.collapsed?.length ? r.message! : t('sketch.opOverDefined'), 'error');
       else if (r.status === 'over') {
         if (add({ ...dimension, driving: false } as SketchConstraint)) this.host.notify(t('sketch.dimensionDriven'), 'info');
@@ -1748,7 +1816,10 @@ export class SketchController {
   dimensionPreview(): { text: string; at: P2 } | null {
     if (this.tool !== 'dimension' || !this.cursor || this.picks.length === 0) return null;
     const hover = this.hover && this.picks.length === 1 && this.hover.id !== this.picks[0] ? [this.picks[0]!, this.hover.id] : this.picks;
-    const proposal = smartDimension(this.geometry(), hover, this.cursor) ?? smartDimension(this.geometry(), this.picks, this.cursor);
+    const geometry = new Map(this.dimensionGeometry());
+    // the crossing under the cursor is a point to dimension to, as soon as it is hovered
+    if (this.hover && this.snapTarget?.kind === 'intersection') geometry.set(this.hover.id, { type: 'point', p: this.snapTarget.p });
+    const proposal = smartDimension(geometry, hover, this.cursor) ?? smartDimension(geometry, this.picks, this.cursor);
     if (!proposal) return null;
     const kind = { distance: '', distanceX: t('dimension.prefixX'), distanceY: t('dimension.prefixY'), radius: 'R', diameter: 'Ø', arcLength: '⌒', angle: '' }[proposal.body.type];
     return { text: `${kind}${fmt(proposal.value)}${proposal.unit === 'deg' ? '°' : ''}`, at: this.cursor };

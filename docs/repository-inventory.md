@@ -7,8 +7,8 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 84／7／34 |
-| ADR 文件 | 209 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 193／189／236 |
+| ADR 文件 | 211 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 194／190／238 |
 | 實機清單項目 | 92 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -439,6 +439,8 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0208：工程圖持久磁吸點與組合件解析參照](<adr/0208-drawing-reference-points.md>)
 - [ADR 0209：錐面側視輪廓的連動導角尺寸](<adr/0209-conical-chamfer-dimensions.md>)
 - [ADR 0210：投影輪廓參照與非對稱公差](<adr/0210-projected-references-and-asymmetric-tolerances.md>)
+- [ADR 0211：關係不能靠把直線壓成一個點來滿足](<adr/0211-relations-do-not-shrink-lines.md>)
+- [ADR 0212：兩條線的交點可作為智慧型尺寸的參考點](<adr/0212-line-crossing-as-dimension-reference.md>)
 
 ### 歷史驗證
 
