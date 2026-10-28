@@ -633,7 +633,11 @@ export class SketchController {
     this.pending=this.host.trial({...s,constraints:[...s.constraints,...relations]})
       .then(result=>{
         if(this.host.doc()!==base) {this.host.notify(t('sketch.relationStale'),'info');return;}
-        if(result.status==='over'||result.status==='failed') {this.host.notify(result.collapsed?.length?result.message!:t('sketch.overDefinedRelation'),'error');return;}
+        if(result.status==='over'||result.status==='failed') {
+          // dependent but not contradicting (nothing in conflict): what is asked already follows from what is there, which is not the same as asking too much (ADR 0213)
+          const implied=result.status==='over'&&result.conflicting.length===0&&!result.collapsed?.length;
+          this.host.notify(result.collapsed?.length?result.message!:t(implied?'sketch.relationImplied':'sketch.overDefinedRelation'),'error');return;
+        }
         accepted=this.host.execute({type:'addSketchItems',featureId:this.host.featureId,entities:[],constraints:relations});
       })
       .catch((error:unknown)=>this.host.notify(t('sketch.opFailed',{reason:error instanceof Error?error.message:String(error)}),'error'))

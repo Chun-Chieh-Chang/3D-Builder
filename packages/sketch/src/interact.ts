@@ -673,13 +673,20 @@ export function blockTargets(geometry: Geometry, selection: readonly Id[], sketc
   return selection.filter((id) => !held.has(id));
 }
 
-/** Expand a multi-selection into a minimal forest of ordinary model constraints. */
-export function expandRelation(body:RelationBody,geometry:Geometry,selection:readonly Id[],sketch:Pick<SketchFeature,'entities'|'constraints'>):RelationBody[] {
+/**
+ * Expand a multi-selection into a minimal forest of ordinary model constraints. Two circles or arcs are the one case of two that is also looked at
+ * (`concentric` and `coradial`, ADR 0213): what already holds is left out, since a relation that only repeats it is redundant and the solver would refuse it.
+ */
+export function expandRelation(body:RelationBody,geometry:Geometry,selection:readonly Id[],sketch:Pick<SketchFeature,'entities'|'constraints'>,pair=false):RelationBody[] {
   const ids=[...new Set(selection)];
-  if(ids.length<3)return [body];
   const kinds=ids.map(id=>kindOf(geometry,id,sketch));
   const lines=kinds.every(kind=>kind==='line'),points=kinds.every(kind=>kind==='point'||kind==='origin'),radials=kinds.every(kind=>kind==='circle'||kind==='arc');
-  if(body.type==='coradial'&&radials)return [...expandRelation({type:'concentric',a:ids[0]!,b:ids[1]!},geometry,ids,sketch),...expandRelation({type:'equal',a:ids[0]!,b:ids[1]!},geometry,ids,sketch)];
+  const twoRadials=ids.length===2&&radials&&(body.type==='concentric'||body.type==='coradial'||(pair&&body.type==='equal'));
+  if(ids.length<3&&!twoRadials)return [body];
+  if(body.type==='coradial'&&radials) {
+    const parts=[...expandRelation({type:'concentric',a:ids[0]!,b:ids[1]!},geometry,ids,sketch,true),...expandRelation({type:'equal',a:ids[0]!,b:ids[1]!},geometry,ids,sketch,true)];
+    return ids.length===2&&parts.length===2?[body]:parts; // both halves missing: the one relation, as before
+  }
   if((body.type==='horizontal'||body.type==='vertical')&&lines) {
     return ids.filter(id=>!sketch.constraints.some(c=>(c.type===body.type&&c.a===id&&c.b===undefined)||(c.type==='block'&&c.entity===id))).map(a=>({type:body.type,a}));
   }
@@ -783,6 +790,7 @@ function candidateRelations(geometry: Geometry, selection: Id[], sketch?: Pick<S
   }
   if (lines.length === 1 && radials.length === 1) return [{ type: 'tangent', a: lines[0]!, b: radials[0]! }];
   if (radials.length === 2) {
+    const rest = { entities: sketch?.entities ?? [], constraints: sketch?.constraints ?? [] };
     return [
       { type: 'concentric', a, b },
       { type: 'coradial', a, b },
@@ -791,7 +799,7 @@ function candidateRelations(geometry: Geometry, selection: Id[], sketch?: Pick<S
       { type: 'tangent', a, b },
       { type:'tangentExternal',a,b },
       { type:'tangentInternal',a,b },
-    ];
+    ].filter((r) => (r.type !== 'concentric' && r.type !== 'coradial') || expandRelation(r as RelationBody, geometry, selection, rest).length > 0) as RelationBody[]; // not what already holds (ADR 0213)
   }
   return [];
 }

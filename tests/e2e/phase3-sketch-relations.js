@@ -3,6 +3,7 @@
 //
 //   await import('/@fs/<checkout>/tests/e2e/phase3-sketch-relations.js?' + Date.now());
 //   await __r.coradial();   // coradial, intersection, merge, arcLength, driven -> { name, pass, ... }
+//   await __r.coradialShared();   // coradial of two circles drawn from one center (ADR 0213)
 
 const here = import.meta.url.slice(0, import.meta.url.lastIndexOf('/') + 1);
 await import(here + 'phase1-demo-parts.js?' + Date.now());
@@ -20,6 +21,37 @@ async function newSketch(centre = [0, 0], pxmm = 8) {
   await H.action('草圖', '草圖');
   await H.frameSketch(centre[0], centre[1], pxmm);
 }
+
+R.coradialShared = async () => {
+  await newSketch();
+  // the second circle is drawn from the first one's center, so the two share that point: 同心 already holds and only the radius is missing
+  await H.tool('圓');
+  await H.sk(0, 0);
+  await H.sk(30, 0);
+  await H.sk(0, 0);
+  await H.sk(22, 0);
+  await H.key('Escape');
+  await H.solved();
+  const [c1, c2] = [...H.geom()].filter(([, g]) => g.type === 'circle').map(([id]) => id);
+  const sameCenter = H.sketch().entities.filter((e) => e.type === 'circle').every((e, _, all) => e.center === all[0].center);
+  await H.selectTool();
+  const [u1, v1] = H.onEntity(c1);
+  const [u2, v2] = H.onEntity(c2);
+  await H.sk(u1, v1);
+  await H.sk(u2, v2, { ctrlKey: true });
+  await H.wait(80);
+  const labels = [...document.querySelectorAll('.relation-buttons button')].map((b) => b.textContent);
+  const before = H.sketch().constraints.length;
+  const b = [...document.querySelectorAll('.relation-buttons button')].find((x) => x.textContent === '同心同徑');
+  if (!b) throw new Error(`同心同徑 not offered: ${labels.join(',')}`);
+  b.click();
+  await H.waitFor(() => H.sketch().constraints.length > before, 5000, '同心同徑 added');
+  await H.solved();
+  const [g1, g2] = [H.geom().get(c1), H.geom().get(c2)];
+  const added = H.sketch().constraints.slice(before).map((c) => c.type);
+  const pass = sameCenter && !labels.includes('同心') && added.join() === 'equal' && near(g1.r, g2.r) && near(g1.c[0], g2.c[0]) && near(g1.c[1], g2.c[1]);
+  return { name: 'two circles on one center point: 同心 is not offered and 同心同徑 adds the equal radius', sameCenter, labels, added, r: [g1.r, g2.r], pass };
+};
 
 R.coradial = async () => {
   await newSketch();

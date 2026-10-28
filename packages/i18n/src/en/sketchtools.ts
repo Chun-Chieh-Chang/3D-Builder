@@ -84,6 +84,7 @@ export const sketchtools: Translation = {
   'snap.name.extension': 'Extension',
   'snap.name.model': 'Edges and vertices of the model',
   'sketch.overDefinedRelation': 'This relation would over define the sketch, so it was not added',
+  'sketch.relationImplied': 'This relation already follows from the relations of the sketch (adding it would only repeat them), so it was not added',
   'sketch.noCrossingRelation': 'The two selected curves do not meet, so this relation was not added',
   'sketch.tangentFromEnd': 'A tangent arc has to start at the end of a line or arc',
   'sketch.collinearCircle': 'The three points are collinear; they make no circle',
