@@ -15,7 +15,7 @@ Phase 0–7範圍已有開發成果；原Phase 0–2閘門按當時較低範圍�
 | 零件建模 | 草圖驅動拉伸／旋轉／掃出／疊層拉伸、圓角／導角、薄殼、多本體與曲面 | 經文件命令與原生核心重建；輸入失敗須回報，不能以圖形假冒幾何；[藍圖](blueprint.md)與ADR |
 | 草圖關係 | 批次拘束、等距／比例、對稱、端點／內外相切、橢圓與Bézier G1、修復診斷；關係不能靠把直線壓成一個點來滿足，會轉動或移動，壓不出來就拒絕並說明（[ADR0211](adr/0211-relations-do-not-shrink-lines.md)）；智慧型尺寸可點兩條線真的交叉的地方，尺寸放下時才建立點與交點關係（[ADR0212](adr/0212-line-crossing-as-dimension-reference.md)，不含延長線交點與圓弧交點）；已經成立的同心／同心同徑不再被提供或要求，被拒絕時說明是「已被決定」還是「過多定義」（[ADR0213](adr/0213-relations-that-already-hold.md)） | 不含一般樣條G2或最小衝突集合；[ADR0195](adr/0195-sketch-constraint-expansion.md) |
 | 齒輪／齒條 | 參數式直齒齒輪、直齒齒條 | 不含斜齒、內齒、變位、滾刀齒根或運動結合；[ADR0193](adr/0193-gear-and-rack-builders.md) |
-| 選面圓角／導角 | 可預選面、多面與邊混選，重建時展開有效邊界；正式「螺紋入口錐面」工具 | 已重現原模型的自由曲面邊導角限制；可由孔口邊／面直接建立可編輯加工錐面；需唯一同軸圓弧，不能推測任意曲線孔口；[ADR0205](adr/0205-thread-entrance-tool.md) |
+| 選面圓角／導角 | 可預選面、多面與邊混選，重建時展開有效邊界；正式「螺紋入口錐面」工具 | 已重現原模型的自由曲面邊導角限制；可由孔口邊／面直接建立可編輯加工錐面；需唯一同軸圓弧，不能推測任意曲線孔口；[ADR0205](adr/0205-thread-entrance-tool.md)；圓角結果的最大容差超過最小半徑的 0.25 倍時拒絕並說明，不讓 `BRepCheck` 看不見的破孔流入（[ADR0214](adr/0214-fillet-tolerance-gate.md)，導角尚未檢查） |
 | 模型互動 | 浮動參數、合法運算式預覽、建構拉伸拖曳／跨平面反向／對稱 | 操控器限有原生終端面的給定深度／對稱第一方向；運算式深度不強制覆寫；[ADR0203](adr/0203-floating-editor-assembly-source-and-live-extrusion.md) |
 | 組合件編輯 | 雙擊／右鍵來源零件草圖或特徵，儲存返回後更新來源實例 | 同時一份文件，不是組合件就地編輯；直接特徵編輯限3dbx；[ADR0203](adr/0203-floating-editor-assembly-source-and-live-extrusion.md) |
 | 顯示 | 固定工作平面的網格、正確深度、右鍵與系統選項同步、參考面共原點、隱藏恢復、透明塗彩 | 同一零件的三預設面共自身原點，實例保留位姿，自訂面保留偏移；[ADR0202](adr/0202-viewport-grid-and-hidden-recovery.md)、[ADR0197](adr/0197-transparent-shaded-view.md) |

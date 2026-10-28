@@ -226,6 +226,13 @@ const T = {
  */
 const LAW_STRETCH_SAMPLES = 64;
 
+/**
+ * How large the tolerance of a fillet's result may be, as a fraction of the smallest radius it was asked for (ADR 0214). Measured over the 504 fillets of
+ * the test suite: a sound result is 1e-7 (median) to 0.025 mm on a 0.5 mm radius, 5 % of it, and meshes without a hole; the one that did not mesh had 18.09 mm,
+ * 36 times the radius. A quarter of the radius lies between the two, 5 times above the largest sound one.
+ */
+const FILLET_TOLERANCE_RATIO = 0.25;
+
 const add = (a: Vec3, b: Vec3, s = 1): Vec3 => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -1854,6 +1861,8 @@ export class Kernel {
     const faces = ShapeIndex.of(oc, shape, T.FACE, arena);
     const edges = ShapeIndex.of(oc, shape, T.EDGE, arena);
     const verts = ShapeIndex.of(oc, shape, T.VERTEX, arena);
+    // the smallest radius the fillets take, which the tolerance of the result is measured against
+    const smallest = Math.min(...edgeIndices.map((i) => { const law = laws?.get(i); return law && law.length > 0 ? Math.min(...law.map((p) => p.r)) : radius; }));
     try {
       let out: TopoDS_Shape | null = null;
       let lastErr: any = null;
@@ -1873,6 +1882,10 @@ export class Kernel {
           // shapes are tried and the last one comes back "done" but corrupt. Refuse it here: handing a body that fails BRepCheck to whatever runs next is
           // what produces the downstream WASM crashes (AGENTS.md §3.5); a clear refusal is the honest outcome.
           if (!this.valid(built)) throw new KernelError(t('feature.filletInvalid'));
+          // BRepCheck says nothing of how far apart the things an edge joins are allowed to be: a fillet that ends where it meets an edge of another feature at
+          // exactly the same place can come back with an edge of tolerance 18 mm on a 20 mm part, "valid", and meshing then leaves holes in the fillet (ADR 0214)
+          const tolerance = this.maxTolerance(built);
+          if (tolerance > FILLET_TOLERANCE_RATIO * smallest) throw new KernelError(t('feature.filletTolerance', { tolerance: tolerance.toPrecision(3), radius: String(+smallest.toPrecision(6)) }));
           out = built;
           usedMk = mk;
           break;
@@ -3361,6 +3374,20 @@ export class Kernel {
         const s = c.State();
         return s === oc.TopAbs_State.TopAbs_IN ? 'in' : s === oc.TopAbs_State.TopAbs_ON ? 'on' : 'out';
       });
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /** The largest tolerance of any edge or vertex of the shape (mm): how far apart OCCT lets things it calls one place be. A sound result has 1e-7 to 1e-4. */
+  private maxTolerance(shape: TopoDS_Shape): number {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      let max = 0;
+      for (const ex = arena.own(new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) max = Math.max(max, oc.BRep_Tool.Tolerance(arena.own(oc.TopoDS.Edge(ex.Current()))));
+      for (const ex = arena.own(new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) max = Math.max(max, oc.BRep_Tool.Tolerance(arena.own(oc.TopoDS.Vertex(ex.Current()))));
+      return max;
     } finally {
       arena.dispose();
     }
