@@ -267,6 +267,9 @@ export interface ControllerView {
   options: ToolOptions;
 }
 
+/** Offered relations are tried one by one (ADR 0216); past these sizes the buttons stay as offered and a refusal is told on the click. */
+const TRIAL_OFFER_LIMIT = 12;
+const TRIAL_SKETCH_LIMIT = 400;
 const PICK_PX = 7;
 /** The picking tools that may take one of the sketch's axes (ADR 0170): a dimension to it, a mirror about it; never trim, extend, fillet or offset. */
 const AXIS_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'mirror']);
@@ -619,18 +622,42 @@ export class SketchController {
     this.changed();
   }
 
+  /** What `body` adds for the selection, as constraints with fresh ids. */
+  private relationsFor(body: RelationBody): SketchConstraint[] {
+    const s = this.sketch();
+    // 「固定」 of curves holds each of the selected that is not held yet, one relation for each, in one step (ADR 0182)
+    // one allocator for all of them: each call of `allocator()` starts from what the document has, so two would hand out the same id twice
+    const ids = this.allocator();
+    return body.type === 'block'
+      ? blockTargets(this.geometry(), [...this.selection], s).map((entity) => ({ id: ids.take('c'), type: 'block', entity }) as SketchConstraint)
+      : expandRelation(body, this.geometry(), [...this.selection], s).map((relation) => ({ id: ids.take('c'), ...relation }) as SketchConstraint);
+  }
+
+  /**
+   * Of the offered relations, the ones the solver would still refuse (over-defined, implied by what is there, or failed), found by trying each one (ADR 0216).
+   * Read-only. `null` when the document changed meanwhile or the sketch is too large to try them all: the caller then keeps every button.
+   */
+  async refusedRelations(offered: readonly RelationBody[]): Promise<Set<RelationBody['type']> | null> {
+    const base = this.host.doc();
+    const s = this.sketch();
+    if (offered.length === 0 || offered.length > TRIAL_OFFER_LIMIT || s.entities.length > TRIAL_SKETCH_LIMIT) return null;
+    const refused = new Set<RelationBody['type']>();
+    for (const body of offered) {
+      const relations = this.relationsFor(body);
+      if (relations.length === 0) { refused.add(body.type); continue; }
+      const r = await this.host.trial({ ...s, constraints: [...s.constraints, ...relations] });
+      if (this.host.doc() !== base) return null;
+      if (r.status === 'over' || r.status === 'failed') refused.add(body.type);
+    }
+    return refused;
+  }
+
   /** 「加入限制條件」 (C1.26): refused, like a dimension, when it would over-define the sketch. */
   async addRelation(body: RelationBody): Promise<boolean> {
     if (this.busy) return false;
     const base=this.host.doc();
     const s = this.sketch();
-    // 「固定」 of curves holds each of the selected that is not held yet, one relation for each, in one step (ADR 0182)
-    // one allocator for all of them: each call of `allocator()` starts from what the document has, so two would hand out the same id twice
-    const ids = this.allocator();
-    const relations =
-      body.type === 'block'
-        ? blockTargets(this.geometry(), [...this.selection], s).map((entity) => ({ id: ids.take('c'), type: 'block', entity }) as SketchConstraint)
-        : expandRelation(body,this.geometry(),[...this.selection],s).map(relation=>({id:ids.take('c'),...relation} as SketchConstraint));
+    const relations = this.relationsFor(body);
     if (relations.length === 0) return false;
     const relation = relations[0]!;
     // 「交錯」 names the point where two curves meet; say that they do not meet rather than let the solver call it over-defined (C6.2)

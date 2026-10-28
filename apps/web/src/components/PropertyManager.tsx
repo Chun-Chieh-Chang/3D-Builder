@@ -616,7 +616,19 @@ function SketchPanel({ f }: { f: SketchFeature }) {
   const view = useSketcherView();
   const sketcher = store.sketcher;
   const selection = view?.selection ?? [];
-  const { entityIds, existing, offered } = relationsOffered(f, solve, selection);
+  const { entityIds, existing, offered: allOffered } = relationsOffered(f, solve, selection);
+  // every button at once, then the ones the solver would refuse go away once tried (ADR 0216)
+  const [refused, setRefused] = useState<{ key: string; sketch: SketchFeature; types: Set<string> } | null>(null);
+  const offeredKey = `${selection.join(',')}|${allOffered.map((r) => r.type).join(',')}|${solve?.status}`;
+  useEffect(() => {
+    let live = true;
+    if (sketcher && allOffered.length > 0) void sketcher.refusedRelations(allOffered).then((r) => live && setRefused(r ? { key: offeredKey, sketch: f, types: r } : null)).catch(() => live && setRefused(null));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offeredKey, sketcher, f]);
+  const offered = refused && refused.key === offeredKey && refused.sketch === f ? allOffered.filter((r) => !refused.types.has(r.type)) : allOffered;
   const curves = f.entities.filter((e) => e.type !== 'point' && entityIds.includes(e.id));
   const dims = f.constraints.filter(isDimension);
   const conflicting = solve?.conflicting.map((id) => describe(f, id)) ?? [];
