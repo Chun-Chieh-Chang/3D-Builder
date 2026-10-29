@@ -3,6 +3,10 @@
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
 
+## 2026-10-29：P0草圖建立工具取消驗收
+
+快轉拉取510b6a9後，以真實PlaneGCS驗12種建立工具首點後Esc取消、第二次Esc回選取，逐一核對文件無半成品。只執行新增案例，1項通過；未更動產品程式，多階段及IME仍待驗，詳驗收表。
+
 ## 2026-10-29：DXF 匯入以其他 CAD 存出的檔案驗證（ADR0219 驗收 #2）
 
 使用者同意從公開來源下載範例。下載開源 DXF 解析器 bjnortier/dxf（MIT，commit `cb571d1`）的 67 個測試檔到暫存資料夾：R12 到 2018，AutoCAD 格式、LibreCAD（dxfrw）、QCAD（dxflib）寫出。

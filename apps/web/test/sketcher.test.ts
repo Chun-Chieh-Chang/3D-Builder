@@ -1450,3 +1450,21 @@ describe('P0 explicit sketch selection candidates', () => {
     }
   });
 });
+
+describe('P0 creation tool cancellation', () => {
+  it('cancels the first point before leaving each creation tool without committing a partial entity', () => {
+    for (const tool of ['line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'threePointArc', 'ellipse', 'bezier', 'slot', 'polygon'] as const) {
+      const h = new Host();
+      const c = new SketchController(h);
+      const before = JSON.stringify(h.sketch());
+      c.setTool(tool);
+      click(c, 12, 12);
+      c.escape();
+      expect(c.getView().tool, `${tool}: first Escape`).toBe(tool);
+      expect(JSON.stringify(h.sketch()), `${tool}: no partial creation`).toBe(before);
+      c.escape();
+      expect(c.getView().tool, `${tool}: second Escape`).toBe('select');
+      expect(JSON.stringify(h.sketch()), `${tool}: no changes after leaving`).toBe(before);
+    }
+  });
+});
