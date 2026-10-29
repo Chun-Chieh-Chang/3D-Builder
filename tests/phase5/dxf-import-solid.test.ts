@@ -2,6 +2,8 @@
  * 「匯入 DXF」 (F2.6) through the real solver and kernel: closed outlines of a DXF, imported into a sketch, solved by PlaneGCS and extruded by OCCT. The volume
  * is checked against the area worked out by hand from the DXF itself (for the spline, from its own B-spline, integrated exactly apart from the importer).
  */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { IdAllocator } from '@3db/model';
 import { importDxf } from '@3db/drawing';
@@ -69,6 +71,39 @@ describe('an imported outline is a profile', () => {
     }
     expect(area).toBeGreaterThan(500);
     expect(Math.abs(volume - area * 10) / (area * 10)).toBeLessThan(1e-7);
+  });
+
+  it('issue21.dxf, saved by LibreCAD: a rectangle and two closed polylines of mixed bulges in it extrude to the area of the raw vertices and bulges, to 1e-9', () => {
+    const text = readFileSync(fileURLToPath(new URL('../fixtures/public-dxf/bjnortier-dxf/issue21.dxf', import.meta.url)), 'latin1');
+    const { result, volume } = solid(text);
+    expect(statuses(result)).toEqual(['s1=ok', 'e1=ok']);
+    // each LWPOLYLINE read from the text: vertices (10, 20) and the bulge (42) of the segment that leaves each
+    const lines = text.split(/\r?\n/).map((s) => s.trim());
+    const closed: { p: P; bulge: number }[][] = [];
+    let loop: { p: P; bulge: number }[] | null = null;
+    for (let k = 0; k + 1 < lines.length; k += 2) {
+      const [code, value] = [lines[k]!, lines[k + 1]!];
+      if (code === '0') {
+        loop = value === 'LWPOLYLINE' ? [] : null;
+        if (loop) closed.push(loop);
+      } else if (loop && code === '10') loop.push({ p: [Number(value), 0], bulge: 0 });
+      else if (loop && code === '20') loop.at(-1)!.p[1] = Number(value);
+      else if (loop && code === '42') loop.at(-1)!.bulge = Number(value);
+    }
+    expect(closed.map((l) => l.length)).toEqual([4, 4, 4]);
+    // the signed area of each: the polygon (shoelace) and, for each bulge b over a chord c, the circular segment r²/2·(θ − sin θ), θ = 4·atan|b|,
+    // r = c / (2·sin(θ/2)), on the side the sign of b says
+    const signedArea = (l: { p: P; bulge: number }[]) =>
+      l.reduce((sum, { p, bulge }, i) => {
+        const q = l[(i + 1) % l.length]!.p;
+        const theta = 4 * Math.atan(Math.abs(bulge));
+        const r = Math.hypot(q[0] - p[0], q[1] - p[1]) / (2 * Math.sin(theta / 2));
+        return sum + (p[0] * q[1] - q[0] * p[1]) / 2 + (bulge ? Math.sign(bulge) * ((r * r) / 2) * (theta - Math.sin(theta)) : 0);
+      }, 0);
+    const areas = closed.map((l) => Math.abs(signedArea(l))).sort((a, b) => b - a);
+    const area = areas[0]! - areas[1]! - areas[2]!;
+    expect(areas[1]).toBeGreaterThan(100);
+    expect(Math.abs(volume - area * 10) / (area * 10)).toBeLessThan(1e-9);
   });
 });
 

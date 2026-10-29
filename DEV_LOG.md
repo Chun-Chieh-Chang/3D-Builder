@@ -3,6 +3,18 @@
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
 
+## 2026-10-29：DXF 匯入以其他 CAD 存出的檔案驗證（ADR0219 驗收 #2）
+
+使用者同意從公開來源下載範例。下載開源 DXF 解析器 bjnortier/dxf（MIT，commit `cb571d1`）的 67 個測試檔到暫存資料夾：R12 到 2018，AutoCAD 格式、LibreCAD（dxfrw）、QCAD（dxflib）寫出。
+
+**第一輪 39 個整個被拒絕**，是讀取器的兩個錯：LibreCAD／QCAD 檔以 `999` 註解開頭（DXF 參考允許任何地方出現），AutoCAD 2013 以後的 `ACDSDATA` 區段以群組 70／71 開頭而非記錄。`readDxf` 改為略過 999、略過用不到的區段到其 ENDSEC（沒有 ENDSEC 仍拒絕）。修正後 66 個匯入，1 個（7413 條曲線）依設計超過上限被拒；全部通過 `sketchError`，近似 ≤ 0.001 mm；回報的問題（長度 0 的線、多邊形網格）都對過原始檔是真的。
+
+失敗萃取：手寫與本程式輸出的 DXF 都是「依參考寫的乾淨檔」，全部繞過了實際寫出程式的習慣（註解、私有區段）。23 項單元測試、200 組 Fuzz 全綠時，真實檔案仍有 58% 讀不進來——讀取類功能的驗收必須含外部程式寫出的檔案，不能以自產檔代替。
+
+真值不經匯入器：寫出程式記錄的 `$EXTMIN/$EXTMAX`（只用記錄得準的：LibreCAD 常寫 1e+20 佔位或鬆的範圍，`arc15` 的 y 最小記成 0 而真值約 34.5，這些不用）、依 DXF 參考從群組值算出的 ARC／ELLIPSE（兩方向量）、從原始頂點與凸度手算的面積。量測時一度以 2 萬個取樣點的最近點量「到真橢圓的距離」，8 m 長的曲線上間距約 1 mm，量出 0.45 mm——量測錯，改黃金分割後 ≤ 0.001，門檻未放寬。
+
+納入 11 個檔（`tests/fixtures/public-dxf/bjnortier-dxf`，README 記來源、授權、SHA-256）；新增 `dxf-import-external.test.ts` 8 項、`dxf-import-solid.test.ts` 的 `issue21` 伸長（體積相對 1e-9）、`dxf-import.test.ts` 讀取器邊界 1 項。反向對照：拿掉兩個修正，9 項中 8 項轉紅。臨時探針已移出版本庫（`zz-probe-dxf-external.test.ts` 在本工作階段暫存資料夾）。全量：型別檢查、lint:rules／i18n／repo、check-deps 通過；`npx vitest run` 3943 通過、1 失敗（`direct-edit.test.ts` 移動面那項，來自 `2ab5718`，與前一項相同，本次未處理）；瀏覽器 `phase3-sketch-dxf.js` 單獨通過。讀取器變更不影響畫面，未跑完整 verify:ui。
+
 ## 2026-10-29：匯入 DXF 到草圖（ADR0219，F2.6）
 
 使用者問「用本系統開啟 DXF 呢」，當時只會輸出。依使用者選定的範圍（匯入草圖、只合併端點、文字轉草圖文字、尺寸略過、匯入前選圖層）實作，設計與做法見 [ADR0219](docs/adr/0219-dxf-import-into-sketch.md)。

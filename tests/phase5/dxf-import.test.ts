@@ -315,6 +315,16 @@ describe('what cannot be imported is said, never changed', () => {
     expect(() => run('0\nSECTION\n2\nENTITIES\nxx\nLINE\n0\nENDSEC\n0\nEOF')).toThrow(DxfImportError);
   });
 
+  it('999 comments anywhere are passed over, as is a section of no use whose groups are not records (ACDSDATA); that section without its ENDSEC is still refused', () => {
+    const line = ent('LINE', 8, 'A', 10, 0, 20, 0, 999, 'a comment inside an entity', 11, 4, 21, 0);
+    const extra = ['0', 'SECTION', '2', 'ACDSDATA', '70', '2', '71', '6', '0', 'ACDSSCHEMA', '90', '0', '0', 'ENDSEC'];
+    const text = ['999', 'written by hand', ...dxf([line]).split('\n').slice(0, -2), ...extra, '0', 'EOF'].join('\n');
+    const r = run(text);
+    expect(r.made).toEqual({ line: 1 });
+    expect(geometry(r.entities).p(geometry(r.entities).of('line')[0]!.p2)).toEqual([4, 0]);
+    expect(() => run(['999', 'x', ...dxf([line]).split('\n').slice(0, -2), ...extra.slice(0, -2), '0', 'EOF'].join('\n'))).toThrow(DxfImportError);
+  });
+
   it('a value that is not a number, a line of no length, a radius of 0: each said with its entity and layer, nothing made of it, the rest imported', () => {
     const r = run(dxf([
       ent('LINE', 5, '1A', 8, 'A', 10, 'x', 20, 0, 11, 1, 21, 0),

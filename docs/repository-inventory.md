@@ -463,6 +463,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 - [舊版文件樣本](<../tests/fixtures/old-versions/README.md>)
 - [OSF sheet-press STEP samples](<../tests/fixtures/public-cad/osf-sheet-press/README.md>)
+- [External DXF samples (bjnortier/dxf)](<../tests/fixtures/public-dxf/bjnortier-dxf/README.md>)
 - [STEP 樣本](<../tests/fixtures/step/README.md>)
 - [金樣零件（Phase 1 驗收 ①②）](<../tests/golden/README.md>)
 
