@@ -53,6 +53,8 @@ export const lowlevel: Translation = {
   'picker.part': '3D-Builder part',
   'picker.oldPart': '3D-Builder part (old .3db.json)',
   'picker.step': 'STEP file',
+  'picker.iges': 'IGES file',
+  'picker.stepOrIges': 'STEP or IGES file',
   'picker.assembly': '3D-Builder assembly',
   'picker.any': 'All supported files',
   'picker.partOrStep': 'Part or STEP file',

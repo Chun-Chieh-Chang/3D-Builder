@@ -170,6 +170,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'save', get label() { return t('act.save'); }, shortcut: 'Ctrl+S', group: 'file', enabled: idle, run: () => void store.save() },
   { id: 'save-as', get label() { return t('act.saveAs'); }, group: 'file', enabled: idle, run: () => void store.saveAs() },
   { id: 'export-step', get label() { return t('export.step'); }, group: 'file', enabled: (s) => (partIdle(s) || (assemblyIdle(s) && hasComponents(s))) && s.bootMs !== null, run: () => store.exportStep() },
+  { id: 'export-iges', get label() { return t('export.iges'); }, group: 'file', enabled: (s) => partIdle(s) && hasBody(s) && s.bootMs !== null, run: () => store.exportIges() },
   { id: 'export-stl', get label() { return t('export.stl'); }, group: 'file', enabled: (s) => hasBody(s) && s.bootMs !== null, run: () => void store.exportStl() },
   { id: 'export-image', get label() { return t('export.image'); }, group: 'file', enabled: (s) => (s.active === 'assembly' ? assemblyIdle(s) && hasComponents(s) : hasBody(s)), run: () => void store.exportImage() },
   { id: 'new-drawing', get label() { return t('drawing.act'); }, group: 'file', enabled: (s) => s.bootMs !== null && (s.active === 'assembly' ? assemblyIdle(s) && !!s.asm?.fileName && !s.asm.dirty : partIdle(s) && s.fileName !== null && !s.dirty), run: () => void store.newDrawing() },

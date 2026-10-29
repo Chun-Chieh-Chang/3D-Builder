@@ -37,6 +37,10 @@ export function stepFileName(name: string): string {
   return `${safeFileName(name)}.step`;
 }
 
+export function igesFileName(name: string): string {
+  return `${safeFileName(name)}.igs`;
+}
+
 export function stlFileName(name: string): string {
   return `${safeFileName(name)}.stl`;
 }

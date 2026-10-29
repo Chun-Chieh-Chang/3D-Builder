@@ -182,7 +182,15 @@ export const help: Translation = {
 
   'help.exportStep.keywords': 'export step file coordinate system colors AP242',
 
-  'help.exportStep.see': 'import-step coord-sys export-stl',
+  'help.exportStep.see': 'import-step coord-sys export-stl export-iges',
+  'help.exportIges.summary': 'Writes the part as an IGES file, for older CAD programs and mold shops that read only IGES.',
+
+  'help.exportIges.body':
+    'Exports the part as an IGES 5.3 file. For an assembly use "Export STEP": IGES export of assemblies is not done.\n\n- A window appears:\n  - "Written as": "Trimmed surfaces" (the default) is read by nearly every CAD program, which sews them into a solid itself; "Solid (B-rep)" reads back as a solid, but some programs do not read it.\n  - "Unit": mm or inch.\n  - "With colors" and "Coordinate system" are as for STEP.\n  - Press "Export".\n- The browser downloads an .igs file.\n- IGES text is ASCII only: each character of a name that is not ASCII is written as _, and the message at the bottom says so.\n- Closed tori and spheres are written in two halves, as for STEP; offset surfaces are converted to B-splines.',
+
+  'help.exportIges.keywords': 'export iges igs file trimmed surfaces solid brep unit inch colors',
+
+  'help.exportIges.see': 'export-step import-step coord-sys',
   'help.exportStl.summary': 'Writes the solids of the part as an STL (triangle mesh) file; the fineness follows the document\'s mesh quality.',
 
   'help.exportStl.body':
@@ -737,14 +745,14 @@ export const help: Translation = {
   'help.coordSys.keywords': 'coordinate system origin step export direction right-handed',
 
   'help.coordSys.see': 'ref-plane export-step ref-point',
-  'help.importStep.summary': 'Reads a STEP file as the body of the part, repairing it only when needed.',
+  'help.importStep.summary': 'Reads a STEP or IGES file as the body of the part, repairing it only when needed.',
 
   'help.importStep.body':
-    'Reads a STEP file in as a body of the part, repairing it when necessary.\n\n- Press it in a new part, choose the .step file in the browser\'s window, wait a few seconds; the model appears in the 3D window and the tree gains a row "Import1".\n- Double-click "Import1" (a single click only selects) to open its panel: "Imported data" (the file name; the data is kept in the part file, so the original is not needed) and "Diagnostic report" (how many solids and faces the file holds, the result of the validity check, what was changed).\n- The "sewing tolerance" (0.01 at first) matters only when the file holds surfaces and no solid.\n- You can then add features to it: sketch on its faces, extrude, delete faces, move faces and so on.\n- When the diagnostic report has warnings, look again with "Check geometry".\n\nVerified example: a plate of 40 × 30 × 10 with a hole of radius 4 in the middle: volume 40 × 30 × 10 − π × 4² × 10 ≈ 11497 mm³.',
+    'Reads a STEP or IGES file in as a body of the part, repairing it when necessary.\n\n- Press it in a new part, choose the .step or .igs file in the browser\'s window, wait a few seconds; the model appears in the 3D window and the tree gains a row "Import1".\n- Double-click "Import1" (a single click only selects) to open its panel: "Imported data" (the file name; the data is kept in the part file, so the original is not needed) and "Diagnostic report" (how many solids and faces the file holds, the result of the validity check, what was changed).\n- The "sewing tolerance" (0.01 at first) matters only when the file holds surfaces and no solid; most IGES files are such files, and their surfaces are sewn into a solid.\n- "Open" also opens a STEP or IGES file, as a new part holding it.\n- You can then add features to it: sketch on its faces, extrude, delete faces, move faces and so on.\n- When the diagnostic report has warnings, look again with "Check geometry".\n\nVerified example: a plate of 40 × 30 × 10 with a hole of radius 4 in the middle: volume 40 × 30 × 10 − π × 4² × 10 ≈ 11497 mm³.',
 
-  'help.importStep.keywords': 'import step body diagnostic report repair sewing',
+  'help.importStep.keywords': 'import step iges igs body diagnostic report repair sewing',
 
-  'help.importStep.see': 'delete-face move-face check-part export-step',
+  'help.importStep.see': 'delete-face move-face check-part export-step export-iges',
 
   'help.cosmeticThread.summary': 'Draws a cosmetic thread on the selected cylinder or hole wall: display only, no real thread geometry.',
 

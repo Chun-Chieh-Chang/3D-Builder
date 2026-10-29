@@ -64,7 +64,7 @@ import {
   isShown,
   bodyKey,
 } from '@3db/model';
-import { readAnyDocumentFile, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
+import { readAnyDocumentFile, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, igesFileName, isStepData, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
 import { gatherSources } from './sources';
 import { DrawingStore, type DrawingSource, type DrawingState } from './drawing';
 import { flatPatternDxf } from '@3db/drawing';
@@ -74,7 +74,7 @@ import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/pr
 import type { ModelItem } from '@3db/sketch/ops';
 import type { PickFilter, Snap, Viewer } from '@3db/render';
 import { captureVertexAnchor, resolveVertexAnchor } from './measureAnchors';
-import type { KernelApi, PartExportOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
+import type { KernelApi, PartExportOptions, PartIgesOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
 import { shouldRestartHeap } from '../worker/heap';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 import { accepts, axisDefinitionFor, emptyRef, put, treePick, treeRef } from './datumSlots';
@@ -86,11 +86,13 @@ import {
   fileIn,
   folderAccess,
   foldersUnsupported,
+  isIgesFile,
   isStepFile,
   listFiles,
   pathIn,
   pickFileToOpen,
   pickProjectFolder,
+  pickImportFile,
   pickSaveTarget,
   pickStepFile,
   readBytes,
@@ -324,7 +326,7 @@ export interface UiState {
   /** 「錯誤為何？」 dialog (D7.1). */
   whatsWrong: boolean;
   /** The equations or file-properties dialog (B5.2, B8.3), when open. */
-  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | 'template' | 'shortcuts' | 'options' | 'bom' | 'physical' | 'viewOrientation' | null;
+  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | 'igesOptions' | 'template' | 'shortcuts' | 'options' | 'bom' | 'physical' | 'viewOrientation' | null;
   /** The file the part was opened from or last saved to (F7.1); null for a part never saved. */
   fileName: string | null;
   /** The document differs from what was last opened or saved (the title shows 「*」). */
@@ -3178,6 +3180,22 @@ class AppStore {
     }
   }
 
+  /** 「輸出 IGES」 (F1.4): a part only; it first asks how (trimmed surfaces or a solid, the unit, colors, a coordinate system). */
+  exportIges(): void {
+    if (!this.assembly) this.openDialog('igesOptions');
+  }
+
+  async writeIges(options: PartIgesOptions = {}): Promise<void> {
+    try {
+      const name = this.documentName();
+      const { text, warnings } = await this.api.exportIges(this.history.doc, name, options);
+      download(igesFileName(name), text, 'model/iges');
+      this.notify(warnings.length > 0 ? `${t('export.done', { file: igesFileName(name) })} ${warnings.join('; ')}` : t('export.done', { file: igesFileName(name) }), warnings.length > 0 ? 'error' : 'info');
+    } catch (e) {
+      this.notify(t('export.failed', { what: 'IGES', why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
   /** 「輸出 STL」 (F4.1): the bodies that count, as fine as the document's quality says. */
   async exportStl(): Promise<void> {
     try {
@@ -3268,9 +3286,9 @@ class AppStore {
     try {
       const picked = await pickFileToOpen(this.project ?? this.remembered);
       if (!picked) return;
-      if (isStepFile(picked)) {
+      if (isStepFile(picked) || isIgesFile(picked)) {
         // Like SolidWorks: a new, unsaved part named after the file, holding the imported body.
-        this.load(createEmptyPart(), null, null, new Map(), picked.name.replace(/\.(step|stp)$/i, ''));
+        this.load(createEmptyPart(), null, null, new Map(), picked.name.replace(/\.(step|stp|igs|iges)$/i, ''));
         return await this.importData(picked.name, picked.bytes);
       }
       const file = await readAnyDocumentFile(picked.bytes);
@@ -3287,10 +3305,10 @@ class AppStore {
     }
   }
 
-  /** 「輸入 STEP」 (F2.1): the file's solids become an imported body at the rollback bar, in one undoable step. */
+  /** 「輸入 STEP／IGES」 (F2.1, F2.2): the file's solids become an imported body at the rollback bar, in one undoable step. */
   async importStep(): Promise<void> {
     try {
-      const picked = await pickStepFile();
+      const picked = await pickImportFile();
       if (picked) await this.importData(picked.name, picked.bytes);
     } catch (e) {
       this.notify(t('file.importFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
@@ -3371,7 +3389,9 @@ class AppStore {
     this.blobs.set(sha256, data);
     const doc = this.history.doc;
     const ids = this.allocator();
-    const blob: BlobRef = { id: ids.take('blob'), sha256, kind: 'step', fileName };
+    // what the bytes say first (a STEP file saved as .igs is read as STEP), then the name
+    const kind = isStepData(data) ? 'step' : isIgesFile({ name: fileName, bytes: data }) ? 'iges' : 'step';
+    const blob: BlobRef = { id: ids.take('blob'), sha256, kind, fileName };
     const feature: ImportedBodyFeature = { id: ids.take('import'), type: 'importedBody', name: nextName(doc, t('feature.importName')), suppressed: false, blob: blob.id };
     if (this.execute({ type: 'importBody', blob, feature, index: doc.rollbackIndex ?? doc.features.length })) {
       this.set({ selected: feature.id, selectedFace: null, selectedElements: [], fitRequest: this.state.fitRequest + 1 });

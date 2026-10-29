@@ -869,6 +869,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const { blob, feature } = cmd;
       if (!/^[0-9a-f]{64}$/.test(blob.sha256)) throw new CommandError(t('cmd.importHashInvalid'));
       if (feature.blob !== blob.id) throw new CommandError(t('cmd.importBodyMustUseData'));
+      if (blob.kind !== 'step' && blob.kind !== 'iges') throw new CommandError(t('cmd.importKind', { kind: String(blob.kind) }));
       assertFresh(draft as PartDoc, [blob.id]);
       draft.blobs.push(blob);
       countersFor([blob.id], draft.idCounters);

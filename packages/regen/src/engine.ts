@@ -2891,7 +2891,8 @@ export class Regenerator {
       const data = this.blobs.get(blob.sha256);
       if (!data) throw new FeatureError(t('regen.importNotInFile'));
       try {
-        const r = this.kernel.importStep(data, f.sewTolerance === undefined ? {} : { sewTolerance: evalLength(f.sewTolerance) });
+        const options = f.sewTolerance === undefined ? {} : { sewTolerance: evalLength(f.sewTolerance) };
+        const r = blob.kind === 'iges' ? this.kernel.importIges(data, options) : this.kernel.importStep(data, options);
         imported = { shape: r.shape, faceOrigins: r.faceOrigins, warnings: r.warnings, diagnostics: r.diagnostics };
       } catch (e) {
         imported = { error: e instanceof Error ? e.message : String(e) };

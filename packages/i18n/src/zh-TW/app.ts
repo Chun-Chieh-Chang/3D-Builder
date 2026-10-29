@@ -24,7 +24,7 @@ export const app = {
   'act.fillet': '圓角',
   'act.chamfer': '導角',
   'act.refPlane': '基準面',
-  'act.importStep': '輸入 STEP',
+  'act.importStep': '輸入 STEP／IGES',
   'act.insertComponent': '插入零組件',
   'act.mate': '結合',
   'act.moveComponent': '移動零組件',

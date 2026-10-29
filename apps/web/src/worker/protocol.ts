@@ -33,6 +33,12 @@ export interface PartExportOptions {
   coordSys?: Id | null;
 }
 
+/** What the user chose for a part's IGES file (F1.4): trimmed surfaces or a B-rep solid, the unit, and as for STEP the colors and a coordinate system. */
+export interface PartIgesOptions extends Omit<PartExportOptions, 'schema'> {
+  mode?: 'faces' | 'brep';
+  unit?: 'MM' | 'INCH';
+}
+
 /** A part file a derived body reads (C7.5), read by the app from the project folder, with the files it reads in turn. */
 export interface SourceFileData {
   /** The path as the derived body writes it (relative to the file that reads it). */
@@ -270,6 +276,8 @@ export interface KernelApi {
   sketchSnapItems(sketchId: Id, shown?: Id[]): Promise<SnapItem[]>;
   /** STEP of the rebuilt part, its product named `name`. */
   exportStep(doc: PartDoc, name: string, options?: PartExportOptions): Promise<StepOutput>;
+  /** IGES of the rebuilt part (F1.4), its product named `name`; the text and what was said about writing it. */
+  exportIges(doc: PartDoc, name: string, options?: PartIgesOptions): Promise<StepOutput>;
   /** Binary STL of the bodies that count, meshed as finely as the document's quality says (F4.1). */
   exportStl(doc: PartDoc, name: string, options?: PartExportOptions): Promise<Uint8Array>;
   /** Rebuilds a part file of an assembly, once per content (`key` = SHA-256 of `bytes`). */
