@@ -1,6 +1,7 @@
 import { CALLOUT_SYMBOL_FALLBACKS } from './calloutSymbols';
 import { ARROW, DIM_TEXT, GAP, OVERSHOOT, STACK_SCALE } from './dimension';
 import { LINE_STYLES, type LineStyle, type Scene, type SceneDimension, type SceneItem } from './scene';
+import { textWidthMm } from './sheet';
 
 /**
  * The drawing as a DXF (F3.1): ASCII, release 2000 (AC1015), in millimetres, model space, written from the same scene as the SVG and the PDF. Each line style is
@@ -189,7 +190,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
     for (const l of layers) o.g(0, 'LAYER').g(5, handle()).g(330, H.layerTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbLayerTableRecord').g(2, l.name).int(70, 0).int(62, 7).g(6, l.linetype).int(370, l.weight);
   });
   table('STYLE', H.styleTable, 1, () => {
-    o.g(0, 'STYLE').g(5, H.standardStyle).g(330, H.styleTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbTextStyleTableRecord').g(2, 'STANDARD').int(70, 0).g(40, 0).g(41, 1).g(50, 0).int(71, 0).g(42, 2.5).g(3, 'txt').g(4, '');
+    o.g(0, 'STYLE').g(5, H.standardStyle).g(330, H.styleTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbTextStyleTableRecord').g(2, 'STANDARD').int(70, 0).g(40, 0).g(41, 1).g(50, 0).int(71, 0).g(42, 2.5).g(3, 'arial.ttf').g(4, '');
   });
   table('VIEW', H.viewTable, 0, () => undefined);
   table('UCS', H.ucsTable, 0, () => undefined);
@@ -242,7 +243,11 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
     } else if (item.text !== '') {
       entity('TEXT', TEXT_LAYER, 'AcDbText');
       const anchor = item.anchor === 'center' ? 1 : item.anchor === 'right' ? 2 : 0;
-      o.g(10, item.at[0]).g(20, item.at[1]).g(30, 0).g(40, item.height).g(1, dxfEscape(item.text));
+      // 10 is where the text starts, 11 the point it is aligned at: a reader that only takes 10 (eDrawings) writes it from there, so a centred or right-aligned
+      // text starts its own width (Helvetica's, as laid out; the style's font is Arial, of the same widths) before the point, along its angle
+      const back = anchor === 0 ? 0 : textWidthMm(item.text, item.height) * (anchor === 1 ? 0.5 : 1);
+      const turn = ((item.angle ?? 0) * Math.PI) / 180;
+      o.g(10, item.at[0] - back * Math.cos(turn)).g(20, item.at[1] - back * Math.sin(turn)).g(30, 0).g(40, item.height).g(1, dxfEscape(item.text));
       if (item.angle) o.g(50, item.angle);
       o.g(7, 'STANDARD');
       if (anchor !== 0) o.int(72, anchor).g(11, item.at[0]).g(21, item.at[1]).g(31, 0);

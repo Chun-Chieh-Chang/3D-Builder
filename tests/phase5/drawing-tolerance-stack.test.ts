@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { rightOf, viewVectors, type Dimension, type ElementFacts, type Ref } from '@3db/model';
-import { checkDxf, deviationTexts, dimensionText, dimensionTextItems, dimensionWords, evaluateDimension, readDxf, STACK_GAP, STACK_LOWER, STACK_SCALE, STACK_UPPER, toDxf, toleranceText, type DxfText, type PlacedView, type SceneItem, type SceneText } from '@3db/drawing';
+import { checkDxf, deviationTexts, dimensionText, dimensionTextItems, dimensionWords, evaluateDimension, readDxf, STACK_GAP, STACK_LOWER, STACK_SCALE, STACK_UPPER, textWidthMm, toDxf, toleranceText, type DxfText, type PlacedView, type SceneItem, type SceneText } from '@3db/drawing';
 
 const bilateral = (upper: number, lower: number) => ({ type: 'bilateral' as const, upper, lower });
 
@@ -172,6 +172,14 @@ describe('the dimensions drawn with it', () => {
     expect(upper!.height).toBeCloseTo(code(146) * code(140), 6);
     expect(lower!.height).toBeCloseTo(code(146) * code(140), 6);
     expect(upper!.height).toBeLessThan(main!.height);
+    // where each starts (10) for a reader that does not align (eDrawings drew 1.2 from the stack's x, over it): its width before the point it is aligned at (11)
+    const at = (e: DxfText, c: number) => Number(e.pairs.find((p) => p[0] === c)?.[1]);
+    expect(main!.align).toBe(2);
+    expect(at(main!, 10)).toBeCloseTo(at(main!, 11) - textWidthMm('1.2', main!.height), 5);
+    expect(at(main!, 10) + textWidthMm('1.2', main!.height)).toBeLessThanOrEqual(at(upper!, 10) + 1e-6);
+    expect(at(upper!, 10)).toBeCloseTo(at(lower!, 10), 6);
+    const font = doc.tables.get('STYLE')!.entries.find((e) => e.name === 'STANDARD')!;
+    expect(font.pairs.find((p) => p[0] === 3)?.[1]).toBe('arial.ttf');
   });
 
   it('a diameter on a shelf: the shelf runs under the whole row, stack and all', () => {

@@ -201,6 +201,8 @@ RCA：正交相機的 near／far 固定為 ±1e5（viewer.ts 建構子）。斜�
 
 後續（2026-10-29，使用者提醒注意公差字高）：參考字高——FreeCAD TechDraw 程式預設 `TolSizeAdjust` 0.50（偏好設定對話框顯示 0.8）；SolidWorks 預設值網路查無可靠來源；SolidCraft 工程圖尚無尺寸與公差（ROADMAP：21 項完成 3 項）。0.52 與 FreeCAD 相近且不低於 ISO 3098 的 1.8 mm，維持不變。缺口：DXF 的 DIMSTYLE 未寫 DIMTFAC（預設 1），CAD 重算尺寸時偏差會與主數字同高，與畫面、PDF、DXF 區塊內的 0.52 不一致。CAPA：DIMSTYLE 寫 `146`＝`STACK_SCALE`；新測試以 `readDxf` 讀回，斷言區塊內偏差 TEXT 字高＝DIMTFAC×DIMTXT，暫時拿掉 146 時該測試失敗（NaN ≠ 0.52）。實際開檔：eDrawings 開「有 DIMTFAC」與「無 DIMTFAC」兩個對照檔（`40 +0/-0.01`、`Ø10 +0.012/-0`），使用者確認兩者偏差字同樣小於主數字——eDrawings 畫的是尺寸區塊，不依尺寸樣式重算，故兩檔皆正確，但 DIMTFAC 本身在 eDrawings 驗證不到；SolidCraft 的 DXF 讀取器略過 DIMENSION 與 TABLES，亦無法驗證。會重算尺寸的 AutoCAD／BricsCAD 尚未開檔確認。
 
+同次開檔發現（使用者截圖）：eDrawings 中主數字與疊字互相重疊（「40」壓在「+0／-0.01」上，「Ø10」亦然），字型為粗糙的 SHX。RCA：TEXT 的起點（10）與對齊點（11）寫成同一點；AutoCAD 依 72／11 重新對齊，eDrawings 只取 10，靠右的主數字因此從疊字起點往右寫；STYLE 字型 `txt` 的字寬也與排版用的 Helvetica 不同。CAPA：置中／靠右的 TEXT，10＝11 沿角度往回 Helvetica 字寬（全寬／一半，`textWidthMm`，與 PDF 同一量法）；STYLE 字型改 `arial.ttf`（字寬同 Helvetica）。此修正同時適用所有置中／靠右的 DXF 文字，不限公差。新斷言：主數字 10＝11−字寬、主數字止於疊字起點之前、上下偏差同起點、字型 Arial；把往回量改為 0 時該測試失敗。使用者以 eDrawings 開修正檔確認「40 +0／-0.01」與「Ø10 +0.012／-0」排列正常。工程圖相關測試 91 檔 863 項通過。
+
 已知差異：本 app 角度尺寸文字一向水平書寫，參考圖的角度文字沿尺寸旋轉；疊字跟隨文字角度，若要角度文字旋轉需另行修改，未於本次變更。
 ## 2026-10-27：草圖線無法與模型輪廓共線（ADR0217，原編 0211，整合時因與 0211-relations-do-not-shrink-lines 撞號而改）
 
