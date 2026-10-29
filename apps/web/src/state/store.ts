@@ -67,7 +67,7 @@ import {
 import { readAnyDocumentFile, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
 import { gatherSources } from './sources';
 import { DrawingStore, type DrawingSource, type DrawingState } from './drawing';
-import { flatPatternDxf } from '@3db/drawing';
+import { dxfText, flatPatternDxf, importDxf, surveyDxf, type DxfImport, type DxfSurvey } from '@3db/drawing';
 import type { FlatReport, SheetCheck } from '@3db/regen';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
@@ -98,6 +98,7 @@ import {
   rememberedFolder,
   rememberFolder,
   writeFile,
+  pickDxfFile,
   pickImageFile,
   type OpenedFile,
   dropRecovery,
@@ -319,6 +320,8 @@ export interface UiState {
   dimensionEdit: Id | null;
   /** The picture of the sketch being edited whose scale is being set from two points of it (ADR 0116), and the points clicked so far (in the plane of the sketch). */
   pictureScale: { pictureId: Id; points: [number, number][] } | null;
+  /** 「匯入 DXF」 (F2.6): the file read and what it holds, while its dialog is open. */
+  dxfImport: { name: string; text: string; survey: DxfSurvey } | null;
   /** Feature whose 「確認刪除」 dialog is open (B2.8). */
   confirmDelete: Id | null;
   /** 「錯誤為何？」 dialog (D7.1). */
@@ -582,6 +585,7 @@ class AppStore {
       sketchSolve: null,
       dimensionEdit: null,
       pictureScale: null,
+      dxfImport: null,
       confirmDelete: null,
       whatsWrong: false,
       dialog: null,
@@ -2864,6 +2868,68 @@ class AppStore {
     const blob: BlobRef = known ?? { id: ids.take('blob'), sha256, kind: size.type, fileName };
     const picture = newPicture(ids.take('picture'), blob.id, size, 100);
     return this.execute({ type: 'addSketchPicture', featureId: sketch.id, blob, picture });
+  }
+
+  /** 「匯入 DXF」 (F2.6, ADR 0219): a DXF file for the sketch being edited; its layers are chosen in a dialog before anything is added. */
+  async importSketchDxf(): Promise<void> {
+    if (!this.editedSketch()) return;
+    try {
+      const picked = await pickDxfFile();
+      if (picked) this.readDxfData(picked.name, picked.bytes);
+    } catch (e) {
+      this.notify(t('dxfImport.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** Reads a DXF and opens the dialog with what it holds; refused in words when it cannot be read. */
+  readDxfData(name: string, bytes: Uint8Array): boolean {
+    if (!this.editedSketch()) return false;
+    try {
+      const text = dxfText(bytes);
+      this.set({ dxfImport: { name, text, survey: surveyDxf(text) } });
+      return true;
+    } catch (e) {
+      this.notify(t('dxfImport.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+      return false;
+    }
+  }
+
+  cancelDxfImport(): void {
+    this.set({ dxfImport: null });
+  }
+
+  /** Adds the chosen layers of the DXF to the sketch being edited, in one step (one undo), and says what came in, what was approximated and what was left out. */
+  applyDxfImport(layers: readonly string[], construction: readonly string[]): boolean {
+    const open = this.state.dxfImport;
+    const sketch = this.editedSketch();
+    if (!open || !sketch) return false;
+    let result: DxfImport;
+    try {
+      result = importDxf(open.text, this.allocator(), { layers: new Set(layers), construction: new Set(construction) });
+    } catch (e) {
+      this.notify(t('dxfImport.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+      return false;
+    }
+    const made = Object.entries(result.made).filter(([kind]) => kind !== 'point' || result.entities.every((e) => e.type === 'point'));
+    const count = made.reduce((n, [, k]) => n + k, 0);
+    if (count === 0) {
+      this.notify(t('dxfImport.nothing'), 'error');
+      return false;
+    }
+    if (!this.execute({ type: 'addSketchItems', featureId: sketch.id, entities: result.entities, constraints: [] })) return false;
+    this.set({ dxfImport: null });
+    const kinds = made.map(([kind, k]) => t(`dxfImport.kind.${kind}` as 'dxfImport.kind.line', { n: k })).join(t('cmd.listSeparator'));
+    const notes = [t('dxfImport.done', { name: open.name, n: count, kinds })];
+    if (open.survey.unit === null) notes.push(t('dxfImport.unitless'));
+    if (result.approximated.count) notes.push(t('dxfImport.approximated', { n: result.approximated.count, d: result.approximated.deviation.toPrecision(2) }));
+    const left = Object.entries(result.skipped).map(([type, k]) => `${type} ×${k}`);
+    if (left.length) notes.push(t('dxfImport.leftOut', { list: left.join(t('cmd.listSeparator')) }));
+    if (result.problems.length) {
+      const p = result.problems[0]!;
+      notes.push(t('dxfImport.problems', { n: result.problems.length, first: t('dxfImport.problem', { what: p.what, layer: p.layer, why: p.why }) }));
+    }
+    this.notify(notes.join(' '), result.problems.length ? 'error' : 'info');
+    return true;
   }
 
   /** Moves, scales, turns or fades a picture of the sketch being edited. */

@@ -6,7 +6,7 @@ import { AssemblyTree } from './components/AssemblyTree';
 import { AssemblyViewport } from './components/AssemblyViewport';
 import { CommandBar } from './components/CommandBar';
 import { AppearanceDialog, EquationsDialog, OptionsDialog, PropertiesDialog, ShortcutsDialog, StepOptionsDialog, TemplateDialog } from './components/ParametersDialogs';
-import { DeleteComponentsDialog, DeleteDialog, FolderDialog, MissingFilesDialog, RecoveryDialog, UnsavedDialog, WhatsWrongDialog } from './components/Dialogs';
+import { DeleteComponentsDialog, DeleteDialog, DxfImportDialog, FolderDialog, MissingFilesDialog, RecoveryDialog, UnsavedDialog, WhatsWrongDialog } from './components/Dialogs';
 import { FeatureTree } from './components/FeatureTree';
 import { HelpPanel } from './components/HelpPanel';
 import { currentTopicId, topicOf } from './help/context';
@@ -145,6 +145,7 @@ export function App() {
       <StatusBar />
       <HelpPanel />
       <DeleteDialog />
+      <DxfImportDialog />
       <DeleteComponentsDialog />
       <WhatsWrongDialog />
       <EquationsDialog />

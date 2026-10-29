@@ -37,6 +37,7 @@ export const app: Translation = {
   'act.offsetSketch': 'Offset Sketch',
   'act.angleSketch': 'Angle Sketch',
   'act.sketchPicture': 'Sketch Picture…',
+  'act.sketchDxf': 'Import DXF…',
   'act.construction': 'Construction Geometry',
   'act.exitSketch': 'Exit Sketch',
   'act.undo': 'Undo',

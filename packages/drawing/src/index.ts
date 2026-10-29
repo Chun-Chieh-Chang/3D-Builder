@@ -18,6 +18,7 @@ export * from './pdf';
 export * from './pdfRead';
 export * from './dxf';
 export * from './dxfRead';
+export * from './dxfImport';
 export * from './flatDxf';
 export * from './flatView';
 export * from './gdt';

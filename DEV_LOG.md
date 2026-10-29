@@ -3,6 +3,14 @@
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
 
+## 2026-10-29：匯入 DXF 到草圖（ADR0219，F2.6）
+
+使用者問「用本系統開啟 DXF 呢」，當時只會輸出。依使用者選定的範圍（匯入草圖、只合併端點、文字轉草圖文字、尺寸略過、匯入前選圖層）實作，設計與做法見 [ADR0219](docs/adr/0219-dxf-import-into-sketch.md)。
+
+開發中發現並修正：①200 組隨機檔案的 Fuzz 找到首尾合併成同一點的貝茲段，`sketchError` 拒絕（「端點重複」）；改為以 de Casteljau 對半分。②NURBS 拆貝茲段的第一版以「起點索引 + j·p」取控制點，對非夾緊或重數不規則的節點不成立；改依局部支撐「每個節點值最後的索引往前 p 個」。③把形狀的有限檢查寫成 `JSON.stringify` 找 `null`，內容是「null」的文字會被誤拒；改為逐一列出數字檢查。④整圈的 ARC 原會被當成長度 0 拒絕；改為圓。⑤第一版測試的橢圓參考以 2 萬點最近點量偏差，取樣間距本身就有 0.0024 mm 誤差，量到 0.0012 超過 0.001 的上限——是量測錯，不是近似錯；改以黃金分割求最近點，並維持 0.001 不放寬。⑥對話框原寫「圖元數」，實際數的是匯入後的曲線與文字（一條聚合線是多段），e2e 量到 OUT 為 5 而非 2；改名為「曲線與文字數」。
+
+紅隊四問見 ADR。驗證：`dxf-import.test.ts` 23 項（含 200 組 Fuzz）、`dxf-import-solid.test.ts` 2 項（真實求解與伸長，體積相對 1e-9／1e-7）、瀏覽器 `phase3-sketch-dxf.js` 通過。全量：型別檢查、lint:rules／i18n／repo、check-deps 通過；`npx vitest run` 3826 通過、0 失敗、25 略過；完整 `verify:ui` 246 項 245 通過，唯一失敗 `manual-drawing-linked`（`box.centred:false`）單獨重跑相同，`git stash -u` 回到乾淨 HEAD 後以相同訊息重現，是既有失敗，本次未處理。提交前發現另一工作階段已推送 ADR 0218（移動面至目標平面，`2ab5718`），本項改為 ADR 0219 並重新 rebase；rebase 後型別檢查、lint 與 DXF／說明／圖示測試通過，`packages/kernel/test/direct-edit.test.ts`「refuses to push a face further into the material…」1 項失敗來自 `2ab5718`（本項未改 kernel／model／regen 任何檔案），未處理。**未完成的驗收**：以其他 CAD 存出的真實 DXF（R12／2000／2018）驗證，待使用者提供檔案或同意下載。
+
 ## 2026-10-29：既有失敗分診（phase5 單元 6 項、verify:ui 15 項）
 
 從 b2cf591（origin/main）出發，逐項找根因。依原因分組如下；只有一組是產品錯，其餘是測試預期沒有跟上已核准的產品變更，或測試本身的缺陷。沒有放寬任何門檻、略過或改寫斷言意義。

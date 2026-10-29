@@ -92,6 +92,8 @@ export interface DxfDocument {
   blocks: string[];
   /** The handles of the BLOCK and ENDBLK records, with the owner each says. */
   blockHandles: { handle: string; owner: string }[];
+  /** Each block's base point (groups 10, 20 of its BLOCK record): where an INSERT puts it. */
+  blockBases: Map<string, [number, number]>;
   /** What each block holds (the anonymous blocks of the dimensions, `*D1` …). */
   blockEntities: Map<string, (DxfPolyline | DxfSolid | DxfText | DxfLine | DxfArc | DxfCircle | DxfDimension | DxfEntity)[]>;
   entities: (DxfPolyline | DxfSolid | DxfText | DxfLine | DxfArc | DxfCircle | DxfDimension | DxfEntity)[];
@@ -128,7 +130,7 @@ const numberOf = (pairs: Pair[], code: number, fallback = 0): number => {
 export function readDxf(text: string): DxfDocument {
   const pairs = pairsOf(text);
   if (pairs.length === 0 || pairs[pairs.length - 1]![0] !== 0 || pairs[pairs.length - 1]![1] !== 'EOF') throw new DxfError(t('dxf.noEof'));
-  const doc: DxfDocument = { version: '', header: new Map(), tables: new Map(), blocks: [], blockHandles: [], blockEntities: new Map(), entities: [], objects: [], sections: [] };
+  const doc: DxfDocument = { version: '', header: new Map(), tables: new Map(), blocks: [], blockHandles: [], blockBases: new Map(), blockEntities: new Map(), entities: [], objects: [], sections: [] };
   let i = 0;
   /** The records of a section: each starts at a group 0 and runs to the next. */
   const records = (): Pair[][] => {
@@ -182,6 +184,7 @@ export function readDxf(text: string): DxfDocument {
         if (kind === 'BLOCK') {
           block = first(rec, 2) ?? '';
           doc.blocks.push(block);
+          doc.blockBases.set(block, [numberOf(rec, 10), numberOf(rec, 20)]);
           doc.blockEntities.set(block, []);
         }
         doc.blockHandles.push({ handle: first(rec, 5) ?? '', owner: first(rec, 330) ?? '' });

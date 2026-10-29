@@ -321,6 +321,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'offset-sketch', get label() { return t('act.offsetSketch'); }, group: 'sketch', enabled: (s) => partIdle(s) && sketchPlane(s) !== null, run: () => store.newOffsetSketch() },
   { id: 'angle-sketch', get label() { return t('act.angleSketch'); }, group: 'sketch', enabled: (s) => partIdle(s) && sketchPlane(s) !== null, run: () => store.newAngleSketch() },
   { id: 'sketch-picture', get label() { return t('act.sketchPicture'); }, group: 'sketch-tool', enabled: sketching, run: () => void store.addSketchPicture() },
+  { id: 'sketch-dxf', get label() { return t('act.sketchDxf'); }, group: 'sketch-tool', enabled: sketching, run: () => void store.importSketchDxf() },
   ...SKETCH_TOOLS.map(
     (tool): UiAction => ({
       id: `tool-${tool}`,

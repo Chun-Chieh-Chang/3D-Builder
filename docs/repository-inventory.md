@@ -7,8 +7,8 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 85／7／34 |
-| ADR 文件 | 217 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 200／196／246 |
+| ADR 文件 | 218 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 201／197／247 |
 | 實機清單項目 | 92 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -447,6 +447,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0216：不會被接受的限制條件按鈕不顯示（試算後過濾）](<adr/0216-trial-filtered-relation-buttons.md>)
 - [ADR 0217：草圖線與曲面輪廓的限制條件](<adr/0217-sketch-relations-to-face-outlines.md>)
 - [ADR 0218：移動面至目標平面](<adr/0218-move-face-target-plane.md>)
+- [ADR 0219：匯入 DXF 到草圖（F2.6）](<adr/0219-dxf-import-into-sketch.md>)
 
 ### 歷史驗證
 

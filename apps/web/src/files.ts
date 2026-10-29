@@ -88,6 +88,12 @@ export function pickImageFile(): Promise<OpenedFile | null> {
   return pick([image]);
 }
 
+/** 「匯入 DXF」: a DXF drawing to bring into a sketch (F2.6). */
+export function pickDxfFile(): Promise<OpenedFile | null> {
+  const dxf: PickerType = { get description() { return t('picker.dxf'); }, accept: { 'image/vnd.dxf': ['.dxf'] } };
+  return pick([dxf]);
+}
+
 /** 「PDF 字型」: a TrueType font file (.ttf, or .ttc such as Microsoft JhengHei) to embed in the PDF for the characters the standard font does not have. */
 export function pickFontFile(): Promise<OpenedFile | null> {
   const font: PickerType = { get description() { return t('picker.font'); }, accept: { 'font/ttf': ['.ttf', '.ttc'] } };
