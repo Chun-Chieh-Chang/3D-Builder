@@ -137,21 +137,23 @@ function preview(text: string, doc: PartDoc, angle: boolean, count = false): { v
 
 /**
  * Field that commits a document command on Enter/blur; invalid input stays red (D6.1). It takes
- * expressions (D2.4): variables, other dimensions, units and functions, with the value shown beside it.
+ * expressions (D2.4): variables, other dimensions, units and functions, with the value shown beside it. Blank is red unless the field is
+ * `optional` (its label says what blank means: none, the default): there blank is an entry like any other.
  */
-function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toCommand: (v: string) => Command; suffix?: string }) {
+function ValueInput({ value, toCommand, suffix = 'mm', optional = false }: { value: string; toCommand: (v: string) => Command; suffix?: string; optional?: boolean }) {
   const doc = useStore((s) => s.doc);
   const [text, setText] = useState(value);
   const [invalid, setInvalid] = useState(false);
   const live = useStore(s => s.editing?.kind === 'feature');
   const command = useRef(toCommand); command.current = toCommand;
   const shown = preview(text, doc, suffix === '°', suffix === '');
+  const missing = !optional && !text.trim();
   useEffect(() => {
     setText(value);
     setInvalid(false);
   }, [value]);
   useEffect(() => {
-    if(!live||text===value||!text.trim()||(shown&&'error' in shown))return;
+    if(!live||text===value||missing||(shown&&'error' in shown))return;
     const timer=setTimeout(()=>setInvalid(!store.execute(command.current(text.trim()))),280);
     return()=>clearTimeout(timer);
   },[text,value,live]);
@@ -162,8 +164,8 @@ function ValueInput({ value, toCommand, suffix = 'mm' }: { value: string; toComm
   return (
     <span className="value-input">
       <input
-        className={invalid || !text.trim() || (shown && 'error' in shown) ? 'invalid' : ''}
-        aria-invalid={invalid || !text.trim() || !!(shown && 'error' in shown)}
+        className={invalid || missing || (shown && 'error' in shown) ? 'invalid' : ''}
+        aria-invalid={invalid || missing || !!(shown && 'error' in shown)}
         value={text}
         title={shown ? ('error' in shown ? shown.error : t('value.expression', { value: shown.value })) : undefined}
         onChange={(e) => setText(e.target.value)}
@@ -2797,7 +2799,7 @@ function KnitPanel({ f }: { f: KnitFeature }) {
       ))}
       <label className="pm-row">
         <span>{t('pm.knit.tolerance')}</span>
-        <ValueInput value={f.tolerance ?? ''} toCommand={(tolerance) => command({ tolerance: tolerance.trim() === '' ? undefined : tolerance })} />
+        <ValueInput value={f.tolerance ?? ''} toCommand={(tolerance) => command({ tolerance: tolerance.trim() === '' ? undefined : tolerance })} optional />
       </label>
       <p className="hint">{t('pm.knit.toleranceHint')}</p>
       <label className="pm-row checkbox">
@@ -2833,7 +2835,7 @@ function SketchPointsPanel({ f, fields, hint }: { f: SnapHookFeature | SnapCatch
       ))}
       <label className="pm-row">
         <span>{t('pm.slots.angle')}</span>
-        <ValueInput value={value('angle')} toCommand={(v) => run({ angle: v })} suffix="°" />
+        <ValueInput value={value('angle')} toCommand={(v) => run({ angle: v })} suffix="°" optional />
       </label>
       {f.type === 'snapHook' && (
         <>
@@ -2928,10 +2930,10 @@ function BaseFlangePanel({ f }: { f: BaseFlangeFeature }) {
     for (const k of Object.keys(next)) if (next[k] === undefined || next[k] === '' || next[k] === false) delete next[k];
     return { type: 'setBaseFlange', featureId: f.id, flange: next as never };
   };
-  const row = (label: string, value: string, key: string) => (
+  const row = (label: string, value: string, key: string, optional = false) => (
     <label className="pm-row">
       <span>{label}</span>
-      <ValueInput value={value} toCommand={(v) => run({ [key]: v })} />
+      <ValueInput value={value} toCommand={(v) => run({ [key]: v })} optional={optional} />
     </label>
   );
   return (
@@ -2939,7 +2941,7 @@ function BaseFlangePanel({ f }: { f: BaseFlangeFeature }) {
       {row(t('pm.flange.thickness'), f.thickness, 'thickness')}
       {row(t('pm.flange.radius'), f.radius, 'radius')}
       {row(t('pm.flange.kFactor'), f.kFactor, 'kFactor')}
-      {row(t('pm.flange.depth'), f.depth ?? '', 'depth')}
+      {row(t('pm.flange.depth'), f.depth ?? '', 'depth', true)}
       <label className="pm-row checkbox">
         <input type="checkbox" checked={!!f.flipSide} onChange={(e) => store.execute(run({ flipSide: e.target.checked }))} />
         <span>{t('pm.flange.flipSide')}</span>
@@ -2983,7 +2985,7 @@ function MidBendPanel({ f }: { f: MidBendFeature }) {
       </label>
       <label className="pm-row">
         <span>{t('pm.midBend.radius')}</span>
-        <ValueInput value={f.radius ?? ''} toCommand={(radius) => run({ radius })} />
+        <ValueInput value={f.radius ?? ''} toCommand={(radius) => run({ radius })} optional />
       </label>
       <label className="pm-row checkbox">
         <input type="checkbox" checked={!!f.flipSide} onChange={(e) => store.execute(run({ flipSide: e.target.checked }))} />
@@ -3017,11 +3019,11 @@ function JogPanel({ f }: { f: JogFeature }) {
       </label>
       <label className="pm-row">
         <span>{t('pm.jog.angle')}</span>
-        <ValueInput value={f.angle ?? ''} toCommand={(angle) => run({ angle })} suffix="°" />
+        <ValueInput value={f.angle ?? ''} toCommand={(angle) => run({ angle })} suffix="°" optional />
       </label>
       <label className="pm-row">
         <span>{t('pm.jog.radius')}</span>
-        <ValueInput value={f.radius ?? ''} toCommand={(radius) => run({ radius })} />
+        <ValueInput value={f.radius ?? ''} toCommand={(radius) => run({ radius })} optional />
       </label>
       <label className="pm-row checkbox">
         <input type="checkbox" checked={!!f.flipSide} onChange={(e) => store.execute(run({ flipSide: e.target.checked }))} />
@@ -3125,11 +3127,11 @@ function EdgeFlangePanel({ f }: { f: EdgeFlangeFeature }) {
       </label>
       <label className="pm-row">
         <span>{t('pm.eflange.angle')}</span>
-        <ValueInput value={f.angle ?? ''} toCommand={(angle) => run({ angle })} suffix="°" />
+        <ValueInput value={f.angle ?? ''} toCommand={(angle) => run({ angle })} suffix="°" optional />
       </label>
       <label className="pm-row">
         <span>{t('pm.eflange.radius')}</span>
-        <ValueInput value={f.radius ?? ''} toCommand={(radius) => run({ radius })} />
+        <ValueInput value={f.radius ?? ''} toCommand={(radius) => run({ radius })} optional />
       </label>
       <label className="pm-row">
         <span>{t('pm.eflange.position')}</span>
@@ -3145,20 +3147,20 @@ function EdgeFlangePanel({ f }: { f: EdgeFlangeFeature }) {
       <FlangeExtras f={f} run={run} />
       <label className="pm-row">
         <span>{t('pm.eflange.cornerStart')}</span>
-        <ValueInput value={f.corner?.start ?? ''} toCommand={(start) => run({ corner: closed(start === '' ? undefined : start, f.corner?.end) })} />
+        <ValueInput value={f.corner?.start ?? ''} toCommand={(start) => run({ corner: closed(start === '' ? undefined : start, f.corner?.end) })} optional />
       </label>
       <label className="pm-row">
         <span>{t('pm.eflange.cornerEnd')}</span>
-        <ValueInput value={f.corner?.end ?? ''} toCommand={(end) => run({ corner: closed(f.corner?.start, end === '' ? undefined : end) })} />
+        <ValueInput value={f.corner?.end ?? ''} toCommand={(end) => run({ corner: closed(f.corner?.start, end === '' ? undefined : end) })} optional />
       </label>
       <p className="hint">{t('pm.eflange.cornerHint')}</p>
       <label className="pm-row">
         <span>{t('pm.eflange.miterStart')}</span>
-        <ValueInput value={f.miter?.start ?? ''} toCommand={(start) => run({ miter: closed(start === '' ? undefined : start, f.miter?.end) })} />
+        <ValueInput value={f.miter?.start ?? ''} toCommand={(start) => run({ miter: closed(start === '' ? undefined : start, f.miter?.end) })} optional />
       </label>
       <label className="pm-row">
         <span>{t('pm.eflange.miterEnd')}</span>
-        <ValueInput value={f.miter?.end ?? ''} toCommand={(end) => run({ miter: closed(f.miter?.start, end === '' ? undefined : end) })} />
+        <ValueInput value={f.miter?.end ?? ''} toCommand={(end) => run({ miter: closed(f.miter?.start, end === '' ? undefined : end) })} optional />
       </label>
       <p className="hint">{t('pm.eflange.miterHint')}</p>
       {status?.status === 'ok' && status.info && <p className="hint gap-info">{status.info}</p>}
@@ -3261,10 +3263,10 @@ function ScrewBossPanel({ f }: { f: ScrewBossFeature }) {
     if (next.angle === '') delete next.angle;
     return run({ ribs: next as NonNullable<typeof ribs> });
   };
-  const row = (label: string, value: string, toCommand: (v: string) => Command, suffix?: string) => (
+  const row = (label: string, value: string, toCommand: (v: string) => Command, suffix?: string, optional = false) => (
     <label className="pm-row">
       <span>{label}</span>
-      <ValueInput value={value} toCommand={toCommand} {...(suffix ? { suffix } : {})} />
+      <ValueInput value={value} toCommand={toCommand} {...(suffix ? { suffix } : {})} optional={optional} />
     </label>
   );
   return (
@@ -3272,9 +3274,9 @@ function ScrewBossPanel({ f }: { f: ScrewBossFeature }) {
       {row(t('pm.boss.diameter'), f.diameter, (diameter) => run({ diameter }))}
       {row(t('pm.boss.holeDiameter'), f.holeDiameter, (holeDiameter) => run({ holeDiameter }))}
       {row(t('pm.boss.height'), f.height, (height) => run({ height }))}
-      {row(t('pm.boss.holeDepth'), f.holeDepth ?? '', (holeDepth) => run({ holeDepth }))}
-      {row(t('pm.boss.draft'), f.draft ?? '', (draft) => run({ draft }), '°')}
-      {row(t('pm.boss.holeDraft'), f.holeDraft ?? '', (holeDraft) => run({ holeDraft }), '°')}
+      {row(t('pm.boss.holeDepth'), f.holeDepth ?? '', (holeDepth) => run({ holeDepth }), undefined, true)}
+      {row(t('pm.boss.draft'), f.draft ?? '', (draft) => run({ draft }), '°', true)}
+      {row(t('pm.boss.holeDraft'), f.holeDraft ?? '', (holeDraft) => run({ holeDraft }), '°', true)}
       {f.draft && f.holeDraft !== f.draft && (
         <button type="button" className="link" data-field="hole-draft-same" onClick={() => store.execute(run({ holeDraft: f.draft }))}>
           {t('pm.boss.holeDraftSame')}
@@ -3296,7 +3298,7 @@ function ScrewBossPanel({ f }: { f: ScrewBossFeature }) {
           {row(t('pm.boss.ribThickness'), ribs.thickness, (thickness) => rib({ thickness }))}
           {row(t('pm.boss.ribLength'), ribs.length, (length) => rib({ length }))}
           {row(t('pm.boss.ribHeight'), ribs.height, (height) => rib({ height }))}
-          {row(t('pm.boss.ribAngle'), ribs.angle ?? '', (angle) => rib({ angle }), '°')}
+          {row(t('pm.boss.ribAngle'), ribs.angle ?? '', (angle) => rib({ angle }), '°', true)}
           <button type="button" className="link" onClick={() => store.execute(run({ ribs: undefined }))}>
             {t('pm.boss.removeRibs')}
           </button>
