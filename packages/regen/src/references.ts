@@ -2,7 +2,7 @@ import { t } from '@3db/i18n';
 import type { SolvedGeometry } from '@3db/sketch';
 import { modelRefOf, type Id, type PlaneFrame, type Ref, type SketchEntity, type SketchFeature, type Vec3 } from '@3db/model';
 import type { Topology } from '@3db/kernel';
-import { edgeFingerprint, resolveRef, vertexFingerprint, type Candidate, type ElementNames } from '@3db/naming';
+import { edgeFingerprint, faceFingerprint, resolveRef, vertexFingerprint, type Candidate, type ElementNames } from '@3db/naming';
 
 /**
  * Sketch entities that follow the model (C1.18, C1.26): the projection of a model edge onto the sketch plane, and the point where a
@@ -59,6 +59,8 @@ export interface ReferenceScope {
   datums?: DatumScope;
   curves?: CurveScope;
   silhouettes?: (ref: Ref) => Projected;
+  /** Every outline of a face on the plane, `silhouette` numbering them (ADR 0217): what a sketch snaps to; none when it has none. */
+  outlines?: (face: Ref) => Projected[];
   sketches?: (id: Id) => OtherSketch | undefined;
 }
 
@@ -658,6 +660,26 @@ export function modelSnapItems(scope: ReferenceScope, fingerprintOf: (edge: numb
     const there = seen.get(key);
     if (!there || (there.off !== undefined && there.off > off)) seen.set(key, { ref: ref(), projected, off });
   });
+  // the outlines of curved faces (ADR 0217), as 「輪廓」 converts them: a cylinder seen from the side has no edge along its top, only its outline, and a
+  // sketch line could neither snap to it nor be made collinear with it. After the edges, so an outline that looks like an edge is that edge; of outlines that
+  // look the same, the nearest, `off` being how far the face's center is from the plane. A plane's outline is its edges, and a cylinder or cone seen along its
+  // axis (a hole's wall) has none of its own. Their ends are no corners: where an outline ends on a vertex (the apex of a cone) that vertex stays, and comes
+  // first, so a point drawn there follows the vertex and not the end of an outline
+  const outlines = new Map<string, Extract<SnapItem, { projected: Projected }>>();
+  if (scope.outlines) {
+    topology.faces.forEach((f, i) => {
+      const name = names.faces[i];
+      const g = f.geometry;
+      const axial = (g?.type === 'cylinder' || g?.type === 'cone') && Math.abs(dot(g.axis, frame.normal)) > (1 - SAME) * Math.hypot(...g.axis);
+      if (!name || f.surface === 'plane' || axial) return;
+      const off = Math.abs(side(f.center));
+      scope.outlines!({ kind: 'face', name }).forEach((projected, silhouette) => {
+        const key = look(projected);
+        const there = outlines.get(key);
+        if (!seen.has(key) && (!there || there.off! > off)) outlines.set(key, { ref: { kind: 'face', name, fingerprint: faceFingerprint(topology, i), silhouette }, projected, off });
+      });
+    });
+  }
   const items = [...seen.values()].sort((a, b) => (a.off ?? -1) - (b.off ?? -1));
   // a pierce point where an item already has a corner or a center adds nothing to snap to
   const corners = items.flatMap((i) =>
@@ -722,5 +744,5 @@ export function modelSnapItems(scope: ReferenceScope, fingerprintOf: (edge: numb
       }
     }
   }
-  return [...items, ...fresh, ...[...vertices.values()].sort((a, b) => a.off - b.off), ...fromSketches];
+  return [...items, ...fresh, ...[...vertices.values()].sort((a, b) => a.off - b.off), ...[...outlines.values()].sort((a, b) => a.off! - b.off!), ...fromSketches];
 }

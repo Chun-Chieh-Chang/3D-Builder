@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import type { Kernel, ShapeId, Topology } from '@3db/kernel';
+import { KernelError, type Kernel, type ShapeId, type Topology } from '@3db/kernel';
 import type { PlaneFrame, Ref } from '@3db/model';
 import { resolveRef, type ElementNames } from '@3db/naming';
 import { ReferenceProblem, type Projected, type Converted } from './references';
@@ -19,6 +19,10 @@ export function silhouetteProjector(kernel:Kernel,shape:ShapeId,names:ElementNam
     const i=ref.silhouette;
     if(i===undefined||!Number.isInteger(i)||i<0)throw new ReferenceProblem(t('silhouette.empty'));
     const branch=all(ref)[i];if(!branch)throw new ReferenceProblem(t('reference.changedKind',{id:ref.name}));return branch;
+  },
+  /** What a sketch can snap to on a face (ADR 0217): its outlines, none when it has none the sketch can hold (an ellipse) — a snap is never an error. */
+  outlines:(ref:Ref):Projected[]=>{
+    try {return all(ref);} catch(err) {if(err instanceof ReferenceProblem||err instanceof KernelError)return [];throw err;}
   } };
 }
 export function silhouetteItems(projector:ReturnType<typeof silhouetteProjector>,faces:Ref[]):Converted[] {

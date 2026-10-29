@@ -10,7 +10,7 @@ import { encodeShade, flatViewLines, rasterizeShade, withoutHiddenEdges, type Sh
 import { findEntrance, silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, placedViewFeatures, viewFeatures, viewEdges, findClearance, findInterference, flatDrawingGeometry, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
-import type { SourcePart, SourceProvider } from '@3db/regen';
+import type { SnapItem, SourcePart, SourceProvider } from '@3db/regen';
 import { mergeMeshes } from './mergeMesh';
 import { heapOf } from './heap';
 import { partFeatures } from './partOutline';
@@ -25,16 +25,23 @@ let ready: Promise<{ occtMs: number; gcsMs: number }> | null = null;
  * The model as the last rebuild left it, which an edited sketch follows (C1.18): its names and shapes (empty while there is no body), the frames of the
  * sketches and planes, and the reference axes and points (ADR 0172). The rebuild stops at the edited sketch, so what is here is what is before it.
  */
-let lastModel: { names: NonNullable<RebuildResult['body']>['names']; topology: NonNullable<RebuildResult['body']>['topology']; frames: RebuildResult['frames']; axes: RebuildResult['axes']; points: RebuildResult['points']; sketches: RebuildResult['sketches']; hasBody: boolean; shape?: ShapeId } | null = null;
+let lastModel: { names: NonNullable<RebuildResult['body']>['names']; topology: NonNullable<RebuildResult['body']>['topology']; frames: RebuildResult['frames']; axes: RebuildResult['axes']; points: RebuildResult['points']; sketches: RebuildResult['sketches']; hasBody: boolean; shape?: ShapeId; upstream?: string } | null = null;
+/**
+ * The last snap items of an edited sketch (ADR 0217), by what they come from: the outlines of curved faces cost the kernel a hidden-line pass each, and the
+ * part is rebuilt after every edit of the sketch while the model before it stays the same.
+ */
+let snapCache: { key: string; items: SnapItem[] } | null = null;
 
 /** Where an edited sketch looks its references up (C1.18, ADR 0172). */
 function scopeOf(model: NonNullable<typeof lastModel>, frame: PlaneFrame): ReferenceScope {
   const origin = { 'axis:x': [1, 0, 0], 'axis:y': [0, 1, 0], 'axis:z': [0, 0, 1] } as const;
+  // one projector, so a face's outlines are worked out once for what the sketch follows and what it snaps to (ADR 0217)
+  const projector = model.shape !== undefined ? silhouetteProjector(kernel, model.shape, model.names, model.topology, frame) : null;
   return {
     names: model.names,
     topology: model.topology,
     frame,
-    ...(model.shape !== undefined ? { silhouettes: silhouetteProjector(kernel,model.shape,model.names,model.topology,frame).branch } : {}),
+    ...(projector ? { silhouettes: projector.branch, outlines: projector.outlines } : {}),
     // a curved edge's crossings with the plane, from the kernel (ADR 0173): the shape is the last rebuild's, alive until the next one
     ...(model.shape !== undefined ? { curves: { crossings: (i: number) => kernel.edgePlaneCrossings(model.shape!, i, { origin: frame.origin, normal: frame.normal }) } } : {}),
     // the sketches the rebuild made before the edited one (it stops there): what its entities may follow (ADR 0175)
@@ -251,7 +258,9 @@ const api: KernelApi = {
     const body = r.body;
     lastResult = r;
     lastPartSeq = seq;
-    lastModel = { names: body?.names ?? NO_NAMES, topology: body?.topology ?? NO_TOPOLOGY, frames: r.frames, axes: r.axes, points: r.points, sketches: r.sketches, hasBody: !!body, ...(body ? { shape: body.shape } : {}) };
+    // what the model before the edited sketch is made from, when the document alone says (no master files, which change behind it): the same, the same model
+    const upstream = until !== undefined && !sources ? JSON.stringify({ ...doc, features: doc.features.slice(0, until), idCounters: undefined, visibility: undefined, appearances: undefined, properties: undefined }) : undefined;
+    lastModel = { names: body?.names ?? NO_NAMES, topology: body?.topology ?? NO_TOPOLOGY, frames: r.frames, axes: r.axes, points: r.points, sketches: r.sketches, hasBody: !!body, ...(body ? { shape: body.shape } : {}), ...(upstream ? { upstream } : {}) };
     const shown = r.bodies.map((b) => isShown(doc, bodyKey(b.id)));
     const mesh = meshOf(r, shown, MESH_QUALITY[settingsOf(doc).meshQuality]);
     const payload: RebuildPayload = {
@@ -329,10 +338,14 @@ const api: KernelApi = {
   async sketchSnapItems(sketchId, shown = []) {
     const frame = lastModel?.frames.get(sketchId);
     if (!lastModel || !frame) return [];
+    const key = lastModel.upstream !== undefined ? JSON.stringify([lastModel.upstream, sketchId, frame, shown]) : null;
+    if (key !== null && snapCache?.key === key) return snapCache.items;
     const scope = scopeOf(lastModel, frame);
     const model = lastModel;
     const sketches = shown.flatMap((id) => (model.sketches.get(id)?.sketch ? [model.sketches.get(id)!.sketch] : []));
-    return modelSnapItems(scope, (i) => edgeFingerprint(scope.topology, i), sketches);
+    const items = modelSnapItems(scope, (i) => edgeFingerprint(scope.topology, i), sketches);
+    snapCache = key === null ? null : { key, items };
+    return items;
   },
 
   async exportStep(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<StepOutput> {

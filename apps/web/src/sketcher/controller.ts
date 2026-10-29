@@ -672,9 +672,19 @@ export class SketchController {
     let accepted=false;
     this.busy=true;
     this.pending=this.host.trial({...s,constraints:[...s.constraints,...relations]})
-      .then(result=>{
+      .then(async result=>{
         if(this.host.doc()!==base) {this.host.notify(t('sketch.relationStale'),'info');return;}
         if(result.status==='over'||result.status==='failed') {
+          // a line's own 水平／垂直 the new relation makes redundant is replaced in one step (ADR 0217); a relation that only shrinks a line never gets that far (ADR 0211)
+          if(!result.collapsed?.length) {
+            const drop=await this.subsumedOrientation(s,relations,base);
+            if(this.host.doc()!==base) {this.host.notify(t('sketch.relationStale'),'info');return;}
+            if(drop) {
+              accepted=this.host.execute({type:'editSketch',featureId:this.host.featureId,remove:[drop.id],add:{entities:[],constraints:relations}});
+              if(accepted)this.host.notify(t(drop.type==='horizontal'?'sketch.relationReplacesHorizontal':'sketch.relationReplacesVertical'),'info');
+              return;
+            }
+          }
           // dependent but not contradicting (nothing in conflict): what is asked already follows from what is there, which is not the same as asking too much (ADR 0213)
           const implied=result.status==='over'&&result.conflicting.length===0&&!result.collapsed?.length;
           this.host.notify(result.collapsed?.length?result.message!:t(implied?'sketch.relationImplied':'sketch.overDefinedRelation'),'error');return;
@@ -685,6 +695,27 @@ export class SketchController {
       .finally(()=>{this.busy=false;this.changed();});
     await this.pending;
     return accepted;
+  }
+
+  /**
+   * 「共線」 or 「平行」 to a line whose direction is already held (an outline or edge of the model, ADR 0217) over-defines a line that is 「水平」 or 「垂直」 by
+   * itself: the solver blames the new relation, so the person could never add it. The line's own horizontal or vertical that the new relations make
+   * redundant, one at a time: the first whose removal solves with the line still that way. A removal that solves with the line turned is a conflict,
+   * not a redundancy, and is never taken. None: the relation over-defines the sketch for another reason.
+   */
+  private async subsumedOrientation(s: SketchFeature, relations: SketchConstraint[], base: PartDoc): Promise<Extract<SketchConstraint, { type: 'horizontal' | 'vertical' }> | null> {
+    const lines = new Set(relations.flatMap((r) => (r.type === 'collinear' || r.type === 'parallel' ? [r.a, r.b] : [])));
+    const own = s.constraints.filter((c): c is Extract<SketchConstraint, { type: 'horizontal' | 'vertical' }> => (c.type === 'horizontal' || c.type === 'vertical') && c.b === undefined && lines.has(c.a));
+    for (const c of own) {
+      const result = await this.host.trial({ ...s, constraints: [...s.constraints.filter((x) => x.id !== c.id), ...relations] });
+      if (this.host.doc() !== base) return null;
+      if (result.status === 'over' || result.status === 'failed') continue;
+      const g = result.geometry.get(c.a);
+      if (g?.type !== 'line') continue;
+      const [dx, dy] = sub(g.b, g.a);
+      if (Math.abs(c.type === 'horizontal' ? dy : dx) <= 1e-9 * Math.max(1, Math.hypot(dx, dy))) return c;
+    }
+    return null;
   }
 
   // ------------------------------------------------------------------ pointer input
