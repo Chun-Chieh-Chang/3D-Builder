@@ -91,6 +91,25 @@ export function zoomView(camera: THREE.OrthographicCamera, factor: number): void
   camera.updateProjectionMatrix();
 }
 
+/**
+ * The depth the camera sees, either side of it: never less than `least` (mm), and `views` times the view's half-diagonal on the screen. A plane seen
+ * aslant reaches deeper the larger the view is (in the isometric view √2 × its half-height), so a fixed depth cut the grid into a band when zoomed far out.
+ * A corner of the screen meets a plane at most the half-diagonal × cot(the view's angle to the plane) from the middle: 100 views reach a plane seen at
+ * 0.6° once the camera's own distance is small against the view. The floor rules every normal zoom, so the depth steps there are as they were.
+ */
+export const DEPTH_RANGE = { least: 1e5, views: 100 } as const;
+
+/** Sets the camera's near and far planes to ±the depth DEPTH_RANGE gives for the view it shows now. */
+export function fitDepthRange(camera: THREE.OrthographicCamera): void {
+  const half = Math.hypot(camera.right - camera.left, camera.top - camera.bottom) / (2 * camera.zoom);
+  if (!(half > 0) || !Number.isFinite(half)) throw new Error(`a view's size must be a positive number, not ${half}`);
+  const depth = Math.max(DEPTH_RANGE.least, DEPTH_RANGE.views * half);
+  if (camera.near === -depth && camera.far === depth) return;
+  camera.near = -depth;
+  camera.far = depth;
+  camera.updateProjectionMatrix();
+}
+
 /** How much of the view a box is made to fill by fitBoxView: its larger side on the screen, as a part of the view's height (or width) (ADR 0180). */
 export const FIT_BOX_FRACTION = 0.3;
 

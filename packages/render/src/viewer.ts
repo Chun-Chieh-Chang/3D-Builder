@@ -7,7 +7,7 @@ import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeome
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { ViewControls } from './controls';
 import { geometryInRect, inSelectionRect, selectionRect, type ScreenPoint } from './boxSelection';
-import { cubeDirection, fitBoxView, nearestView, orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView } from './viewNav';
+import { cubeDirection, DEPTH_RANGE, fitBoxView, fitDepthRange, nearestView, orbitView, panView, restoreView, rollView, viewState, ViewHistory, zoomView } from './viewNav';
 import { circleCentre, middleOf, polylinesOf, type V3 } from './snap';
 import { buildOverlayObjects, disposeGroup, overlayFitBox, toWorld, type P2, type PlaneFrame, type SketchOverlay } from './overlay';
 
@@ -858,7 +858,7 @@ export class Viewer {
     this.labelLayer.className = 'overlay-labels';
     container.appendChild(this.labelLayer);
 
-    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -1e5, 1e5);
+    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -DEPTH_RANGE.least, DEPTH_RANGE.least);
     this.scene.add(new THREE.AmbientLight(0xffffff, 1.1));
     const headlight = new THREE.DirectionalLight(0xffffff, 1.8);
     headlight.position.set(0.3, 0.4, 1);
@@ -3568,6 +3568,8 @@ export class Viewer {
     const h = this.container.clientHeight;
     r.setViewport(0, 0, w, h);
     r.clear();
+    // The depth follows the view's size (every zoom path, the wheel's included, ends up here), before the grid's key is read.
+    fitDepthRange(this.camera);
     // Grid lines and model share depth: foreground lines remain visible, opaque material hides lines behind it.
     // Drawing the grid first also lets transparent faces blend over the grid at their real depth.
     if (this.gridVisible) { this.updateGrid(); r.render(this.gridScene, this.camera); }
