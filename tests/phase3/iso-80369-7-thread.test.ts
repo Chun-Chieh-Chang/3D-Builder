@@ -507,8 +507,9 @@ describe('ISO 80369-7 Luer Reference Parts & Drawing Verification (T-4)', () => 
       // Verify DXF Export
       const dxfContent = toDxf(built.scene);
       expect(dxfContent).toMatch(/(\\U\+00B1|±)0\.025/);
-      expect(dxfContent).toContain('0/-0.005');
-      expect(dxfContent).toContain('+0.001/-0.004');
+      // limits are written as MTEXT's stacked deviations, upper over lower (ISO 129-1, 「+0」 for a zero upper one)
+      expect(dxfContent).toContain('\\S+0^-0.005;');
+      expect(dxfContent).toContain('\\S+0.001^-0.004;');
       expect(dxfContent).toContain('DIMENSION');
 
       // Verify PDF Export

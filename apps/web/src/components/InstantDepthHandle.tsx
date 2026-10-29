@@ -40,7 +40,7 @@ export function InstantDepthHandle() {
     const move=(e:PointerEvent)=>{if(e.pointerId!==event.pointerId)return;e.preventDefault();e.stopImmediatePropagation();try{value=draggedDepth(start,from,[e.clientX,e.clientY],axis);bad=false;setPreview(value);setInvalid(false);}catch{bad=true;setInvalid(true);}};
     const cancel=()=>stop();
     const key=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();stop();}};
-    const up=(e:PointerEvent)=>{if(e.pointerId!==event.pointerId)return;move(e);stop();if(bad)return store.notify(t('instant3d.positive'),'error');if(store.getState().doc!==before)return store.notify(t('instant3d.changed'),'error');if(value!==start)store.execute({type:'setEndCondition',featureId:feature.id,dir:'dir1',value:{...end,depth:String(value)}});};
+    const up=(e:PointerEvent)=>{if(e.pointerId!==event.pointerId)return;move(e);stop();if(bad)return store.notify(t('instantDepth.positive'),'error');if(store.getState().doc!==before)return store.notify(t('instantDepth.changed'),'error');if(value!==start)store.execute({type:'setEndCondition',featureId:feature.id,dir:'dir1',value:{...end,depth:String(value)}});};
     cleanup.current=stop;setPreview(depth);window.addEventListener('pointermove',move,true);window.addEventListener('pointerup',up,true);window.addEventListener('pointercancel',cancel,true);window.addEventListener('keydown',key,true);
   };
   void tick;
@@ -51,7 +51,7 @@ export function InstantDepthHandle() {
         <line x1="0" y1="0" x2={u[0]!*90} y2={u[1]!*90} stroke="var(--accent)"/>
         {[0,20,40,60,80].map(px=><line key={px} x1={u[0]!*px-u[1]!*4} y1={u[1]!*px+u[0]!*4} x2={u[0]!*px+u[1]!*4} y2={u[1]!*px-u[0]!*4} stroke="var(--accent)"/>)}
       </svg>
-      <button data-action="instantDepthDrag" disabled={!direct} onPointerDown={down} title={t(direct?'instant3d.drag':'instant3d.expression')} style={{position:'absolute',left:u[0]!*(24+(shown-depth)*len)-12,top:u[1]!*(24+(shown-depth)*len)-12,pointerEvents:'auto',cursor:'ns-resize',whiteSpace:'nowrap',color:invalid?'var(--error)':'var(--accent)'}}>
+      <button data-action="instantDepthDrag" disabled={!direct} onPointerDown={down} title={t(direct?'instantDepth.drag':'instantDepth.expression')} style={{position:'absolute',left:u[0]!*(24+(shown-depth)*len)-12,top:u[1]!*(24+(shown-depth)*len)-12,pointerEvents:'auto',cursor:'ns-resize',whiteSpace:'nowrap',color:invalid?'var(--error)':'var(--accent)'}}>
         ↔ {Number(shown.toFixed(3))} mm
       </button>
     </div>}

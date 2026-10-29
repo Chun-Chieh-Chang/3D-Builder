@@ -8,11 +8,11 @@ export const help: Translation = {
   'help.sheetUnfoldSelected.summary': "Unfold selected bends for machining while keeping other bends folded.",
   'help.sheetUnfold.summary': "Creates editable flat manufacturing geometry while retaining panel mappings.",
   'help.sheetUnfold.body': "Choose Sheet Metal → Unfold for machining, or Partial unfold and select bends in the property panel. Unselected bends stay folded; a jog is selected as one two-bend group. Sketch and cut holes or slots, then Refold. Features support undo, suppression and saving.\n\nSupports closed-profile bases, flanges, hems, sequential mid bends, jogs and compatible mitred/closed corners. Cuts across selected bend zones must have a constant section normal to sheet thickness. Unselected curved zones, oblique cuts, added material, re-bending across upright flanges and overlapping unfolded material are refused. Mitre developments retain the existing approximate boundary.",
-  'help.sheetUnfold.keywords': "sheet metal unfold refold machining 鈑金 展開 摺回 加工",
+  'help.sheetUnfold.keywords': "sheet metal unfold refold machining",
   'help.sheetUnfold.see': "sheet-unfold sheet-refold flat-pattern mid-bend jog",
   'help.sheetRefold.summary': "Maps machining on unfolded planar panels back to the folded sheet.",
   'help.sheetRefold.body': "Choose Sheet Metal → Refold after the matching unfold feature. Planar cuts use rigid transforms; cuts across unfolded cylindrical bend zones use neutral-length and thickness-radius mapping to native surfaces. Holes, slots and the flat pattern stay associated. Bend-zone cuts must have a constant section normal to sheet thickness. Include every machined curved bend in the unfold selection.",
-  'help.sheetRefold.keywords': "sheet metal unfold refold machining 鈑金 展開 摺回 加工",
+  'help.sheetRefold.keywords': "sheet metal unfold refold machining",
   'help.sheetRefold.see': "sheet-unfold sheet-refold flat-pattern mid-bend jog",
   'help.toolEllipse.summary': "Draw an ellipse by its center, major-axis endpoint and minor radius.",
   'help.toolEllipse.body': "Pick center, major-axis endpoint, then a smaller minor radius. Select the ellipse to constrain and edit both axis radii using expressions. Its center and major-axis point accept point relations. A line can be tangent, or a point can lie on the curve. Use a circle for equal axes.",
@@ -45,7 +45,7 @@ export const help: Translation = {
 
   "help.toolSilhouette.summary": "Projects apparent contours of a selected face into the active sketch.",
   "help.toolSilhouette.body": "Select a model face for its apparent contours along the sketch normal; faces without internal contours use visible boundary edges.",
-  "help.toolSilhouette.keywords": "silhouette contour 側影 輪廓 曲面",
+  "help.toolSilhouette.keywords": "silhouette contour outline curved face",
   "help.toolSilhouette.see": "tool-convert tool-intersect",
 
   "help.selectUnderdefined.summary": "Selects entities with remaining degrees of freedom from the solver analysis.",
@@ -53,7 +53,7 @@ export const help: Translation = {
 
   "help.projectedCurve.summary": "Projected Curve",
   "help.projectedCurve.body": "Retains every branch on the selected faces along the projection line. Produces a curve body; sweep paths are not yet supported.",
-  "help.projectedCurve.keywords": "project curve sketch face 投影 曲線 草圖 面",
+  "help.projectedCurve.keywords": "project curve sketch face",
   "help.projectedCurve.see": "helix split-line",
 
   // ---------------------------------------------------------------- the window
