@@ -3,7 +3,8 @@ import { DIM_STYLE_DEFAULT, normalizedViewAxes, dimensionRefs, fitDeviations, in
 import { projectionFacts } from './projectionRefs';
 import { circlePolyline } from './geometry';
 import { toSheet, type PlacedView, type ViewLines } from './layout';
-import type { SceneDimensionGeometry, SceneItem } from './scene';
+import { HELVETICA_CAP_HEIGHT, helveticaWidth } from './helvetica';
+import type { SceneDimensionGeometry, SceneItem, SceneText } from './scene';
 
 /**
  * A dimension as text and lines on the sheet (C16.4, ISO 129-1): the number the model gives (measured in the view, at full size whatever the scale), the
@@ -22,7 +23,8 @@ export type DimensionHandle =
   | { kind: 'round'; centre: [number, number]; radius: number }
   | { kind: 'angle'; centre: [number, number]; radius: number; /** where the middle of the arc is, in radians */ mid: number };
 
-export type DimensionOutcome = { value: number; text: string; items: SceneItem[]; chamfer?: { size: number; angle: number }; handle?: DimensionHandle; dxf?: { textAt: [number, number]; geometry: SceneDimensionGeometry } } | { error: string };
+/** `parts`: what the text is drawn with, given only when it stacks deviations (a DXF writes them stacked in the dimension's own text). */
+export type DimensionOutcome = { value: number; text: string; parts?: DimensionTextPart[]; items: SceneItem[]; chamfer?: { size: number; angle: number }; handle?: DimensionHandle; dxf?: { textAt: [number, number]; geometry: SceneDimensionGeometry } } | { error: string };
 
 /**
  * Height of the text of a dimension (mm) and the length of an arrowhead, as ISO's style has them (a drawing's own are in `sheet.dimStyle`, ADR 0146), the gap between a
@@ -60,12 +62,32 @@ export function lengthNumber(mm: number, places: number, unit: LengthUnit = 'mm'
 
 const signed = (v: number, unit: LengthUnit = 'mm') => (v === 0 ? '0' : `${v > 0 ? '+' : '-'}${lengthNumber(Math.abs(v), 4, unit)}`);
 
+/** Limits written 「±0.05」: equal and opposite. Any other limits are two deviations, stacked on the drawing. */
+const symmetric = (tol: { upper: number; lower: number }) => tol.upper === -tol.lower && tol.upper > 0;
+
 /**
- * The tolerance as written after a number: 「±0.05」, 「+0.1/-0.05」, the class and its limits 「H7 (+0.012/0)」 (the class alone when the table does not reach this
- * size), or the word of a one-sided limit 「MAX」/「MIN」 (「10 MAX」: 10 is the largest the part may be).
+ * The two deviations of limits as written one over the other (ISO 129-1): each with its sign, a zero too (「+0」 over, 「-0」 under, as the deviation's place
+ * says), up to four decimals in the unit with none that are zero at the end, then both of the same decimals unless one is zero (「+0.10」 over 「-0.05」, 「+0」
+ * over 「-0.01」). An angle's deviation is in degrees and has its sign of degrees, except a zero (「+4°」 over 「-0」). The decimals of the dimension's number do not
+ * apply: rounding a deviation to them could take it away (one decimal makes -0.01 nothing).
+ */
+export function deviationTexts(upper: number, lower: number, unit: LengthUnit = 'mm', angle = false): [string, string] {
+  const digits = [upper, lower].map((v) => (angle ? formatNumber(Math.abs(v), 4) : lengthNumber(Math.abs(v), 4, unit)));
+  const places = Math.max(0, ...digits.filter((s) => s !== '0').map((s) => s.split('.')[1]?.length ?? 0));
+  return [upper, lower].map((v, i) => {
+    const s = digits[i]!;
+    if (s === '0') return i === 0 ? '+0' : '-0';
+    return `${v > 0 ? '+' : '-'}${places > 0 ? Number(s).toFixed(places) : s}${angle ? '°' : ''}`;
+  }) as [string, string];
+}
+
+/**
+ * The tolerance as written after a number: 「±0.05」, 「+0.1/-0.05」 (the two deviations of `deviationTexts`, which the drawing stacks), the class and its limits
+ * 「H7 (+0.012/0)」 (the class alone when the table does not reach this size), or the word of a one-sided limit 「MAX」/「MIN」 (「10 MAX」: 10 is the largest the
+ * part may be).
  */
 export function toleranceText(tol: DimensionTolerance, nominal: number, unit: LengthUnit = 'mm'): string {
-  if (tol.type === 'bilateral') return tol.upper === -tol.lower && tol.upper > 0 ? `±${lengthNumber(tol.upper, 4, unit)}` : `${signed(tol.upper, unit)}/${signed(tol.lower, unit)}`;
+  if (tol.type === 'bilateral') return symmetric(tol) ? `±${lengthNumber(tol.upper, 4, unit)}` : deviationTexts(tol.upper, tol.lower, unit).join('/');
   if (tol.type === 'max') return t('drawing.tolMax');
   if (tol.type === 'min') return t('drawing.tolMin');
   const d = fitDeviations(nominal, tol.fit);
@@ -124,26 +146,54 @@ export function cosmeticThreadText(ct: ThreadCallout, unit: LengthUnit = 'mm', s
  * element it points at); in parentheses for a reference dimension.
  */
 export function dimensionText(d: Dimension, value: number, facts?: ElementFacts, unit: LengthUnit = 'mm'): string {
-  return finish(d, base(d, value, facts, unit));
+  return dimensionWords(d, value, facts, unit).text;
+}
+
+/** A part of what a dimension says: text, or two deviations written one over the other after it. */
+export type DimensionTextPart = string | { upper: string; lower: string };
+
+/** Where the deviations stand in what `base` says, until they are cut out (the user's own text cannot hold these characters: `finish` takes them out). */
+const STACK = /\u0001([^\u0002]*)\u0002([^\u0003]*)\u0003/g;
+const stacked = ([upper, lower]: [string, string]) => `\u0001${upper}\u0002${lower}\u0003`;
+
+/** What a dimension says as one line (`text`, the deviations as 「+0.1/-0.05」) and as the parts it is drawn with (`parts`, the deviations stacked). */
+export function dimensionWords(d: Dimension, value: number, facts?: ElementFacts, unit: LengthUnit = 'mm'): { text: string; parts: DimensionTextPart[] } {
+  const said = finish(d, base(d, value, facts, unit));
+  const parts: DimensionTextPart[] = [];
+  let last = 0;
+  for (const m of said.matchAll(STACK)) {
+    if (m.index! > last) parts.push(said.slice(last, m.index));
+    parts.push({ upper: m[1]!, lower: m[2]! });
+    last = m.index! + m[0].length;
+  }
+  if (last < said.length || parts.length === 0) parts.push(said.slice(last));
+  return { text: said.replace(STACK, '$1/$2'), parts };
 }
 
 /** What the user wrote around it or in its place (v8): a prefix and a suffix outside any parentheses, or a text of their own in which `<DIM>` stands for what it would have said. */
 function finish(d: Dimension, said: string): string {
-  if (d.text) return d.text.split('<DIM>').join(said);
-  return `${d.prefix ?? ''}${said}${d.suffix ?? ''}`;
+  const own = (s: string | undefined) => (s ?? '').replace(/[\u0001-\u0003]/g, '');
+  if (d.text) return own(d.text).split('<DIM>').join(said);
+  return `${own(d.prefix)}${said}${own(d.suffix)}`;
+}
+
+/** The tolerance after a dimension's number, with a space before it: limits that are not 「±」 as two stacked deviations. */
+function toleranceAfter(tol: DimensionTolerance | undefined, nominal: number, unit: LengthUnit): string {
+  if (!tol) return '';
+  return ` ${tol.type === 'bilateral' && !symmetric(tol) ? stacked(deviationTexts(tol.upper, tol.lower, unit)) : toleranceText(tol, nominal, unit)}`;
 }
 
 function base(d: Dimension, value: number, facts: ElementFacts | undefined, unit: LengthUnit): string {
   if (d.kind === 'angle') {
-    // a one-sided limit is a word, so no degree sign follows it (「45° MAX」, not 「45° MAX°」)
-    const oneSided = d.tolerance?.type === 'max' || d.tolerance?.type === 'min';
-    const tolerance = d.tolerance ? ` ${toleranceText(d.tolerance, value)}${oneSided ? '' : '°'}` : '';
+    // a one-sided limit is a word, so no degree sign follows it (「45° MAX」, not 「45° MAX°」); stacked deviations carry their own
+    const tol = d.tolerance;
+    const tolerance = !tol ? '' : tol.type === 'bilateral' && !symmetric(tol) ? ` ${stacked(deviationTexts(tol.upper, tol.lower, 'mm', true))}` : ` ${toleranceText(tol, value)}${tol.type === 'max' || tol.type === 'min' ? '' : '°'}`;
     const angle = `${formatNumber(value, d.precision ?? 2)}°${tolerance}`;
     return d.reference ? `(${angle})` : angle;
   }
   if (d.kind === 'chamfer') {
     const count = d.count ? `${d.count}×` : '';
-    const tol = d.tolerance ? ` ${toleranceText(d.tolerance, d.size, unit)}` : '';
+    const tol = toleranceAfter(d.tolerance, d.size, unit);
     const places = d.precision !== undefined ? d.precision : (unit === 'in' ? 3 : 2);
     const sizeStr = d.precision !== undefined ? formatNumber(inUnit(d.size, unit), places) : lengthNumber(d.size, places, unit);
     const angle = d.chamferAngle ?? 45;
@@ -159,7 +209,7 @@ function base(d: Dimension, value: number, facts: ElementFacts | undefined, unit
     : null;
   if (threaded) return d.reference ? `(${count}${threaded})` : `${count}${threaded}`;
   const prefix = d.kind === 'diameter' ? 'Ø' : d.kind === 'radius' ? 'R' : '';
-  const tol = d.tolerance ? ` ${toleranceText(d.tolerance, value, unit)}` : '';
+  const tol = toleranceAfter(d.tolerance, value, unit);
   const note = d.kind === 'diameter' && d.callout && facts?.hole ? ` ${holeNote(facts.hole, unit, style)}` : '';
   // the decimals the user asked for are the decimals written, in either unit
   const number = d.precision !== undefined ? formatNumber(inUnit(value, unit), d.precision) : lengthNumber(value, 3, unit);
@@ -169,6 +219,76 @@ function base(d: Dimension, value: number, facts: ElementFacts | undefined, unit
 
 /** How wide a text is (mm), estimated from its height: the dimensions' text is set in a plain sans-serif. */
 const textWidth = (text: string, height: number) => text.length * height * 0.62;
+
+/**
+ * How wide a text is set (mm) in Helvetica's widths, which the PDF writes with and the screen's sans-serif (Arial) shares; a character Helvetica cannot write
+ * (Chinese) as wide as the font is tall (1.4 times the height, svg.ts).
+ */
+const setWidth = (text: string, height: number) =>
+  [...text].reduce((w, c) => {
+    const k = helveticaWidth(c.codePointAt(0)!);
+    return w + (k > 0 ? k / HELVETICA_CAP_HEIGHT : 1.4) * height;
+  }, 0);
+
+/**
+ * Deviations stacked after a number, as the reference drawings have them: each this part of the number's height (at ISO's 3.5 mm, 1.82 mm: no smaller than
+ * ISO 3098's smallest lettering, 1.8 mm), the lower one's baseline a tenth of the height under the number's and the upper one's so that the stack ends a tenth
+ * over the number's capitals, set three tenths of the height after the number.
+ */
+export const STACK_SCALE = 0.52;
+export const STACK_LOWER = -0.1;
+export const STACK_UPPER = 1.1 - STACK_SCALE;
+export const STACK_GAP = 0.3;
+
+/**
+ * The texts a dimension's words are written with, `at` the left end, middle or right end (by `anchor`) of their baseline, turned by `angle` (degrees): one text
+ * when nothing is stacked, as it always was. Stacked deviations are two texts left-aligned one over the other, the text before them ends where they begin
+ * (anchored at its right end, so a font a little wider or narrower than Helvetica still leaves the gap), the text after them follows. `width` is how far it
+ * reaches along the baseline.
+ */
+export function dimensionTextItems(parts: readonly DimensionTextPart[], at: P, height: number, anchor: 'left' | 'center' | 'right' = 'left', angle = 0): { items: SceneText[]; width: number } {
+  const turned = angle ? { angle } : {};
+  if (parts.every((p) => typeof p === 'string')) {
+    const text = parts.join('');
+    return { items: [{ kind: 'text', at, text, height, anchor, ...turned }], width: textWidth(text, height) };
+  }
+  const small = height * STACK_SCALE;
+  type Piece = { text: string; w: number } | { upper: string; lower: string; w: number };
+  const pieces: Piece[] = [];
+  const gaps: number[] = [];
+  parts.forEach((p, i) => {
+    const next = parts[i + 1];
+    if (typeof p === 'string') {
+      const text = typeof next === 'object' ? p.trimEnd() : p;
+      if (text === '') return;
+      gaps.push(pieces.length && typeof parts[i - 1] === 'object' && !/^\s/.test(text) ? height * 0.1 : 0);
+      pieces.push({ text, w: setWidth(text, height) });
+    } else {
+      gaps.push(pieces.length ? height * STACK_GAP : 0);
+      pieces.push({ ...p, w: Math.max(setWidth(p.upper, small), setWidth(p.lower, small)) });
+    }
+  });
+  const width = pieces.reduce((s, p, i) => s + p.w + gaps[i]!, 0);
+  const r = (angle * Math.PI) / 180;
+  const c = Math.cos(r), s = Math.sin(r);
+  const place = (x: number, y: number): P => [at[0] + x * c - y * s, at[1] + x * s + y * c];
+  const items: SceneText[] = [];
+  let x = anchor === 'center' ? -width / 2 : anchor === 'right' ? -width : 0;
+  pieces.forEach((p, i) => {
+    x += gaps[i]!;
+    if ('text' in p) {
+      const before = pieces[i + 1] && !('text' in pieces[i + 1]!);
+      items.push({ kind: 'text', at: place(before ? x + p.w : x, 0), text: p.text, height, anchor: before ? 'right' : 'left', ...turned });
+    } else {
+      items.push({ kind: 'text', at: place(x, height * STACK_UPPER), text: p.upper, height: small, anchor: 'left', ...turned });
+      items.push({ kind: 'text', at: place(x, height * STACK_LOWER), text: p.lower, height: small, anchor: 'left', ...turned });
+    }
+    x += p.w;
+  });
+  return { items, width };
+}
+
+const stackedParts = (parts: DimensionTextPart[]) => (parts.some((p) => typeof p !== 'string') ? { parts } : {});
 
 type P = [number, number];
 const add = (a: P, b: P, k = 1): P => [a[0] + b[0] * k, a[1] + b[1] * k];
@@ -216,12 +336,13 @@ function pen(st: Style) {
     return [line(add(a, u, -stub), add(b, u, stub)), ...arrowhead(a, u), ...arrowhead(b, [-u[0], -u[1]])];
   };
   /** Text of a dimension on a line with direction angle `a` (degrees), kept readable (never upside down), above the line at `mid`. */
-  const textOn = (mid: P, angle: number, text: string): SceneItem => {
+  const textOn = (mid: P, angle: number, parts: readonly DimensionTextPart[]): { at: P; items: SceneText[] } => {
     let a = angle;
     while (a > 90 + 1e-9) a -= 180;
     while (a <= -90 + 1e-9) a += 180;
     const r = (a * Math.PI) / 180;
-    return { kind: 'text', at: add(mid, [-Math.sin(r), Math.cos(r)], 1), text, height: st.text, anchor: 'center', ...(a !== 0 ? { angle: a } : {}) };
+    const at = add(mid, [-Math.sin(r), Math.cos(r)], 1);
+    return { at, items: dimensionTextItems(parts, at, st.text, 'center', a).items };
   };
   return { line, arrowhead, dimensionLine, textOn };
 }
@@ -312,7 +433,8 @@ function ordinate(d: Extract<Dimension, { kind: 'ordinate' }>, els: readonly Ele
   const entries = at.map((p, i) => {
     const s = toSheet(placed, p[0], p[1]);
     const value = Math.abs(p[k] - origin);
-    return { s, value, text: i === 0 ? '0' : dimensionText(d, value, undefined, unit), bound: isBound(els[i]!) };
+    const words = i === 0 ? { text: '0', parts: ['0'] } : dimensionWords(d, value, undefined, unit);
+    return { s, value, ...words, bound: isBound(els[i]!) };
   });
   // the texts along the row, in the order of their elements, at least a text's height and a gap apart
   const gap = DIM_TEXT * 1.5;
@@ -340,8 +462,9 @@ function ordinate(d: Extract<Dimension, { kind: 'ordinate' }>, els: readonly Ele
         : [[from, e.s[1]], [knee, e.s[1]], [row, across], [row + outward * 1, across]];
     items.push(line(...pts));
     // the text along the extension line beyond the row, read from the bottom or the right of the sheet
-    if (d.axis === 'x') items.push({ kind: 'text', at: [across + DIM_TEXT / 2, row + outward * 1.5], text: e.text, height: DIM_TEXT, angle: 90, anchor: outward > 0 ? 'left' : 'right' });
-    else items.push({ kind: 'text', at: [row + outward * 1.5, across - DIM_TEXT / 2], text: e.text, height: DIM_TEXT, anchor: outward > 0 ? 'left' : 'right' });
+    const anchor = outward > 0 ? 'left' : 'right';
+    if (d.axis === 'x') items.push(...dimensionTextItems(e.parts, [across + DIM_TEXT / 2, row + outward * 1.5], DIM_TEXT, anchor, 90).items);
+    else items.push(...dimensionTextItems(e.parts, [row + outward * 1.5, across - DIM_TEXT / 2], DIM_TEXT, anchor).items);
   }
   const values = entries.slice(1).map((e) => e.value);
   const handle: DimensionHandle = {
@@ -401,7 +524,7 @@ function angle(d: Extract<Dimension, { kind: 'angle' }>, ea: ElementFacts, eb: E
   if (d.supplementary) r2 = [-r2[0], -r2[1]];
   const sweep = Math.atan2(r1[0] * r2[1] - r1[1] * r2[0], r1[0] * r2[0] + r1[1] * r2[1]); // signed, -π..π
   const value = (Math.abs(sweep) * 180) / Math.PI;
-  const text = dimensionText(d, value);
+  const { text, parts } = dimensionWords(d, value);
   const centre = toSheet(placed, meet[0], meet[1]);
   const R = d.arc;
   const a1 = Math.atan2(r1[1], r1[0]);
@@ -425,9 +548,9 @@ function angle(d: Extract<Dimension, { kind: 'angle' }>, ea: ElementFacts, eb: E
   const mid = a1 + sweep / 2;
   const slid = mid + (d.slide ?? 0) / R; // the text goes along the arc, by what was slid (mm)
   const textAt: P = [centre[0] + (R + DIM_TEXT) * Math.cos(slid), centre[1] + (R + DIM_TEXT) * Math.sin(slid) - DIM_TEXT / 2];
-  items.push({ kind: 'text', at: textAt, text, height: DIM_TEXT, anchor: 'center' });
+  items.push(...dimensionTextItems(parts, textAt, DIM_TEXT, 'center').items);
   const far = (r: P): P => add(centre, r, R + OVERSHOOT);
-  return { value, text, items, handle: { kind: 'angle', centre, radius: R, mid }, dxf: { textAt: [textAt[0], textAt[1] + DIM_TEXT / 2], geometry: { kind: 'angular', first: [centre, far(r1)], second: [centre, far(r2)], arc: at(mid) } } };
+  return { value, text, ...stackedParts(parts), items, handle: { kind: 'angle', centre, radius: R, mid }, dxf: { textAt: [textAt[0], textAt[1] + DIM_TEXT / 2], geometry: { kind: 'angular', first: [centre, far(r1)], second: [centre, far(r2)], arc: at(mid) } } };
 }
 
 /** The foot of the perpendicular from `q` to the line through `p` along the unit `d`. */
@@ -493,7 +616,7 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
     for (const e of [ea, eb]) if (isBound(e) && !squareTo(e, axes, along)) return { error: t('drawing.dimNotAcross') };
   }
   const value = d.orientation === 'horizontal' ? Math.abs(B[0] - A[0]) : d.orientation === 'vertical' ? Math.abs(B[1] - A[1]) : Math.hypot(B[0] - A[0], B[1] - A[1]);
-  const text = dimensionText(d, value, undefined, unit);
+  const { text, parts } = dimensionWords(d, value, undefined, unit);
   // Extend from the referenced contour, never the overall view rectangle. Native
   // face centres select the relevant interval when separate parts are coplanar.
   const attach = (p: P, e: ElementFacts): P => {
@@ -559,11 +682,11 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
   const b = onLine(sB);
   items.push(...dimensionLine(a, b));
   const mid: P = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-  const label = textOn(add(mid, u, d.slide ?? 0), (Math.atan2(u[1], u[0]) * 180) / Math.PI, text);
-  items.push(label);
-  const textAt: P = label.kind === 'text' ? add(label.at, n, DIM_TEXT / 2) : a;
+  const label = textOn(add(mid, u, d.slide ?? 0), (Math.atan2(u[1], u[0]) * 180) / Math.PI, parts);
+  items.push(...label.items);
+  const textAt: P = add(label.at, n, DIM_TEXT / 2);
   const handle: DimensionHandle = { kind: 'linear', orientation: d.orientation, mid, u, box, a: sA, b: sB };
-  return { value, text, items, handle, dxf: { textAt, geometry: { kind: 'linear', a: sA, b: sB, line: a, ...(d.orientation === 'horizontal' ? { rotation: 0 } : d.orientation === 'vertical' ? { rotation: 90 } : {}) } } };
+  return { value, text, ...stackedParts(parts), items, handle, dxf: { textAt, geometry: { kind: 'linear', a: sA, b: sB, line: a, ...(d.orientation === 'horizontal' ? { rotation: 0 } : d.orientation === 'vertical' ? { rotation: 90 } : {}) } } };
 }
 
 /**
@@ -608,25 +731,27 @@ function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: Eleme
     const centre = toSheet(placed, at[0], at[1]);
     const near = add(centre, n, side * e.radius * placed.scale);
     const outer = add(near, u, d.leader ?? LEADER);
-    const text = dimensionText(d, 2 * e.radius, e, unit);
+    const { text, parts } = dimensionWords(d, 2 * e.radius, e, unit);
     const dir = u[0] >= 0 ? 1 : -1;
-    const shelf: P = [outer[0] + dir * (textWidth(text, DIM_TEXT) + 2), outer[1]];
-    return { value: 2 * e.radius, text, items: [line(near, outer, shelf), ...arrowhead(near, [-u[0], -u[1]]),
-      { kind: 'text', at: [outer[0] + dir, outer[1] + 1], text, height: DIM_TEXT, anchor: dir > 0 ? 'left' : 'right' }],
+    const label = dimensionTextItems(parts, [outer[0] + dir, outer[1] + 1], DIM_TEXT, dir > 0 ? 'left' : 'right');
+    const shelf: P = [outer[0] + dir * (label.width + 2), outer[1]];
+    return { value: 2 * e.radius, text, ...stackedParts(parts), items: [line(near, outer, shelf), ...arrowhead(near, [-u[0], -u[1]]), ...label.items],
       handle: { kind: 'round', centre: near, radius: 0 } };
   }
   // the circle has to be seen as a circle
   const at = circleCentre(e, axes, u);
   if (!at) return { error: t('drawing.dimNotTrueShape') };
   const value = d.kind === 'diameter' ? 2 * e.radius : e.radius;
-  const text = dimensionText(d, value, e, unit);
+  const { text, parts } = dimensionWords(d, value, e, unit);
   const centre = toSheet(placed, at[0], at[1]);
   const r = e.radius * placed.scale;
   const near = add(centre, u, r);
   const leader = d.leader ?? LEADER;
   const outer = add(centre, u, r + leader);
   const dir = u[0] >= 0 ? 1 : -1;
-  const shelfEnd: P = [outer[0] + dir * (textWidth(text, DIM_TEXT) + 2), outer[1]];
+  const textAt: P = [outer[0] + dir * 1, outer[1] + 1];
+  const label = dimensionTextItems(parts, textAt, DIM_TEXT, dir > 0 ? 'left' : 'right');
+  const shelfEnd: P = [outer[0] + dir * (label.width + 2), outer[1]];
   const items: SceneItem[] = [];
   if (d.kind === 'diameter' && 2 * r >= 2 * ARROW + 2) {
     // room inside: the line crosses the circle through its middle, an arrow at each end touching the circle from inside
@@ -636,12 +761,12 @@ function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: Eleme
     // a small circle, or a radius: the leader comes from outside and its arrow touches the circle pointing in
     items.push(line(shelfEnd, outer, near), ...arrowhead(near, [-u[0], -u[1]]));
   }
-  const textAt: P = [outer[0] + dir * 1, outer[1] + 1];
-  items.push({ kind: 'text', at: textAt, text, height: DIM_TEXT, anchor: dir > 0 ? 'left' : 'right' });
-  const middle: P = [textAt[0] + (dir * textWidth(text, DIM_TEXT)) / 2, textAt[1] + DIM_TEXT / 2];
+  items.push(...label.items);
+  const middle: P = [textAt[0] + (dir * label.width) / 2, textAt[1] + DIM_TEXT / 2];
   return {
     value,
     text,
+    ...stackedParts(parts),
     items,
     handle: { kind: 'round', centre, radius: r },
     dxf: { textAt: middle, geometry: d.kind === 'diameter' ? { kind: 'diameter', far: add(centre, u, -r), near, leader } : { kind: 'radius', centre, near, leader } },
@@ -676,17 +801,18 @@ function chamfer(d: Extract<Dimension, { kind: 'chamfer' }>, e: ElementFacts, ax
   const outer = add(centre, u, leader);
   const value = size;
   const effective = { ...d, size, chamferAngle: measuredAngle, ...(d.coneSide !== undefined && Math.abs(measuredAngle - 45) > 1e-6 ? { chamferFormat: 'distanceAngle' as const } : {}) };
-  const text = dimensionText(effective, value, e, unit);
+  const { text, parts } = dimensionWords(effective, value, e, unit);
   const dir = u[0] >= 0 ? 1 : -1;
-  const shelfEnd: P = [outer[0] + dir * (textWidth(text, DIM_TEXT) + 2), outer[1]];
-  const items: SceneItem[] = [];
-  items.push(line(shelfEnd, outer, centre), ...arrowhead(centre, [-u[0], -u[1]]));
   const textAt: P = [outer[0] + dir * 1, outer[1] + 1];
-  items.push({ kind: 'text', at: textAt, text, height: DIM_TEXT, anchor: dir > 0 ? 'left' : 'right' });
-  const middle: P = [textAt[0] + (dir * textWidth(text, DIM_TEXT)) / 2, textAt[1] + DIM_TEXT / 2];
+  const label = dimensionTextItems(parts, textAt, DIM_TEXT, dir > 0 ? 'left' : 'right');
+  const shelfEnd: P = [outer[0] + dir * (label.width + 2), outer[1]];
+  const items: SceneItem[] = [];
+  items.push(line(shelfEnd, outer, centre), ...arrowhead(centre, [-u[0], -u[1]]), ...label.items);
+  const middle: P = [textAt[0] + (dir * label.width) / 2, textAt[1] + DIM_TEXT / 2];
   return {
     value,
     text,
+    ...stackedParts(parts),
     chamfer: { size, angle: measuredAngle },
     items,
     handle: { kind: 'round', centre, radius: 0 },

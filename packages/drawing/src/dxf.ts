@@ -48,6 +48,16 @@ export function dxfEscape(text: string): string {
   return out;
 }
 
+/**
+ * The text a DIMENSION is written with over what it would measure: stacked deviations in MTEXT's tolerance stack 「\S+0^-0.01;」 (upper over lower, no bar between),
+ * so a CAD program that draws the dimension again draws them stacked too.
+ */
+export function dimensionOverride(d: Pick<SceneDimension, 'text' | 'parts'>): string {
+  if (!d.parts) return dxfEscape(d.text);
+  // `^` and `;` end the halves of a stack; a deviation is a signed number with a degree sign, which has neither
+  return d.parts.map((p) => (typeof p === 'string' ? dxfEscape(p) : `\\S${dxfEscape(p.upper)}^${dxfEscape(p.lower)};`)).join('');
+}
+
 class Out {
   readonly lines: string[] = [];
   g(code: number, value: string | number): this {
@@ -251,7 +261,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
     const kind = gm.kind === 'linear' ? (gm.rotation === undefined ? 1 : 0) : gm.kind === 'diameter' ? 3 : gm.kind === 'radius' ? 4 : 2;
     const def = gm.kind === 'linear' ? gm.line : gm.kind === 'diameter' ? gm.far : gm.kind === 'radius' ? gm.centre : gm.second[1];
     entity('DIMENSION', LINE_STYLES.dimension.layer, 'AcDbDimension');
-    o.g(2, block).g(10, def[0]).g(20, def[1]).g(30, 0).g(11, d.textAt[0]).g(21, d.textAt[1]).g(31, 0).int(70, kind + 32 + 128).int(71, 5).g(3, 'STANDARD').g(1, dxfEscape(d.text));
+    o.g(2, block).g(10, def[0]).g(20, def[1]).g(30, 0).g(11, d.textAt[0]).g(21, d.textAt[1]).g(31, 0).int(70, kind + 32 + 128).int(71, 5).g(3, 'STANDARD').g(1, dimensionOverride(d));
     const point = (code: number, p: readonly [number, number]) => o.g(code, p[0]).g(code + 10, p[1]).g(code + 20, 0);
     if (gm.kind === 'linear') {
       o.g(100, 'AcDbAlignedDimension');

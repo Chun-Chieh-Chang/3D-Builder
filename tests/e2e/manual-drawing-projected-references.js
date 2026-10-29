@@ -70,7 +70,7 @@ window.__projectedReferences={run:async()=>{
    must(d().scene().dimensions.get(dim.id).text.includes('+0.02/-0.01'),'different upper/lower deviations shown');
    await edit('dimUpper',0.03);await edit('dimLower',0.01);
    must(d().scene().dimensions.get(dim.id).text.includes('+0.03/+0.01'),'same-positive unilateral deviations supported');
-   const scene=d().scene().scene;must(D.toSvg(scene).includes('+0.03/+0.01')&&D.toDxf(scene).includes('+0.03/+0.01'),'SVG and DXF use the same deviations');
+   const scene=d().scene().scene;must(/>\+0\.03<\/text>[\s\S]*>\+0\.01<\/text>/.test(D.toSvg(scene))&&D.toDxf(scene).includes('\\S+0.03^+0.01;'),'SVG stacks and DXF writes the same deviations');
   });
   await step('4b batch asymmetric negative deviations and visible property controls',async()=>{
    d().pick(pg().dimensions.map(dim=>({kind:'dimension',id:dim.id})),'replace');await H.wait(100);

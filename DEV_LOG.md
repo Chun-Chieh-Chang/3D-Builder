@@ -131,6 +131,20 @@
 
 驗證：三個檔案 29 項通過；更新後整份 CI 清單在本機 14 個檔案、158 項通過（11 秒）。遠端結果待這次提交的那輪 CI。教訓：測試只在局部清單裡被跑到時，改動共用語意（這裡是孔深定義）的提交必須自己搜尋並更新所有依賴那個語意的斷言，不能只補新測試；改動後只跑 CI 清單不等於全量。
 
+## 2026-10-27：非對稱／單向公差的疊字顯示
+
+使用者附參考圖：非對稱與單向公差應寫成主數字正常字高、右側上下兩行較小字的偏差（`1.2` 右疊 `+0`／`-0.01`；`25°` 右疊 `+4°`／`-0`），原本一律串成 `+0.1/-0.05` 的單行文字。對稱 `±` 不變。
+
+設計：場景模型（SceneItem）是畫面 SVG、匯出 SVG、DXF、PDF 的唯一來源，故疊字拆成多個 SceneText 而不改各寫出器——主數字靠右錨定於疊字起點，兩行偏差靠左錨定於同一 x（左對齊），全部同一旋轉角，跟著尺寸文字方向（垂直線性尺寸 90°、縱座標 x 軸 90°）。字寬以既有 Helvetica 字寬表估算，引線架長改用含疊字的實際寬度。偏差字高 0.52×（3.5 mm 字高時 1.82 mm，不低於 ISO 3098 最小 1.8 mm），下行基線 −0.1h、上行 0.58h，主數字與疊字間距 0.3h。前綴、後綴、自訂 `<DIM>` 文字套用後才以控制字元標記切開，使用者字串中的控制字元先剔除。DXF 的 DIMENSION 文字覆寫寫 MTEXT 疊字 `\S+0^-0.01;`，區塊內仍是分開的 TEXT。面板清單的單行文字沿用 `+0/-0.01` 的同一組偏差字串。
+
+小數規則（ISO 129-1）：每個偏差都帶正負號，零寫成所在位置的號（上 `+0`、下 `-0`）；以單位最多 4 位、去尾零，兩個非零偏差補到相同位數，零不補位；角度僅非零偏差加 `°`。尺寸的 precision 只管主數字，不套用到偏差——1 位小數會把 −0.01 抹成 0，等於篡改使用者輸入的公差。英寸沿用既有換算（+0.1/−0.05 mm → `+0.0039/-0.0020`）。配合公差 `H7 (+0.012/0)` 與 MAX／MIN 文字不變。
+
+紅隊四問：①同號（`+0.03/+0.01`、`-0.01/-0.03`、`-2°/-3°`）、任一側為零、兩側皆零、負值、英寸、小於 4 位小數而四捨五入為零、precision 不影響偏差均有斷言；輸入驗證沿用 ADR0210 的上下界檢查，不以 Math.round／abs 改值。②無新幾何或布林運算，只改文字排版。③Dimension 求值 → SceneDimension.parts → SVG／DXF／PDF 寫出及引線寬度全鏈路接線，選取／重疊檢查本來就逐個 SceneText 處理；Schema 不變。④佈局數值以 Helvetica 字寬手算對照，非 mock；真實瀏覽器以原生支架零件建立 `45° +4°/-0` 角度與垂直 `0.5 +0/-0.01` 線性尺寸，放大截圖與參考圖對照。
+
+驗證：新增 tests/phase5/drawing-tolerance-stack.test.ts 16 項，於乾淨 HEAD（獨立 worktree，@3db 指向該 worktree）全數失敗、套用後通過；4 個舊測試依新格式更新，5 個公差相關檔 85/85 通過。lint:rules／deps／i18n／repo 通過。typecheck 唯一錯誤在 git 忽略的 packages/kernel/test/zz-hlr-spike.test.ts（10-16 的實驗檔，非本次）。phase5 另有 6 項在乾淨 HEAD 同樣失敗（acceptance-5 孔深與 19.5 厚度、drawing-annotations 盲孔、drawing-auxiliary-view 放置、drawing-fit 兩項比例），與本次無關，未修改。完整 verify:ui（獨立 worktree，避免其他工作階段的熱更新；首輪因 libcascade／planegcs 的 junction 指向主資料夾、Vite 不供應 worktree 外的 wasm 而全數逾時，作廢後改放實體複本重跑）：236 項 220 通過、16 不通過。其中 15 項（asm-section、asm-triad、c20、c6、drawing-linked、interference-view、measure-view、sidebar-tabs、smart-mates、thread-extensions、phase3-sketch-checks、phase5-views、phase6-boss-ui、phase7-corner-ui、phase7-miter-ui）在同一 worktree 還原為乾淨 HEAD 後以相同錯誤失敗，與本次無關；1 項 manual-drawing-projected-references 是本次造成——它斷言匯出含舊單行 `+0.03/+0.01`，依新格式改為斷言 SVG 疊字與 DXF `\S+0.03^+0.01;` 後，與 phase5-angle／annotations／dimensions 一起重跑 4/4 通過。
+
+已知差異：本 app 角度尺寸文字一向水平書寫，參考圖的角度文字沿尺寸旋轉；疊字跟隨文字角度，若要角度文字旋轉需另行修改，未於本次變更。
+
 ## 2026-10-27：投影參照與非對稱公差（ADR0210）
 
 補足實際 HLR 剖切新邊及自由曲線的選取，直線作尺寸參照、曲線取投影點；保留原生解析圓／錐面路徑。修正命名等角方向未正規化造成誤判正圓、近鄰原輪廓攔截及折斷視圖反變換。Schema34 投影參照以目前重新生成輪廓求值，失配明示失效；單一／批次公差新增非對稱／單向入口，上下偏差可同號，沿用 bilateral 模型。設計、操作與限制見 [ADR0210](docs/adr/0210-projected-references-and-asymmetric-tolerances.md)。

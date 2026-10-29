@@ -94,10 +94,10 @@ describe('what a dimension is written as (ISO 129-1)', () => {
     expect([120, 7.5, 9.0000001, 45.25, 0, -0.0001, 0.1 + 0.2].map((v) => formatNumber(v))).toEqual(['120', '7.5', '9', '45.25', '0', '0', '0.3']);
   });
 
-  it('the tolerances: ±0.05, +0.1/-0.05, +0.1/0, and a class with its limits', () => {
+  it('the tolerances: ±0.05, +0.10/-0.05 (both deviations of the same decimals), +0.1/-0 (a zero signed by its place), and a class with its limits', () => {
     expect(toleranceText({ type: 'bilateral', upper: 0.05, lower: -0.05 }, 20)).toBe('±0.05');
-    expect(toleranceText({ type: 'bilateral', upper: 0.1, lower: -0.05 }, 20)).toBe('+0.1/-0.05');
-    expect(toleranceText({ type: 'bilateral', upper: 0.1, lower: 0 }, 20)).toBe('+0.1/0');
+    expect(toleranceText({ type: 'bilateral', upper: 0.1, lower: -0.05 }, 20)).toBe('+0.10/-0.05');
+    expect(toleranceText({ type: 'bilateral', upper: 0.1, lower: 0 }, 20)).toBe('+0.1/-0');
     expect(toleranceText({ type: 'fit', fit: 'H7' }, 6)).toBe('H7 (+0.012/0)');
     expect(toleranceText({ type: 'fit', fit: 'm6' }, 6)).toBe('m6 (+0.012/+0.004)');
     expect(toleranceText({ type: 'fit', fit: 'JS7' }, 50)).toBe('JS7 (+0.0125/-0.0125)');

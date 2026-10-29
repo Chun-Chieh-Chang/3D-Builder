@@ -30,10 +30,10 @@ describe('the numbers', () => {
 });
 
 describe('the tolerance', () => {
-  it('limits are millimetres in the document and inches on the sheet: ±0.05 mm is ±0.002, +0.1/−0.05 is +0.0039/−0.002', () => {
+  it('limits are millimetres in the document and inches on the sheet: ±0.05 mm is ±0.002, +0.1/−0.05 is +0.0039/−0.0020 (both of four decimals)', () => {
     expect(toleranceText({ type: 'bilateral', upper: 0.05, lower: -0.05 }, 20, 'mm')).toBe('±0.05');
     expect(toleranceText({ type: 'bilateral', upper: 0.05, lower: -0.05 }, 20, 'in')).toBe('±0.002');
-    expect(toleranceText({ type: 'bilateral', upper: 0.1, lower: -0.05 }, 20, 'in')).toBe('+0.0039/-0.002');
+    expect(toleranceText({ type: 'bilateral', upper: 0.1, lower: -0.05 }, 20, 'in')).toBe('+0.0039/-0.0020');
   });
 
   it('a class: its limits come from the table in millimetres and are written in inches: H7 of 6 mm is +0.012/0, +0.0005/0', () => {

@@ -94,8 +94,10 @@ it('a fallback straight contour plans a dimension with projected endpoint refere
  const d={...dimension,tolerance:{type:'bilateral' as const,upper:0.02,lower:-0.01}};
  doc=applyDrawingCommand(doc,{type:'insertDimensions',dimensions:[d]});
  const built=buildScene(doc,new Map([['v',section]]),new Map([['d',{elements:[null,null]}]]),new Map());
- expect(toSvg(built.scene)).toContain('+0.02/-0.01'); expect(toDxf(built.scene)).toContain('+0.02/-0.01');
- expect(readPdf(toPdf(built.scene).bytes).pages[0]!.texts.some(t=>t.text.includes('+0.02/-0.01'))).toBe(true);
+ // the deviations are stacked: two texts of their own in every output, and the DXF dimension's text an MTEXT tolerance stack
+ expect(toSvg(built.scene)).toMatch(/>\+0\.02<\/text>[\s\S]*>-0\.01<\/text>/); expect(toDxf(built.scene)).toContain('\\S+0.02^-0.01;');
+ const pdfTexts=readPdf(toPdf(built.scene).bytes).pages[0]!.texts.map(t=>t.text);
+ expect(pdfTexts).toContain('+0.02'); expect(pdfTexts).toContain('-0.01');
  expect(page(parseDrawing(serializeDrawing(doc))).dimensions[0]!.tolerance).toEqual(d.tolerance);
 });
 

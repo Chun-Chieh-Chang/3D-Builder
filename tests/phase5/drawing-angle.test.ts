@@ -118,7 +118,7 @@ describe('what an angle between two lines of the view comes to', () => {
     const d = angle('d', { tolerance: { type: 'bilateral', upper: 0.5, lower: -0.5 } });
     expect(dimensionText(d, 90)).toBe('90° ±0.5°');
     expect(dimensionText(angle('d', { reference: true }), 45.25)).toBe('(45.25°)');
-    expect(dimensionText(angle('d', { tolerance: { type: 'bilateral', upper: 0.2, lower: -0.1 } }), 45)).toBe('45° +0.2/-0.1°');
+    expect(dimensionText(angle('d', { tolerance: { type: 'bilateral', upper: 0.2, lower: -0.1 } }), 45)).toBe('45° +0.2°/-0.1°');
     // a one-sided limit is a word, so no degree sign follows it (the degree sign is already on the number)
     expect(dimensionText(angle('d', { tolerance: { type: 'max' } }), 45)).toBe('45° 最大');
     expect(dimensionText(angle('d', { tolerance: { type: 'min' }, reference: true }), 45)).toBe('(45° 最小)');

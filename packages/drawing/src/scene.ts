@@ -6,7 +6,7 @@ import type { ShadeImage } from './shade';
 import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
 import { annotationItems } from './gdt';
 import { balloonSpots, bomTableBox, bomTableItems, spotItems, type BalloonSpot, type ViewBom } from './bomTable';
-import { evaluateDimension, type DimensionOutcome, type ElementsResult } from './dimension';
+import { evaluateDimension, type DimensionOutcome, type DimensionTextPart, type ElementsResult } from './dimension';
 import { circlePolyline, clipToOutline, clipToBand, hatch, outlinePoints, type Polyline } from './geometry';
 import { layoutViews, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
 import { fittedTitleHeight, sheetMetrics, titleCells, type Rect } from './sheet';
@@ -92,6 +92,8 @@ export type SceneDimensionGeometry =
 export interface SceneDimension {
   id: string;
   text: string;
+  /** The text's parts when it stacks deviations (`DimensionOutcome.parts`): a DXF writes them stacked. */
+  parts?: DimensionTextPart[];
   /** Where the middle of the text is. */
   textAt: P2;
   geometry: SceneDimensionGeometry;
@@ -367,7 +369,7 @@ function buildSceneIn(
     dimensions.set(d.id, outcome);
     if (!('error' in outcome)) {
       items.push(...outcome.items.map((i) => ({ ...i, group: d.id })));
-      if (outcome.dxf) sceneDimensions.push({ id: d.id, text: outcome.text, textAt: outcome.dxf.textAt, geometry: outcome.dxf.geometry });
+      if (outcome.dxf) sceneDimensions.push({ id: d.id, text: outcome.text, ...(outcome.parts ? { parts: outcome.parts } : {}), textAt: outcome.dxf.textAt, geometry: outcome.dxf.geometry });
     }
   }
   const tables = new Map<Id, HoleRow[]>();
