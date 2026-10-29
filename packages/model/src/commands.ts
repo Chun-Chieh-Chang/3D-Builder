@@ -182,7 +182,7 @@ ull). */
   /** The name and the reference flag of a body (C7.1); an empty name or `false` takes the choice back. */
   | { type: 'setBody'; bodyId: Id; name?: string; reference?: boolean }
   /** The face and the distance of a Move Face feature (C10.1). */
-  | { type: 'setMoveFace'; featureId: Id; face: Ref; distance: Expr }
+  | { type: 'setMoveFace'; featureId: Id; face: Ref; distance: Expr; target?: Ref | null }
   | { type: 'setRefPlane'; featureId: Id; def: PlaneDefinition }
   /** How a reference axis (C3.3), a reference point (C3.5) or a coordinate system (C3.4) is defined. */
   | { type: 'setRefAxis'; featureId: Id; def: AxisDefinition }
@@ -654,6 +654,7 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       if (f.faces.some((r) => r.kind !== 'face')) throw new CommandError(t('cmd.offsetSurfaceOnlyFaces'));
       return;
     case 'moveFace':
+      if (f.target) planeRef(doc, f.target, index);
       if (f.face.kind !== 'face') throw new CommandError(t('cmd.moveFaceOnlyFace'));
       return;
     case 'splitLine':
@@ -1644,6 +1645,9 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (f.type !== 'moveFace') throw new CommandError(t('cmd.onlyMoveFaceHasParams'));
       if (cmd.face.kind !== 'face') throw new CommandError(t('cmd.moveFaceOnlyFace'));
       f.face = cmd.face;
+      if (cmd.target === null) delete f.target;
+      else if (cmd.target !== undefined) f.target = cmd.target;
+      if (f.target) planeRef(draft as PartDoc, f.target, draft.features.findIndex(x => x.id === f.id));
       f.distance = cmd.distance;
       checkExprs(draft as PartDoc, f as Feature);
       return;

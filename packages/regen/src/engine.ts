@@ -4635,7 +4635,14 @@ export class Regenerator {
   private moveFace(f: MoveFaceFeature, set: Bodies): BodyState[] {
     return this.perBody(set, [f.face], 'face', t('edit.noBodyForMove'), (n) => t('edit.facesLost', { n }), (body) => {
       const [face] = this.faceIndices([f.face], body);
-      return this.edited(f, this.kernel.moveFace(body.shape, face!, evalLength(f.distance)), body);
+      let distance = evalLength(f.distance);
+      if (f.target) {
+        const target = this.planeOf(f.target, set, { what: t('edit.moveTarget'), notPlanar: t('edit.planeOnly') });
+        const source = body.topology.faces[face!]!;
+        if (!source.normal || source.surface !== 'plane' || Math.abs(dot(source.normal, target.normal)) < 1 - 1e-10) throw new FeatureError(t('edit.targetParallel'));
+        distance = dot([target.origin[0] - source.center[0], target.origin[1] - source.center[1], target.origin[2] - source.center[2]], source.normal);
+      }
+      return this.edited(f, this.kernel.moveFace(body.shape, face!, distance), body);
     });
   }
 

@@ -571,7 +571,7 @@ export const help: Translation = {
   'help.moveFace.summary': 'Pushes the selected flat face by a distance and extends the faces around it, to edit an imported model directly.',
 
   'help.moveFace.body':
-    'Click a planar face, type the "distance" and press ✔: the face moves along its outward normal and the neighboring faces extend or shorten with it; it is for editing imported models directly.\n\n- A negative value goes into the material.\n- Slanted faces keep their slope.\n- Faces tangent to it (fillets, for example) have to be dealt with first; otherwise the feature fails and says why.',
+    'Select the planar end face, click Target plane, then select a datum in the tree or a parallel planar model face in the graphics area. The target dropdown also selects datum planes. Confirm to extend or shorten automatically, preserving conical taper without calculating distance or radius. Target edits regenerate the feature. Targets must precede this feature; crossing the cone apex is rejected. Tangent fillets must be handled first. Choose Distance to return to distance mode.',
 
   'help.moveFace.keywords': 'move face direct edit imported distance',
 

@@ -3,6 +3,7 @@
  * (native or imported) and Move Face pushes a planar face. Both keep the names of the faces they leave alone,
  * so what comes after them stays where the user put it (ADR 0021).
  */
+import { readFile } from 'node:fs/promises';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { applyCommand, createEmptyPart, parsePart, SCHEMA_VERSION, serializePart, type Feature, type PartDoc } from '@3db/model';
 import { readPartFile, sha256Hex, writePartFile } from '@3db/io';
@@ -279,4 +280,81 @@ describe('the two features in the document', () => {
     expect(finalHeapBytes, 'WASM heap should not grow across repeated moveFace operations').toBe(initialHeapBytes);
     regen.dispose();
   });
+});
+
+
+function coneTarget(height: number): PartDoc {
+    const plane: Feature = { id: 'p', name: 'p', type: 'refPlane', suppressed: false, def: { mode: 'offset', plane: front, distance: '20' } };
+    const target: Feature = { ...plane, id: 'target', def: { mode: 'offset', plane: front, distance: String(Math.abs(height) || 1), ...(height < 0 ? { reverse: true } : {}) } };
+    return build(sketch('a', front, circle('ca', 0, 0, 10)), plane,
+      sketch('b', { kind: 'datum', name: 'p' }, circle('cb', 0, 0, 5)),
+      { id: 'loft', name: 'loft', type: 'loft', suppressed: false, op: 'boss', sections: ['a', 'b'] }, target,
+      { id: 'move', name: 'move', type: 'moveFace', suppressed: false, face: face('loft:cap:end'), distance: '5', target: height === 0 ? front : { kind: 'datum', name: 'target' } });
+}
+
+describe('Move Face target plane', () => {
+  it.each([-5, 0, 20, 40, 45])('rejects degenerate or apex-crossing target %s', height => {
+    const r = rebuild(coneTarget(height));
+    expect(r.features.find(f => f.id === 'move')?.status).toBe('error');
+  });
+  it('rejects nonparallel planes and tracks target edits after serialization', () => {
+    const doc = coneTarget(28);
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(85);
+    const bad = applyCommand(doc, { type: 'setMoveFace', featureId: 'move', face: face('loft:cap:end'), distance: '5', target: { kind: 'datum', name: 'plane:right' } });
+    expect(rebuild(bad).features.find(f => f.id === 'move')?.status).toBe('error');
+    const loaded = parsePart(serializePart(doc));
+    expect(loaded.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(dependencies(loaded).parents.get('move')).toContain('target');
+    const changed = applyCommand(loaded, { type: 'setRefPlane', featureId: 'target', def: { mode: 'offset', plane: front, distance: '32' } });
+    const r = rebuild(changed);
+    expect(statuses(r).filter(x => !x.endsWith('=ok'))).toEqual([]);
+    expect(volume(r)).toBeCloseTo(Math.PI * 32 / 3 * (100 + 20 + 4), 4);
+    expect(r.body!.names.faces.length).toBe(r.body!.topology.faces.length);
+    expect(r.body!.names.edges.length).toBe(r.body!.topology.edges.length);
+  });
+  it('extends a loft cone to a parallel planar model face on the same body', () => {
+    const plane: Feature = { id: 'p', name: 'p', type: 'refPlane', suppressed: false, def: { mode: 'offset', plane: front, distance: '10' } };
+    const plane2: Feature = { id: 'p2', name: 'p2', type: 'refPlane', suppressed: false, def: { mode: 'offset', plane: front, distance: '30' } };
+    const doc = build(
+      sketch('sBase', front, circle('cBase', 0, 0, 15)),
+      extrude('base', 'sBase', 'boss', { type: 'blind', depth: '4', reverse: true }),
+      plane,
+      sketch('a', { kind: 'datum', name: 'p' }, circle('ca', 0, 0, 8)),
+      plane2,
+      sketch('b', { kind: 'datum', name: 'p2' }, circle('cb', 0, 0, 4)),
+      { id: 'loft', name: 'loft', type: 'loft', suppressed: false, op: 'boss', sections: ['a', 'b'] },
+      { id: 'move', name: 'move', type: 'moveFace', suppressed: false, face: face('loft:cap:start'), distance: '5', target: face('base:cap:start') }
+    );
+    const r = rebuild(doc);
+    expect(statuses(r).filter(x => !x.endsWith('=ok'))).toEqual([]);
+    expect(valid(r)).toBe(true);
+    // Base cylinder (r=15, h=4 at z=-4..0) + extended cone from z=0 (r=10) to z=30 (r=4)
+    const expectedVol = Math.PI * 15 * 15 * 4 + (Math.PI * 30 / 3) * (100 + 40 + 16);
+    expect(volume(r)).toBeCloseTo(expectedVol, 3);
+  });
+  it.each(Array.from({ length: 100 }, (_, i) => 1 + (((i + 1) * 16807) % 2147483647 % 38000) / 1000))('moves a loft cone to datum height %s preserving its analytic taper', (height) => {
+    const doc = coneTarget(height);
+    const r = rebuild(doc);
+    expect(statuses(r).filter(x => !x.endsWith('=ok'))).toEqual([]);
+    expect(valid(r)).toBe(true);
+    expect(volume(r)).toBeCloseTo(Math.PI * height / 3 * (100 + 10 * (10 - height / 4) + (10 - height / 4) ** 2), 4);
+    const end = r.body!.topology.faces.find(f => f.surface === 'plane' && Math.abs(f.center[2] - height) < 1e-7);
+    expect(end).toBeDefined();
+    expect(end!.area).toBeCloseTo(Math.PI * (10 - height / 4) ** 2, 5);
+  });
+});
+
+if (process.env.MOVE_FACE_SAMPLE) it('extends the supplied real part cone to the front datum', async () => {
+  const file = await readPartFile(new Uint8Array(await readFile(process.env.MOVE_FACE_SAMPLE!)));
+  let doc = file.doc;
+  doc = { ...doc, features: doc.features.filter(f => f.type !== 'moveFace') };
+  const base = rebuild(doc);
+  expect(statuses(base).filter(x => !x.endsWith('=ok'))).toEqual([]);
+  const moved = applyCommand(doc, { type: 'insertFeature', index: doc.features.length, feature: { id: 'sampleMove', name: 'sampleMove', type: 'moveFace', suppressed: false, face: face('loft1:cap:start'), distance: '5', target: front } });
+  const r = rebuild(moved);
+  expect(statuses(r).filter(x => !x.endsWith('=ok'))).toEqual([]);
+  expect(valid(r)).toBe(true);
+  expect(volume(r)).toBeGreaterThan(volume(base));
+  expect(r.body!.topology.faces.some(f => f.surface === 'plane' && Math.abs(f.center[2]) < 1e-7)).toBe(true);
 });

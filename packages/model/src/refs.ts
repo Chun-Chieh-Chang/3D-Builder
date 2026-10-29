@@ -85,6 +85,7 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     case 'draft':
       return { feature: { ...feature, neutral: one(feature.neutral), faces: feature.faces.map(one) }, replaced };
     case 'moveFace':
+      return { feature: { ...feature, face: one(feature.face), ...(feature.target ? { target: one(feature.target) } : {}) }, replaced };
     case 'splitLine':
     case 'trimSurface':
     case 'lipGroove':

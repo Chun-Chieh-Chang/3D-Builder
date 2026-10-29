@@ -2573,11 +2573,33 @@ function ShellPanel({ f }: { f: ShellFeature }) {
 
 /** Move Face (C10.1): the plane to push and how far along its outward normal. */
 function MoveFacePanel({ f }: { f: MoveFaceFeature }) {
+  const doc = useStore((s) => s.doc);
+  const planes = doc.features.slice(0, doc.features.findIndex(x => x.id === f.id)).filter(x => x.type === 'refPlane');
+  const pick = useStore(s => s.moveFacePick);
   const result = useStore((s) => s.result);
   const found = !!f.face.name && !!result?.faceNames.includes(f.face.name);
   return (
     <section className="pm-group">
       <h4>{t('pm.moveFace.heading')}</h4>
+      <label className="pm-row"><span>{t('edit.moveTarget')}</span>
+        <select
+          value={f.target?.name ?? ''}
+          onChange={(e) => {
+            const val = e.target.value;
+            const target: Ref | null = !val ? null : f.target?.kind === 'face' && f.target.name === val ? f.target : { kind: 'datum', name: val };
+            store.execute({ type: 'setMoveFace', featureId: f.id, face: f.face, distance: f.distance, target });
+          }}
+        >
+          <option value="">{t('edit.moveDistance')}</option>
+          {['plane:front', 'plane:top', 'plane:right'].map(name => <option key={name} value={name}>{t(name === 'plane:front' ? 'datum.front' : name === 'plane:top' ? 'datum.top' : 'datum.right')}</option>)}
+          {f.target?.kind === 'face' && <option value={f.target.name}>{f.target.name}</option>}
+          {planes.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </label>
+
+      <button type="button" className={pick === 'face' ? 'active' : ''} onClick={() => store.setMoveFacePick('face')}>{t('pm.moveFace.heading')}</button>
+      <button type="button" className={pick === 'target' ? 'active' : ''} onClick={() => store.setMoveFacePick('target')}>{t('edit.moveTarget')}</button>
+      <p className="hint">{pick === 'target' ? t('edit.pickMoveTarget') : t('pm.moveFace.empty')}</p>
       <ul className="selection-box">
         {!f.face.name && <li className="muted">{t('pm.moveFace.empty')}</li>}
         {f.face.name && (
@@ -2588,11 +2610,13 @@ function MoveFacePanel({ f }: { f: MoveFaceFeature }) {
             {!found && <UseNearest featureId={f.id} refr={f.face} />}
           </li>
         )}
+        {f.target?.kind === 'face' && <FaceRow featureId={f.id} r={f.target} label={t('edit.moveTarget')} />}
       </ul>
-      <label className="pm-row">
+      {!f.target && <label className="pm-row">
         <span>{t('pm.moveFace.distance')}</span>
         <ValueInput value={f.distance} toCommand={(distance) => ({ type: 'setMoveFace', featureId: f.id, face: f.face, distance })} />
       </label>
+      }
       <p className="hint">{t('pm.moveFace.hint')}</p>
     </section>
   );

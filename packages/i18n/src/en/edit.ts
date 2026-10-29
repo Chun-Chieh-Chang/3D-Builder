@@ -2,6 +2,10 @@ import type { Translation } from '../index';
 
 /** Messages of direct editing (C10.1 move face, C10.2 delete face) from the kernel and the rebuild. */
 export const edit: Translation = {
+  'edit.pickMoveTarget': 'Select a datum plane in the tree or a parallel planar face in the graphics area.',
+  'edit.moveTarget': 'Target plane',
+  'edit.targetParallel': 'Target must be parallel to the moved planar face',
+  'edit.moveDistance': 'Distance',
   'edit.moveFace': 'Move Face',
   'edit.noFacesToDelete': 'No face to delete has been picked',
   'edit.faceOutOfRange': 'The face index is out of range: {index}',
@@ -11,6 +15,7 @@ export const edit: Translation = {
   'edit.deleteInvalid': 'The result of Delete Face is not a valid solid',
   'edit.distanceZero': 'The distance to move cannot be 0',
   'edit.planeOnly': 'Move Face supports planar faces only for now',
+  'edit.moveFacePickPlane': 'Select the planar face to move in the graphics area before confirming.',
   'edit.tangentNeighbour': 'This face is tangent to a neighbouring face (for example the edge is filleted) and cannot be moved; move the fillet with it, or delete the fillet first',
   'edit.noPointNearEdge': 'No point near the edge was found on the face (the edge is too short or the face too thin)',
   'edit.noSurfacePoint': 'The position of the neighbouring face along the edge was not found',

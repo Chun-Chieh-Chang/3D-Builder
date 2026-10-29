@@ -372,6 +372,7 @@ export interface UiState {
   flat: FlatState | null;
   /** What a face picked in the view is while a shell is edited: one to take away (open), or one with a wall of its own (C5.4). */
   shellPick: 'open' | 'thickness';
+  moveFacePick: 'face' | 'target';
   /** The group of faces a face picked in the view goes to while a face fillet or a full round fillet is edited. */
   filletPick: FilletGroup;
   /** The interference detection (E2.1) while its window is open. Null when closed. */
@@ -610,6 +611,7 @@ class AppStore {
       interference: null,
       clearance: null,
       shellPick: 'open',
+      moveFacePick: 'face',
       filletPick: 'faces',
       thickness: null,
       flat: null,
@@ -2184,6 +2186,7 @@ class AppStore {
 
   /** 「移動面」 (C10.1): starts with the planar face selected in the graphics area, if there is one. */
   newMoveFace(): void {
+    this.set({ moveFacePick: 'face' });
     const face = this.state.selectedFace;
     const name = t('feature.moveFace');
     const picked: Ref = face?.kind === 'face' && face.fingerprint?.type === 'plane' ? face : { kind: 'face', name: '' };
@@ -2552,9 +2555,17 @@ class AppStore {
   }
 
   /** The face a Move Face pushes: the planar face clicked in the graphics area. */
+  setMoveFacePick(mode: 'face' | 'target'): void { this.set({ moveFacePick: mode }); }
+
   setMoveFace(ref: Ref): void {
     const f = this.editedFeature();
-    if (f?.type !== 'moveFace' || ref.kind !== 'face') return;
+    if (f?.type !== 'moveFace') return;
+    if (this.state.moveFacePick === 'target' || ref.kind === 'datum') {
+      if (ref.kind !== 'datum' && (ref.kind !== 'face' || ref.fingerprint?.type !== 'plane')) return this.notify(t('edit.planeOnly'), 'error');
+      this.execute({ type: 'setMoveFace', featureId: f.id, face: f.face, distance: f.distance, target: ref });
+      return;
+    }
+    if (ref.kind !== 'face') return;
     if (ref.fingerprint?.type !== 'plane') return this.notify(t('edit.planeOnly'), 'error');
     this.execute({ type: 'setMoveFace', featureId: f.id, face: ref, distance: f.distance });
   }
@@ -2576,6 +2587,10 @@ class AppStore {
     const e = this.state.editing;
     if (!e) return;
     const pending = findFeature(this.history.doc, e.featureId);
+    if (pending?.type === 'moveFace' && (!pending.face.name || (pending.target && !pending.target.name))) {
+      this.notify(t('edit.moveFacePickPlane'), 'error');
+      return;
+    }
     if ((pending?.type === 'chamfer' || (pending?.type === 'fillet' && (!pending.kind || pending.kind === 'constant'))) && pending.edges.length === 0 && !pending.faces?.length) {
       this.notify(t('edit.noEdgeOrFacePicked'), 'error');
       return;
@@ -2754,6 +2769,7 @@ class AppStore {
       }
     }
     const f = this.editedFeature();
+    if (f?.type === 'moveFace' && this.isPlane(id)) { this.setMoveFace({ kind: 'datum', name: id }); return; }
     if ((f?.type==='gear'||f?.type==='rack') && this.isPlane(id)) {this.execute({type:'setGear',featureId:f.id,params:{plane:{kind:'datum',name:id}}});return;}
     if (f?.type === 'loft' && findFeature(this.history.doc, id)?.type === 'sketch') {
       if (!f.sections.includes(id)) this.execute({ type: 'setLoftSections', featureId: f.id, sections: [...f.sections, id] });

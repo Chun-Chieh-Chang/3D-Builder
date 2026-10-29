@@ -4132,3 +4132,19 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 - **驗證**：`solve-options.test.ts` 新增 4 項（只有寬高的矩形：四角各 2、總和大於 dof 2；一個角在水平軸上：1 個方向、dof 1；圓心在原點的圓：只有半徑；完全定義與過多定義：不列出），14 項全過。瀏覽器實測：矩形＋未定半徑的圓為 dof 3，面板列 4 條直線與「圓 k1：半徑未定」；點一列選取該圖元；「選取全部」與 `selectUnderdefined` 結果相同；加尺寸成完全定義、再加矛盾尺寸成過多定義時清單都消失；復原兩次回到 dof 3 並再列出 5 列；0 Console 錯誤。字級 13px。
 - **`verify:ui` 完整一輪**（自己的伺服器）：219／238 通過。19 項不通過的，在**乾淨的 HEAD worktree** 重跑：15 項同樣失敗（既有，與本次無關；其中 `manual-c6`、`phase3-sketch-checks` 是 10-25 `6f6043b` 把按鈕改名為「套用已驗證修復」後腳本未跟上）；另外 4 項（`manual-assembly-section-captions`、`manual-d4`、`manual-drawing-projected-references`、`manual-gear-rack`）在乾淨 HEAD **只套用本次變更**時全數通過，連同 `manual-productivity`、`manual-constraint-diagnostics` 共 8／8，判定為主資料夾中其他工作階段未提交的工程圖／顯示變更所致。
 - **環境陷阱**：第一次跑時 5391 被別的 worktree 的 vite 佔用、第二次 5411 亦然，腳本全數載入失敗（0／238、0／21），結果作廢。跑 `verify:ui` 時 `VERIFY_UI_ORIGIN` 也要改成確認空著的埠，不只 DevTools 與樣本兩個埠。
+
+# 2026-10-29：移動面至目標平面並維持錐度（ADR 0218）
+
+- **需求**：疊層拉伸建立的錐體端面（或任意平面端面）需要像 SolidWorks 一樣選取與端面平行的目標平面（基準面或模型平面），自動延伸或縮短至該平面並保持原錐度，無須人工計算距離與末端半徑；同時防止「移動面」未選取端面即按確定建立空參考特徵。
+- **RCA**：
+  1. 既有 `store.commitEdit()` 未檢查 `moveFace` 的 `face.name` 是否已選取，導致未選面按 ✔ 會將空參考寫入特徵，重算時誤報「遺失參考」。
+  2. 既有 `MoveFaceFeature` 僅支援手動輸入距離 `distance`，缺乏關聯式目標平面 `target?: Ref` 與兩平行平面有向距離推導。
+  3. 核心幾何 `Kernel.moveFace` 的 `trim()` 對相鄰圓錐面以無界 `Geom_ConicalSurface` 建立 `BRepPrimAPI_MakeHalfSpace` 並做 `Common`，因雙葉圓錐跨越錐尖自相交，OCCT 會回傳空體積（0 體積卻回報成功）；此外 `ShapeUpgrade_UnifySameDomain` 合併同域圓錐面時會破壞圓錐接縫（seam edge）並汙染共享拓樸。
+- **修正（CAPA）**：
+  1. **Schema 85 與全鏈路目標參照**：`MoveFaceFeature` 新增 `target?: Ref`（支援 `datum` 與平面 `face`），串接 `commands.ts`（`planeRef` 順序與型別檢驗）、`refs.ts`（`mapRefs` 遺失參考替換）、`dag.ts`（`parentsOf` 連動重算）、`engine.ts`（平行檢驗與有向距離計算）與 `PropertyManager.tsx`／`store.ts`（支援設計樹點選基準面、下拉選單或圖形區點選平行模型面，並攔截空參考確認）。
+  2. **解析圓錐旋轉薄層（Analytic Revolved Cone Slab）**：當移動端面與單一凸圓錐面正交且為完整圓盤時，由圓錐頂點 `apex`、軸向 `axis` 與半角 `halfAngle` 解析推導起訖半徑 $r_0, r_1$，以 `BRepPrimAPI_MakeRevol` 建立精確圓錐台薄層並保留布林分面與來源，跳過會破壞圓錐接縫的 `unify`；若移動跨越錐尖（$z_0 \cdot z_1 \le 0$ 或 $|z_1| < 10^{-7}$）或結果體積 $\le 10^{-12}$ 立即拋出 `edit.moveInvalid`。
+- **紅隊四問**：
+  1. **輸入破壞**：拒絕未選端面確認、非平面目標、非平行目標平面、零位移（$z = 20$）、完全切穿基底（$z = 0, -5$）、到達或跨越錐尖（$z = 40, 45$）。
+  2. **拓樸與幾何相交**：跨越錐尖於前置參數解析直接攔截（`z0 * z1 <= 0`），不送入 OCCT 產生退化自交形狀；圓錐結果保留有效布林拓樸並檢查 `BRepCheck_Analyzer` 與實體體積 $> 10^{-12}$。
+  3. **依賴鏈完整性**：`schema.ts` → `serialize.ts` (v85) → `commands.ts` → `refs.ts` → `dag.ts` → `engine.ts` → `store.ts` → `PropertyManager.tsx` 全鏈路接線，測試涵蓋序列化讀回與修改目標基準面偏移距離後的自動重算。
+  4. **規格真實性與零 Mock**：以真實 OCCT 驗證 100 組隨機目標高度（涵蓋延伸與縮短）之解析圓錐台體積 $\frac{\pi h}{3}(R_1^2 + R_1 R_2 + R_2^2)$ 與端面面積 $\pi R_2^2$、平行模型面目標、使用者實際樣本 `TM0002138.3dbx` 延伸至前基準面，以及 `tests/e2e/manual-move-face-target.js` 瀏覽器端到端操作；不宣稱消除 OCCT 底層布林 Heap 成長。
