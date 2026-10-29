@@ -647,7 +647,11 @@ export class SketchController {
       if (relations.length === 0) { refused.add(body.type); continue; }
       const r = await this.host.trial({ ...s, constraints: [...s.constraints, ...relations] });
       if (this.host.doc() !== base) return null;
-      if (r.status === 'over' || r.status === 'failed') refused.add(body.type);
+      if (r.status !== 'over' && r.status !== 'failed') continue;
+      // one that replaces a line's own 水平／垂直 it makes redundant is taken by `addRelation` (ADR 0217), so it is not refused
+      const drop = r.collapsed?.length ? null : await this.subsumedOrientation(s, relations, base);
+      if (this.host.doc() !== base) return null;
+      if (!drop) refused.add(body.type);
     }
     return refused;
   }
