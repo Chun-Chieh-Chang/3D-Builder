@@ -3,6 +3,14 @@
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
 
+## 2026-10-29：工程圖在隱藏窗格開啟時整頁空白（SVG strokeScale）
+
+現象：工程圖在視窗或窗格隱藏時開啟，主控台出現 `Uncaught Error: SVG strokeScale must be finite and positive`。以 `display: none` 重現，錯誤堆疊與回報一致（`DrawingViewport.tsx` 的 `toSvg` useMemo），而且沒有 error boundary，React 卸載整個 App，頁面全白，再顯示也不會恢復。根因：`fit()` 以 `clientWidth／clientHeight` 為 0 計算最適比例，得到負的 zoom，再當作 `strokeScale` 交給 `toSvg`。修正：`fit()` 算出的 zoom 不是有限正數時不套用，而是記下待辦，由 `ResizeObserver` 在窗格有實際大小時補做；`toSvg` 的檢查保留不動，也沒有夾值。使用者自己縮放後再隱藏、顯示，不會被重新最適化。
+
+新增 `tests/e2e/manual-drawing-hidden-open.js`：修正前失敗（擲出該錯誤、App 卸載），修正後通過。型別檢查與 lint:deps／rules／i18n／repo 通過（inventory 已同步）。完整 `verify:ui` 223／242 通過，19 項未過，沒有任何一項是主控台錯誤。其中 14 項把本次變更還原為 HEAD 後以相同訊息重現（包括 `manual-drawing-linked`、`phase5-views`、`manual-c6`、`phase6-boss-ui` 等），是既有失敗，本次未處理。另外 4 項在整輪中是「載入／開檔逾時」，在修正版上單獨重跑全部通過。
+
+紅隊四問：①輸入破壞：寬高為 0、小於 40 px 邊界、圖紙尺寸為 0 導致 Infinity，都歸入「非有限正數」，等到有大小再處理，不夾值。②不涉及幾何布林。③鏈路：`fit` → `pan.zoom` → `toSvg` 與疊加層的 `pan.zoom * PX`；全部改由同一個守門控制，不會再有負的 zoom 進入。④以真實 App、真實 Chrome 與真實 0×0 版面驗收，沒有 mock。
+
 ## 2026-10-29：草圖工作階段取消與完成驗收
 
 快轉整合Claude Code的943dfc9，新增真實瀏覽器A03案例：建立帶尺寸矩形，重新編輯加入圓後取消，逐字比對原圖；再編輯完成，檢查Undo／Redo回復完整草圖。初次測試因輔助函式名稱錯誤失敗，修正前置後僅重跑該案例通過（out/sketch-session-rollback-retry.json）。沒有更動產品程式，未宣稱其他P0案例或跨平台已驗。

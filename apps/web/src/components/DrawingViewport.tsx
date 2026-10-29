@@ -268,13 +268,29 @@ export function DrawingViewport() {
     [shown, built],
   );
 
+  /** A fit asked for while the pane had no room for the sheet (hidden: 0×0), still to come once it has. */
+  const fitPending = useRef(false);
   const fit = () => {
     const el = host.current;
     if (!el) return;
     const zoom = Math.min((el.clientWidth - 40) / (sheet.width * PX), (el.clientHeight - 40) / (sheet.height * PX));
+    // a hidden pane's size is 0, which gives no zoom to fit to (a negative one): wait for a real size rather than draw at it
+    fitPending.current = !(Number.isFinite(zoom) && zoom > 0);
+    if (fitPending.current) return;
     setPan({ zoom, x: (el.clientWidth - sheet.width * PX * zoom) / 2, y: (el.clientHeight - sheet.height * PX * zoom) / 2 });
   };
+  const fitNow = useRef(fit);
+  fitNow.current = fit;
   useEffect(fit, [drw.fitRequest, curPage.sheet.size, curPage.sheet.orientation, activePageIndex]);
+  useEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    const resized = new ResizeObserver(() => {
+      if (fitPending.current) fitNow.current();
+    });
+    resized.observe(el);
+    return () => resized.disconnect();
+  }, []);
 
   useEffect(() => {
     const el = host.current;
