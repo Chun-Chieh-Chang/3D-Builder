@@ -28,8 +28,11 @@ export const edit = {
   'import.healed': '輸入的幾何有缺陷，已自動修復',
   'import.looseFaces': '略過 {n} 個不屬於實體的面',
   'import.stillInvalid': '輸入的幾何沒有通過有效性檢查，後續特徵可能失敗',
-  'import.noSolid': 'STEP 檔中沒有實體，也沒有可縫合成實體的曲面（可能只有線架構）',
-  'import.openSurfaces': 'STEP 檔中只有曲面，縫合後仍有 {n} 條邊沒有接上（容差 {tolerance} mm），曲面沒有圍成封閉的體積；可以加大縫合容差再試',
+  'import.igesCannotRead': '無法讀取 IGES 檔：{reason}',
+  'import.notIges': '無法讀取 IGES 檔（格式錯誤，或不是 IGES 檔）',
+  'import.igesNoShapes': 'IGES 檔中沒有形狀',
+  'import.noSolid': '檔案中沒有實體，也沒有可縫合成實體的曲面（可能只有線架構）',
+  'import.openSurfaces': '檔案中只有曲面，縫合後仍有 {n} 條邊沒有接上（容差 {tolerance} mm），曲面沒有圍成封閉的體積；可以加大縫合容差再試',
   'import.sewn': '檔案中沒有實體：已把 {faces} 個曲面縫合成 {solids} 個實體（容差 {tolerance} mm）',
 
   'body.removedWhole': '除料把整個本體移除了：{names}',

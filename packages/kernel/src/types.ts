@@ -371,6 +371,19 @@ export interface StepExportOptions {
   warnings?: string[];
 }
 
+/** What an IGES file of a part carries beyond its shape (F1.4): how the solid is written, and a color for faces. */
+export interface IgesExportOptions {
+  /**
+   * `faces` (the default): trimmed surfaces (entity 144), which nearly every program reads and sews into a solid itself;
+   * `brep`: the solid as a manifold solid B-rep (entity 186), which reads back as a solid but fewer programs read.
+   */
+  mode?: 'faces' | 'brep';
+  /** "#rrggbb" or null for each face, in the order of `Kernel.topology`. */
+  faceColors?: readonly (string | null)[];
+  /** What the writer could not do as it should and wrote anyway (for the caller to tell the user). */
+  warnings?: string[];
+}
+
 /** One sample along a curve or 3D edge (C6.4, ADR 0166). */
 export interface EdgeSample {
   point: Vec3;

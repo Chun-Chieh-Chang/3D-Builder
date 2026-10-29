@@ -30,8 +30,11 @@ export const edit: Translation = {
   'import.healed': 'The imported geometry had defects and was repaired',
   'import.looseFaces': '{n} face(s) that belong to no solid were skipped',
   'import.stillInvalid': 'The imported geometry did not pass the validity check; later features may fail',
-  'import.noSolid': 'The STEP file has no solid and no surfaces that can be sewn into one (it may be wireframe only)',
-  'import.openSurfaces': 'The STEP file has surfaces only, and {n} edge(s) are still open after sewing (tolerance {tolerance} mm), so the surfaces do not enclose a volume; try a larger sewing tolerance',
+  'import.igesCannotRead': 'The IGES file cannot be read: {reason}',
+  'import.notIges': 'The IGES file cannot be read (wrong format, or not an IGES file)',
+  'import.igesNoShapes': 'The IGES file has no shapes',
+  'import.noSolid': 'The file has no solid and no surfaces that can be sewn into one (it may be wireframe only)',
+  'import.openSurfaces': 'The file has surfaces only, and {n} edge(s) are still open after sewing (tolerance {tolerance} mm), so the surfaces do not enclose a volume; try a larger sewing tolerance',
   'import.sewn': 'The file has no solid: {faces} surface(s) were sewn into {solids} solid(s) (tolerance {tolerance} mm)',
 
   'body.removedWhole': 'The cut removed the whole body: {names}',
