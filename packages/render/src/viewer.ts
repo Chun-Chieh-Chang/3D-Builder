@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { referenceGrid } from './referenceGrid';
+import { GRID_MID_OPACITY, referenceGrid } from './referenceGrid';
 import { referencePlaneCorners } from './referencePlane';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
@@ -3550,11 +3550,12 @@ export class Viewer {
     this.gridKey = key;
     if (this.gridGroup) { disposeGroup(this.gridGroup); this.gridScene.remove(this.gridGroup); }
     const group = new THREE.Group();
-    const lines = referenceGrid(this.camera, this.container.clientHeight, this.gridSpacing, this.gridFrame);
-    for (const [points, color] of [[lines.minor, 0xdfe7e5], [lines.major, 0xc4d3ce]] as const) {
+    // The levels fade continuously with zoom (see referenceGrid), all in the major-line colour. A fading line writes no depth, so one
+    // that has almost faded away cannot cut a background-coloured line through the model drawn after it.
+    for (const { positions, opacity } of referenceGrid(this.camera, this.container.clientHeight, this.gridSpacing, this.gridFrame)) {
       const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-      group.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, depthTest: true, depthWrite: true })));
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      group.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: 0xc4d3ce, transparent: opacity < 1, opacity, depthTest: true, depthWrite: opacity >= GRID_MID_OPACITY })));
     }
     this.gridGroup = group;
     this.gridScene.add(group);
