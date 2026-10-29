@@ -19,6 +19,8 @@
 ③ 依賴鏈：`schema.ts`（blob kind）→ `commands.ts`（只收 step／iges）→ `engine.ts`（依 kind 分派）→ `partFile.ts`（`.igs`）→ worker／store／對話框／說明／`help-links.json`；`refs.ts`／`dag.ts`／`PropertyManager.tsx` 以輸入特徵處理，與格式無關，不需改。
 ④ 零 mock：往返以獨立讀取器與真實 OCCT 量測；瀏覽器 e2e 走真實選單、對話框、下載與兩個真實 worker。
 
+全量：`npm test` 3826 通過（26 既有略過；第一輪的 help-manual 失敗是驗證手冊未同步新說明，以 `SYNC_MANUAL_HELP=1` 重生一行）。完整 `verify:ui` 兩輪 245／246；`manual-drawing-linked.js` 在乾淨 `bca2d80` 以 `--only` 重現同一數值（`box.centred:false`），為既有失敗。紅隊注入設定順序錯誤 8 項失敗，已還原。尚待：使用者以 eDrawings 開步驟 0 的 6 個對照檔。
+
 
 ## 2026-10-29：既有失敗分診（phase5 單元 6 項、verify:ui 15 項）
 

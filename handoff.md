@@ -4,6 +4,8 @@
 
 ## 本批工作
 
+最新交付（2026-10-29，分支 `claude/iges-exchange`，未併入 main）：IGES 輸出（修剪曲面／B-rep，mm／inch）與輸入（「開啟舊檔」及「輸入 STEP／IGES」），Schema 85，[ADR0219](docs/adr/0219-iges-exchange.md)。壞檔會讓 OCCT 讀取器無窮迴圈，輸入先在拋棄式 worker 限時試讀。`npm test` 全過；完整 `verify:ui` 245／246，唯一失敗 `manual-drawing-linked.js` 在 `bca2d80` 重現，為既有。待辦：①使用者以 eDrawings 開步驟 0 的 6 個對照檔判定；②併入 main 前先確認主資料夾另一工作階段的 DXF 變更（store.ts、files.ts、actions.ts、i18n 可能衝突，Schema 85 可能撞號）；③沒有他牌 CAD 的 IGES 樣本。
+
 最新進行中：[草圖互動方案](docs/design/sketch-interaction/plan.md)已獲使用者明確核准執行。P0第一批交付候選清單／Tab選取、工具狀態與Esc拖曳還原（[ADR0215](docs/adr/0215-sketch-selection-candidates.md)）。精確進度及失敗只維護於[驗收表](docs/design/sketch-interaction/acceptance.md)：整合遠端6019692後175項相關測試通過，新增候選及交點UI三流程通過，候選截圖已檢視；舊平面流程改以等角視圖消除頂點投影重疊後原斷言全部通過，A03草圖完成／取消及Undo／Redo瀏覽器流程已通過；下一步補其餘P0驗收。P0尚未整階段通過、P1尚未開始，不能跳過待驗項宣稱完成。
 
 最新交付：[ADR0210](docs/adr/0210-projected-references-and-asymmetric-tolerances.md)。工程圖 Schema34；實際投影直線可作尺寸參照，自由曲線可取投影點，補剖切／細部漏選；等角方向正規化與折斷反變換修正。單一／批次尺寸明列非對稱／單向偏差，同正或同負可用，沿用 bilateral。206 個不同相關案例各有通過紀錄，新流程冷重開與舊兩流程各自通過；未全量重跑。投影簽名只作定位，必須從目前原生 HLR 求值；幾何／切面／離散化改變可能明示失效需重選，不能宣稱完整拓樸歷史追蹤。新原生測試已列入 CI，遠端結果待確認。
