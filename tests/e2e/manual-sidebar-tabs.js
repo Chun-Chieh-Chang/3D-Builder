@@ -42,6 +42,8 @@ const typeIn = async (el, text) => {
 /** Opens the master part of manual-e1.js (an extrusion eb on a sketch) and waits for it. */
 const openMaster = async () => {
   H.ready();
+  // the parameters docked in the sidebar, which is what is checked here; by default they float in a card of their own (ADR 0203)
+  store.setOptions({ floatingParameters: false });
   await H.project({ '定位板.3dbx': `${H.GOLDEN}locating-plate.3dbx` });
   await H.writeAt('夾具.3dbx', await io.writePartFile(master()));
   await H.open('夾具.3dbx');

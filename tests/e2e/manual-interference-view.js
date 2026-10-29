@@ -263,7 +263,8 @@ M.run = async () => {
     const through = Math.abs(at - anchorOf(t)[0]) <= 0.005; // the cut is along X at the start, shown to two places
     await press(sectionButton);
     await setSelect(bar.querySelector('select'), 'shadedEdges');
-    return { pass: modes.length === 4 && seen.length === 8 && seen.every((x) => x.red) && through, seen, at, anchor: anchorOf(t)[0] };
+    // the assembly's five display types (透明塗彩 since ADR 0197; no 顯示隱藏線 in an assembly)
+    return { pass: modes.join() === 'shadedEdges,transparent,shaded,hiddenRemoved,wireframe' && seen.length === 10 && seen.every((x) => x.red) && through, seen, at, anchor: anchorOf(t)[0] };
   });
 
   await step('7 「非干涉零組件」: 線架構 draws the plate as edges, 隱藏 leaves it out (and it cannot be picked), 保持目前顯示 leaves it as it was', async () => {

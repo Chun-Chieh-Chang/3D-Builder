@@ -291,10 +291,12 @@ M.run = async () => {
   await step('17b a coordinate system of the part (X along the top plane, Y along the right one): the window lists it, the differences are taken along its axes (the numbers worked out from its own axes), the legs are drawn along them; the world again when asked', async () => {
     store.stopMeasure();
     await H.action('特徵', '座標系統');
-    document.querySelector('.property-manager .pm-ok').click();
-    await H.settle();
-    const id = [...store.getState().result.systems.keys()][0];
+    // its axes first: a coordinate system with none is in error, and 套用 is refused for a feature in error (ADR 0203)
+    const id = store.getState().editing.featureId;
     store.execute({ type: 'setCoordSys', featureId: id, value: { x: { kind: 'datum', name: 'plane:top' }, y: { kind: 'datum', name: 'plane:right' } } });
+    await H.settle();
+    document.querySelector('.property-manager .pm-ok').click();
+    await H.waitFor(() => !store.getState().editing, 10000, 'the coordinate system to be applied');
     await H.settle();
     const sys = store.getState().result.systems.get(id);
     await H.action('工具', '測量');
@@ -314,10 +316,10 @@ M.run = async () => {
     const back = result().includes(`Delta X: ${trim(Math.abs(delta[0]), 3)}mm`);
     // the part is as it was (the drawing that follows needs a part with nothing unsaved)
     store.stopMeasure();
-    store.undo();
-    store.undo();
+    store.undo(); // made and set up in one session: one step
     await H.settle();
-    return { pass: listed && inFrame && JSON.stringify(drawn) === JSON.stringify(legs) && back, listed, along, text, drawn, legs, back };
+    const undone = !store.getState().doc.features.some((f) => f.id === id);
+    return { pass: listed && inFrame && JSON.stringify(drawn) === JSON.stringify(legs) && back && undone, listed, along, text, drawn, legs, back, undone };
   });
   await step('18 a drawing in inches: the sheet\'s unit takes the dimensions, the tolerance and the hole table with it (120 mm is 4.724)', async () => {
     store.stopMeasure();

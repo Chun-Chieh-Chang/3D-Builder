@@ -75,6 +75,9 @@ M.run = async () => {
     await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
     await H.newDrawing();
     await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
+    // the steps below are worked out for first angle; new drawings default to third angle
+    store.drawingStore.setSheet({ projection: 'first' });
+    await H.waitFor(() => page()?.sheet.projection === 'first', 3000, 'first angle');
     await H.wait(300);
     await H.waitFor(() => drw().features.size === 3, 30000, 'the features of the three views (the centre marks)');
     await H.wait(300);

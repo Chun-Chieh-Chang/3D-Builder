@@ -3,6 +3,26 @@
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
 
+## 2026-10-29：既有失敗分診（phase5 單元 6 項、verify:ui 15 項）
+
+從 b2cf591（origin/main）出發，逐項找根因。依原因分組如下；只有一組是產品錯，其餘是測試預期沒有跟上已核准的產品變更，或測試本身的缺陷。沒有放寬任何門檻、略過或改寫斷言意義。
+
+1. **產品錯：選填欄位空白被標成無效（phase6-boss-ui、phase7-corner-ui、phase7-miter-ui）**。4f01344（ADR 0203 浮動參數窗）讓 `ValueInput` 空白一律加 `invalid`／`aria-invalid`，本意是必填欄位空白要明示錯誤；但標籤寫著「空白＝沒有／不閉合／不斜接／預設」的選填欄位也被標紅，而浮動窗只要有任何 `aria-invalid` 就停用「套用」——使用者無法套用沒有拔模的螺柱、沒有閉合角落或斜接的邊線凸緣。修正：`ValueInput` 加 `optional`，只在模型欄位本來就可省略、且面板把空白去掉的欄位標上（螺柱孔深／外壁拔模／孔拔模／肋起始角、邊線凸緣角度／半徑／閉合角落／斜接、凸折角度／半徑、中間折彎半徑、凸緣板寬、縫織容差、卡扣類方向角）；必填欄位空白照舊標紅，送出時命令仍會拒絕。
+2. **預設改第三角法後未更新的測試（drawing-fit 2 項、drawing-auxiliary-view 1 項、phase5-views、manual-drawing-linked）**。60bfd9a 把 `createEmptyDrawing()` 改為第三角法，只改了部分測試（其 DEV_LOG 註明「沒有全量重跑」）。這些測試的手算數值與方向都以第一角法寫成，比照 60bfd9a 的做法明示設第一角。輔助視圖測試另有潛在缺陷：拿視圖的圖紙絕對座標去比母視圖半寬，第一角時恰好為正而通過；改為相對母視圖中心比較，現在兩種投影都成立。
+3. **顯示類型多了透明塗彩（manual-c20、manual-asm-section、manual-interference-view）**。e9ce8a7（ADR 0197）新增第六種顯示類型，列舉全部類型的三個腳本未更新；改為新清單，干涉腳本仍要求五種類型、剖切開關各一輪共 10 次全部為紅。
+4. **三軸右鍵選單多了顯示網格（manual-asm-triad）**。6c5e176（ADR 0202）刻意把「顯示網格」加入組合件三軸選單；更新預期的選單 id。
+5. **過多定義診斷改為「套用已驗證修復」（manual-c6、phase3-sketch-checks）**。6f6043b（ADR 0195）把「改為從動／刪除」移到項目說明，按鈕統一為「套用已驗證修復」；腳本改找說明為「距離 25 (改為從動)」的項目並按其按鈕。
+6. **浮動參數窗（manual-sidebar-tabs、manual-measure-view）**。ADR 0203 預設參數浮動，工作階段不再進側邊欄的屬性頁；側邊欄腳本測的是 ADR 0155 的停靠模式，改為先明示停靠（`floatingParameters: false`）。量測腳本在座標系統尚無參考時就按套用，而浮動窗拒絕套用有錯誤的特徵（ADR 0203 的設計），工作階段因此一直開著、「測量」「新工程圖」停用；改為先設參考再套用，且建立與設定同一個交易只需一次復原（原本兩次 undo 會多退一步）。
+7. **SmartMate 的 Tab（manual-smart-mates）**。以探針量到 Tab 被翻轉兩次：腳本把 keydown 直接派到 `window`，在目標階段 `window` 上的 `actions.ts` 監聽（較早註冊）與視圖手勢的 capture 監聽依註冊順序都執行。實際按鍵的目標是焦點元素，手勢的 capture 監聽在捕獲階段先處理並 `stopImmediatePropagation`，只翻一次；產品正確，腳本改派到 `document.body`。
+8. **缺少前置檔案（manual-thread-extensions）**。腳本讀取 gitignore 的 `out/thread-extensions/…3dbx`，產生它的驗收需要雲端環境的字型路徑，任何乾淨 checkout 都無法通過。改為在頁面內以 `tests/phase1/builders` 建出同一個零件（Ø8×30 外螺紋 M8×1.25 深 18、6g，即 callout-exports 的 side-external），其餘斷言不變。
+9. acceptance-5 的兩項與 drawing-annotations 已在 e01d33e 之後的提交修好，本次在 b2cf591 重跑通過。
+
+驗證：phase5 與 apps/web 單元 91 檔 913 項通過（1 項既有略過）；型別、lint:rules／deps／i18n／repo 通過；在 b2cf591 加上本次變更跑完整 verify:ui，241 項中 240 項通過，唯一失敗 manual-asm-component-datums 是開檔逾時，單獨重跑 8.2 秒通過（`out/full-verify.json`、`out/full-verify-retry.json`）。之後快轉到 733e6d5（只多了隱藏窗格開圖修正及其腳本，與本次檔案不重疊），未再跑全套。分診期間另兩個工作階段同時在跑完整 verify:ui，組合件載入曾逾時（manual-asm-section、manual-interference-view、manual-smart-mates、manual-sidebar-tabs 第 4 步），單獨重跑皆通過，未改期限。manual-interference-view 的 ring 有一次在 phase3-subassembly 的「削邊銷軸在 x = 80」量到 84（四次中一次，完整一輪通過），未追查，列為觀察。
+
+紅隊四問：① 空白只在模型本來可省略的欄位放行，必填空白照舊拒絕，不默改數值；② 不涉幾何／布林；③ 只改 UI 欄位的驗證呈現與測試，命令、Schema、DAG 不變；④ 每項以實際瀏覽器或單元結果為證，SmartMate 以探針量到雙重翻轉才下結論。
+
+失敗萃取：本次 15 項中 13 項來自「改了產品行為、只重跑新／受影響案例、沒有全量重跑」的提交（60bfd9a、e9ce8a7、6c5e176、6f6043b、4f01344），日誌都寫明未跑全套。改到預設值、共用元件（`ValueInput`）、選單或顯示類型清單時，須以 grep 找出所有列舉它的腳本並跑完整 verify:ui。另：分診時一度在 verify:ui 執行中改原始碼，該輪結果作廢重跑（AGENTS.md §4 已載明）。
+
 ## 2026-10-29：工程圖在隱藏窗格開啟時整頁空白（SVG strokeScale）
 
 現象：工程圖在視窗或窗格隱藏時開啟，主控台出現 `Uncaught Error: SVG strokeScale must be finite and positive`。以 `display: none` 重現，錯誤堆疊與回報一致（`DrawingViewport.tsx` 的 `toSvg` useMemo），而且沒有 error boundary，React 卸載整個 App，頁面全白，再顯示也不會恢復。根因：`fit()` 以 `clientWidth／clientHeight` 為 0 計算最適比例，得到負的 zoom，再當作 `strokeScale` 交給 `toSvg`。修正：`fit()` 算出的 zoom 不是有限正數時不套用，而是記下待辦，由 `ResizeObserver` 在窗格有實際大小時補做；`toSvg` 的檢查保留不動，也沒有夾值。使用者自己縮放後再隱藏、顯示，不會被重新最適化。

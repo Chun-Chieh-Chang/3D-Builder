@@ -1,11 +1,20 @@
-// Sheet defaults, model tolerance classes and associative side-view thread leaders.
-// Generate fixtures first with CALLOUT_EXTENSIONS=1 and CALLOUT_ACCEPTANCE_OUT=out/thread-extensions.
+// Sheet defaults, model tolerance classes and associative side-view thread leaders. The part is made here (it is the side-external
+// case of tests/acceptance/callout-exports.acceptance.ts), so nothing has to be generated first.
 //   await import('/@fs/<checkout>/tests/e2e/manual-thread-extensions.js?' + Date.now());
 //   await __threadExtensions.run();
 const root = new URL(import.meta.url).pathname.replace(/tests\/e2e\/[^/]*$/, '');
 await import(`${root}tests/e2e/phase2-assembly.js?` + Date.now());
 const H = window.__ui2;
 const { store } = H;
+const io = await import(`${root}packages/io/src/index.ts`);
+const { build, extrude, face, front, sketch } = await import(`${root}tests/phase1/builders.ts`);
+/** A Ø8 × 30 rod with an M8×1.25 external cosmetic thread 18 deep, class 6g. */
+const rod = () => build(
+  sketch('s1', front, { entities: [{ id: 'p', type: 'point', x: 0, y: 0 }, { id: 'c', type: 'circle', center: 'p', radius: 4 }], constraints: [] }),
+  extrude('e1', 's1', 'boss', { type: 'blind', depth: '30' }),
+  { id: 'ct1', name: 'ct1', type: 'cosmeticThread', suppressed: false, toleranceClass: '6g', targetFace: face('e1:side:s1.c'), threadType: 'external',
+    standardMode: 'standard', standardDesignation: 'M8', majorDiameter: '8', minorDiameter: '6.466', pitch: '1.25', endCondition: 'blind', depth: '18' },
+);
 const drw = () => store.getState().drw;
 const page = () => H.page(drw()?.doc);
 const panel = sel => document.querySelector(`[data-drawing-panel] ${sel}`);
@@ -21,7 +30,8 @@ const text = () => {
 };
 window.__threadExtensions = { run: async () => {
   H.ready();
-  await H.project({ 'part.3dbx': `${root}out/thread-extensions/side-external-en-symbols.3dbx` });
+  await H.project({});
+  await H.writeAt('part.3dbx', await io.writePartFile(rod()));
   await H.open('part.3dbx');
   await H.waitFor(() => store.getState().result?.mesh, 20000, 'threaded model');
   await H.treeClick('ct1');

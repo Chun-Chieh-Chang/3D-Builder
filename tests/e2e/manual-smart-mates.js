@@ -25,8 +25,9 @@ window.__smartMates={run:async()=>{
  send('pointerdown',spot(block.id),1);send('pointermove',spot(plate.id),1);
  await H.waitFor(()=>a.getState().mate?.align,10000,'mate alignment');
  const alignment=a.getState().mate.align;
- window.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true}));
- H.check(a.getState().mate.align!==alignment,'Tab flips alignment');
+ // a key pressed goes to the focused element, not to window itself: the gesture's capture listener on window takes it on the way down, alone
+ document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));
+ const flipped=a.getState().mate;H.check(flipped?.align!==alignment,`Tab flips alignment: ${JSON.stringify({alignment,after:flipped?.align,type:flipped?.type,b:!!flipped?.b})}`);
  send('pointerup',spot(plate.id),0);
  await H.waitFor(()=>a.getState().doc.mates.length===1&&!a.getState().smartMate,10000,'SmartMate committed');
  H.check(a.getState().doc.mates[0].type==='coincident','planar faces mate coincident');

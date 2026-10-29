@@ -293,7 +293,7 @@ M.run = async () => {
     await H.solved();
     await H.wait(200);
     const angle = turnAbout(before.rotation, placement(block).rotation, 2);
-    return { pass: what === 'triad' && same(ids, ['triad-turn-Z90', 'triad-turn-Z-90', 'triad-turn-Z180', 'triad-move-to', 'triad-close']) && Math.abs(angle - Math.PI / 2) < TOL && len(sub(origin(block), middle)) < TOL, ids, angle };
+    return { pass: what === 'triad' && same(ids, ['triad-turn-Z90', 'triad-turn-Z-90', 'triad-turn-Z180', 'triad-move-to', 'triad-close', 'toggle-grid']) && Math.abs(angle - Math.PI / 2) < TOL && len(sub(origin(block), middle)) < TOL, ids, angle };
   });
 
   await step('9 right click on the ball → 移至 XYZ: 移動零組件 opens on 至 XYZ 位置', async () => {

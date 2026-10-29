@@ -44,7 +44,9 @@ K.diagnose = async () => {
   await H.wait(600);
   const box = [...pm().querySelectorAll('.pm-group')].find((g) => g.querySelector('h4')?.textContent === '過多定義診斷');
   const offered = box ? [...box.querySelectorAll('li')].map((li) => li.textContent) : [];
-  const driven = [...box.querySelectorAll('button')].find((b) => b.textContent === '改為從動' && b.closest('li').textContent.includes('25'));
+  // each cure says what it does to which item (ADR 0195), e.g. 「距離 25 (改為從動)」, and is applied by its own button
+  const cure = [...box.querySelectorAll('li')].find((li) => li.querySelector('span')?.textContent === '距離 25 (改為從動)');
+  const driven = cure?.querySelector('button');
   if (!driven) throw new Error(`no 改為從動 for the 25: ${offered.join(' | ')}`);
   driven.click();
   await H.waitFor(() => state().sketchSolve?.status === 'fully', 5000, 'fully defined again');

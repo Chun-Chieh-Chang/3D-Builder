@@ -42,6 +42,9 @@ v.run = async () => {
   await H.newDrawing();
   await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
   const front = page()?.views.find((x) => x.direction === 'front');
+  // what follows is worked out for first angle; new drawings default to third angle
+  store.drawingStore.setSheet({ projection: 'first' });
+  await H.waitFor(() => page()?.sheet.projection === 'first', 3000, 'first angle');
 
   // nothing selected: the derived views cannot be made
   H.check(panel('[data-action="addSection"]').disabled, 'no section without a parent');

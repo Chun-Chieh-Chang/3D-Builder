@@ -12,8 +12,9 @@ const lines = new Map<string, ViewLines>([['f', box(100, 60)], ['t', box(100, 40
 const ref = (name: string): Ref => ({ kind: 'vertex', name });
 const point = (x: number, y: number) => ({ kind: 'vertex' as const, type: 'point', point: [x, y, 0] as [number, number, number] });
 
+/** First angle, as the numbers above are worked out (the top view below the front); new drawings default to third angle. */
 const make = (views: DrawingView[], dimensions: Dimension[] = []): DrawingDoc => {
-  let d = applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views });
+  let d = applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet: { projection: 'first' } }), { type: 'insertViews', views });
   if (dimensions.length > 0) d = applyDrawingCommand(d, { type: 'insertDimensions', dimensions });
   return d;
 };

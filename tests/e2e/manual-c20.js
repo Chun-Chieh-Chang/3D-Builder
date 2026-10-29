@@ -26,7 +26,7 @@ M.run = async () => {
     await S.iso();
     return { volume: S.volume(), pass: near(S.volume(), 991.416, 1e-5) };
   });
-  await step('2 顯示類型: the five choices one after the other, each takes at once', async () => {
+  await step('2 顯示類型: the six choices (透明塗彩 since ADR 0197) one after the other, each takes at once', async () => {
     const select = options().querySelector('select[aria-label="顯示類型"]');
     const seen = [];
     for (const o of [...select.options]) {
@@ -36,7 +36,7 @@ M.run = async () => {
       await shot(`2-display-${o.value}`);
     }
     await S.select(select, 'shadedEdges');
-    return { seen, pass: seen.length === 5 && seen.map((x) => x[0]).join() === 'shadedEdges,shaded,hiddenRemoved,hiddenVisible,wireframe' && S.failed().length === 0 };
+    return { seen, pass: seen.length === 6 && seen.map((x) => x[0]).join() === 'shadedEdges,transparent,shaded,hiddenRemoved,hiddenVisible,wireframe' && seen.every((x) => x[2] === x[0]) && S.failed().length === 0 };
   });
   await step('3 剖面: 垂直於 X, Y, Z with the slider moved; 反向; off again', async () => {
     const button = [...options().querySelectorAll('button')].find((b) => b.textContent === '剖面');

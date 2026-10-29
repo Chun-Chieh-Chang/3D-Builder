@@ -211,7 +211,8 @@ describe('the auxiliary view (B2.7)', () => {
     // a vertical fold line puts it left or right, never above or below, and level with the parent (in line with it)
     expect(side === 'left' || side === 'right').toBe(true);
     expect(Math.abs(own.at[1] - parent.at[1])).toBeLessThan(1e-6);
-    expect(side === 'right' ? own.at[0] : -own.at[0]).toBeGreaterThan(parent.w / 2);
+    // on that side of the parent's middle (both are sheet positions), clear of the parent
+    expect(side === 'right' ? own.at[0] - parent.at[0] : parent.at[0] - own.at[0]).toBeGreaterThan(parent.w / 2);
     expect(slideAxis(d, auxiliaryView())).toBe(0);
     // and a horizontal fold line puts it above or below instead
     const flat = auxiliaryView({ line: [[-10, 0], [10, 0]] });

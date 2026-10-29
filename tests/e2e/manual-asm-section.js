@@ -51,7 +51,7 @@ M.run = async () => {
     await H.hud('上視');
     await H.hud('全部顯示');
     const modes = [...bar().querySelectorAll('select option')].map((o) => o.textContent);
-    return { pass: !!button('剖面') && modes.join() === '帶邊線塗彩,塗彩,移除隱藏線,線架構' && !bar().querySelector('.pick-filter'), modes };
+    return { pass: !!button('剖面') && modes.join() === '帶邊線塗彩,透明塗彩,塗彩,移除隱藏線,線架構' && !bar().querySelector('.pick-filter'), modes };
   });
   let before;
   await step('2 before cutting, a click in the middle of the plate picks a component', async () => {
