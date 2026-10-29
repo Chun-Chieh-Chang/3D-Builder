@@ -150,3 +150,8 @@
 - **2026-10-25（透明塗彩，ADR 0197）**：材質透明度須組合全局顯示、面濾器淡化及組合件個別／聚焦角色，不能由任一刷新路徑直接覆寫成 opacity=1；網格重建與切回不透明都須驗證。透明材質不寫深度，切面不以不透明填蓋遮住內部。畫面驗收須包含實際 WebGL 像素與遮擋邊線，不能只檢查選單或 material flags。新控制列須實際檢視截圖，避免與原視圖工具重疊。使用者已拒絕本次圖示工具列，保留文字名稱。
 
 - **2026-10-27（STEP 圓角在 eDrawings 顯示錯誤）**：OCCT 把整圈圓角寫成「一個帶縫合邊的完整環面」，eDrawings 2026 會畫成環管的另一段（內圓角變成約 3/4 圈的環、外圓角往外翻）。同一形狀以 OCCT 自身讀回完全正確，所以**「以 OCCT 讀回一致」不能證明別的 CAD 讀得對**；與檢視器顯示有關的修正，必須產生對照檔請使用者在該檢視器實際開啟裁定（本次 A 原樣／B 不寫 PCURVE／C、D 分割全部封閉面，使用者確認只有 C、D 正確）。修法比照 SolidWorks，但只分割兩個方向都封閉的面（環面、球面），圓柱、圓錐不動，讀回的面數只增加環面與球面的數目；面的顏色經 `ShapeBuild_ReShape` 對到分割後的每一片。
+
+- **2026-10-29（公差疊字，在獨立 worktree 跑完整 `verify:ui`）**：為了避開其他工作階段的熱更新，在暫存 worktree 裡以 junction 借用主資料夾的 `node_modules`，結果 236 項幾乎全部「timeout waiting for sketch solve／to open」。根因：`libcascade` 與 `@salusoft89/planegcs` 的 `?url` WASM 經 junction 解析到主資料夾，位於 worktree 的 Vite 根目錄之外，Vite 回傳 `index.html`（伺服器日誌：`expected magic word 00 61 73 6d, found 3c 21 64 6f`）。
+  1. **在 worktree 跑 `verify:ui` 或 dev server 前，這兩個套件必須是 worktree 內的實體複本**（其餘套件可用 junction；`@3db/*` 要指向 worktree 自己的 packages，否則測到的是主資料夾的程式碼）。開跑前先載入一次頁面，確認伺服器日誌沒有 wasm 錯誤。
+  2. 大量測試在同一個早期步驟（求解、開檔）一起逾時，先懷疑環境而不是本次變更；這一輪作廢，修好環境後整輪重跑。
+  3. 判斷失敗是否為自己造成：在同一個 worktree 還原為乾淨 HEAD，只跑失敗的腳本（`--only`），錯誤訊息相同才算既有失敗。
