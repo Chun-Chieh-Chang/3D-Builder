@@ -3,6 +3,60 @@
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
 
+## 2026-10-29：草圖互動改善方案 P0 驗收全量完成與通過
+
+依據 [草圖互動改善方案](docs/design/sketch-interaction/plan.md) 與 [驗收表](docs/design/sketch-interaction/acceptance.md) 執行 P0 階段（選取、取消、吸附提示、基準面座標與效能）驗收與缺陷修復。
+
+### 1. 交付與修正內容
+1. **輸入法 IME 組字防禦**：
+   - `apps/web/src/actions.ts` 全域快速鍵監聽、`apps/web/src/components/Viewport.tsx`（尺寸編輯器、剖面輸入）及 `PropertyManager.tsx` 加入 `e.isComposing || e.keyCode === 229` 判斷。防止在中文輸入法候選詞按 Esc 取消選字或按 Enter 確認選字時誤觸草圖工具取消或整張草圖退出。
+2. **吸附提示來源 ID 明示**：
+   - `apps/web/src/sketcher/controller.ts` 新增 `snapSources()`。在端點重合、中點、交點與相切吸附觸發時，吸附標籤標記參照對象 ID（如 `端點 · 重合 (p1, l1)`、`中點 (l1)`、`交點 (l1, l2)`），提供可追溯的幾何關係依據。
+3. **右鍵保留選取集合**：
+   - 修訂 `contextPick(e)`：當右鍵點選的圖元已在當前選取集合中、且未由 Tab 明確鎖定單一候選時，保留已有的多選集合；若使用 Tab 鎖定單一候選則僅選取該候選圖元。
+4. **工作平面狀態列呈現**：
+   - `PropertyManager.tsx` 狀態列加入 `sketchPlaneLabel(doc, f.plane)`，於 `[data-sketch-tool-status]` 顯示當前草圖名稱與工作基準面（如 `草圖 1 (前基準面) · 直線`）。
+5. **1000 圖元自由度診斷 fast-path**：
+   - 解決 1000 圖元自由度診斷造成畫面凍結的問題。`packages/sketch/src/planegcs.ts` 之 `analyze()` 引入 fast-path：在拘束數為 0、無文字／B-spline 且原生求解器確認 DOF 等於預期自由度（點×2 + 線×4 + 圓×3）時，直接判定所有圖元為完全欠拘束（`free`），略過逐一圖元試解（從 1000 次重複試解降為 0 次）。1000 圖元原生診斷耗時由逾時降至 23.3 ms。
+6. **跨平台 CI 矩陣入口補齊**：
+   - `.github/workflows/repository-integrity.yml` 將 `view-normal.test.ts`、`solve-options.test.ts`、`sketch-pointer-baseline.test.ts` 納入跨平台矩陣。
+
+### 2. 失敗紀錄與根因分析 (RCA) 與預防措施 (CAPA)
+1. **1000 圖元自由度診斷逾時**：
+   - *RCA*：自由度診斷 `analyze()` 原對所有圖元以單一圖元固定試解（1000 個圖元＝1000 次 PlaneGCS 試解）。在無拘束大量圖元情境下，反覆試解造成 CPU 長時間阻塞（逾 20 秒）。
+   - *CAPA*：加入無拘束全欠拘束 fast-path；同時在 `packages/sketch/test/solve-options.test.ts` 新增 150 組隨機點／線／圓組態（含固定點／固定半徑拘束），比對 fast-path 與完整試解路徑，確保自由度計數與狀態 100% 一致。
+2. **視角變更導致 E2E 點選漂移**：
+   - *RCA*：`manual-sketch-plane.js` 在中途步驟切換了相機方位，導致後續步驟（如 step 10 `H.at([0, 0, 28])`）的投影座標漂移到畫布邊界外。
+   - *CAPA*：將旋轉平面落點驗收排至最後 step 12，且在等角視圖下以 `H.frameSketch()` 重新置中焦點，確保點選座標穩定在畫布範圍內。
+3. **dirty 零件阻擋草圖重置**：
+   - *RCA*：在 E2E 效能重測前未處置 dirty 零件，直接呼叫 `newPart` 彈出未存檔對話框而未執行新建，導致後續 `addSketchItems` 圖元 ID 與舊草圖衝突。
+   - *CAPA*：加入 `if (store.getState().unsaved) await store.answerUnsaved('discard')` 守門，確保新測試必定於乾淨零件上執行。
+4. **右鍵點選殘留候選鎖定**：
+   - *RCA*：前一手左鍵測試留存了 `this.candidate`，導致後續右鍵測試按 Tab 時從 index 1 循環而非 0。
+   - *CAPA*：在右鍵候選測試前加入 `Escape` 連按清除前置狀態。
+
+### 3. 紅隊對抗四問核對
+- **輸入破壞**：IME 守門未阻擋標準 Esc/Enter 流程；fast-path 嚴格檢查拘束數為 0、無文字/曲線、原生 DOF == expected，任一條件不符立即退回完整試解，無靜默篡改或盲目假設。
+- **拓樸幾何相交**：未變更布林運算與拓樸核心；草圖座標反求使用真實 PlaneFrame 正交基底矩陣。
+- **依賴鏈完整性**：Controller、Store、UI 狀態列、SVG 吸附層與 E2E Harness 全鏈路對齊。
+- **規格真實性與零 Mock**：所有指標取自真實 CDP 事件與瀏覽器實測；Worker 往返、select p95、snap p95 均取自真實瀏覽器渲染，未以 Node 單元測試代理指標冒充。
+
+### 4. 驗收結果
+- **原生 Vitest**：
+  - `packages/sketch/test/solve-options.test.ts`, `apps/web/test/sketcher.test.ts`, `apps/web/test/sketch-pointer-baseline.test.ts`, `tests/phase8/view-normal.test.ts`：4 檔 100 項全部通過。
+  - 草圖相關套件全量（21 檔 309 項）：全數通過（6.91s，0 失敗）。
+- **瀏覽器 E2E 驗收 (`verify:ui`)**：
+  - `manual-sketch-plane.js` (35.7s PASS)
+  - `manual-sketch-selection-candidates.js` (26.5s PASS)
+  - `manual-sketch-session-rollback.js` (8.4s PASS)
+  - 結果：3 of 3 pass, 0 defects, 0 failures。
+- **實機效能數據**（Windows 11 Chrome，`out/sketch-p0-ui.json`）：
+  - 100 圖元：Worker roundtrip 50.3 ms、select p95 0.10 ms、line snap p95 0.20 ms。
+  - 1000 圖元：Worker roundtrip 333.9 ms、select p95 0.30 ms、line snap p95 2.30 ms（標準 ≤ 8.0 ms）。
+- 靜態檢查：`typecheck`, `lint:rules`, `lint:deps`, `lint:i18n`, `lint:repo`, `build` 全部通過。
+
+
+
 ## 2026-10-29：P0草圖建立工具取消驗收
 
 快轉拉取510b6a9後，以真實PlaneGCS驗12種建立工具首點後Esc取消、第二次Esc回選取，逐一核對文件無半成品。只執行新增案例，1項通過；未更動產品程式，多階段及IME仍待驗，詳驗收表。

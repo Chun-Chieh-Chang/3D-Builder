@@ -523,7 +523,7 @@ function runViewKey(c: ViewKeyCommand): void {
 
 export function installShortcuts(): () => void {
   const onKey = (e: KeyboardEvent) => {
-    if (e.defaultPrevented) return; // A viewport gesture or local editor already owns this key.
+    if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return; // A viewport gesture, IME composition, or local editor already owns this key.
     if (e.key === 'Escape' && store.cancelFeatureGesture) { e.preventDefault(); e.stopImmediatePropagation(); store.cancelFeatureGesture(); return; }
     const target = e.target as HTMLElement | null;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) return;

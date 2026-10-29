@@ -8,6 +8,7 @@ import {
   evalLength,
   evalQuantity,
   isSketchAxis,
+  modelRefOf,
   sketchAxisDir,
   SKETCH_ORIGIN,
   type Id,
@@ -861,11 +862,21 @@ export class PlaneGcsSolver implements SketchSolver {
       else if (g.type === 'circle') solved.radii.set(id, g.r);
     }
     const allFixed = ok && base.dof === 0;
+    const pointCount = sketch.entities.filter((e) => e.type === 'point').length;
+    const circleCount = sketch.entities.filter((e) => e.type === 'circle').length;
+    const allFree =
+      ok &&
+      base.conflicting.length === 0 &&
+      base.redundant.length === 0 &&
+      sketch.constraints.every((c) => 'driving' in c && c.driving === false) &&
+      sketch.entities.every((e) => (e.type === 'point' || e.type === 'line' || e.type === 'circle') && !modelRefOf(e)) &&
+      base.dof === 2 * pointCount + circleCount;
     /** Degrees of freedom the pin takes away; null when the pinned system did not converge. */
     const probe = (prims: Prim[]): number | null => (this.run(prims) ? base.dof - this.w.gcs.dof() : null);
     const points = new Map<Id, number | null>();
     const pointFreedom = (id: Id): number | null => {
       if (allFixed) return 0;
+      if (allFree) return 2;
       if (!ok) return null;
       let v = points.get(id);
       if (v === undefined) {
@@ -876,6 +887,7 @@ export class PlaneGcsSolver implements SketchSolver {
     };
     const radiusFixed = (id: Id): boolean => {
       if (allFixed) return true;
+      if (allFree) return false;
       if (!ok) return false;
       return probe([...toPrimitives(sketch, solved), { id: '@probe.r', type: 'circle_radius', c_id: id, radius: solved.radii.get(id) ?? 1 }]) === 0;
     };

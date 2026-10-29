@@ -17,10 +17,11 @@ for (const count of [100, 1000]) it(`records selection and snapping on ${count} 
   const sketch: SketchFeature = { id: 's', name: 'baseline', type: 'sketch', suppressed: false, plane: { kind: 'datum', name: 'plane:front' }, entities, constraints: [] };
   const doc = applyCommand(createEmptyPart(), { type: 'insertFeature', index: 0, feature: sketch });
   const start = performance.now();
-  const solved = solver.solve(resolveSketch(sketch, doc), { analyze: false });
+  const solved = solver.solve(resolveSketch(sketch, doc), { analyze: true });
   const solveMs = performance.now() - start;
   expect(solved.status).not.toBe('failed');
   expect(solved.geometry.size).toBe(count);
+  expect(solved.entityFreedom?.size).toBe(count);
   const unavailable = (): never => { throw new Error('read-only pointer benchmark must not edit'); };
   const host: SketchHost = { featureId: 's', doc: () => doc, solved: () => ({ ...solved, seq: 0, problems: [], ms: solveMs }), execute: unavailable, trial: unavailable, dragPreview: unavailable, notify: unavailable, editDimension: unavailable };
   const c = new SketchController(host);

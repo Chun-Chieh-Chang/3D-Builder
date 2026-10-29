@@ -22,6 +22,7 @@ M.run = async () => {
   let axis;
   let system;
   let point;
+  let tiltedSketch;
   await step('1 「偏移草圖」: 25 off the front plane; the sketch editor opens on the plane it made', async () => {
     await S.fresh();
     await H.treeClick('前基準面');
@@ -143,8 +144,17 @@ M.run = async () => {
     const frame = sketch ? store.frameOf(sketch) : null;
     const up = frame ? Math.abs(frame.normal[2]) : 0;
     const opened = !!sketch && sketch.plane.name === tilted;
-    if (opened) await H.exitSketch();
-    return { pass: opened && filled === axis && S.near(up, Math.cos(Math.PI / 6), 1e-6), filled, opened, up, normal: frame?.normal };
+    let statusOk = false;
+    if (opened) {
+      tiltedSketch = sketch.name;
+      await H.tool('直線');
+      const statusText = document.querySelector('[data-sketch-tool-status]')?.textContent ?? '';
+      const hintText = H.view()?.hint ?? '';
+      statusOk = statusText.includes(sketch.name) && statusText.includes(nameOf(tilted)) && statusText.includes('直線') && hintText.length > 0 && statusText.includes(hintText);
+      await H.selectTool();
+      await H.exitSketch();
+    }
+    return { pass: opened && filled === axis && S.near(up, Math.cos(Math.PI / 6), 1e-6) && statusOk, filled, opened, up, statusOk, normal: frame?.normal };
   });
   await step('10 「參考點」 in the middle of the block, then clicked in the graphics area (it is drawn over the model, so it takes the click)', async () => {
     await H.action('特徵', '參考點');
@@ -191,7 +201,35 @@ M.run = async () => {
     store.togglePickFilterBar(); // hide the bar again, back as it was
     return { pass: on !== null && isPlane && off === null && state().pickFilter.planes === true, off, on, isPlane, pf: state().pickFilter };
   });
-  await step('12 nothing in the tree is left broken', async () => ({ pass: S.failed().length === 0, failed: S.failed(), volume: state().result.mass?.volume }));
+  await step('12 rotated custom plane normal vs oblique view cursor landing and solved line match within 1e-4 mm, and nothing in the tree is left broken', async () => {
+    await S.treeEdit(tiltedSketch);
+    const frame = store.frameOf(store.editedSketch());
+    await H.tool('直線');
+    await H.action('檢視', '正視於');
+    await H.frameSketch(3, -1.5, 12);
+    const c1 = H.toClient(6, -3);
+    const pNormal = store.viewer.planePoint(c1.x, c1.y, frame);
+    await H.sk(0, 0);
+    await H.action('檢視', '等角');
+    await H.frameSketch(3, -1.5, 12);
+    const c2 = H.toClient(6, -3);
+    const pOblique = store.viewer.planePoint(c2.x, c2.y, frame);
+    await H.sk(6, -3);
+    await H.solved();
+    await H.selectTool();
+    const lineId = H.sketch().entities.find((e) => e.type === 'line')?.id;
+    const g = lineId ? H.geom().get(lineId) : null;
+    const landingOk =
+      !!pNormal &&
+      !!pOblique &&
+      !!g &&
+      Math.hypot(pNormal[0] - 6, pNormal[1] + 3) < 1e-4 &&
+      Math.hypot(pOblique[0] - 6, pOblique[1] + 3) < 1e-4 &&
+      Math.hypot(g.a[0], g.a[1]) < 1e-4 &&
+      Math.hypot(g.b[0] - 6, g.b[1] + 3) < 1e-4;
+    await H.exitSketch();
+    return { pass: landingOk && S.failed().length === 0, landingOk, pNormal, pOblique, failed: S.failed(), volume: state().result.mass?.volume };
+  });
   // 收尾把文件清乾淨：這支腳本會留下一個未儲存的零件，12 支腳本的批次實測在這裡出現「Blocked attempt to show a 'beforeunload'
   // confirmation panel…」，接著下一次載入页面就永久卡住（當下的 verify:ui 還沒有對話框處理與呼叫逾時，那兩項之後由 620473d 補上）。
   await S.fresh();

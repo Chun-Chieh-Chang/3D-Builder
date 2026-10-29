@@ -403,7 +403,43 @@ export class SketchController {
     };
   }
 
-  private hint(step: number): string {
+  private snapSources(): Id[] {
+    const out: Id[] = [];
+    const push = (...ids: (Id | null | undefined)[]) => {
+      for (const id of ids) if (id && !out.includes(id)) out.push(id);
+    };
+    const s = this.snapTarget;
+    if (s) {
+      switch (s.kind) {
+        case 'point':
+          push(s.id, ...this.curvesAt(s.id));
+          break;
+        case 'midpoint':
+        case 'extension':
+          push(s.line);
+          break;
+        case 'curve':
+          push(s.id);
+          break;
+        case 'intersection':
+          push(s.a, s.b);
+          break;
+        case 'quadrant':
+          push(s.curve, s.center);
+          break;
+        case 'model':
+          push(s.item.ref.name);
+          break;
+        case 'free':
+          if (s.align) push(s.align.h?.id, s.align.v?.id);
+          break;
+      }
+    }
+    push(this.lineTo?.line, this.tangentTo);
+    return out;
+  }
+
+  private baseHint(step: number): string {
     const tool = this.tool;
     switch (tool) {
       case 'slot':
@@ -443,6 +479,14 @@ export class SketchController {
         return t(hints[Math.min(step, hints.length - 1)]!);
       }
     }
+  }
+
+  private hint(step: number): string {
+    const base = this.baseHint(step);
+    if (!this.inference) return base;
+    const infer = t(`infer.${this.inference}`);
+    const sources = this.snapSources();
+    return sources.length > 0 ? `${base} · ${infer} (${sources.join(', ')})` : `${base} · ${infer}`;
   }
 
   setOption<K extends keyof ToolOptions>(key: K, value: ToolOptions[K]): void {
@@ -560,13 +604,17 @@ export class SketchController {
    * Returns what was under the pointer.
    */
   contextPick(e: PointerInput): Id | null {
+    const locked = this.tool === 'select' ? this.candidate?.id ?? null : null;
     const hit = (this.tool === 'select' ? this.selectionHit(e) : hitTest(this.geometry(), e.p, PICK_PX * e.px)) ?? this.axisAt(e);
-    if (hit && !this.selection.has(hit.id)) {
+    const activeLock = locked !== null && this.candidate?.id === locked;
+    const preserved = !activeLock && this.tool === 'select' ? this.candidates.find((h) => this.selection.has(h.id)) : undefined;
+    const target = preserved ?? hit;
+    if (target && !this.selection.has(target.id)) {
       this.selection.clear();
-      this.selection.add(hit.id);
+      this.selection.add(target.id);
       this.changed();
     }
-    return hit?.id ?? null;
+    return target?.id ?? null;
   }
 
   /** 「選擇鏈」 (ADR 0176): the selected lines, arcs and circles and every curve joined to them end to end become the selection. */

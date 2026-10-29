@@ -41,11 +41,12 @@ if (typeof (globalThis as unknown as { document?: unknown }).document === 'undef
 
 describe('正視於 outside a sketch (C2)', () => {
   let action: typeof import('../../apps/web/src/actions').action;
+  let installShortcuts: typeof import('../../apps/web/src/actions').installShortcuts;
   let normalFrame: typeof import('../../apps/web/src/actions').normalFrame;
   let store: typeof import('../../apps/web/src/state/store').store;
 
   beforeAll(async () => {
-    ({ action, normalFrame } = await import('../../apps/web/src/actions'));
+    ({ action, installShortcuts, normalFrame } = await import('../../apps/web/src/actions'));
     ({ store } = await import('../../apps/web/src/state/store'));
   });
 
@@ -177,5 +178,30 @@ describe('正視於 outside a sketch (C2)', () => {
     expect(viewNormal().enabled(measuring)).toBe(false);
 
     store.select(null);
+  });
+
+  it('ignores IME composition Escape/Enter events in global shortcuts (A02, B04)', () => {
+    let keyHandler: ((e: KeyboardEvent) => void) | null = null;
+    const win = (globalThis as unknown as { window: { addEventListener: (type: string, fn: (e: KeyboardEvent) => void) => void; removeEventListener: () => void } }).window;
+    const prevAdd = win.addEventListener;
+    win.addEventListener = (type, fn) => {
+      if (type === 'keydown') keyHandler = fn;
+    };
+    const dispose = installShortcuts();
+    win.addEventListener = prevAdd;
+    expect(keyHandler).toBeTypeOf('function');
+
+    let cancelled = 0;
+    store.cancelFeatureGesture = () => {
+      cancelled++;
+    };
+    keyHandler!({ key: 'Escape', isComposing: true, keyCode: 27, defaultPrevented: false, preventDefault: () => {}, stopImmediatePropagation: () => {} } as unknown as KeyboardEvent);
+    keyHandler!({ key: 'Escape', isComposing: false, keyCode: 229, defaultPrevented: false, preventDefault: () => {}, stopImmediatePropagation: () => {} } as unknown as KeyboardEvent);
+    expect(cancelled).toBe(0);
+    keyHandler!({ key: 'Escape', isComposing: false, keyCode: 27, defaultPrevented: false, preventDefault: () => {}, stopImmediatePropagation: () => {} } as unknown as KeyboardEvent);
+    expect(cancelled).toBe(1);
+
+    store.cancelFeatureGesture = null;
+    dispose();
   });
 });

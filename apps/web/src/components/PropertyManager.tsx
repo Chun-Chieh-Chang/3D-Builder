@@ -172,6 +172,7 @@ function ValueInput({ value, toCommand, suffix = 'mm', optional = false }: { val
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
           if (e.key === 'Enter') {
             e.preventDefault();
             e.stopPropagation();
@@ -650,7 +651,19 @@ function TextEntityBox({ f, entity, sketcher }: { f: SketchFeature; entity: Extr
   );
 }
 
+function sketchPlaneLabel(doc: PartDoc, plane: Ref): string {
+  if (plane.kind === 'datum') {
+    const standard = DATUM_ITEMS.find((d) => d.id === plane.name);
+    if (standard) return standard.label;
+    const custom = doc.features.find((x) => x.id === plane.name);
+    if (custom) return custom.name;
+    return plane.name;
+  }
+  return plane.name;
+}
+
 function SketchPanel({ f }: { f: SketchFeature }) {
+  const doc = useStore((s) => s.doc);
   const solve = useStore((s) => s.sketchSolve);
   const view = useSketcherView();
   const sketcher = store.sketcher;
@@ -685,7 +698,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
       )}
       {view && (
         <section className="pm-group" data-sketch-tool-status>
-          <h4>{f.name} · {TOOL_LABEL[view.tool]}</h4>
+          <h4>{f.name} · {sketchPlaneLabel(doc, f.plane)} · {TOOL_LABEL[view.tool]}</h4>
           <p className="hint">{view.hint}</p>
           {view.picks.length > 0 && <ul className="selection-box">{view.picks.map(id => <li key={id}>{describe(f, id)}</li>)}</ul>}
           {sketcher && <ToolOptionsBox view={view} sketcher={sketcher} />}
