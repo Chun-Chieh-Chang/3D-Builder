@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { rightOf, viewVectors, type Dimension, type ElementFacts, type Ref } from '@3db/model';
-import { deviationTexts, dimensionText, dimensionTextItems, dimensionWords, evaluateDimension, STACK_GAP, STACK_LOWER, STACK_SCALE, STACK_UPPER, toleranceText, type PlacedView, type SceneItem, type SceneText } from '@3db/drawing';
+import { checkDxf, deviationTexts, dimensionText, dimensionTextItems, dimensionWords, evaluateDimension, readDxf, STACK_GAP, STACK_LOWER, STACK_SCALE, STACK_UPPER, toDxf, toleranceText, type DxfText, type PlacedView, type SceneItem, type SceneText } from '@3db/drawing';
 
 const bilateral = (upper: number, lower: number) => ({ type: 'bilateral' as const, upper, lower });
 
@@ -155,6 +155,23 @@ describe('the dimensions drawn with it', () => {
     const sym = ok(evaluateDimension(lin({ tolerance: bilateral(0.05, -0.05) }), { elements: [wall(0), wall(1.2)] }, axes, placed));
     expect(sym).not.toHaveProperty('parts');
     expect(texts(sym.items)).toEqual([{ kind: 'text', at: expect.any(Array), text: '1.2 ±0.05', height: 3.5, anchor: 'center' }]);
+  });
+
+  it('the DXF\'s dimension style gives the stack the height the drawing draws it with (DIMTFAC × DIMTXT), so a CAD program that draws it again matches', () => {
+    const o = ok(evaluateDimension(lin({ tolerance: bilateral(0, -0.01) }), { elements: [wall(0), wall(1.2)] }, axes, placed));
+    const items = o.items.map((i) => ({ ...i, group: 'd' }));
+    const doc = readDxf(toDxf({ width: 200, height: 200, items, dimensions: [{ id: 'd', text: o.text, parts: o.parts, ...o.dxf! }] }));
+    expect(checkDxf(doc)).toEqual([]);
+    const style = doc.tables.get('DIMSTYLE')!.entries.find((e) => e.name === 'STANDARD')!;
+    const code = (c: number) => Number(style.pairs.find((p) => p[0] === c)?.[1]);
+    expect(code(146)).toBe(STACK_SCALE);
+    // the deviations in the dimension's block (what a viewer shows) against the style's own number (what a CAD program draws again)
+    const drawn = doc.blockEntities.get('*D1')!.filter((e): e is DxfText => e.type === 'TEXT');
+    const [main, upper, lower] = ['1.2', '+0', '-0.01'].map((s) => drawn.find((e) => e.text === s)!);
+    expect(main!.height).toBe(code(140));
+    expect(upper!.height).toBeCloseTo(code(146) * code(140), 6);
+    expect(lower!.height).toBeCloseTo(code(146) * code(140), 6);
+    expect(upper!.height).toBeLessThan(main!.height);
   });
 
   it('a diameter on a shelf: the shelf runs under the whole row, stack and all', () => {

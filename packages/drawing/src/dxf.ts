@@ -1,5 +1,5 @@
 import { CALLOUT_SYMBOL_FALLBACKS } from './calloutSymbols';
-import { ARROW, DIM_TEXT, GAP, OVERSHOOT } from './dimension';
+import { ARROW, DIM_TEXT, GAP, OVERSHOOT, STACK_SCALE } from './dimension';
 import { LINE_STYLES, type LineStyle, type Scene, type SceneDimension, type SceneItem } from './scene';
 
 /**
@@ -196,10 +196,11 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
   table('APPID', H.appidTable, 1, () => {
     o.g(0, 'APPID').g(5, handle()).g(330, H.appidTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbRegAppTableRecord').g(2, 'ACAD').int(70, 0);
   });
-  // the style the dimensions name: the sizes the drawing draws them with (arrows, extension lines, text above the line, read horizontally or along the line)
+  // the style the dimensions name: the sizes the drawing draws them with (arrows, extension lines, text above the line, read horizontally or along the line);
+  // DIMTFAC (146) the stacked deviations' part of the text height, so a CAD program that draws a dimension again draws them as the drawing does (default 1)
   o.g(0, 'TABLE').g(2, 'DIMSTYLE').g(5, H.dimstyleTable).g(330, '0').g(100, 'AcDbSymbolTable').int(70, 1).g(100, 'AcDbDimStyleTable').int(71, 1);
   o.g(0, 'DIMSTYLE').g(105, handle()).g(330, H.dimstyleTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbDimStyleTableRecord').g(2, 'STANDARD').int(70, 0);
-  o.g(40, 1).g(41, scene.dimStyle?.arrow ?? ARROW).g(42, GAP).g(43, 3.75).g(44, OVERSHOOT).g(140, scene.dimStyle?.text ?? DIM_TEXT).g(141, 2.5).g(147, 1).int(73, 0).int(74, 0).int(77, 1).int(78, 8).int(171, 3).int(172, 1).int(271, 2).int(272, 2).int(275, 0).g(340, H.standardStyle);
+  o.g(40, 1).g(41, scene.dimStyle?.arrow ?? ARROW).g(42, GAP).g(43, 3.75).g(44, OVERSHOOT).g(140, scene.dimStyle?.text ?? DIM_TEXT).g(141, 2.5).g(146, STACK_SCALE).g(147, 1).int(73, 0).int(74, 0).int(77, 1).int(78, 8).int(171, 3).int(172, 1).int(271, 2).int(272, 2).int(275, 0).g(340, H.standardStyle);
   o.g(0, 'ENDTAB');
   table('BLOCK_RECORD', H.blockRecordTable, 2 + dims.length, () => {
     o.g(0, 'BLOCK_RECORD').g(5, H.modelRecord).g(330, H.blockRecordTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbBlockTableRecord').g(2, '*Model_Space');
