@@ -19,6 +19,16 @@ export type SketchStatus = 'fully' | 'under' | 'over' | 'failed';
 /** Definition state of one entity (C1.31 colours each entity, not only the whole sketch). */
 export type EntityStatus = 'fully' | 'under' | 'over';
 
+/**
+ * What still moves in an under-defined entity: each free point with how many degrees of freedom pinning it where it is takes away
+ * (1 = it slides along one direction, 2 = it moves freely; null when that probe did not converge), and whether a circle's radius is free.
+ * The counts of different entities share freedoms (a free rotation moves every corner), so they do not add up to the sketch's total.
+ */
+export interface EntityFreedom {
+  points: { id: Id; dof: number | null }[];
+  radius: boolean;
+}
+
 export interface SolvedSketch {
   geometry: Map<Id, SolvedGeometry>;
   status: SketchStatus;
@@ -28,6 +38,8 @@ export interface SolvedSketch {
   redundant: Id[];
   /** Present when the solve was asked to analyze (see SolveOptions.analyze). */
   entityStatus?: Map<Id, EntityStatus>;
+  /** With entityStatus: the free parts of each under-defined entity. */
+  entityFreedom?: Map<Id, EntityFreedom>;
   message?: string;
   /** The lines the sketch's relations could only be met by shrinking to a point (ADR 0211): the solve is then `failed`. */
   collapsed?: Id[];

@@ -623,7 +623,7 @@ class AppStore {
         if (this.state.editing?.kind !== 'sketch') return;
         // Drag frames are not analyzed: keep the last per-entity colours until the next analysis.
         const prev = this.state.sketchSolve;
-        this.set({ sketchSolve: res.entityStatus || !prev?.entityStatus ? res : { ...res, entityStatus: prev.entityStatus } });
+        this.set({ sketchSolve: res.entityStatus || !prev?.entityStatus ? res : { ...res, entityStatus: prev.entityStatus, entityFreedom: prev.entityFreedom } });
       },
       (e) => this.set({ notice: { kind: 'error', text: t('sketch.solveFailed', { why: e instanceof Error ? e.message : String(e) }) } }),
     );

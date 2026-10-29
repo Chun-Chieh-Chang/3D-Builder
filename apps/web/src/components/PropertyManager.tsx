@@ -118,6 +118,7 @@ import { AXIS_MODE_LABEL, DATUM_ITEMS, DIMENSION_LABEL, FEATURE_LABEL, featureLa
 import { Icon } from './Icon';
 import type { ControllerView, SketchController, SketchFix } from '../sketcher/controller';
 import type { SketchIssue } from '@3db/sketch/check';
+import type { EntityFreedom } from '@3db/sketch';
 import type { ContourChoice } from '@3db/sketch/profiles';
 
 /**
@@ -315,6 +316,42 @@ function TransformOptions({ view, sketcher }: { view: ControllerView; sketcher: 
       )}
       <p className="hint">{t('sketch.option.keepRelationsHint')}</p>
     </>
+  );
+}
+
+/**
+ * Under-defined sketch (A2.4): which entities still move and what of them (each free point and how many directions, a free radius),
+ * from the solver's per-entity analysis. A point that is the end of a listed curve is told with the curve, not again on its own.
+ */
+function FreedomList({ f, freedom, sketcher }: { f: SketchFeature; freedom: Map<Id, EntityFreedom>; sketcher: SketchController }) {
+  const curves = f.entities.filter((e) => e.type !== 'point' && freedom.has(e.id));
+  const told = new Set(curves.flatMap((e) => entityPoints(e)));
+  const listed = f.entities.filter((e) => freedom.has(e.id) && !told.has(e.id));
+  const moves = (dof: number | null) => t(dof === 2 ? 'pm.free.moves2' : dof === 1 ? 'pm.free.moves1' : 'pm.free.moves');
+  const parts = (e: SketchEntity, x: EntityFreedom): string[] => [
+    ...x.points.map((p) => (p.id === e.id ? moves(p.dof) : `${describe(f, p.id)} ${moves(p.dof)}`)),
+    ...(x.radius ? [t('pm.free.radius')] : []),
+  ];
+  if (listed.length === 0) return null;
+  return (
+    <div className="freedom">
+      <p className="hint">{t('pm.free.title')}</p>
+      <ul className="freedom-list">
+        {listed.map((e) => (
+          <li key={e.id}>
+            <button type="button" name="freeEntity" data-id={e.id} onClick={() => sketcher.select([e.id])}>
+              {t('pm.free.item', { name: describe(f, e.id), parts: parts(e, freedom.get(e.id)!).join(t('cmd.listSeparator')) })}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="hint">{t('pm.free.hint')}</p>
+      <div className="relation-buttons">
+        <button type="button" name="selectUnderdefined" onClick={() => sketcher.selectUnderdefined()}>
+          {t('pm.free.selectAll')}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -666,6 +703,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
           <p className="muted">{t('pm.solving')}</p>
         )}
         {conflicting.length > 0 && <p className="error-text">{t('pm.conflict', { ids: conflicting.join(t('cmd.listSeparator')) })}</p>}
+        {sketcher && solve?.status === 'under' && solve.entityFreedom && <FreedomList f={f} freedom={solve.entityFreedom} sketcher={sketcher} />}
       </section>
 
       {view?.tool === 'select' && sketcher && (view.candidates?.length ?? 0) > 1 && (

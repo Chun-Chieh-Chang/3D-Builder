@@ -14,7 +14,7 @@ import {
   type SketchEntity,
   type SketchFeature,
 } from '@3db/model';
-import type { EntityStatus, SketchSolver, SketchStatus, SolvedGeometry, SolvedSketch, SolveOptions } from './types';
+import type { EntityFreedom, EntityStatus, SketchSolver, SketchStatus, SolvedGeometry, SolvedSketch, SolveOptions } from './types';
 
 type Prim = SketchPrimitive;
 
@@ -839,16 +839,17 @@ export class PlaneGcsSolver implements SketchSolver {
       ...(ok ? {} : { message: t('regen.sketchUnsolved') }),
     };
     for(const g of result.geometry.values())if(g.type==='spline'&&g.bezier&&(!(Math.hypot(g.points[1]![0]-g.points[0]![0],g.points[1]![1]-g.points[0]![1])>1e-8)||!(Math.hypot(g.points[g.points.length-1]![0]-g.points[g.points.length-2]![0],g.points[g.points.length-1]![1]-g.points[g.points.length-2]![1])>1e-8))){result.status='failed';result.message=t('sketch.bezierInvalid');}
-    if (options.analyze) result.entityStatus = this.analyze(sketch, result, ok);
+    if (options.analyze) Object.assign(result, this.analyze(sketch, result, ok));
     return result;
   }
 
   /**
    * Per-entity definition (C1.31). A point is fully defined when pinning it where it is does not
    * change the sketch's degrees of freedom: then no remaining freedom can move it. This is an exact
-   * rank computation by the solver, one extra solve per point, not a heuristic.
+   * rank computation by the solver, one extra solve per point, not a heuristic. How many it takes away is how many directions the
+   * point can still move in (EntityFreedom).
    */
-  private analyze(sketch: SketchFeature, base: SolvedSketch, ok: boolean): Map<Id, EntityStatus> {
+  private analyze(sketch: SketchFeature, base: SolvedSketch, ok: boolean): { entityStatus: Map<Id, EntityStatus>; entityFreedom: Map<Id, EntityFreedom> } {
     const over = new Set<Id>();
     for (const c of sketch.constraints) {
       if (base.conflicting.includes(c.id) || base.redundant.includes(c.id)) for (const r of constraintRefs(c)) over.add(r);
@@ -860,11 +861,12 @@ export class PlaneGcsSolver implements SketchSolver {
       else if (g.type === 'circle') solved.radii.set(id, g.r);
     }
     const allFixed = ok && base.dof === 0;
-    const probe = (prims: Prim[]) => this.run(prims) && this.w.gcs.dof() === base.dof;
-    const points = new Map<Id, boolean>();
-    const pointFixed = (id: Id): boolean => {
-      if (allFixed) return true;
-      if (!ok) return false;
+    /** Degrees of freedom the pin takes away; null when the pinned system did not converge. */
+    const probe = (prims: Prim[]): number | null => (this.run(prims) ? base.dof - this.w.gcs.dof() : null);
+    const points = new Map<Id, number | null>();
+    const pointFreedom = (id: Id): number | null => {
+      if (allFixed) return 0;
+      if (!ok) return null;
       let v = points.get(id);
       if (v === undefined) {
         v = probe(toPrimitives(sketch, solved, new Set([id])));
@@ -875,19 +877,23 @@ export class PlaneGcsSolver implements SketchSolver {
     const radiusFixed = (id: Id): boolean => {
       if (allFixed) return true;
       if (!ok) return false;
-      return probe([...toPrimitives(sketch, solved), { id: '@probe.r', type: 'circle_radius', c_id: id, radius: solved.radii.get(id) ?? 1 }]);
+      return probe([...toPrimitives(sketch, solved), { id: '@probe.r', type: 'circle_radius', c_id: id, radius: solved.radii.get(id) ?? 1 }]) === 0;
     };
 
     const status = new Map<Id, EntityStatus>();
+    const freedom = new Map<Id, EntityFreedom>();
     for (const e of sketch.entities) {
       const pts = e.type === 'point' ? [e.id] : entityPoints(e);
       if (over.has(e.id) || pts.some((p) => over.has(p))) {
         status.set(e.id, 'over');
         continue;
       }
-      const fully = pts.every(pointFixed) && (e.type !== 'circle' || radiusFixed(e.id));
+      const free = pts.map((id) => ({ id, dof: pointFreedom(id) })).filter((p) => p.dof !== 0);
+      const radius = e.type === 'circle' && !radiusFixed(e.id);
+      const fully = free.length === 0 && !radius;
       status.set(e.id, fully ? 'fully' : 'under');
+      if (!fully) freedom.set(e.id, { points: free, radius });
     }
-    return status;
+    return { entityStatus: status, entityFreedom: freedom };
   }
 }

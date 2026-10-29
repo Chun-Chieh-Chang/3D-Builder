@@ -69,6 +69,71 @@ describe('per-entity definition (C1.31)', () => {
   });
 });
 
+describe('what still moves in an under-defined entity', () => {
+  const corners: [string, number, number][] = [['a', 0, 0], ['b', 40, 0], ['c', 40, 30], ['d', 0, 30]];
+  /** A rectangle with only its width and height: free to translate (2), nothing else. */
+  const rectangle = () =>
+    sketch(
+      [
+        ...corners.map(([id, x, y]) => ({ id, type: 'point', x, y }) as const),
+        { id: 'l1', type: 'line', p1: 'a', p2: 'b' },
+        { id: 'l2', type: 'line', p1: 'b', p2: 'c' },
+        { id: 'l3', type: 'line', p1: 'c', p2: 'd' },
+        { id: 'l4', type: 'line', p1: 'd', p2: 'a' },
+      ],
+      [
+        { id: 'h1', type: 'horizontal', a: 'l1' },
+        { id: 'v2', type: 'vertical', a: 'l2' },
+        { id: 'h3', type: 'horizontal', a: 'l3' },
+        { id: 'v4', type: 'vertical', a: 'l4' },
+        { id: 'w', type: 'distance', a: 'l1', value: '40' },
+        { id: 'ht', type: 'distance', a: 'l2', value: '30' },
+      ],
+    );
+
+  it('lists every corner of a rectangle that only has its size, each free in both directions', () => {
+    const r = solver.solve(rectangle(), { analyze: true });
+    expect(r.status).toBe('under');
+    expect(r.dof).toBe(2);
+    expect(r.entityFreedom!.get('l1')).toEqual({ points: [{ id: 'a', dof: 2 }, { id: 'b', dof: 2 }], radius: false });
+    expect(r.entityFreedom!.get('l3')).toEqual({ points: [{ id: 'c', dof: 2 }, { id: 'd', dof: 2 }], radius: false });
+    expect(r.entityFreedom!.get('a')).toEqual({ points: [{ id: 'a', dof: 2 }], radius: false });
+    // the per-entity counts share the same two freedoms: they do not add up to the sketch's total
+    expect([...r.entityFreedom!.values()].reduce((n, f) => n + f.points.reduce((m, p) => m + p.dof!, 0), 0)).toBeGreaterThan(r.dof);
+  });
+
+  it('says a point slides along one direction when only one coordinate is held', () => {
+    const s = rectangle();
+    const r = solver.solve({ ...s, constraints: [...s.constraints, { id: 'onX', type: 'pointOnCurve', point: 'a', curve: '@axisH' } as SketchConstraint] }, { analyze: true });
+    expect(r.dof).toBe(1);
+    expect(r.entityFreedom!.get('l1')!.points).toEqual([{ id: 'a', dof: 1 }, { id: 'b', dof: 1 }]);
+  });
+
+  it('names only the radius of a circle whose centre is placed', () => {
+    const r = solver.solve(
+      sketch(
+        [
+          { id: 'c0', type: 'point', x: 0, y: 0 },
+          { id: 'k1', type: 'circle', center: 'c0', radius: 3 },
+        ],
+        [{ id: 'o', type: 'coincident', a: 'c0', b: '@origin' }],
+      ),
+      { analyze: true },
+    );
+    expect(r.dof).toBe(1);
+    expect(r.entityFreedom!.get('k1')).toEqual({ points: [], radius: true });
+    expect(r.entityFreedom!.has('c0')).toBe(false);
+  });
+
+  it('lists nothing when fully defined or over-defined', () => {
+    expect(solver.solve(demo(), { analyze: true }).entityFreedom!.size).toBe(0);
+    const s = demo();
+    const over = solver.solve({ ...s, constraints: [...s.constraints, { id: 'bad', type: 'distance', a: 'p1', b: 'p3', value: '5' }] }, { analyze: true });
+    expect(over.status).toBe('over');
+    expect(over.entityFreedom!.has('p3')).toBe(false);
+  });
+});
+
 describe('relations added in Phase 1', () => {
   it('puts a point on a circle and aligns two points horizontally', () => {
     const r = solver.solve(

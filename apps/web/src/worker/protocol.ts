@@ -6,7 +6,7 @@ import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, Fea
 import type { MateGeometry } from '@3db/assembly';
 import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
 import type { ShadeImage } from '@3db/drawing';
-import type { EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
+import type { EntityFreedom, EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
 
 /**
  * Where a part file is on its way in (2F): read from the project folder (the app), then rebuilt (a STEP
@@ -167,6 +167,7 @@ export interface SketchSolvePayload {
   conflicting: Id[];
   redundant: Id[];
   entityStatus?: Map<Id, EntityStatus>;
+  entityFreedom?: Map<Id, EntityFreedom>;
   /** Why the sketch cannot make a closed profile yet (open ends, branches); empty when it can. */
   problems: string[];
   message?: string;
