@@ -74,7 +74,7 @@ import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/pr
 import type { ModelItem } from '@3db/sketch/ops';
 import type { PickFilter, Snap, Viewer } from '@3db/render';
 import { captureVertexAnchor, resolveVertexAnchor } from './measureAnchors';
-import type { KernelApi, PartExportOptions, PartIgesOptions, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
+import type { KernelApi, PartExportOptions, PartIgesOptions, ProbeApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
 import { shouldRestartHeap } from '../worker/heap';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 import { accepts, axisDefinitionFor, emptyRef, put, treePick, treeRef } from './datumSlots';
@@ -3384,18 +3384,42 @@ class AppStore {
    * kept in the session even if the feature is deleted later: undo can bring the feature back.
    */
   private async importData(fileName: string, data: Uint8Array): Promise<void> {
+    // what the bytes say first (a STEP file saved as .igs is read as STEP), then the name
+    const kind = isStepData(data) ? 'step' : isIgesFile({ name: fileName, bytes: data }) ? 'iges' : 'step';
+    if (kind === 'iges' && !(await this.probeIges(fileName, data))) return;
     const sha256 = await sha256Hex(data);
     await this.api.addBlob(sha256, data);
     this.blobs.set(sha256, data);
     const doc = this.history.doc;
     const ids = this.allocator();
-    // what the bytes say first (a STEP file saved as .igs is read as STEP), then the name
-    const kind = isStepData(data) ? 'step' : isIgesFile({ name: fileName, bytes: data }) ? 'iges' : 'step';
     const blob: BlobRef = { id: ids.take('blob'), sha256, kind, fileName };
     const feature: ImportedBodyFeature = { id: ids.take('import'), type: 'importedBody', name: nextName(doc, t('feature.importName')), suppressed: false, blob: blob.id };
     if (this.execute({ type: 'importBody', blob, feature, index: doc.rollbackIndex ?? doc.features.length })) {
       this.set({ selected: feature.id, selectedFace: null, selectedElements: [], fitRequest: this.state.fitRequest + 1 });
       this.notify(t('file.imported', { name: fileName }));
+    }
+  }
+
+  /**
+   * Reads an IGES file in a worker of its own before it goes into the document (F2.2): OCCT's IGES reader loops for ever on some broken files and
+   * cannot be interrupted, and a file in the document is read again by every rebuild. The worker gets the rebuild's time limit and is terminated after.
+   * True when the file reads; otherwise the user is told why and nothing is added.
+   */
+  private async probeIges(fileName: string, data: Uint8Array): Promise<boolean> {
+    this.notify(t('import.igesChecking', { name: fileName }));
+    const worker = new Worker(new URL('../worker/probe.worker.ts', import.meta.url), { type: 'module' });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const stalled = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new StalledError()), this.rebuildLimitMs)));
+      await Promise.race([Comlink.wrap<ProbeApi>(worker).probeIges(data, getLocale()), stalled]);
+      return true;
+    } catch (e) {
+      const why = e instanceof StalledError ? t('import.igesStalled', { seconds: Math.round(this.rebuildLimitMs / 1000) }) : e instanceof Error ? e.message : String(e);
+      this.notify(t('file.importFailed', { why }), 'error');
+      return false;
+    } finally {
+      clearTimeout(timer);
+      worker.terminate();
     }
   }
 

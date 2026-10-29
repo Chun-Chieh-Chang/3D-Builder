@@ -33,6 +33,12 @@ export interface PartExportOptions {
   coordSys?: Id | null;
 }
 
+/** The worker that tries an IGES file before it is imported (probe.worker.ts, F2.2). */
+export interface ProbeApi {
+  /** Reads the IGES file as an import does, with messages in `locale`; resolves when it reads, rejects with why when it is refused. */
+  probeIges(data: Uint8Array, locale: 'zh-TW' | 'en'): Promise<void>;
+}
+
 /** What the user chose for a part's IGES file (F1.4): trimmed surfaces or a B-rep solid, the unit, and as for STEP the colors and a coordinate system. */
 export interface PartIgesOptions extends Omit<PartExportOptions, 'schema'> {
   mode?: 'faces' | 'brep';

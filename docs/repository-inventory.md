@@ -6,9 +6,9 @@
 
 | 項目 | 程式來源值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 84／7／34 |
-| ADR 文件 | 216 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 199／195／245 |
+| 零件／組合件／工程圖 Schema | 85／7／34 |
+| ADR 文件 | 217 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 200／196／246 |
 | 實機清單項目 | 92 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -446,6 +446,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0215：草圖選取候選與取消預覽](<adr/0215-sketch-selection-candidates.md>)
 - [ADR 0216：不會被接受的限制條件按鈕不顯示（試算後過濾）](<adr/0216-trial-filtered-relation-buttons.md>)
 - [ADR 0217：草圖線與曲面輪廓的限制條件](<adr/0217-sketch-relations-to-face-outlines.md>)
+- [ADR 0219：IGES 輸出與輸入（F1.4、F2.2）](<adr/0219-iges-exchange.md>)
 
 ### 歷史驗證
 

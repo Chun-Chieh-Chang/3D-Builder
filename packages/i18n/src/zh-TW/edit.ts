@@ -31,6 +31,8 @@ export const edit = {
   'import.igesCannotRead': '無法讀取 IGES 檔：{reason}',
   'import.notIges': '無法讀取 IGES 檔（格式錯誤，或不是 IGES 檔）',
   'import.igesNoShapes': 'IGES 檔中沒有形狀',
+  'import.igesChecking': '正在讀取 {name}…',
+  'import.igesStalled': 'IGES 檔 {seconds} 秒內沒有讀完，已停止：檔案可能損壞（例如某個實體的參數不足），沒有加入零件',
   'import.noSolid': '檔案中沒有實體，也沒有可縫合成實體的曲面（可能只有線架構）',
   'import.openSurfaces': '檔案中只有曲面，縫合後仍有 {n} 條邊沒有接上（容差 {tolerance} mm），曲面沒有圍成封閉的體積；可以加大縫合容差再試',
   'import.sewn': '檔案中沒有實體：已把 {faces} 個曲面縫合成 {solids} 個實體（容差 {tolerance} mm）',
