@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { imageBitmapOf } from '../state/pictures';
 import { t } from '@3db/i18n';
 import { ModelDimensions } from './ModelDimensions';
@@ -11,6 +11,8 @@ import { ACTIONS, shortcutOf } from '../actions';
 import { chosen, pickable, prompt } from '../state/datumSlots';
 import { sample } from '@3db/sketch/interact';
 import { buildOverlay, SKETCH_COLORS } from '../sketcher/overlay';
+import type { EntryView } from '../sketcher/controller';
+import type { P2 } from '@3db/sketch';
 import { store, useSketcherView, useStore } from '../state/store';
 import { FEATURE_LABEL, PICK_FILTER_LABEL } from '../strings';
 import type { RebuildPayload } from '../worker/protocol';
@@ -544,6 +546,7 @@ export function Viewport() {
         </div>
       )}
       {sketching && dimensionEdit && <DimensionEditor id={dimensionEdit} overlay={editorOverlay ?? overlay.current} key={dimensionEdit} />}
+      {sketching && !dimensionEdit && view?.entry && <EntryBoxes typed={view.entry} at={view.snap?.p ?? view.cursor} overlay={overlay.current} />}
       {!bootMs && (
         <div className="boot-overlay">{bootError ? t('boot.failed', { why: bootError }) : t('boot.loading')}</div>
       )}
@@ -632,6 +635,69 @@ function DimensionEditor({ id, overlay }: { id: string; overlay: SketchOverlay |
         onBlur={() => store.editDimension(null)}
       />
       <span className="suffix">{c.type === 'angle' ? '°' : 'mm'}</span>
+    </div>
+  );
+}
+
+/**
+ * The values typed while drawing (P1, G01), next to the cursor: one box per value, the cursor's value shown in a box nothing is typed in. Typing in the
+ * sketch moves the keyboard here; Tab goes to the next box, Enter makes what they say, Esc drops what was typed (a second Esc is the sketch's own).
+ */
+function EntryBoxes({ typed, at, overlay }: { typed: EntryView; at: P2 | null; overlay: SketchOverlay | null }) {
+  const inputs = useRef<(HTMLInputElement | null)[]>([]);
+  const sketcher = store.sketcher;
+  // only when typing or Tab asks for it: a box made active otherwise (the next segment after Enter) leaves the keyboard with the sketch
+  useLayoutEffect(() => {
+    const input = inputs.current[typed.active];
+    if (typed.focus === 0 || !input) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, [typed.focus]); // eslint-disable-line react-hooks/exhaustive-deps
+  const v = store.viewer;
+  if (!sketcher || !v || !overlay || !at) return null;
+  const screen = v.screenOf(overlay.frame, at);
+  const error = typed.fields.find((f) => f.error)?.error;
+  const circle = typed.fields.find((f) => f.key === 'diameter' || f.key === 'radius');
+  return (
+    <div className="entry-box" data-sketch-entry style={{ left: screen.x, top: screen.y }} onPointerDown={(e) => e.stopPropagation()} title={t('sketch.entry.help')}>
+      <div className="entry-fields">
+        {typed.fields.map((f, i) => (
+          <label key={f.key} className={i === typed.active ? 'active' : ''}>
+            <span>{t(`sketch.entry.${f.key}`)}</span>
+            <input
+              ref={(el) => void (inputs.current[i] = el)}
+              data-entry={f.key}
+              className={f.error ? 'invalid' : f.locked ? 'locked' : ''}
+              value={f.text}
+              placeholder={f.live}
+              aria-invalid={!!f.error}
+              onChange={(e) => sketcher.setEntry(f.key, e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return; // the IME's own Enter and Esc
+                if (e.key === 'Tab') {
+                  e.preventDefault();
+                  sketcher.nextEntry(e.shiftKey);
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  if (sketcher.commitEntry()) e.currentTarget.blur();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                  if (!sketcher.cancelEntry()) sketcher.escape();
+                }
+              }}
+            />
+            <span className="suffix">{f.key === 'angle' ? '°' : 'mm'}</span>
+          </label>
+        ))}
+        {circle && (
+          <button type="button" data-entry-mode title={t('sketch.entry.circleMode')} onClick={() => sketcher.setCircleEntry(circle.key === 'diameter' ? 'radius' : 'diameter')}>
+            {circle.key === 'diameter' ? 'Ø→R' : 'R→Ø'}
+          </button>
+        )}
+      </div>
+      {error && <div className="entry-error" role="alert">{error}</div>}
     </div>
   );
 }

@@ -521,6 +521,9 @@ function runViewKey(c: ViewKeyCommand): void {
   }
 }
 
+/** The characters a typed value can start with: a digit, a sign, a decimal point, a parenthesis. */
+const ENTRY_START = /^[0-9.+\-(]$/;
+
 export function installShortcuts(): () => void {
   const onKey = (e: KeyboardEvent) => {
     if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return; // A viewport gesture, IME composition, or local editor already owns this key.
@@ -588,6 +591,9 @@ export function installShortcuts(): () => void {
       // Inside a sketch, Esc ends the current tool and Delete removes the selection (SolidWorks);
       // leaving the sketch is the confirmation corner or 「離開草圖」.
       if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey && store.sketcher?.cycleCandidate(e.shiftKey)) { e.preventDefault(); return; }
+      // a value typed while drawing (P1, G01): its first character starts it in the box next to the cursor, which then has the keyboard
+      if (ENTRY_START.test(e.key) && !e.ctrlKey && !e.altKey && !e.metaKey && store.sketcher?.beginEntry(e.key)) { e.preventDefault(); return; }
+      if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey && store.sketcher?.nextEntry(e.shiftKey)) { e.preventDefault(); return; }
       if (e.key === 'Escape') return void store.sketcher?.escape();
       if (e.key === 'Delete') return void store.sketcher?.deleteSelection();
     } else if (s.editing) {
