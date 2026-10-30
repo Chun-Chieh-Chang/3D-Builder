@@ -9,12 +9,12 @@ import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type
 import { encodeShade, flatViewLines, rasterizeShade, withoutHiddenEdges, type ShadeImage, type ViewLines } from '@3db/drawing';
 import { findEntrance, silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, placedViewFeatures, viewFeatures, viewEdges, findClearance, findInterference, flatDrawingGeometry, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
-import { binaryStl, exportAssemblyStep, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
+import { binaryStl, exportAssemblyStep, exportPartIges, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SnapItem, SourcePart, SourceProvider } from '@3db/regen';
 import { mergeMeshes } from './mergeMesh';
 import { heapOf } from './heap';
 import { partFeatures } from './partOutline';
-import type { AssemblyStepRequest, DrawingElementsResult, DrawingFeaturesResult, DrawingViewRequest, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData, StepOutput } from './protocol';
+import type { AssemblyStepRequest, DrawingElementsResult, DrawingFeaturesResult, DrawingViewRequest, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, PartIgesOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData, StepOutput } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -147,7 +147,7 @@ function ownBodies(doc: PartDoc, r: RebuildResult) {
 }
 
 /** The motion that writes the part in the coordinate system chosen (C3.4), or nothing. */
-function placing(r: RebuildResult, options: PartExportOptions): { place?: number[] } {
+function placing(r: RebuildResult, options: Pick<PartExportOptions, 'coordSys'>): { place?: number[] } {
   if (!options.coordSys) return {};
   const system = r.systems.get(options.coordSys);
   if (!system) throw new Error(t('export.coordSysMissing'));
@@ -358,6 +358,23 @@ const api: KernelApi = {
     const warnings: string[] = [];
     const text = exportPartStep(kernel, shapes, name, {
       schema: options.schema ?? 'AP214',
+      ...(options.colors === false ? {} : { faceColors: colors }),
+      ...placing(r, options),
+      warnings,
+    });
+    return { text, warnings };
+  },
+
+  async exportIges(doc: PartDoc, name: string, options: PartIgesOptions = {}): Promise<StepOutput> {
+    await api.init();
+    await solver.fresh();
+    const r = regen.rebuild(doc);
+    lastResult = r; // the regenerator lets go of what it made before (the shapes measuring reads)
+    const { shapes, colors } = ownBodies(doc, r);
+    const warnings: string[] = [];
+    const text = exportPartIges(kernel, shapes, name, {
+      mode: options.mode ?? 'faces',
+      unit: options.unit ?? 'MM',
       ...(options.colors === false ? {} : { faceColors: colors }),
       ...placing(r, options),
       warnings,

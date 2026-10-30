@@ -35,6 +35,7 @@ import {
   type StepAssemblyPrototype,
   type StepComponent,
   type StepExportOptions,
+  type IgesExportOptions,
   type MeshOptions,
   type ProjectedView,
   type ViewDirection,
@@ -5533,6 +5534,55 @@ export class Kernel {
   }
 
   /**
+   * IGES 5.3 of a part (F1.4) through XCAF, so that the file carries the part name and the colors of faces, written as trimmed surfaces or as a
+   * B-rep solid (`IgesExportOptions.mode`). The shape is cut as for STEP (`seamless`). The unit and the mode are settings of the library as a whole
+   * that a writer takes when it is made (set after, they go to the next file), so they are set first and put back after. IGES text is ASCII: a name
+   * with other characters is written with `_` for each of them, and `warnings` says so.
+   */
+  exportIges(id: ShapeId, productName = 'Part', unit: 'MM' | 'INCH' = 'MM', options: IgesExportOptions = {}): string {
+    const oc = this.oc;
+    const mode = options.mode ?? 'faces';
+    if (unit !== 'MM' && unit !== 'INCH') throw new KernelError(t('kernel.igesBadUnit', { unit: String(unit) }));
+    if (mode !== 'faces' && mode !== 'brep') throw new KernelError(t('kernel.igesBadMode', { mode: String(mode) }));
+    const arena = new Arena();
+    const path = `/export-${++this.fileSeq}.igs`;
+    const doc = new oc.TDocStd_Document(arena.own(new oc.TCollection_ExtendedString('XmlXCAF', false)));
+    try {
+      oc.IGESControl_Controller.Init(); // makes the settings exist
+      oc.Interface_Static.SetCVal('write.iges.unit', unit);
+      oc.Interface_Static.SetCVal('write.iges.brep.mode', mode === 'brep' ? 'BRep' : 'Faces');
+      const w = arena.own(new oc.IGESCAFControl_Writer());
+      const shapeTool = oc.XCAFDoc_DocumentTool.ShapeTool(doc.Main());
+      const written = this.seamless(id, arena, options.warnings);
+      const label = shapeTool.AddShape(written.shape, false, true);
+      const name = productName.replace(/[^\x20-\x7e]/g, '_');
+      if (name !== productName) options.warnings?.push(t('kernel.igesNameAscii', { name: productName, written: name }));
+      oc.TDataStd_Name.Set(label, arena.own(new oc.TCollection_ExtendedString(name, false)));
+      this.colorFaces(doc, label, id, options.faceColors ?? [], arena, written.piecesOf);
+      w.SetNameMode(true);
+      w.SetColorMode(true);
+      let ok: boolean;
+      try {
+        ok = w.Perform(doc, path, arena.own(new oc.Message_ProgressRange()));
+      } catch (e) {
+        throw new KernelError(t('kernel.igesFailedWhy', { why: this.errorText(e) }));
+      }
+      if (!ok) throw new KernelError(t('kernel.igesFailed'));
+      return oc.FS.readFile(path, { encoding: 'utf8' }) as string;
+    } finally {
+      oc.Interface_Static.SetCVal('write.iges.unit', 'MM');
+      oc.Interface_Static.SetCVal('write.iges.brep.mode', 'Faces');
+      doc.delete();
+      try {
+        oc.FS.unlink(path);
+      } catch {
+        // not written
+      }
+      arena.dispose();
+    }
+  }
+
+  /**
    * The shape as it is written to STEP: every closed torus or sphere face cut in two, as SolidWorks writes them. eDrawings 2026 draws a whole
    * torus closed by a seam edge (what OCCT makes of a fillet of a round edge) as the wrong part of the tube: a concave fillet comes out as three
    * quarters of a ring, a convex one flares outwards (checked by the user in eDrawings, 2026-10-27: the same file with its closed faces cut in two is
@@ -5839,6 +5889,41 @@ export class Kernel {
       if (status !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) throw new KernelError(t('import.notStep'));
       r.TransferRoots(arena.own(new oc.Message_ProgressRange()));
       if (r.NbShapes() === 0) throw new KernelError(t('import.noShapes'));
+      return this.repairImport(arena.own(r.OneShape()), options);
+    } finally {
+      try {
+        oc.FS.unlink(path);
+      } catch {
+        // not written
+      }
+      arena.dispose();
+    }
+  }
+
+  /**
+   * IGES import (F2.2): as `importStep`, in millimetres whatever unit the file uses. A file of trimmed surfaces (what most programs write) has no
+   * solid, so its faces are sewn into one by `repairImport`; a file written as a B-rep solid reads as that solid.
+   */
+  importIges(data: Uint8Array | string, options: ImportOptions = {}): ImportResult {
+    const oc = this.oc;
+    const arena = new Arena();
+    const path = `/import-${++this.fileSeq}.igs`;
+    try {
+      oc.FS.writeFile(path, data);
+      const r = arena.own(new oc.IGESControl_Reader());
+      let status;
+      try {
+        status = r.ReadFile(path);
+      } catch (e) {
+        throw new KernelError(t('import.igesCannotRead', { reason: this.errorText(e) }));
+      }
+      if (status !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) throw new KernelError(t('import.notIges'));
+      try {
+        r.TransferRoots(arena.own(new oc.Message_ProgressRange()));
+      } catch (e) {
+        throw new KernelError(t('import.igesCannotRead', { reason: this.errorText(e) }));
+      }
+      if (r.NbShapes() === 0) throw new KernelError(t('import.igesNoShapes'));
       return this.repairImport(arena.own(r.OneShape()), options);
     } finally {
       try {

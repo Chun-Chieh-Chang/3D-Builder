@@ -244,6 +244,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   83: (doc) => doc,
   // v85: associative Move Face target plane.
   84: (doc) => doc,
+  // v86: an imported body may read an IGES file (a blob of kind iges, F2.2). Nothing to convert; an older program refuses the file.
+  85: (doc) => doc,
 };
 
 export class FormatError extends Error {

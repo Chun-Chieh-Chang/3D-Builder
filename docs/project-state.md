@@ -26,7 +26,7 @@ Phase 0–7範圍已有開發成果；原Phase 0–2閘門按當時較低範圍�
 | 剖面與剖面線 | 一般／斜向／階梯／對正／局部剖面，分零件實例填線、線距與角度 | 目前自動分件樣式，未提供逐件手動樣式；裁剪／放大繼承與母視圖限制仍有效；[ADR0198](adr/0198-section-hatch-regions-and-style.md)、[ADR0207](adr/0207-component-hatches-and-view-captions.md) |
 | 鈑金 | 多道與局部展開、相容的展開加工／摺回、原生展平尺寸與折彎表 | 封閉基材與單一本體；未展開曲面／變截面斜向加工／加料拒絕；任意STEP轉鈑金未開放；[ADR0199](adr/0199-sheet-manufacturing-workflow.md)、[ADR0200](adr/0200-sheet-partial-unfold-curved-machining.md) |
 | 圖示與選單 | SolidCraft授權圖示＋完整文字、現有CommandBar | 新Ribbon分組／搜尋仍是[獨立設計稿](design/menu-redesign/plan.md)，不能當正式介面；[ADR0201](adr/0201-solidcraft-icons-and-menu-design.md) |
-| 輸出與驗證 | STEP、SVG、DXF、PDF；公開樣本與外部應用程式探針 | AutoCAD／SHX、使用者製造基準與實體列印未認證；[自動驗收](automated-acceptance.md) |
+| 輸出與驗證 | STEP、IGES（零件，輸入與輸出）、SVG、DXF、PDF；公開樣本與外部應用程式探針 | AutoCAD／SHX、使用者製造基準與實體列印未認證；IGES 只以本程式寫出的檔與模糊測試驗證，尚無他牌 CAD 樣本，使用者已在 eDrawings 確認產品輸出（含切半與顏色）正確（[ADR0220](adr/0220-iges-exchange.md)）；[自動驗收](automated-acceptance.md) |
 
 ## 待辦與已知問題
 

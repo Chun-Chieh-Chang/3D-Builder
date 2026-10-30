@@ -32,6 +32,29 @@
 
 ---
 
+## 2026-10-29：IGES 輸出與輸入（F1.4、F2.2，ADR 0220，Schema 86）
+
+在 worktree `claude/iges-exchange` 開發（主資料夾同時有另一工作階段在做 DXF 輸入，依 AGENTS.md §4 不共用資料夾）。設計、量測與驗證見 [ADR 0220](docs/adr/0220-iges-exchange.md)。原取 ADR 0219／Schema 85，2026-10-30 合併 main 時與 DXF 匯入（ADR 0219）及移動面（Schema 85）撞號，改為 0220／86。
+
+過程中的發現：
+
+1. **IGES 全域設定在寫出器建構時讀取**：建構後才設的單位與寫法會套用到下一個檔案（探針第二、三個檔互換）。改為先設、再建構、`finally` 還原，並以「inch＋B-rep 之後的預設輸出」守門。
+2. **OCCT IGES 讀取器的無窮迴圈**：模糊測試 #46 卡住超過 10 分鐘。以逐一還原法縮小到單一變更：平面實體的參數記錄提早結束（`108,-;`、`108,0;…`、`108,0.;`）就會卡住，壞數字則正常拒絕。WASM 無法中斷，採使用者選擇的「拋棄式 worker 限時試讀」擋在入口；模糊測試以子行程＋殺行程重現同一機制。
+3. **測試讀取器的縫合容差**：第一版 1e-6 對 IGES 修剪曲線太緊，讀回少面而失敗；被測的 `importIges` 同時誤差 ~1e-10。改測試讀取器為 1e-4，驗收門檻不變（§3.3）。
+4. **記憶體**：IGES 輸出 2000 次 +330.88 MiB，與只用 OCCT `IGESControl_Writer` 的對照完全相同，成長屬於程式庫；照實記錄，不斷言 0（§3.5）。
+
+紅隊四問：
+① 輸入破壞：非法單位／寫法拋錯不改寫；非 ASCII 名稱寫成 `_` 並警告；非 IGES、空檔、截斷、STEP 冒充 `.igs`（依內容判斷）皆有明確結果；200 個壞檔 0 個非 `KernelError`、0 次當機，2 個卡死由時限停止。
+② 幾何：環面、球面切半與 STEP 共用 `seamless`；整圈圓角與球兩種寫法往返體積 ≤ 1e-6、包圍盒 ≤ 1e-5 mm、面數相符。
+③ 依賴鏈：`schema.ts`（blob kind）→ `commands.ts`（只收 step／iges）→ `engine.ts`（依 kind 分派）→ `partFile.ts`（`.igs`）→ worker／store／對話框／說明／`help-links.json`；`refs.ts`／`dag.ts`／`PropertyManager.tsx` 以輸入特徵處理，與格式無關，不需改。
+④ 零 mock：往返以獨立讀取器與真實 OCCT 量測；瀏覽器 e2e 走真實選單、對話框、下載與兩個真實 worker。
+
+全量：`npm test` 3826 通過（26 既有略過；第一輪的 help-manual 失敗是驗證手冊未同步新說明，以 `SYNC_MANUAL_HELP=1` 重生一行）。完整 `verify:ui` 兩輪 245／246；`manual-drawing-linked.js` 在乾淨 `bca2d80` 以 `--only` 重現同一數值（`box.centred:false`），為既有失敗。紅隊注入設定順序錯誤 8 項失敗，已還原。2026-10-30 使用者確認步驟 0 的 6 個對照檔在 eDrawings 全部正確；這 6 個檔由 OCCT 寫出器直接寫出、未經 `exportIges`，所以另以 `exportIges` 產生 6 個產品路徑對照檔（含切半與顏色），使用者同日確認這 6 個也全部正確（含切半與顏色），產品輸出的 eDrawings 驗收通過。
+
+合併 main（至 `d66cabb`）：IGES 改為 Schema 86、ADR 0220；衝突在 App.tsx（兩個新對話框）、serialize.ts（遷移）、handoff、盤點。合併後完整 `verify:ui` 248／248；`npm test` 唯一失敗為 main 既有的 `direct-edit.test.ts` 移動面推進超過厚度（未含 IGES 的 main 同樣失敗，未修改）。
+
+---
+
 
 ## 2026-10-30：大型草圖使 PlaneGCS 記憶體耗盡（`Aborted(OOM)`）的根因與修正
 

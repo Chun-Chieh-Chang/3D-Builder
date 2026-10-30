@@ -189,7 +189,15 @@ export const help = {
 
   'help.exportStep.keywords': '輸出 STEP 檔案 匯出 座標系統 顏色 AP242',
 
-  'help.exportStep.see': 'import-step coord-sys export-stl',
+  'help.exportStep.see': 'import-step coord-sys export-stl export-iges',
+  'help.exportIges.summary': '把零件輸出成 IGES 檔，給只讀 IGES 的舊 CAD 或模具廠用。',
+
+  'help.exportIges.body':
+    '把零件輸出成 IGES 5.3 檔。組合件請用「輸出 STEP」：IGES 這次不輸出組合件。\n\n- 跳出視窗：\n  - 「寫法」：「修剪曲面」（預設）幾乎每個 CAD 都讀得到，讀的一方要自己縫成實體；「實體 (B-rep)」讀回來直接是實體，但有些軟體不支援。\n  - 「單位」：mm 或 inch。\n  - 「帶著顏色」、「座標系統」與輸出 STEP 相同。\n  - 按「輸出」。\n- 瀏覽器下載一個 .igs 檔。\n- IGES 只能寫 ASCII：中文的零件名稱每個字寫成 _，最下方的訊息會說。\n- 封閉的環面與球面跟 STEP 一樣分成兩半寫出；偏移曲面轉成 B 樣條。',
+
+  'help.exportIges.keywords': '輸出 IGES IGS 檔案 匯出 修剪曲面 實體 單位 英制 顏色',
+
+  'help.exportIges.see': 'export-step import-step coord-sys',
   'help.exportStl.summary': '把零件的實體輸出成 STL（三角網格）檔，精細度依文件的網格品質設定。',
 
   'help.exportStl.body':
@@ -754,14 +762,14 @@ export const help = {
   'help.coordSys.keywords': '座標系統 原點 STEP 輸出 方向 右手系',
 
   'help.coordSys.see': 'ref-plane export-step ref-point',
-  'help.importStep.summary': '把 STEP 檔讀進來成為零件的本體，必要時自動修復。',
+  'help.importStep.summary': '把 STEP 或 IGES 檔讀進來成為零件的本體，必要時自動修復。',
 
   'help.importStep.body':
-    '把 STEP 檔讀進來成為零件的一個本體，必要時自動修復。\n\n- 在新零件按它，在瀏覽器的視窗選 .step 檔；等幾秒，3D 視窗出現模型，設計樹多一列「輸入1」。\n- 雙擊「輸入1」（單擊只是選取）打開面板：「輸入的資料」（檔名，資料存放在零件檔中，不需要原始檔案）與「診斷報告」（檔案內容有幾個實體與面、有效性檢查結果、做了什麼修改）。\n- 「縫合容差」（預設 0.01）只有檔案裡只有曲面、沒有實體時才有作用。\n- 之後可以在它上面加特徵：草圖畫在它的面上、伸長、刪除面、移動面等。\n- 診斷報告有警告時，用「檢查幾何」再看一次。\n\n驗證過的例子：40 × 30 × 10 的板、中間一個半徑 4 的孔：體積 40 × 30 × 10 − π × 4² × 10 ≈ 11497 mm³。',
+    '把 STEP 或 IGES 檔讀進來成為零件的一個本體，必要時自動修復。\n\n- 在新零件按它，在瀏覽器的視窗選 .step 或 .igs 檔；等幾秒，3D 視窗出現模型，設計樹多一列「輸入1」。\n- 雙擊「輸入1」（單擊只是選取）打開面板：「輸入的資料」（檔名，資料存放在零件檔中，不需要原始檔案）與「診斷報告」（檔案內容有幾個實體與面、有效性檢查結果、做了什麼修改）。\n- 「縫合容差」（預設 0.01）只有檔案裡只有曲面、沒有實體時才有作用；大多數 IGES 檔就是這種，曲面會縫成實體。\n- 「開啟舊檔」也能直接開 STEP 或 IGES 檔，開成一個帶著它的新零件。\n- 之後可以在它上面加特徵：草圖畫在它的面上、伸長、刪除面、移動面等。\n- 診斷報告有警告時，用「檢查幾何」再看一次。\n\n驗證過的例子：40 × 30 × 10 的板、中間一個半徑 4 的孔：體積 40 × 30 × 10 − π × 4² × 10 ≈ 11497 mm³。',
 
-  'help.importStep.keywords': '輸入 STEP 匯入 本體 診斷報告 修復 縫合',
+  'help.importStep.keywords': '輸入 STEP IGES IGS 匯入 本體 診斷報告 修復 縫合',
 
-  'help.importStep.see': 'delete-face move-face check-part export-step',
+  'help.importStep.see': 'delete-face move-face check-part export-step export-iges',
 
   'help.cosmeticThread.summary': '在選取的圓柱面或孔壁上畫裝飾螺紋線：只改變顯示，不加真正的螺紋幾何。',
 

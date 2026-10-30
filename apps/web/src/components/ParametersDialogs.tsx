@@ -473,6 +473,67 @@ export function StepOptionsDialog() {
   );
 }
 
+/** 輸出 IGES (F1.4): trimmed surfaces or a B-rep solid, the unit, colors, and the coordinate system the part is written in. */
+export function IgesOptionsDialog() {
+  const open = useStore((s) => s.dialog === 'igesOptions');
+  const doc = useStore((s) => s.doc);
+  const [mode, setMode] = useState<'faces' | 'brep'>('faces');
+  const [unit, setUnit] = useState<'MM' | 'INCH'>('MM');
+  const [colors, setColors] = useState(true);
+  const [coordSys, setCoordSys] = useState('');
+  if (!open) return null;
+  const systems = doc.features.filter((f) => f.type === 'coordSys' && !f.suppressed);
+  const close = () => store.openDialog(null);
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal parameters" role="dialog" aria-label={t('export.igesTitle')} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && close()}>
+        <h3>{t('export.igesTitle')}</h3>
+        <p className="hint">{t('export.igesHint')}</p>
+        <label className="pm-row">
+          <span>{t('export.igesMode')}</span>
+          <select value={mode} onChange={(e) => setMode(e.target.value as 'faces' | 'brep')}>
+            <option value="faces">{t('export.igesFaces')}</option>
+            <option value="brep">{t('export.igesBrep')}</option>
+          </select>
+        </label>
+        <label className="pm-row">
+          <span>{t('export.unit')}</span>
+          <select value={unit} onChange={(e) => setUnit(e.target.value as 'MM' | 'INCH')}>
+            <option value="MM">mm</option>
+            <option value="INCH">inch</option>
+          </select>
+        </label>
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={colors} onChange={(e) => setColors(e.target.checked)} />
+          <span>{t('export.colors')}</span>
+        </label>
+        <label className="pm-row">
+          <span>{t('export.coordSys')}</span>
+          <select value={coordSys} onChange={(e) => setCoordSys(e.target.value)}>
+            <option value="">{t('export.partOrigin')}</option>
+            {systems.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="modal-actions">
+          <button
+            onClick={() => {
+              close();
+              void store.writeIges({ mode, unit, colors, coordSys: coordSys || null });
+            }}
+          >
+            {t('export.go')}
+          </button>
+          <button onClick={close}>{t('export.cancel')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** 新零件（範本） (B1.4): which kind of part to begin with. */
 export function TemplateDialog() {
   const open = useStore((s) => s.dialog === 'template');

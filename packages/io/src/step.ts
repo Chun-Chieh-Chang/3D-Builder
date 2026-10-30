@@ -1,4 +1,4 @@
-import { KernelError, type Kernel, type ShapeId, type StepExportOptions } from '@3db/kernel';
+import { KernelError, type IgesExportOptions, type Kernel, type ShapeId, type StepExportOptions } from '@3db/kernel';
 import { t } from '@3db/i18n';
 import { componentPatternInstances, composePose, dirName, joinPath, mirrorKey, mirroredInside, mirroredPose, type AssemblyDoc, type Id, type InnerPoses, type PatternAxis, type PatternLine, type Pose, type SourceTree } from '@3db/model';
 import { componentName, partNameOf } from './names';
@@ -26,22 +26,33 @@ export function portableShape(kernel: Kernel, shape: ShapeId): { shape: ShapeId;
  * of its faces. `place` moves the shape first (a coordinate system's frame to the origin, C3.4): a 3 × 4 motion as `Kernel.transformed` takes it.
  */
 export function exportPartStep(kernel: Kernel, bodies: ShapeId | readonly ShapeId[], name: string, options: StepExportOptions & { place?: readonly number[]; warnings?: string[] } = {}): string {
+  const { place, ...step } = options;
+  return writePart(kernel, bodies, place, options.warnings, (shape) => kernel.exportStep(shape, name, 'MM', step));
+}
+
+/** IGES export of a part (F1.4): the bodies as for `exportPartStep`, written as trimmed surfaces or a B-rep solid, in millimetres or inches. */
+export function exportPartIges(kernel: Kernel, bodies: ShapeId | readonly ShapeId[], name: string, options: IgesExportOptions & { unit?: 'MM' | 'INCH'; place?: readonly number[] } = {}): string {
+  const { place, unit, ...iges } = options;
+  return writePart(kernel, bodies, place, options.warnings, (shape) => kernel.exportIges(shape, name, unit ?? 'MM', iges));
+}
+
+/** The bodies made portable (`portableShape`), put together and placed, handed to `write`; what was made on the way is released after. */
+function writePart(kernel: Kernel, bodies: ShapeId | readonly ShapeId[], place: readonly number[] | undefined, warnings: string[] | undefined, write: (shape: ShapeId) => string): string {
   const given = Array.isArray(bodies) ? (bodies as readonly ShapeId[]) : [bodies as ShapeId];
   const made: ShapeId[] = [];
   try {
     const fit = given.map((s) => portableShape(kernel, s));
     for (const f of fit) if (f.converted) made.push(f.shape);
     const stuck = fit.filter((f) => f.failed).length;
-    if (stuck > 0) options.warnings?.push(t('export.offsetKept', { n: String(stuck) }));
+    if (stuck > 0) warnings?.push(t('export.offsetKept', { n: String(stuck) }));
     const list = fit.map((f) => f.shape);
     let shape = list.length === 1 ? list[0]! : kernel.join([...list]);
     if (list.length !== 1) made.push(shape);
-    if (options.place) {
-      shape = kernel.transformed(shape, options.place);
+    if (place) {
+      shape = kernel.transformed(shape, place);
       made.push(shape);
     }
-    const { place: _place, ...step } = options;
-    return kernel.exportStep(shape, name, 'MM', step);
+    return write(shape);
   } finally {
     for (const id of made) kernel.release(id);
   }

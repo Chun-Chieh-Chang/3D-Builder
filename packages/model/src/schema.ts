@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 85;
+export const SCHEMA_VERSION = 86;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -700,7 +700,7 @@ export interface CoordSysFeature extends FeatureBase {
 }
 
 /**
- * A solid read from a file (F2.1). The file's content is the document's blob `blob` and travels
+ * A solid read from a STEP or (v86) IGES file (F2.1, F2.2). The file's content is the document's blob `blob` and travels
  * inside the part file, so the part rebuilds without the original file.
  */
 export interface ImportedBodyFeature extends FeatureBase {
@@ -1271,7 +1271,8 @@ export interface AppearanceOverride {
 export interface BlobRef {
   id: Id;
   sha256: string;
-  kind: 'step' | 'png' | 'jpg';
+  /** `step` or `iges` (v86) for an imported body, `png` or `jpg` for a sketch picture. */
+  kind: 'step' | 'iges' | 'png' | 'jpg';
   /** Name of the file it was read from; shown only. */
   fileName?: string;
 }

@@ -51,6 +51,8 @@ export const lowlevel = {
   'picker.part': '3D-Builder 零件',
   'picker.oldPart': '3D-Builder 零件（舊版 .3db.json）',
   'picker.step': 'STEP 檔',
+  'picker.iges': 'IGES 檔',
+  'picker.stepOrIges': 'STEP 或 IGES 檔',
   'picker.assembly': '3D-Builder 組合件',
   'picker.any': '所有支援的檔案',
   'picker.partOrStep': '零件或 STEP 檔',

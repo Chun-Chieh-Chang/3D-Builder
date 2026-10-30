@@ -26,7 +26,7 @@ export const app: Translation = {
   'act.fillet': 'Fillet',
   'act.chamfer': 'Chamfer',
   'act.refPlane': 'Plane',
-  'act.importStep': 'Import STEP',
+  'act.importStep': 'Import STEP/IGES',
   'act.insertComponent': 'Insert Components',
   'act.mate': 'Mate',
   'act.moveComponent': 'Move Component',

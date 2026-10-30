@@ -91,6 +91,7 @@ export const model: Translation = {
   'cmd.pictureSize': 'The width and the height of a picture have to be more than 0',
   'cmd.pictureOpacity': 'The opacity of a picture has to be between 0 and 1',
   'cmd.importBodyMustUseData': 'An Imported Body must use this imported data',
+  'cmd.importKind': 'An Imported Body reads a STEP or IGES file, not data of kind "{kind}"',
   'cmd.dimensionNotFound': 'Dimension not found: {id}',
   'cmd.dimensionPositionNotFinite': 'The position of a dimension label must be finite numbers',
   'cmd.onlyExtrudeHasEnd': 'Only an Extrude feature has an end condition',

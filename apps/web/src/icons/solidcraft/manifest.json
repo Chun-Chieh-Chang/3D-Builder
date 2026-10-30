@@ -523,6 +523,7 @@
     "save": "save",
     "save-as": "save",
     "export-step": "export",
+    "export-iges": "export",
     "export-stl": "export",
     "export-image": "export",
     "drw-pdf": "export",

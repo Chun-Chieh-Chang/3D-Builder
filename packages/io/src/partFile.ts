@@ -15,7 +15,7 @@ import { writeZip, type ZipEntry } from './zip';
  */
 export const PART_FILE_EXTENSION = '.3dbx';
 
-const BLOB_EXTENSION: Record<BlobRef['kind'], string> = { step: 'step', png: 'png', jpg: 'jpg' };
+const BLOB_EXTENSION: Record<BlobRef['kind'], string> = { step: 'step', iges: 'igs', png: 'png', jpg: 'jpg' };
 const blobPath = (b: BlobRef) => `blobs/${b.sha256}.${BLOB_EXTENSION[b.kind]}`;
 
 export interface PartFile {

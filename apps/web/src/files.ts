@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { ASSEMBLY_FILE_EXTENSION, DRAWING_FILE_EXTENSION, isStepData, PART_FILE_EXTENSION } from '@3db/io';
+import { ASSEMBLY_FILE_EXTENSION, DRAWING_FILE_EXTENSION, isIgesData, isStepData, PART_FILE_EXTENSION } from '@3db/io';
 import type { Recovery } from './autosave';
 
 /**
@@ -46,6 +46,7 @@ const PART_TYPE: PickerType = { get description() { return t('picker.part'); }, 
 /** Parts saved before `.3dbx` were bare document text (`.3db.json`). */
 const OLD_PART_TYPE: PickerType = { get description() { return t('picker.oldPart'); }, accept: { 'application/json': ['.json'] } };
 const STEP_TYPE: PickerType = { get description() { return t('picker.step'); }, accept: { 'application/step': ['.step', '.stp'] } };
+const IGES_TYPE: PickerType = { get description() { return t('picker.iges'); }, accept: { 'model/iges': ['.igs', '.iges'] } };
 const ASSEMBLY_TYPE: PickerType = { get description() { return t('picker.assembly'); }, accept: { 'application/x-3db-assembly': [ASSEMBLY_FILE_EXTENSION] } };
 const DRAWING_TYPE: PickerType = { get description() { return t('picker.drawing'); }, accept: { 'application/x-3db-drawing': [DRAWING_FILE_EXTENSION] } };
 /** The first type is the dialog's default filter: everything 「開啟舊檔」 can open. */
@@ -53,7 +54,7 @@ const ANY_TYPE: PickerType = {
   get description() {
     return t('picker.any');
   },
-  accept: { 'application/octet-stream': [PART_FILE_EXTENSION, ASSEMBLY_FILE_EXTENSION, DRAWING_FILE_EXTENSION], ...STEP_TYPE.accept, ...OLD_PART_TYPE.accept },
+  accept: { 'application/octet-stream': [PART_FILE_EXTENSION, ASSEMBLY_FILE_EXTENSION, DRAWING_FILE_EXTENSION], ...STEP_TYPE.accept, ...IGES_TYPE.accept, ...OLD_PART_TYPE.accept },
 };
 
 const acceptOf = (types: PickerType[]) => types.flatMap((t) => Object.values(t.accept).flat()).join(',');
@@ -61,6 +62,11 @@ const acceptOf = (types: PickerType[]) => types.flatMap((t) => Object.values(t.a
 /** A STEP file by name, or by its first bytes when the name says nothing. */
 export function isStepFile(file: OpenedFile): boolean {
   return /\.(step|stp)$/i.test(file.name) || isStepData(file.bytes);
+}
+
+/** An IGES file by name, or by its first bytes when the name says nothing. */
+export function isIgesFile(file: Pick<OpenedFile, 'name' | 'bytes'>): boolean {
+  return /\.(igs|iges)$/i.test(file.name) || isIgesData(file.bytes);
 }
 
 export interface OpenedFile {
@@ -72,14 +78,20 @@ export interface OpenedFile {
 
 const cancelled = (e: unknown) => e instanceof DOMException && e.name === 'AbortError';
 
-/** 「開啟舊檔」: a part, an assembly, or a STEP file to start a part from; null when the user cancels. */
+/** 「開啟舊檔」: a part, an assembly, or a STEP or IGES file to start a part from; null when the user cancels. */
 export function pickFileToOpen(startIn: FileSystemDirectoryHandle | null = null): Promise<OpenedFile | null> {
-  return pick([ANY_TYPE, PART_TYPE, ASSEMBLY_TYPE, DRAWING_TYPE, STEP_TYPE, OLD_PART_TYPE], startIn);
+  return pick([ANY_TYPE, PART_TYPE, ASSEMBLY_TYPE, DRAWING_TYPE, STEP_TYPE, IGES_TYPE, OLD_PART_TYPE], startIn);
 }
 
-/** 「輸入 STEP」: a STEP file to import into the part. */
+/** 「輸入 STEP 組合件」: a STEP file. */
 export function pickStepFile(): Promise<OpenedFile | null> {
   return pick([STEP_TYPE]);
+}
+
+/** 「輸入 STEP／IGES」: a STEP or an IGES file to import into the part. */
+export function pickImportFile(): Promise<OpenedFile | null> {
+  const either: PickerType = { get description() { return t('picker.stepOrIges'); }, accept: { ...STEP_TYPE.accept, ...IGES_TYPE.accept } };
+  return pick([either, STEP_TYPE, IGES_TYPE]);
 }
 
 /** 「草圖圖片」: a PNG or a JPEG to lay in a sketch. */
