@@ -14,6 +14,7 @@ import {
   type PartDoc,
   type PointPosition,
   type SketchConstraint,
+  type SketchEdit,
   type SketchEntity,
   type SketchFeature,
   type SketchPlacement,
@@ -46,6 +47,7 @@ import {
   unit,
   cross,
   dot,
+  type Geometry,
   type Hit,
   type RelationBody,
   type Snap,
@@ -232,11 +234,13 @@ export interface PointerInput {
   shift: boolean;
 }
 
-/** Previewed geometry of the tool in progress (drawn by the overlay). */
+/** What a shared operation plan says will happen to a curve it previews (G06, P2): new piece, a cut/moved one, and what stays of the entity being changed. */
+export type OpRole = 'add' | 'remove' | 'change';
+
 export type PreviewShape =
-  | { kind: 'line'; a: P2; b: P2; construction?: boolean }
-  | { kind: 'circle'; c: P2; r: number }
-  | { kind: 'arc'; c: P2; r: number; a0: number; a1: number }
+  | { kind: 'line'; a: P2; b: P2; construction?: boolean; role?: OpRole }
+  | { kind: 'circle'; c: P2; r: number; role?: OpRole }
+  | { kind: 'arc'; c: P2; r: number; a0: number; a1: number; role?: OpRole }
   | { kind: 'box'; a: P2; b: P2 };
 
 /** A value typed in while drawing (P1, G01): it becomes a driving dimension of what the click makes. 'edge' is a polygon's side length (G16). */
@@ -366,6 +370,8 @@ export class SketchController {
   private entryCache: { doc: PartDoc; key: string; values: Partial<Record<EntryField, number>>; errors: Partial<Record<EntryField, string>> } | null = null;
   /** What a typed value kept the cursor from snapping to, said in the hint. */
   private ignoredSnap: Id[] | null = null;
+  /** The operation plan the tool has under the pointer: hover shows it, the confirming click submits the same plan (G06, P2-1). Null again once the document it was built from changes. */
+  private opPlan: { doc: PartDoc; target: Id; shapes: PreviewShape[] } | null = null;
   /** The last pointer position, which Enter in the boxes clicks at. */
   private pointer: PointerInput | null = null;
   /** Crossings of two lines picked by the dimension tool, by the id a pick stands for them with. They become a point and an `intersection` relation only with the dimension (ADR 0212). */
@@ -410,6 +416,7 @@ export class SketchController {
 
   private snapshot(): ControllerView {
     if (this.candidateDoc !== this.host.doc()) { this.candidates = []; this.candidate = null; }
+    if (this.opPlan && this.opPlan.doc !== this.host.doc()) this.opPlan = null;
 
     if (this.message && (this.tool !== 'select' || this.message.selection !== [...this.selection].join(','))) this.message = null;
     const drawingLine = this.tool === 'line' || this.tool === 'centerline';
@@ -963,6 +970,7 @@ export class SketchController {
     this.inference = null;
     this.tangentTo = null;
     this.sweep = { total: 0, last: 0 };
+    this.opPlan = null;
     this.clearEntry();
   }
 
@@ -1249,6 +1257,7 @@ export class SketchController {
     this.cursor = null;
     this.hover = null;
     this.snapTarget = null;
+    this.opPlan = null;
     this.changed();
   }
 
@@ -1455,6 +1464,7 @@ export class SketchController {
         return;
       }
       this.hover = hitTest(geometry, e.p, PICK_PX * e.px, undefined, AXIS_TOOLS.has(this.tool));
+      this.opPlan = this.operationPlan(e);
       return;
     }
     const cfg = this.settings();
@@ -1917,6 +1927,21 @@ export class SketchController {
     const hit = hitTest(this.geometry(), e.p, PICK_PX * e.px, undefined, axes);
     const g = hit && geometryOf(this.geometry(), hit.id);
     return hit && g && g.type !== 'point' ? { id: hit.id, g } : null;
+  }
+
+  /**
+   * The plan of the operation the tool would make under the pointer, drawn from the same pure op the confirming click submits
+   * (G06, P2-1: trim is the first; the other PICK tools join in P2-2). Null where the op would fail, so hover then offers nothing.
+   */
+  private operationPlan(e: PointerInput): { doc: PartDoc; target: Id; shapes: PreviewShape[] } | null {
+    if (this.tool !== 'trim') return null;
+    const hit = this.hover;
+    const geometry = this.geometry();
+    const g = hit && geometryOf(geometry, hit.id);
+    if (!hit || !g || g.type === 'point') return null;
+    const plan = trim(this.sketch(), geometry, this.allocator(), hit.id, e.p);
+    if ('error' in plan) return null;
+    return { doc: this.host.doc(), target: hit.id, shapes: editPreviewShapes(plan.edit, geometry) };
   }
 
   private operationClick(e: PointerInput): void {
@@ -2441,7 +2466,8 @@ export class SketchController {
     const shapes: PreviewShape[] = [];
     if (this.box) shapes.push({ kind: 'box', a: this.box.a, b: this.box.b });
     const cursor = this.snapTarget?.p ?? this.cursor;
-    if (!cursor || this.tool === 'select' || PICK_TOOLS.has(this.tool)) return shapes;
+    if (!cursor || this.tool === 'select') return shapes;
+    if (PICK_TOOLS.has(this.tool)) return [...shapes, ...(this.opPlan?.shapes ?? [])];
     if (isTransformTool(this.tool)) return [...shapes, ...this.transformPreview(this.tool, cursor)];
     const [c1, c2] = this.clicks;
     switch (this.tool) {
@@ -2540,6 +2566,71 @@ export class SketchController {
 
 function rectLines(corners: P2[]): PreviewShape[] {
   return corners.map((a, i) => ({ kind: 'line' as const, a, b: corners[(i + 1) % 4]! }));
+}
+
+/**
+ * What a prepared edit will do, drawn where it happens (G06, P2-1): the entities it shortens re-drawn where they will lie
+ * (`change`), the new segments and arcs the op computes where they will be created (`add`), and what it deletes drawn on the
+ * spot (`remove`). The coordinates come from the plan itself — new points carry the draft positions the op computed — plus the
+ * solved geometry for what already exists, so the preview is what the confirming click will submit. Ellipses and splines as
+ * polylines (they still preview through the same transform helper).
+ */
+function editPreviewShapes(edit: SketchEdit, geometry: Geometry): PreviewShape[] {
+  const shapes: PreviewShape[] = [];
+  // the draft coordinates the op itself computed for the entities it adds
+  const draft = new Map<Id, P2>();
+  for (const en of edit.add?.entities ?? []) if (en.type === 'point') draft.set(en.id, [en.x, en.y]);
+  const at = (id: Id): P2 | null => {
+    const d = draft.get(id);
+    if (d) return d;
+    const g = geometry.get(id);
+    return g?.type === 'point' ? g.p : null;
+  };
+  /** An arc of a sketch entity: the center with the angles of its two ref points, radius as they measure. */
+  const arcOf = (c: P2 | null, start: Id | undefined, end: Id | undefined, radius?: number): PreviewShape | null => {
+    if (!c || !start || !end) return null;
+    const s = at(start), e = at(end);
+    if (!s || !e) return null;
+    const r = radius ?? dist(c, s);
+    return { kind: 'arc', c, r, a0: Math.atan2(s[1] - c[1], s[0] - c[0]), a1: Math.atan2(e[1] - c[1], e[0] - c[0]), role: 'add' };
+  };
+  for (const en of edit.add?.entities ?? []) {
+    if (en.type === 'line') {
+      const a = at(en.p1), b = at(en.p2);
+      if (a && b) shapes.push({ kind: 'line', a, b, construction: en.construction, role: 'add' });
+    } else if (en.type === 'circle') {
+      const c = at(en.center);
+      if (c) shapes.push({ kind: 'circle', c, r: en.radius, role: 'add' });
+    } else if (en.type === 'arc') {
+      const arc = arcOf(at(en.center) ?? null, en.start, en.end);
+      if (arc) shapes.push(arc);
+    }
+  }
+  for (const { id, set } of edit.entities ?? []) {
+    const g = geometry.get(id);
+    if (!g) continue;
+    if (g.type === 'line') {
+      const a = set.p1 ? at(set.p1) : g.a, b = set.p2 ? at(set.p2) : g.b;
+      if (a && b) shapes.push({ kind: 'line', a, b, construction: g.construction, role: 'change' });
+    } else if (g.type === 'arc') {
+      const c = set.center ? at(set.center) : g.c;
+      const s = at(set.start || g.start), e = at(set.end || g.end);
+      if (c && s && e) shapes.push({ kind: 'arc', c, r: g.r, a0: Math.atan2(s[1] - c[1], s[0] - c[0]), a1: Math.atan2(e[1] - c[1], e[0] - c[0]), role: 'change' });
+    } else if (g.type === 'circle') {
+      const c = set.center ? at(set.center) : g.c;
+      if (c) shapes.push({ kind: 'circle', c, r: g.r, role: 'change' });
+    }
+  }
+  for (const id of edit.remove ?? []) {
+    const g = geometry.get(id);
+    if (!g) continue;
+    if (g.type === 'line') shapes.push({ kind: 'line', a: g.a, b: g.b, construction: g.construction, role: 'remove' });
+    else if (g.type === 'circle') shapes.push({ kind: 'circle', c: g.c, r: g.r, role: 'remove' });
+    else if (g.type === 'arc') shapes.push({ kind: 'arc', c: g.c, r: g.r, a0: g.a0, a1: g.a1, role: 'remove' });
+    // ellipses and splines rough as polylines, through the transform preview with no transform applied
+    else if (g.type === 'ellipse' || g.type === 'spline') shapes.push(...transformedShapes(g, { kind: 'translate', d: [0, 0] }).map((s) => (s.kind === 'box' ? s : { ...s, role: 'remove' as const })));
+  }
+  return shapes;
 }
 
 /** How an entity looks where a transform takes it (ADR 0178 preview): lines, circles and arcs exactly; ellipses and splines as polylines; points and texts not at all. */

@@ -103,6 +103,9 @@
   --sketch-selected: var(--accent);
   --sketch-hover: var(--warn);
   --sketch-preview: var(--accent-line);
+  --sketch-op-add: var(--accent-line);
+  --sketch-op-change: var(--child);
+  --sketch-op-remove: var(--error);
   --sketch-guide: var(--faint);
   --sketch-dimension: var(--text-2);
   --sketch-origin: var(--error);

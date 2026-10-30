@@ -43,6 +43,18 @@ P0 核心功能與驗收項目已全數跑通（Windows 瀏覽器 `manual-sketch
 
 已知限制：PlaneGCS 對約 900 個以上拘束、大多已定義的草圖會 `Aborted(OOM)`（不經本功能、直接寫入的 150 個標尺寸矩形即可重現；100 個 52 ms）。此為既有限制，另案處理。
 
+## P2-1：共用操作計畫預覽管道（G06，trim 為代表）
+
+2026-10-30。依[方案](plan.md) P2「修改預覽與連續路徑」首刀：PICK 工具（修剪／延伸／圓角／倒角／偏移／鏡射）目前點擊即提交、無最終結果預覽。本批先建立「操作計畫」管道——hover 時以與提交完全相同的純 op（`trim()`）算出候選 `SketchEdit`，預覽以 `remove`／`change`／`add` 三種角色畫在發生位置；確認才試解提交，取消零文件變更；預覽不產生 Undo。文件 Schema 未變更。
+
+| 案例 | 狀態 | 證據／仍缺項 |
+|---|---|---|
+| G06 trim 預覽管道 | 部分通過（管道與 trim 完成，其餘工具 P2-2 鋪開） | 原生 `sketch-op-preview.test.ts` 3 項：①直線中段修剪 hover 顯示保留段的 `change` 形狀 ((−10,0)→(0,0)) 且文件不變；②游標離開圖元不再預覽、文件逐字不變；③圓修剪 hover 同時顯示 `remove` 的圓與 `add` 的保留弧（a0=π→a1=0），點擊提交後求解真值與計畫一致（±1e-6）、圓消失、無殘留預覽（文件的計畫即時失效）、一次 Undo 還原。其他五個工具仍點擊即提交，下一步 P2-2。 |
+| 預覽=提交結果 | 通過 | 預覽與提交呼叫同一純 op；新增點以 op 計算的暫存座標渲染（`Parts.point` 自帶 x/y），提交後求解真值與計畫差 ≤1e-6 mm。 |
+
+回歸：`apps/web` 全量 30 檔 308 項通過（含新增 3 項）；typecheck、lint:rules／deps／repo／i18n 全 PASS；瀏覽器 `manual-sketch-entry` 煙霧 1/1（同時驗證新 `--sketch-op-*` 主題變數可解析）。
+
+
 ## 測試與失敗紀錄
 
 - `apps/web/test/sketcher.test.ts` 75項、`packages/sketch/test/solve-options.test.ts` 16項（含150組隨機配置核對）、`apps/web/test/sketch-pointer-baseline.test.ts` 2項、`tests/phase8/view-normal.test.ts` 7項，合計100項測試全數通過。

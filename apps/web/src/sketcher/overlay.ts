@@ -7,7 +7,7 @@ import type { EntityStatus, P2, SolvedGeometry } from '@3db/sketch';
 import type { OverlayCurve, OverlayLabel, OverlayPoint, SketchOverlay } from '@3db/render';
 import { RELATION_LABEL } from '../strings';
 import type { SketchSolvePayload } from '../worker/protocol';
-import type { ControllerView, PreviewShape } from './controller';
+import type { ControllerView, OpRole, PreviewShape } from './controller';
 
 /** SolidWorks sketch colours: black = fully defined, blue = under-defined, red = over-defined. */
 /**
@@ -24,13 +24,17 @@ export const SKETCH_COLORS = {
   selected: 0x0ca678,
   hover: 0xf08c00,
   preview: 0x74b0e8,
+  /** what a G06 operation plan previews: the piece it adds, the one it changes, and the one it deletes */
+  opAdd: 0x74b0e8,
+  opChange: 0x7048e8,
+  opRemove: 0xe03131,
   guide: 0x868e96,
   grid: 0xe9ecef,
   gridMajor: 0xced4da,
   dimension: 0x3d4650,
   origin: 0xe03131,
   reference: 0x7048e8,
-} as Record<'fully' | 'under' | 'over' | 'selected' | 'hover' | 'preview' | 'guide' | 'grid' | 'gridMajor' | 'dimension' | 'origin' | 'reference', number>;
+} as Record<'fully' | 'under' | 'over' | 'selected' | 'hover' | 'preview' | 'opAdd' | 'opChange' | 'opRemove' | 'guide' | 'grid' | 'gridMajor' | 'dimension' | 'origin' | 'reference', number>;
 
 export type SketchColors = typeof SKETCH_COLORS;
 
@@ -103,6 +107,11 @@ export function gridCurves(visible: { min: P2; max: P2 }, spacing: number, px: n
 
 const shown = (v: number, decimals = 4) => String(Math.round(v * 10 ** decimals) / 10 ** decimals);
 
+/** What a role-marked preview shape means (G06, P2): a new piece in the preview family, a modified one in the child purple, a removed one dashed in the error red. */
+function roleColor(role: OpRole | undefined): number {
+  return role === 'remove' ? SKETCH_COLORS.opRemove : role === 'change' ? SKETCH_COLORS.opChange : role === 'add' ? SKETCH_COLORS.opAdd : SKETCH_COLORS.preview;
+}
+
 /** A dimension's text: as typed when it is a plain number, else its value marked with Σ. */
 function dimensionLabel(c: DimensionConstraint, value: number | undefined, measured: string | undefined, precision = 4): string {
   if (c.driving === false) return dimensionText(c, measured); // a reference: what is measured now, in parentheses
@@ -147,13 +156,13 @@ function previewCurves(shapes: PreviewShape[], px: number): OverlayCurve[] {
   return shapes.map((s): OverlayCurve => {
     switch (s.kind) {
       case 'line':
-        return { points: [s.a, s.b], color: SKETCH_COLORS.preview, dashed: s.construction ?? false };
+        return { points: [s.a, s.b], color: roleColor(s.role), dashed: (s.construction ?? false) || s.role === 'remove' };
       case 'box':
         return { points: [s.a, [s.b[0], s.a[1]], s.b, [s.a[0], s.b[1]], s.a], color: SKETCH_COLORS.dimension, dashed: true };
       case 'circle':
-        return { points: sample({ type: 'circle', c: s.c, r: s.r, center: '', construction: false }, px), color: SKETCH_COLORS.preview };
+        return { points: sample({ type: 'circle', c: s.c, r: s.r, center: '', construction: false }, px), color: roleColor(s.role) };
       case 'arc':
-        return { points: sample({ type: 'arc', c: s.c, r: s.r, a0: s.a0, a1: s.a1, center: '', start: '', end: '', construction: false }, px), color: SKETCH_COLORS.preview };
+        return { points: sample({ type: 'arc', c: s.c, r: s.r, a0: s.a0, a1: s.a1, center: '', start: '', end: '', construction: false }, px), color: roleColor(s.role) };
     }
   });
 }

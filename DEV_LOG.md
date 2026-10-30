@@ -2,6 +2,36 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-10-30：草圖互動 P2 第一刀：共用操作計畫預覽管道（G06，trim 為代表）
+
+依[草圖互動方案](docs/design/sketch-interaction/plan.md) P2「修改預覽與連續路徑」。此前修剪／延伸／圓角／倒角／偏移／鏡射六個 PICK 工具都是點擊立即提交、無最終結果預覽（G06）。本批建立共用管道：hover 時以**與提交完全相同的純 op** 算出候選 `SketchEdit`，預覽以 `remove`／`change`／`add` 三種角色畫在發生位置；確認才試解提交，取消零文件變更、預覽不產生 Undo；文件 Schema 未變更。
+
+### 1. 交付內容
+- `apps/web/src/sketcher/controller.ts`：
+  - `PreviewShape` 增加可選 `role`（`OpRole = 'add' | 'remove' | 'change'`）；模組層新 `editPreviewShapes(edit, geometry)`：以 op 在 `Parts.point` 攜帶的暫存座標渲染新增圖元（線／圓／弧），以既有求解幾何渲染刪除與變更者（橢圓／樣條經 `transformedShapes` 以恆等變換畫多段線）。
+  - `operationPlan()`：trim 在 hover（`updateSnap` 的 PICK 分支）以暫存 `IdAllocator` 呼叫同一 `trim()` 純函式回傳計畫；op 回傳錯誤時不予預覽（游標懸停也不給假綠）。
+  - 計畫失效防呆：`snapshot()` 在文件版本變更後即丟棄過期計畫（與 `candidateDoc` 同一模式）；`leave()` 與 `resetTool()` 清除，換工具、離開畫布、提交／Undo 後都無殘留。
+  - 確認路徑不變：`operationClick` 仍以同一 `trim()` 與當下指標重算提交——與 hover 計畫同輸入同結果，預覽即提交。
+- `apps/web/src/sketcher/overlay.ts`：`previewCurves` 依 `role` 著色——`add` 用預覽藍、`change` 用子件紫、`remove` 用錯誤紅並虛線；無角色者維持原繪製（既有繪製預覽不受影響）。
+- `apps/web/src/theme.ts` & `apps/web/src/app.css`：新 `opAdd`／`opChange`／`opRemove` 對 `--sketch-op-add/--sketch-op-change/--sketch-op-remove`（分別 `--accent-line`／`--child`／`--error`），theme 缺宣告即拋錯的既有防呆照常守門。
+- 新測試 `apps/web/test/sketch-op-preview.test.ts`（3 項，真實 PlaneGCS 求解）。
+
+### 2. 紅隊四問（AGENTS.md §2）
+1. **輸入破壞**：本批未加數值輸入；計畫只由純 op 產生，op 明確回傳 `{ error }` 時（如樣條、無交點）預覽為空，不做任何默認修正。
+2. **幾何相交破壞**：退化幾何（孤立曲線、只一個交點的圓、非曲線圖元）下計畫為 null，hover 不畫任何形狀；點擊與 hover 同 op，不會出現「預覽可以、提交失敗」的分岔。
+3. **依賴鏈完整性**：`SketchEdit` 型別零擴充（沿用既有命令）；controller → overlay → theme → app.css 四處的顏色鍵同步新增，typecheck 與 `lint:repo` 守門通過。
+4. **規格真實性與零 Mock**：測試以真實求解斷言——提交後的弧半徑／端點角與計畫差 ≤1e-6 mm；hover 文件不變、一次 Undo 還原均以計數與文件比對驗證，無 hardcode 假資料。
+
+### 3. 失敗紀錄與 RCA / CAPA
+1. **box 預覽類型誤擴**：以 `{ ...s, role: 'remove' } as PreviewShape` 轉型繞過 box 分支，typecheck 擋回（`role` 不存在於 box 變體）；CAPA：以條件式 `s.kind === 'box' ? s : { ...s, role }` 相應縮窄，不繞型別系統。
+2. **測試錯誤假設**：「游標離開後 constraints 長度為 0」誤以為繪製兩線不加任何推斷關係（實際有 4 條）；CAPA：改為與繪製完成時逐項計數比對，不絕對假設空集合。
+
+### 4. 確效與指標
+- `apps/web` 全量 30 檔 308 項通過（含新增 `sketch-op-preview.test.ts` 3 項）。`npm run typecheck` 無誤；`lint:rules`／`lint:deps`／`lint:repo`／`lint:i18n` 全 PASS。
+- 瀏覽器 `verify:ui --only manual-sketch-entry` 1/1 PASS（主題新變數在實機解析成功）。
+- 效能：trim hover 每次移動多一次單一圖元的交點計算（與點擊時同量級），未達需量測門檻；`sketch-pointer-baseline`（select／line 模式）不受影響。
+- 仍缺：其餘五隻 PICK 工具接入同一管道（P2-2）、掃掠修剪（P2-4）、延伸選邊界（P2-5）、相切接續（P2-6）。
+
 ## 2026-10-30：草圖互動 P1 第二批：狹槽（B05）與多邊形（B06 / G16）數值即時輸入、驅動拘束與分層復原
 
 依[草圖互動方案](docs/design/sketch-interaction/plan.md) B05、B06／G16 與[執行驗收表](docs/design/sketch-interaction/acceptance.md)。承接 P1 第一批，完成狹槽與多邊形繪製時的數值即時輸入、自動驅動尺寸、定向射線、Esc 分層取消與單步 Undo/Redo。未變更文件 Schema。
