@@ -228,7 +228,7 @@ export interface Hit {
  * the user picks a reference (select, smart dimension, a mirror line), never in the snaps of drawing, where an infinite line along x = 0 or y = 0 would
  * take the place of the model's edges there and of horizontal and vertical.
  */
-export function hitCandidates(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), axes = false): Hit[] {
+export function hitCandidates(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), axes = false, curvesOnly = false): Hit[] {
   const hits: Hit[] = [];
   let hasCurve = false;
   const consider = (h: Hit) => {
@@ -239,7 +239,7 @@ export function hitCandidates(geometry: Geometry, p: P2, tol: number, exclude: R
   for (const [id, g] of geometry) {
     if (exclude.has(id)) continue;
     if (g.type === 'point') {
-      if (Math.abs(p[0] - g.p[0]) > tol || Math.abs(p[1] - g.p[1]) > tol) continue;
+      if (curvesOnly || Math.abs(p[0] - g.p[0]) > tol || Math.abs(p[1] - g.p[1]) > tol) continue;
       consider({ id, kind: 'point', q: g.p, d: dist(p, g.p) });
     } else if (g.type === 'circle') {
       if (Math.abs(p[0] - g.c[0]) > g.r + tol || Math.abs(p[1] - g.c[1]) > g.r + tol) continue;
@@ -259,7 +259,7 @@ export function hitCandidates(geometry: Geometry, p: P2, tol: number, exclude: R
     }
   }
   // Last, so a sketch point lying on the origin wins the tie: merging with it beats a new relation.
-  if (!exclude.has(SKETCH_ORIGIN)) consider({ id: SKETCH_ORIGIN, kind: 'origin', q: [0, 0], d: len(p) });
+  if (!curvesOnly && !exclude.has(SKETCH_ORIGIN)) consider({ id: SKETCH_ORIGIN, kind: 'origin', q: [0, 0], d: len(p) });
   // the axes (ADR 0170), infinite, only where no curve of the sketch is: what the user drew comes first
   if (axes && !hasCurve) {
     for (const id of [SKETCH_AXIS_H, SKETCH_AXIS_V]) {
@@ -274,8 +274,8 @@ export function hitCandidates(geometry: Geometry, p: P2, tol: number, exclude: R
 }
 
 /** Default selection keeps the established point-first order; callers may expose all candidates. */
-export function hitTest(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), axes = false): Hit | null {
-  return hitCandidates(geometry, p, tol, exclude, axes)[0] ?? null;
+export function hitTest(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), axes = false, curvesOnly = false): Hit | null {
+  return hitCandidates(geometry, p, tol, exclude, axes, curvesOnly)[0] ?? null;
 }
 
 /** Entities whose drawing lies completely inside a box (window selection, D5.1). */
@@ -407,7 +407,7 @@ export function arcMidpoint(g: Extract<SolvedGeometry, { type: 'arc' }>): P2 {
 export function snap(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), allow: SnapAllow = {}): Snap {
   const [byPoint, byMidpoint, byCurve] = [allow.point !== false, allow.midpoint !== false, allow.curve !== false];
   // without the points, what is under the cursor is a curve (a point on it is not a place to snap to then)
-  const hit = hitTest(byPoint ? geometry : new Map([...geometry].filter(([, g]) => g.type !== 'point')), p, tol, exclude);
+  const hit = hitTest(geometry, p, tol, exclude, false, !byPoint);
   if (byPoint && hit && (hit.kind === 'point' || hit.kind === 'origin')) return { kind: 'point', id: hit.id, p: hit.q };
   let best: { line: Id; p: P2; d: number } | null = null;
   for (const [id, g] of byMidpoint ? geometry : []) {
