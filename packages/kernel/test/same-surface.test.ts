@@ -4,11 +4,12 @@
  * and the names followed: 零件1's lugs lost their fillet on the first rebuild. Worked on a topology made by hand, so each case is exactly what it says.
  */
 import { describe, expect, it } from 'vitest';
-import { inheritBodySurface } from '../src/sameSurface';
+import { inheritBodySurface, sameSurface } from '../src/sameSurface';
 import type { FaceOrigin, Topology } from '../src/types';
 
 type Face = Topology['faces'][number];
 const cyl = (radius: number, axis: [number, number, number] = [0, 1, 0], origin: [number, number, number] = [0, 0, 0]): Face => ({ surface: 'cylinder', area: 1, center: [0, 0, 0], normal: null, geometry: { type: 'cylinder', origin, axis, radius, convex: true } });
+const cone = (apex: [number, number, number], axis: [number, number, number], halfAngle: number, convex = true): Face => ({ surface: 'cone', area: 1, center: [0, 0, 0], normal: null, geometry: { type: 'cone', apex, axis, halfAngle, convex } });
 const plane = (normal: [number, number, number], origin: [number, number, number]): Face => ({ surface: 'plane', area: 1, center: origin, normal, geometry: { type: 'plane', origin, normal } });
 /** Faces, and the pairs of them that share an edge. */
 const topo = (faces: Face[], touching: [number, number][]): Topology => ({
@@ -54,5 +55,17 @@ describe('a piece made by the tool on the surface of a body face it touches is n
   it('a seam (an edge between a face and itself) is not a neighbour', () => {
     const t = topo([cyl(3)], [[0, 0]]);
     expect(inheritBodySurface([[tool(1)]], t, isBody)).toEqual([[tool(1)]]);
+  });
+
+  it('recognizes two cone faces on the same cone (either axis orientation) and rejects different apex, half-angle or convexity', () => {
+    const a = cone([0, 0, -20], [0, 0, 1], Math.atan(0.5), true).geometry;
+    const bSame = cone([0, 0, -20], [0, 0, -1], -Math.atan(0.5), true).geometry;
+    const bDiffApex = cone([0, 0, -19.99], [0, 0, 1], Math.atan(0.5), true).geometry;
+    const bDiffAngle = cone([0, 0, -20], [0, 0, 1], Math.atan(0.5) + 1e-3, true).geometry;
+    const bDiffConvex = cone([0, 0, -20], [0, 0, 1], Math.atan(0.5), false).geometry;
+    expect(sameSurface(a, bSame)).toBe(true);
+    expect(sameSurface(a, bDiffApex)).toBe(false);
+    expect(sameSurface(a, bDiffAngle)).toBe(false);
+    expect(sameSurface(a, bDiffConvex)).toBe(false);
   });
 });

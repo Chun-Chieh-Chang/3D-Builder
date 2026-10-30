@@ -3,7 +3,7 @@ import type { BRepBuilderAPI_MakeShape, NCollection_Array1_gp_Pnt2d, NCollection
 import { anyHit, buildBvh, nearestHitAt, triangleNormal } from './rays';
 import { forEachSample } from './sampling';
 import { escapeStepText } from './stepText';
-import { inheritBodySurface } from './sameSurface';
+import { inheritBodySurface, sameSurface } from './sameSurface';
 import { planSectionPath } from './sectionPath';
 import { loopPoints, sweepVolumeFloor } from './sweepFloor';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
@@ -2466,6 +2466,9 @@ export class Kernel {
       // of any shape can be swept instead, and when every neighbour is a plane there is nothing to keep whole.
       const planarAround = [...sharing.keys()].every((g) => topo.faces[g]!.surface === 'plane');
       let made: Slab;
+      let baseShape = shape;
+      let baseFaces = faces;
+      let baseOrigins: FaceOrigin[][] | undefined;
       const adjacent = [...sharing.keys()];
       const coneIndex = adjacent.length === 1 ? adjacent[0] : undefined;
       const cone = coneIndex === undefined ? undefined : topo.faces[coneIndex]!.geometry;
@@ -2477,21 +2480,82 @@ export class Kernel {
         const z1 = z0 + distance * dot3(n, cone.axis);
         if (z0 * z1 <= 0 || Math.abs(z1) < 1e-7) throw new KernelError(t('edit.moveInvalid'));
         const r0 = Math.abs(z0 * Math.tan(cone.halfAngle));
-        const r1 = Math.abs(z1 * Math.tan(cone.halfAngle));
         if (Math.abs(info.area - Math.PI * r0 * r0) > 1e-6 * info.area) throw new KernelError(t('edit.notConvex'));
-        const helper: Vec3 = Math.abs(cone.axis[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
-        const radial = cross3(cone.axis, helper);
-        const x = scale3(radial, 1 / Math.hypot(...radial));
-        const poly = arena.own(new oc.BRepBuilderAPI_MakePolygon());
-        for (const [z, r] of (z1 > z0 ? [[z0, 0], [z0, r0], [z1, r1], [z1, 0]] : [[z1, 0], [z1, r1], [z0, r0], [z0, 0]])) poly.Add(this.pnt(arena, add(add(cone.apex, cone.axis, z!), x, r!)));
-        poly.Close();
-        const section = arena.own(arena.own(new oc.BRepBuilderAPI_MakeFace(arena.own(poly.Wire()), true)).Face());
+        const adCone = arena.own(new oc.BRepAdaptor_Surface(arena.own(oc.TopoDS.Face(faces.keys[coneIndex!]!)), true));
+        const xDir = arena.own(arena.own(arena.own(adCone.Cone()).Position()).XDirection());
+        const x: Vec3 = [xDir.X(), xDir.Y(), xDir.Z()];
         const axis = arena.own(new oc.gp_Ax1(this.pnt(arena, cone.apex), this.dir(arena, cone.axis)));
-        const revol = arena.own(new oc.BRepPrimAPI_MakeRevol(section, axis, 2 * Math.PI, false));
-        const slab = arena.own(this.build(revol, t('edit.moveFace'), arena));
-        const index = ShapeIndex.of(oc, slab, T.FACE, arena);
-        slabFaces.push(index);
-        made = { shape: slab, index, origins: index.keys.map(g => this.faceInfo(g, arena).surface === 'plane' ? [moved] : [{ rel: 'modified', kind: 'face', index: coneIndex! }]) };
+        const makeFrustum = (za: number, zb: number) => {
+          const ra = Math.abs(za * Math.tan(cone.halfAngle));
+          const rb = Math.abs(zb * Math.tan(cone.halfAngle));
+          const poly = arena.own(new oc.BRepBuilderAPI_MakePolygon());
+          for (const [z, r] of (zb > za ? [[za, 0], [za, ra], [zb, rb], [zb, 0]] : [[zb, 0], [zb, rb], [za, ra], [za, 0]])) poly.Add(this.pnt(arena, add(add(cone.apex, cone.axis, z!), x, r!)));
+          poly.Close();
+          const section = arena.own(arena.own(new oc.BRepBuilderAPI_MakeFace(arena.own(poly.Wire()), true)).Face());
+          const revol = arena.own(new oc.BRepPrimAPI_MakeRevol(section, axis, 2 * Math.PI, false));
+          return arena.own(this.build(revol, t('edit.moveFace'), arena));
+        };
+        const coneVerts = new Set(topo.edges.filter((e) => e.faces.includes(coneIndex!)).flatMap((e) => e.vertices));
+        const zs = [...coneVerts].map((vi) => dot3(sub3(topo.vertices[vi]!.point, cone.apex), cone.axis));
+        const zFar = zs.reduce((best, z) => (Math.abs(z - z0) > Math.abs(best - z0) ? z : best), z0);
+        const rFar = Math.abs(zFar * Math.tan(cone.halfAngle));
+        const fullConeArea = Math.PI * (rFar + r0) * Math.hypot(zFar - z0, rFar - r0);
+        const zLo = Math.min(zFar, z0) + 1e-5;
+        const zHi = Math.max(zFar, z0) - 1e-5;
+        const noInteriorFace = topo.faces.every((f, fi) => {
+          if (fi === coneIndex || fi === faceIndex) return true;
+          const zf = dot3(sub3(f.center, cone.apex), cone.axis);
+          return zf <= zLo || zf >= zHi;
+        });
+        const replaceFullCone =
+          distance > 0 &&
+          Math.abs(zFar - z0) > 1e-5 &&
+          (z0 - zFar) * (z1 - z0) > 0 &&
+          zs.every((z) => Math.abs(z - z0) < 1e-5 || Math.abs(z - zFar) < 1e-5) &&
+          Math.abs(topo.faces[coneIndex!]!.area - fullConeArea) <= 1e-5 * fullConeArea &&
+          noInteriorFace;
+        if (replaceFullCone) {
+          const farNeighbors = new Set(topo.edges.filter((e) => e.faces.includes(coneIndex!)).flatMap((e) => e.faces));
+          const farCapIndex = [...farNeighbors].find(
+            (fi) => fi !== coneIndex && fi !== faceIndex && topo.faces[fi]!.surface === 'plane' && Math.abs(dot3(sub3(topo.faces[fi]!.center, cone.apex), cone.axis) - zFar) < 1e-5,
+          );
+          const slab = makeFrustum(zFar, z1);
+          const index = ShapeIndex.of(oc, slab, T.FACE, arena);
+          slabFaces.push(index);
+          const origins: FaceOrigin[][] = index.keys.map((g) => {
+            const fi = this.faceInfo(g, arena);
+            if (fi.surface !== 'plane') return [{ rel: 'modified', kind: 'face', index: coneIndex! }];
+            const zg = dot3(sub3(fi.center, cone.apex), cone.axis);
+            if (Math.abs(zg - z1) <= Math.abs(zg - zFar)) return [moved];
+            return farCapIndex !== undefined ? [{ rel: 'modified', kind: 'face', index: farCapIndex }] : [moved];
+          });
+          if (topo.faces.length === 3 && farCapIndex !== undefined) {
+            if (!this.valid(slab)) throw new KernelError(t('edit.moveInvalid'));
+            const result = this.put(slab.Oriented(slab.Orientation()));
+            if (!(this.massProps(result).volume > 1e-12)) {
+              this.release(result);
+              throw new KernelError(t('edit.moveInvalid'));
+            }
+            return { shape: result, faceOrigins: origins };
+          }
+          const oldCone = makeFrustum(zFar, z0);
+          const oldIndex = ShapeIndex.of(oc, oldCone, T.FACE, arena);
+          slabFaces.push(oldIndex);
+          const cutMk = this.boolOp('cut', shape, oldCone, t('edit.moveFace'), arena);
+          const cutRaw = arena.own(cutMk.Shape());
+          const cutIndex = ShapeIndex.of(oc, cutRaw, T.FACE, arena);
+          slabFaces.push(cutIndex);
+          const cutHist = this.history(cutMk, { faces: [...faces.keys, ...oldIndex.keys], edges: [], verts: [] }, cutRaw, arena);
+          baseShape = cutRaw;
+          baseFaces = cutIndex;
+          baseOrigins = cutHist.map((list) => list.filter((o) => o.rel !== 'cap' && o.rel !== 'imported' && o.kind === 'face' && o.index < nTarget));
+          made = { shape: slab, index, origins };
+        } else {
+          const slab = makeFrustum(z0, z1);
+          const index = ShapeIndex.of(oc, slab, T.FACE, arena);
+          slabFaces.push(index);
+          made = { shape: slab, index, origins: index.keys.map((g) => (this.faceInfo(g, arena).surface === 'plane' ? [moved] : [{ rel: 'modified', kind: 'face', index: coneIndex! }])) };
+        }
       }
       else if (square && planarAround) made = sweep();
       else if (!square) made = trim();
@@ -2506,11 +2570,12 @@ export class Kernel {
       const slab = made.shape;
       const slabIndex = made.index;
       const slabOrigins = made.origins;
+      const nBase = baseFaces.keys.length;
 
-      const mk = this.boolOp(distance > 0 ? 'fuse' : 'cut', shape, slab, t('edit.moveFace'), arena);
+      const mk = this.boolOp(distance > 0 ? 'fuse' : 'cut', baseShape, slab, t('edit.moveFace'), arena);
       const raw = mk.Shape();
       try {
-        const origins = this.history(mk, { faces: [...faces.keys, ...slabIndex.keys], edges: [], verts: [] }, raw, arena);
+        const origins = this.history(mk, { faces: [...baseFaces.keys, ...slabIndex.keys], edges: [], verts: [] }, raw, arena);
         // only the faces round the moved one may be regrouped (see unify)
         const touched = new Set([faceIndex, ...sharing.keys()]);
         const apart = topo.edges.flatMap((e, ei) => (e.faces.length > 0 && e.faces.every((g) => !touched.has(g)) ? [edges.keys[ei]!] : []));
@@ -2526,7 +2591,14 @@ export class Kernel {
         const faceOrigins = unified.origins.map((list) => {
           const out: FaceOrigin[] = [];
           for (const o of list) {
-            const expanded = o.rel !== 'cap' && o.rel !== 'imported' && o.kind === 'face' && o.index >= nTarget ? slabOrigins[o.index - nTarget]! : [o];
+            const expanded =
+              o.rel !== 'cap' && o.rel !== 'imported' && o.kind === 'face'
+                ? o.index >= nBase
+                  ? slabOrigins[o.index - nBase]!
+                  : baseOrigins
+                    ? baseOrigins[o.index]!
+                    : [o]
+                : [o];
             for (const x of expanded) if (!out.some((y) => same(x, y))) out.push(x);
           }
           return out;
@@ -3460,7 +3532,18 @@ export class Kernel {
       const positions: number[] = [];
       const indices: number[] = [];
       const faceRanges: number[] = [];
+      const edgeFaces: number[][] = edges.keys.map(() => []);
       faces.keys.forEach((f, fi) => {
+        const seen = new Set<number>();
+        for (const ex = arena.own(new oc.TopExp_Explorer(f, T.EDGE as never, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) {
+          const c = ex.Current();
+          const ei = edges.indexOf(c);
+          c.delete();
+          if (ei >= 0 && !seen.has(ei)) {
+            seen.add(ei);
+            edgeFaces[ei]!.push(fi);
+          }
+        }
         const face = arena.own(oc.TopoDS.Face(f));
         const loc = arena.own(new oc.TopLoc_Location());
         const tri = oc.BRep_Tool.Triangulation(face, loc, 0);
@@ -3482,13 +3565,29 @@ export class Kernel {
         faceRanges.push(start, indices.length - start, fi);
       });
 
+      const geomCache = new Map<number, SurfaceGeometry | undefined>();
+      const faceGeom = (fi: number): SurfaceGeometry | undefined => {
+        if (!geomCache.has(fi)) geomCache.set(fi, this.faceInfo(faces.keys[fi]!, arena).geometry);
+        return geomCache.get(fi);
+      };
       // Edges: tangential-deflection polylines, independent of the face tessellation.
+      // Closed periodic surface UV seam edges and internal coaxial circular split edges between two faces on the same cone are omitted.
       const edgePoints: number[] = [];
       const edgeRanges: number[] = [];
       edges.keys.forEach((e, ei) => {
         const edge = arena.own(oc.TopoDS.Edge(e));
         if (oc.BRep_Tool.Degenerated(edge)) return;
+        const adj = edgeFaces[ei]!;
+        if (adj.length === 1 && oc.BRep_Tool.IsClosed(edge, arena.own(oc.TopoDS.Face(faces.keys[adj[0]!]!)))) return;
         const curve = arena.own(new oc.BRepAdaptor_Curve(edge));
+        if (adj.length === 2 && curve.GetType() === oc.GeomAbs_CurveType.GeomAbs_Circle) {
+          const g0 = faceGeom(adj[0]!);
+          const g1 = faceGeom(adj[1]!);
+          if (g0?.type === 'cone' && g1?.type === 'cone' && sameSurface(g0, g1)) {
+            const cDir = this.xyz(arena.own(arena.own(arena.own(curve.Circle()).Axis()).Direction()));
+            if (1 - Math.abs(dot3(cDir, g0.axis)) <= 1e-6) return;
+          }
+        }
         // Exactly three arguments: with six, arity-based dispatch picks the (first, last parameter) overload.
         const pts = arena.own(new oc.GCPnts_TangentialDeflection(curve, angular, tolerance));
         const start = edgePoints.length / 3;

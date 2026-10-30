@@ -193,7 +193,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 ### 交接
 
-- [交接與接續工作](<../handoff.md>)
+- [交接與接續工作 (Handoff for Claude Code)](<../handoff.md>)
 
 ### 交接歷史
 

@@ -4226,3 +4226,12 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
   2. **拓樸與幾何相交**：跨越錐尖於前置參數解析直接攔截（`z0 * z1 <= 0`），不送入 OCCT 產生退化自交形狀；圓錐結果保留有效布林拓樸並檢查 `BRepCheck_Analyzer` 與實體體積 $> 10^{-12}$。
   3. **依賴鏈完整性**：`schema.ts` → `serialize.ts` (v85) → `commands.ts` → `refs.ts` → `dag.ts` → `engine.ts` → `store.ts` → `PropertyManager.tsx` 全鏈路接線，測試涵蓋序列化讀回與修改目標基準面偏移距離後的自動重算。
   4. **規格真實性與零 Mock**：以真實 OCCT 驗證 100 組隨機目標高度（涵蓋延伸與縮短）之解析圓錐台體積 $\frac{\pi h}{3}(R_1^2 + R_1 R_2 + R_2^2)$ 與端面面積 $\pi R_2^2$、平行模型面目標、使用者實際樣本 `TM0002138.3dbx` 延伸至前基準面，以及 `tests/e2e/manual-move-face-target.js` 瀏覽器端到端操作；不宣稱消除 OCCT 底層布林 Heap 成長。
+- **後續：消除圓柱／圓錐參數接縫邊與圓錐延伸內部切分線（對齊 SW／FreeCAD／SolidCraft 作法）**：
+  - **現象**（使用者截圖 `TM0002138.3dbx`）：套用「移動面」延伸圓錐端面後，在「帶邊線塗彩」模式下出現並可選取 6 條額外非輪廓線條：4 條縱向母線（`{extrude2:side:sketch4.ci4}`、`{loft1:side:sketch1.ci1#2}`、`{extrude1:side:sketch0.ci3}`、`{loft1:side:sketch1.ci1#1}`）與 2 條位於原端面 $z_0$ 高度的圓弧切分邊（`{loft1:side:sketch1.ci1#1|loft1:side:sketch1.ci1#2}#1` 與 `#2`）。
+  - **RCA**：
+    1. `Kernel.mesh()` 將所有非退化拓樸邊全數輸出至 `mesh.edgeRanges`，未如 `drawingEdges.ts` 般排除封閉週期曲面（圓柱、圓錐、球面、圓環）的單面參數接縫邊（`edgeFaces.length === 1 && BRep_Tool.IsClosed(edge, face)`）。
+    2. `BRepOffsetAPI_ThruSections` 建立的疊層拉伸圓錐側面底層為 `Geom_RectangularTrimmedSurface`，與 `BRepPrimAPI_MakeRevol` 建立的 `Geom_ConicalSurface` 薄層無法由 `ShapeUpgrade_UnifySameDomain` 合併（會拋出 C++ 例外），且原 `coneSlab` 取任意正交向量 `x = [0, 1, 0]` 與疊層拉伸的 `XDirection = [1, 0, 0]` 相差 $90^\circ$，導致圓錐側面分裂為 `#1`、`#2` 兩面並在 $z_0$ 產生 $90^\circ$ 與 $270^\circ$ 兩段圓弧交線。
+  - **修正（CAPA）**：
+    1. **單一連續圓錐面替換（`Kernel.moveFace`）**：圓錐薄層改取原圓錐面 `adCone.Cone().Position().XDirection()` 對齊接縫方向；當完整圓錐台往外延伸（`distance > 0`）且圓錐軸向區間內無其他內部特徵面時，以由 `zFar` 至 `z1` 的完整解析圓錐台替換原 `[zFar, z0]` 圓錐區段（單獨 3 面圓錐台直接替換為 0 次布林，複合體先切除舊圓錐台再融合完整圓錐台並保留來源映射），使延伸後的 `loft1:side:sketch1.ci1` 保持為單一連續圓錐面。
+    2. **3D 網格與工程圖邊線過濾（`Kernel.mesh`、`sameSurface.ts`、`drawingEdges.ts`）**：`sameSurface` 補齊同圓錐面判別（同 `convex`、同 `apex`、平行 `axis`、同 `|halfAngle|`）；`Kernel.mesh()` 排除單一面的封閉週期接縫邊（`adj.length === 1 && oc.BRep_Tool.IsClosed(edge, face)`，完整保留 `IsClosed === false` 的開放曲面自由邊界與 0 面的 3D 曲線本體）以及同圓錐面間的共軸圓形切分邊；`drawingEdges.ts` 同步排除同圓錐面共軸切分邊。
+  - **驗證**：`packages/kernel/test/same-surface.test.ts`（7 項）、`tests/phase3/direct-edit.test.ts`（128 項，含 `TM0002138` 階梯軸圓錐延伸驗證僅輸出 6 條真實圓形輪廓邊、0 條縱向接縫與 0 條內部切分邊）、`tests/phase4b/split-line.test.ts`（6 項）、`tests/phase5/drawing-tangent-hidden.test.ts`（5 項）與 `typecheck`／`lint:rules`／`lint:deps`／`lint:i18n`／`lint:repo` 全數通過。
