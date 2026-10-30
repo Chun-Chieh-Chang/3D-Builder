@@ -716,6 +716,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
           <p className="muted">{t('pm.solving')}</p>
         )}
         {conflicting.length > 0 && <p className="error-text">{t('pm.conflict', { ids: conflicting.join(t('cmd.listSeparator')) })}</p>}
+        {solve?.status === 'failed' && solve.message && <p className="error-text" data-sketch-solve-message>{solve.message}</p>}
         {sketcher && solve?.status === 'under' && solve.entityFreedom && <FreedomList f={f} freedom={solve.entityFreedom} sketcher={sketcher} />}
       </section>
 

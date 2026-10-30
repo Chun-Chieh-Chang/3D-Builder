@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { Algorithm, make_gcs_wrapper, SolveStatus, type GcsWrapper, type SketchPrimitive } from '@salusoft89/planegcs';
+import { Algorithm, GcsWrapper, init_planegcs_module, SolveStatus, type SketchPrimitive } from '@salusoft89/planegcs';
 import { relationCrossings } from './ops';
 import {
   constraintRefs,
@@ -660,12 +660,10 @@ interface Batch {
 }
 
 /**
- * The system split into parts that share no unknown, put back together into batches of up to `BATCH_SIZE` (2026-10-30). Fixed geometry (the origin, the
- * axes, a pinned point, the helpers of a pattern) has no unknown and joins nothing: it goes with every batch that refers to it. Parts that share no unknown
- * do not change each other's answer, so solving them apart is the same sketch; planegcs itself splits a system the same way, but only after it has built the
- * dense matrices of the whole of it. The order of the primitives is kept, and a system that fits in one batch is returned as it is.
+ * The system split into parts that share no unknown (2026-10-30). Fixed geometry (the origin, the axes, a pinned point, the helpers of a pattern) has no
+ * unknown and joins nothing; `close` adds it to the ids of a part that refers to it, so that the part can be solved on its own.
  */
-function batches(prims: Prim[]): Batch[] {
+function split(prims: Prim[]): { parts: Map<string, { ids: string[]; size: number }>; close: (ids: Set<string>) => Set<string> } {
   const byId = new Map(prims.map((p) => [p.id, p]));
   const fixed = (id: string): boolean => {
     const p = byId.get(id);
@@ -707,6 +705,29 @@ function batches(prims: Prim[]): Batch[] {
     part.ids.push(p.id);
     part.size += GEOMETRY.has(p.type) ? (UNKNOWNS[p.type] ?? 0) : 1;
   }
+  const close = (ids: Set<string>): Set<string> => {
+    // with the fixed geometry the part refers to, and what that refers to (an axis and its two points)
+    const need = [...ids];
+    for (let i = 0; i < need.length; i++) {
+      for (const id of refsOf(byId.get(need[i]!)!)) {
+        if (!ids.has(id) && byId.has(id)) {
+          ids.add(id);
+          need.push(id);
+        }
+      }
+    }
+    return ids;
+  };
+  return { parts, close };
+}
+
+/**
+ * The parts of `split` put back together into batches of up to `BATCH_SIZE`. Parts that share no unknown do not change each other's answer, so solving them
+ * apart is the same sketch; planegcs itself splits a system the same way, but only after it has built the dense matrices of the whole of it. The order of
+ * the primitives is kept, and a system that fits in one batch is returned as it is.
+ */
+function batches(prims: Prim[]): Batch[] {
+  const { parts, close } = split(prims);
   const total = [...parts.values()].reduce((n, part) => n + part.size, 0);
   if (total <= BATCH_SIZE) return [{ prims, size: total }];
   const groups: { ids: Set<string>; size: number }[] = [];
@@ -718,18 +739,35 @@ function batches(prims: Prim[]): Batch[] {
     } else groups.push({ ids: new Set(part.ids), size: part.size });
   }
   return groups.map(({ ids, size }) => {
-    // with the fixed geometry the batch refers to, and what that refers to (an axis and its two points)
-    const need = [...ids];
-    for (let i = 0; i < need.length; i++) {
-      for (const id of refsOf(byId.get(need[i]!)!)) {
-        if (!ids.has(id) && byId.has(id)) {
-          ids.add(id);
-          need.push(id);
-        }
-      }
-    }
+    close(ids);
     return { prims: prims.filter((p) => ids.has(p.id)), size };
   });
+}
+
+/**
+ * A planegcs module, as `make_gcs_wrapper` makes it, except that its out-of-memory abort is not printed (2026-10-30): the module prints `Aborted(OOM)` with
+ * `console.error` and then throws a `RuntimeError` with the same text, which `runBatch` turns into the refusal the user sees. Anything else it prints is
+ * printed as before.
+ */
+async function loadModule(wasmUrl?: string): Promise<GcsWrapper> {
+  const module = await init_planegcs_module({
+    ...(wasmUrl ? { locateFile: () => wasmUrl } : {}),
+    printErr: (text: string) => {
+      if (text !== 'Aborted(OOM)') console.error(text);
+    },
+  });
+  return new GcsWrapper(new module.GcsSystem(), module);
+}
+
+/** For each primitive of a part of `split`: the ids of its whole part, with the fixed geometry it refers to (one set shared by the part). */
+function partsOf(prims: Prim[]): Map<string, ReadonlySet<string>> {
+  const { parts, close } = split(prims);
+  const out = new Map<string, ReadonlySet<string>>();
+  for (const part of parts.values()) {
+    const ids = close(new Set(part.ids));
+    for (const id of part.ids) out.set(id, ids);
+  }
+  return out;
 }
 
 const baseId = (gcsId: string) => gcsId.split('#')[0]!;
@@ -870,7 +908,7 @@ export class PlaneGcsSolver implements SketchSolver {
   ) {}
 
   static async create(wasmUrl?: string): Promise<PlaneGcsSolver> {
-    const [w, spare] = await Promise.all([make_gcs_wrapper(wasmUrl), make_gcs_wrapper(wasmUrl)]);
+    const [w, spare] = await Promise.all([loadModule(wasmUrl), loadModule(wasmUrl)]);
     const solver = new PlaneGcsSolver(w, wasmUrl);
     solver.spare = spare;
     return solver;
@@ -882,7 +920,7 @@ export class PlaneGcsSolver implements SketchSolver {
    * begins with this solves every sketch from the same memory, and so gets the same numbers for the same document every time. About 4 ms.
    */
   async fresh(): Promise<void> {
-    const next = await make_gcs_wrapper(this.wasmUrl);
+    const next = await loadModule(this.wasmUrl);
     const old = this.w;
     this.w = next;
     old?.destroy_gcs_module();
@@ -907,7 +945,7 @@ export class PlaneGcsSolver implements SketchSolver {
 
   /** Loads a module for what is missing: the one in use, else the spare. A failure is kept for `ready` to throw (no one may be waiting). */
   private reload(): void {
-    this.loading ??= make_gcs_wrapper(this.wasmUrl).then(
+    this.loading ??= loadModule(this.wasmUrl).then(
       (next) => {
         this.loading = null;
         if (!this.w) this.w = next;
@@ -1052,8 +1090,31 @@ export class PlaneGcsSolver implements SketchSolver {
       ...(ok ? {} : { message: t('regen.sketchUnsolved') }),
     };
     for(const g of result.geometry.values())if(g.type==='spline'&&g.bezier&&(!(Math.hypot(g.points[1]![0]-g.points[0]![0],g.points[1]![1]-g.points[0]![1])>1e-8)||!(Math.hypot(g.points[g.points.length-1]![0]-g.points[g.points.length-2]![0],g.points[g.points.length-1]![1]-g.points[g.points.length-2]![1])>1e-8))){result.status='failed';result.message=t('sketch.bezierInvalid');}
-    if (options.analyze) Object.assign(result, this.analyze(sketch, result, ok));
+    if (options.analyze) Object.assign(result, this.analyzeApart(sketch, result, ok));
     return result;
+  }
+
+  /**
+   * `analyze` on the spare module, not on the one the sketch is solved with (2026-10-30). planegcs's answer to an under-defined sketch depends on what its
+   * module solved before (see `fresh`), so probes run on that module moved the next answer: when the probes became one part each instead of the whole
+   * sketch, two lines made one by a parallel came out 0.55 shorter than before. What the analysis solves now leaves the solves of the sketch as they were.
+   * A probe that aborts takes the spare only; the module in use is untouched, and a spare is loaded again.
+   */
+  private analyzeApart(sketch: SketchFeature, base: SolvedSketch, ok: boolean): ReturnType<PlaneGcsSolver['analyze']> {
+    const main = this.w;
+    const spare = this.spare;
+    if (!spare) return this.analyze(sketch, base, ok); // none while one loads after an abort: on the module in use, as before
+    this.w = spare;
+    this.spare = null;
+    try {
+      return this.analyze(sketch, base, ok);
+    } finally {
+      // the spare back in its place, or, if a probe aborted it, the one `runBatch` began to load
+      const used = this.w;
+      this.w = main;
+      this.spare = used;
+      if (!used) this.reload();
+    }
   }
 
   /**
@@ -1083,10 +1144,27 @@ export class PlaneGcsSolver implements SketchSolver {
       sketch.constraints.every((c) => 'driving' in c && c.driving === false) &&
       sketch.entities.every((e) => (e.type === 'point' || e.type === 'line' || e.type === 'circle') && !modelRefOf(e)) &&
       base.dof === 2 * pointCount + circleCount;
-    /** Degrees of freedom the pin takes away; null when the pinned system did not converge. */
-    const probe = (prims: Prim[]): number | null => {
-      const r = this.run(prims);
-      return r.ok ? base.dof - r.dof : null;
+    // a pin takes freedoms only from its own part (parts share no unknown, see `split`): each probe solves that part alone, not the whole sketch again, which
+    // made the analysis grow with the square of the sketch (2026-10-30: 150 rectangles, 600 probes of the whole, took 31 s)
+    const unpinned = toPrimitives(sketch, solved);
+    const known = new Set(unpinned.map((p) => p.id));
+    const partOf = partsOf(unpinned);
+    const partDof = new Map<ReadonlySet<string>, number | null>();
+    /** Degrees of freedom the pin of `at` takes away; null when the pinned system did not converge. */
+    const probe = (prims: Prim[], at: Id): number | null => {
+      const part = partOf.get(at);
+      if (!part) {
+        const r = this.run(prims);
+        return r.ok ? base.dof - r.dof : null;
+      }
+      let before = partDof.get(part);
+      if (before === undefined) {
+        const r = this.run(unpinned.filter((p) => part.has(p.id)));
+        partDof.set(part, (before = r.ok ? r.dof : null));
+      }
+      // the part, pinned, and what the probe adds to it
+      const r = this.run(prims.filter((p) => part.has(p.id) || !known.has(p.id)));
+      return r.ok && before !== null ? before - r.dof : null;
     };
     const points = new Map<Id, number | null>();
     const pointFreedom = (id: Id): number | null => {
@@ -1095,7 +1173,7 @@ export class PlaneGcsSolver implements SketchSolver {
       if (!ok) return null;
       let v = points.get(id);
       if (v === undefined) {
-        v = probe(toPrimitives(sketch, solved, new Set([id])));
+        v = probe(toPrimitives(sketch, solved, new Set([id])), id);
         points.set(id, v);
       }
       return v;
@@ -1104,7 +1182,7 @@ export class PlaneGcsSolver implements SketchSolver {
       if (allFixed) return true;
       if (allFree) return false;
       if (!ok) return false;
-      return probe([...toPrimitives(sketch, solved), { id: '@probe.r', type: 'circle_radius', c_id: id, radius: solved.radii.get(id) ?? 1 }]) === 0;
+      return probe([...toPrimitives(sketch, solved), { id: '@probe.r', type: 'circle_radius', c_id: id, radius: solved.radii.get(id) ?? 1 }], id) === 0;
     };
 
     const status = new Map<Id, EntityStatus>();
