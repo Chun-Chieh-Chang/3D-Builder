@@ -58,6 +58,15 @@
 
 ---
 
+## 3b. 2026-10-30 P1 第一批已完成：繪製時輸入尺寸（直線／中心線、圓、矩形）
+
+- 依使用者確認的四項設計完成並驗收（見[驗收表 P1](docs/design/sketch-interaction/acceptance.md) 與 DEV_LOG 同日條目）：角度 0°～180° 由游標側定方向；部分鎖值 Enter 即完成；鎖值優先於吸附並提示；槽／多邊形留下一批。
+- 變更：`apps/web/src/sketcher/controller.ts`（entry 狀態、`lockSnap`、提交時加驅動尺寸）、`apps/web/src/components/Viewport.tsx` `EntryBoxes`、`apps/web/src/actions.ts`（數字鍵起始輸入、Tab）、`app.css`、i18n `sketch.entry.*`；新測試 `apps/web/test/sketch-entry.test.ts`（32 項）、`tests/e2e/manual-sketch-entry.js`；`apps/web/test/sketch-collapse.test.ts` 的 host 改為每文件只求解一次（RCA 見 DEV_LOG，門檻未改）。
+- **下一步**：
+  1. P1 第二批：槽與多邊形（G16、B06）——多邊形半徑／邊長、方向角、頂點朝向或邊平行；沿用 `entryFields`／`lockedPoint`／`Builder.dimension`。
+  2. 既有限制另案：PlaneGCS 對約 900 個拘束、大多已定義的草圖 `Aborted(OOM)`（150 個標尺寸矩形可重現，100 個 52 ms；對照程式在工作階段暫存區，不在版本庫）。
+  3. E03：P1 輸入框在 macOS 鍵盤與 DPR2／不同縮放尚未驗證。
+
 ## 4. 下一階段核心計畫：草圖互動改善方案 (P1 即時尺寸輸入)
 
 參考規劃文檔：[草圖互動方案規劃 (docs/design/sketch-interaction/plan.md)](docs/design/sketch-interaction/plan.md) 與 [P0 驗收紀錄 (docs/design/sketch-interaction/acceptance.md)](docs/design/sketch-interaction/acceptance.md)。

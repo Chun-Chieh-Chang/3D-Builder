@@ -338,6 +338,18 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .modify-box input { width: 90px; font: inherit; padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; text-align: right; }
 .modify-box input.invalid { border-color: var(--error); background: var(--error-soft); }
 .modify-box .suffix { color: var(--muted); font-size: 11px; }
+/* Values typed while drawing (P1, G01): next to the cursor, clear of the snap marker under it. */
+.entry-box { position: absolute; transform: translate(16px, 16px); background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); z-index: 5; font-size: 13px; line-height: 1.5; }
+.entry-box .entry-fields { display: flex; align-items: center; gap: 8px; }
+.entry-box label { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+.entry-box label.active { color: inherit; }
+.entry-box input { width: 72px; font: inherit; padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; text-align: right; }
+.entry-box label.active input { border-color: var(--accent); }
+.entry-box input.locked { font-weight: 600; background: var(--accent-soft); }
+.entry-box input.invalid { border-color: var(--error); background: var(--error-soft); }
+.entry-box .suffix { color: var(--muted); }
+.entry-box button { font: inherit; padding: 1px 6px; }
+.entry-box .entry-error { color: var(--error); max-width: 360px; margin-top: 4px; }
 .pick-hint { position: absolute; left: 110px; bottom: 10px; right: 10px; background: color-mix(in oklab, var(--card) 92%, transparent); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; font-size: 12px; }
 
 /* The measure tool (E1.1) */

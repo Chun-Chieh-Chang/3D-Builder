@@ -2,6 +2,36 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-10-30：草圖互動 P1 第一批：繪製時輸入尺寸（G01：直線／中心線、圓、邊角／中心矩形）
+
+依[方案](docs/design/sketch-interaction/plan.md) G01／B01–B04／T09。使用者於本輪確認四項設計：角度欄為 0°～180°（不含），方向由游標在起點上方或下方決定；只鎖部分欄位按 Enter 即完成，未鎖欄位取游標；鎖值與吸附衝突時鎖值優先、不加重合關係並於提示列說明；本批只做線／圓／矩形，槽與多邊形（G16、B06）留下一批。未升 Schema（只用既有 `distance`／`angle`／`radius`／`diameter` 尺寸）。
+
+### 1. 交付內容
+- `apps/web/src/sketcher/controller.ts`：`entry` 狀態（只存在控制器，不進文件）；`beginEntry`／`setEntry`／`nextEntry`／`setCircleEntry`／`commitEntry`／`cancelEntry`；`lockSnap` 在吸附計算最後把終點移到鎖值位置；提交時鎖值成為驅動尺寸，與圖元同一個 `addSketchItems`（一次 Undo）。輸入以 `Parameters.evaluate` 在文件內求值（變數、其他尺寸、`1in`），文字原樣存為尺寸值。圓的 Ø／R 切換對純數值折半／加倍、對表達式包成 `(expr)/2`，永遠只產生一個尺寸。
+- `apps/web/src/components/Viewport.tsx` `EntryBoxes`、`app.css` `.entry-box`：游標右下的輸入框，未輸入時以 placeholder 顯示游標當下值；IME 組字的 Enter／Esc 不處理。
+- `apps/web/src/actions.ts`：草圖中數字／符號鍵起始輸入並把鍵盤移到輸入框；Tab 切欄。既有 Ctrl+數字快捷鍵不受影響。
+- i18n：`sketch.entry.*`（中、英）。
+
+### 2. 紅隊四問（AGENTS.md §2）
+1. **輸入破壞**：0、負值、`0mm`、`NaN`、`Infinity`、`1/0`、`1+`、`abc`、`2000000`、`30deg`（長度欄）與 0、180、-30、200、`90mm`（角度欄）全部就地拒絕、不提交（Enter 與滑鼠點擊皆然），文件物件不變（無 Undo）。不以 `Math.abs`／round 改寫。上限 1e6 mm 與橢圓軸一致。
+2. **幾何相交／冗餘**：鎖角度時移除游標推斷的水平／垂直／平行／相切關係，避免與角度尺寸重複；鎖值時不再建立重合／點在線上關係，終點必為新自由點，新增尺寸最多吃掉該點的 2 個自由度，不會過度定義既有幾何。
+3. **依賴鏈**：角度以既有 `SKETCH_AXIS_H` 參照（PlaneGCS `l2l_angle_ll`），存讀（`serializePart`→`parsePart`）後拘束全等，變數改值後圓半徑隨之更新。
+4. **真值**：測試全用真實 PlaneGCS 求解幾何量測（長度 1e-6 mm、角度 1e-6 rad），四象限、150 組隨機 Fuzz。
+
+### 3. 失敗紀錄與 RCA／CAPA
+1. **Fuzz 第一版 240 s 且一個矩形無幾何**：原寫法把 150 個圖形放進同一張草圖。對照實驗（各自全新求解器）：**不經控制器、直接寫入的** 100 個標尺寸矩形（600 拘束）52 ms 求解；150 個（900 拘束）PlaneGCS `Aborted(OOM)`。去掉尺寸的同一草圖 899 圖元 26 ms。結論：PlaneGCS 對大型且大多已定義的草圖有既有的記憶體上限，與本功能無關（未經本功能即可重現）。Fuzz 改為每組獨立草圖（每組真值獨立驗證，2.6 s）；上限本身列為後續工作，未在本批處理。
+2. **`sketch-collapse.test.ts`「垂直線畫好後加平行」在新程式碼固定失敗（長度差 0.554 > 0.5），乾淨 HEAD 通過**：同一 sketch JSON 兩版逐字相同。RCA：此測試的 host 每次 `solved()` 都重新求解；PlaneGCS 的答案取決於先前求解的記憶體配置（`PlaneGcsSolver.fresh` 註解已記載），而新輸入框在畫線時多讀幾次 `solved()`，欠定義草圖因此落到另一個解。產品的 store 對同一文件只求解一次，不受影響。CAPA：測試 host 改為「每個文件只求解一次」，與其標頭宣稱的「與 store 相同」一致；門檻 0.5 與所有斷言未改；新舊程式碼各跑兩次皆通過。
+3. **瀏覽器驗收：Enter 後鍵盤又被拉回輸入框**：聚焦 effect 依賴 `active`，提交後 `active` 歸零就重新聚焦。改為只在 `focus` 計數（打字或 Tab）變動時聚焦。
+
+### 4. 驗證
+- `apps/web/test/sketch-entry.test.ts` 32 項（B01×3、B02×9、B03×2、T09×15、Esc 分層、工具切換、Fuzz 150 組）；`apps/web/test` + `packages/sketch/test` + `packages/i18n` 48 檔 537 項通過；handoff smoke 19 檔 289 項通過。
+- typecheck、`lint:rules`／`lint:deps`／`lint:i18n`／`lint:repo` 通過。
+- 瀏覽器：`npm run verify:ui -- --only manual-sketch-entry` 1/1 通過（打字聚焦、Tab、Enter 建線 30／30° 真值 1e-6、IME Enter 不提交、Esc 分層、一次 Undo／Redo、Ø8→R4 單一尺寸、寬 0 就地拒絕、中心矩形 40×25）。
+- 完整 `npm run verify:ui`（AGENTS.md §4 第 7 點，改到畫布與鍵盤）：246/248 通過。`manual-assembly-section-captions`（步驟 6「a real horizontal projected edge is required」）在只還原原始碼的乾淨 HEAD 以 `--only` 同樣失敗，為既有失敗；`manual-drawing-linked`（步驟 0 方框置中）在乾淨 HEAD 通過，在本變更下單獨重跑 2/2 通過，為整批執行時的不穩定，與本變更無關。
+- `npm run build` 通過；`docs:sync` 更新盤點（新增一個瀏覽器腳本）。
+
+---
+
 ## 2026-10-29：IGES 輸出與輸入（F1.4、F2.2，ADR 0220，Schema 86）
 
 在 worktree `claude/iges-exchange` 開發（主資料夾同時有另一工作階段在做 DXF 輸入，依 AGENTS.md §4 不共用資料夾）。設計、量測與驗證見 [ADR 0220](docs/adr/0220-iges-exchange.md)。原取 ADR 0219／Schema 85，2026-10-30 合併 main 時與 DXF 匯入（ADR 0219）及移動面（Schema 85）撞號，改為 0220／86。
@@ -22,6 +52,8 @@
 全量：`npm test` 3826 通過（26 既有略過；第一輪的 help-manual 失敗是驗證手冊未同步新說明，以 `SYNC_MANUAL_HELP=1` 重生一行）。完整 `verify:ui` 兩輪 245／246；`manual-drawing-linked.js` 在乾淨 `bca2d80` 以 `--only` 重現同一數值（`box.centred:false`），為既有失敗。紅隊注入設定順序錯誤 8 項失敗，已還原。2026-10-30 使用者確認步驟 0 的 6 個對照檔在 eDrawings 全部正確；這 6 個檔由 OCCT 寫出器直接寫出、未經 `exportIges`，所以另以 `exportIges` 產生 6 個產品路徑對照檔（含切半與顏色），使用者同日確認這 6 個也全部正確（含切半與顏色），產品輸出的 eDrawings 驗收通過。
 
 合併 main（至 `d66cabb`）：IGES 改為 Schema 86、ADR 0220；衝突在 App.tsx（兩個新對話框）、serialize.ts（遷移）、handoff、盤點。合併後完整 `verify:ui` 248／248；`npm test` 唯一失敗為 main 既有的 `direct-edit.test.ts` 移動面推進超過厚度（未含 IGES 的 main 同樣失敗，未修改）。
+
+---
 
 
 ## 2026-10-30：CI 雲端虛擬機效能瓶頸根治與幾何 AABB 快速剪枝

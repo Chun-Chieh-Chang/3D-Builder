@@ -5,6 +5,8 @@ import {
   idsInUse,
   isDimension,
   isSketchAxis,
+  Parameters,
+  SKETCH_AXIS_H,
   SKETCH_ORIGIN,
   type CircleRadius,
   type Command,
@@ -237,7 +239,20 @@ export type PreviewShape =
   | { kind: 'arc'; c: P2; r: number; a0: number; a1: number }
   | { kind: 'box'; a: P2; b: P2 };
 
+/** A value typed in while drawing (P1, G01): it becomes a driving dimension of what the click makes. */
+export type EntryField = 'length' | 'angle' | 'width' | 'height' | 'radius' | 'diameter';
+
+/** The boxes next to the cursor: what is typed in each, what the cursor gives meanwhile, and why a typed value cannot be used. */
+export interface EntryView {
+  fields: { key: EntryField; text: string; locked: boolean; error: string | null; live: string }[];
+  active: number;
+  /** Goes up each time typing should move the keyboard focus into the active box. */
+  focus: number;
+}
+
 export interface ControllerView {
+  /** The values that can be typed in for the click about to be made; null when the tool takes none. */
+  entry?: EntryView | null;
   candidates?: { id: Id; kind: Hit['kind'] }[];
   candidate?: Id | null;
   dimensionDrag?: { id: Id; position: P2 };
@@ -306,6 +321,10 @@ const HINT_KEYS: Record<Exclude<ToolId, OperationTool>, PlainKey[]> = {
 };
 
 const fmt = (v: number) => String(Number(v.toFixed(4)));
+/** The largest length (mm) a value typed while drawing may come to, as for an ellipse's axes. */
+const MAX_ENTRY_MM = 1e6;
+/** A number with nothing else: halved or doubled as it is when the circle's box changes between diameter and radius. */
+const PLAIN_NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
 
 /**
  * Sketch editing (C1, D5): tools, selection, dragging and dimensions. Every change goes through
@@ -335,6 +354,16 @@ export class SketchController {
   /** Center-point arc: accumulated sweep of the cursor around the center (sign = direction). */
   private sweep = { total: 0, last: 0 };
   private picks: Id[] = [];
+  /** The values typed in for the next click (P1, G01), as typed; they go with the segment they were typed for. */
+  private entry: { texts: Partial<Record<EntryField, string>>; active: number; focus: number } = { texts: {}, active: 0, focus: 0 };
+  /** What the circle's box takes: its diameter, or its radius. Kept from circle to circle. */
+  private circleEntry: 'diameter' | 'radius' = 'diameter';
+  /** The typed values evaluated, for the document and texts they were evaluated for. */
+  private entryCache: { doc: PartDoc; key: string; values: Partial<Record<EntryField, number>>; errors: Partial<Record<EntryField, string>> } | null = null;
+  /** What a typed value kept the cursor from snapping to, said in the hint. */
+  private ignoredSnap: Id[] | null = null;
+  /** The last pointer position, which Enter in the boxes clicks at. */
+  private pointer: PointerInput | null = null;
   /** Crossings of two lines picked by the dimension tool, by the id a pick stands for them with. They become a point and an `intersection` relation only with the dimension (ADR 0212). */
   private crossings = new Map<Id, { p: P2; a: Id; b: Id }>();
   private press: { p: P2; hit: Hit | null; modelSnap?: Extract<Snap, { kind: 'model' }> | null; moved: boolean } | null = null;
@@ -382,6 +411,7 @@ export class SketchController {
     const drawingLine = this.tool === 'line' || this.tool === 'centerline';
     const step = this.tool === 'dimension' ? Math.min(this.picks.length, 2) : drawingLine && this.chain ? 1 : this.clicks.length;
     return {
+      entry: this.entryView(),
       dimensionDrag: this.dimensionDrag?.moved ? { id: this.dimensionDrag.id, position: this.dimensionDrag.position } : undefined,
       candidates: this.candidates.map(({ id, kind }) => ({ id, kind })),
       candidate: this.candidate?.id ?? null,
@@ -482,7 +512,8 @@ export class SketchController {
   }
 
   private hint(step: number): string {
-    const base = this.baseHint(step);
+    let base = this.baseHint(step);
+    if (this.ignoredSnap) base = `${base} · ${t('sketch.entry.snapIgnored', { ids: this.ignoredSnap.join(', ') })}`;
     if (!this.inference) return base;
     const infer = t(`infer.${this.inference}`);
     const sources = this.snapSources();
@@ -492,6 +523,240 @@ export class SketchController {
   setOption<K extends keyof ToolOptions>(key: K, value: ToolOptions[K]): void {
     this.options = { ...this.options, [key]: value };
     this.changed();
+  }
+
+  // ------------------------------------------------------------------ values typed while drawing (P1, G01)
+
+  /** The boxes the click about to be made takes: a line's length and angle, a rectangle's width and height, a circle's diameter or radius. */
+  private entryFields(): EntryField[] {
+    switch (this.tool) {
+      case 'line':
+      case 'centerline':
+        return this.chain || this.clicks.length > 0 ? ['length', 'angle'] : [];
+      case 'rect':
+      case 'centerRect':
+        return this.clicks.length === 1 ? ['width', 'height'] : [];
+      case 'circle':
+        return this.clicks.length === 1 ? [this.circleEntry] : [];
+      default:
+        return [];
+    }
+  }
+
+  /**
+   * The typed values of the current boxes in millimetres and radians, and why the others cannot be used. They are evaluated in the document, so a
+   * variable or another dimension may be named, and a unit given (`1in`). A value out of range is refused, never changed into one in range (AGENTS.md §2.1).
+   */
+  private evaluatedEntry(): NonNullable<SketchController['entryCache']> {
+    const fields = this.entryFields();
+    const doc = this.host.doc();
+    const key = fields.map((f) => `${f}=${this.entry.texts[f] ?? ''}`).join('\n');
+    if (this.entryCache?.doc === doc && this.entryCache.key === key) return this.entryCache;
+    const values: Partial<Record<EntryField, number>> = {};
+    const errors: Partial<Record<EntryField, string>> = {};
+    let params: Parameters | null = null;
+    for (const f of fields) {
+      const text = this.entry.texts[f]?.trim();
+      if (!text) continue;
+      try {
+        params ??= new Parameters(doc);
+        const v = params.evaluate(text, f === 'angle' ? 'angle' : 'length');
+        if (f === 'angle' ? !(v > 0 && v < Math.PI) : !(v > 0 && v <= MAX_ENTRY_MM)) errors[f] = t(f === 'angle' ? 'sketch.entry.angleRange' : 'sketch.entry.lengthRange', { value: text });
+        else values[f] = v;
+      } catch (e) {
+        errors[f] = e instanceof Error ? e.message : String(e);
+      }
+    }
+    this.entryCache = { doc, key, values, errors };
+    return this.entryCache;
+  }
+
+  /** The typed values to make dimensions of: the texts of the boxes whose values can be used. */
+  private entryTexts(): Partial<Record<EntryField, string>> {
+    const { values } = this.evaluatedEntry();
+    return Object.fromEntries((Object.keys(values) as EntryField[]).map((f) => [f, this.entry.texts[f]!.trim()]));
+  }
+
+  /** Why a typed value cannot be used, or null. */
+  private entryProblem(): string | null {
+    return Object.values(this.evaluatedEntry().errors)[0] ?? null;
+  }
+
+  /**
+   * The snap moved to where the typed values put it. What it would have joined is not joined (a typed value is never changed by a snap) and the hint
+   * says so; a relation that only sets the direction stays, unless the angle is typed, which sets the direction itself.
+   */
+  private lockSnap(s: Snap, raw: P2): Snap {
+    const { values } = this.evaluatedEntry();
+    if (Object.keys(values).length === 0) return s;
+    const p = this.lockedPoint(s.p, raw, values);
+    if (!p) return s;
+    if (s.kind !== 'free' || s.align) {
+      const was = this.snapTarget;
+      this.snapTarget = s;
+      const lost = this.snapSources();
+      this.snapTarget = was;
+      this.ignoredSnap = lost.length > 0 ? lost : null;
+    }
+    const drawingLine = this.tool === 'line' || this.tool === 'centerline';
+    if (!drawingLine || values.angle !== undefined) {
+      this.inference = null;
+      this.lineTo = null;
+      this.tangentTo = null;
+    } else if (!this.lineTo && this.inference !== 'horizontal' && this.inference !== 'vertical' && this.inference !== 'tangent') this.inference = null;
+    return { kind: 'free', p };
+  }
+
+  /** Where the typed values put the point the next click makes. What is not typed comes from the snapped cursor; the side of the start the cursor is on picks the direction. */
+  private lockedPoint(p: P2, raw: P2, v: Partial<Record<EntryField, number>>): P2 | null {
+    const toward = (from: P2, length: number): P2 => {
+      const d = sub(p, from);
+      const l = Math.hypot(d[0], d[1]);
+      return add(from, scale(l > 1e-12 ? scale(d, 1 / l) : [1, 0], length));
+    };
+    switch (this.tool) {
+      case 'line':
+      case 'centerline': {
+        const from = this.lineStart();
+        if (!from) return null;
+        if (v.angle === undefined) return toward(from, v.length ?? dist(from, p));
+        const angle = raw[1] < from[1] ? -v.angle : v.angle;
+        return add(from, scale([Math.cos(angle), Math.sin(angle)], v.length ?? dist(from, p)));
+      }
+      case 'rect':
+      case 'centerRect': {
+        const a = this.clicks[0]?.p;
+        if (!a) return null;
+        const part = this.tool === 'centerRect' ? 0.5 : 1; // a center rectangle's corner is half its width and height from the center
+        const side = (i: 0 | 1) => (raw[i] < a[i] ? -1 : 1);
+        return [v.width === undefined ? p[0] : a[0] + side(0) * v.width * part, v.height === undefined ? p[1] : a[1] + side(1) * v.height * part];
+      }
+      case 'circle': {
+        const c = this.clicks[0]?.p;
+        const r = v.radius ?? (v.diameter === undefined ? undefined : v.diameter / 2);
+        return c && r !== undefined ? toward(c, r) : null;
+      }
+      default:
+        return null;
+    }
+  }
+
+  /** What the cursor gives for each box meanwhile, shown in the boxes nothing is typed in. */
+  private entryLive(): Partial<Record<EntryField, string>> {
+    const p = this.snapTarget?.p ?? this.cursor;
+    if (!p) return {};
+    switch (this.tool) {
+      case 'line':
+      case 'centerline': {
+        const from = this.lineStart();
+        if (!from) return {};
+        const d = sub(p, from);
+        return { length: fmt(Math.hypot(d[0], d[1])), angle: fmt((Math.abs(Math.atan2(d[1], d[0])) * 180) / Math.PI) };
+      }
+      case 'rect':
+      case 'centerRect': {
+        const a = this.clicks[0]?.p;
+        if (!a) return {};
+        const k = this.tool === 'centerRect' ? 2 : 1;
+        return { width: fmt(Math.abs(p[0] - a[0]) * k), height: fmt(Math.abs(p[1] - a[1]) * k) };
+      }
+      case 'circle': {
+        const c = this.clicks[0]?.p;
+        return c ? { radius: fmt(dist(c, p)), diameter: fmt(2 * dist(c, p)) } : {};
+      }
+      default:
+        return {};
+    }
+  }
+
+  private entryView(): EntryView | null {
+    const fields = this.entryFields();
+    if (fields.length === 0) return null;
+    const { values, errors } = this.evaluatedEntry();
+    const live = this.entryLive();
+    return {
+      fields: fields.map((key) => ({ key, text: this.entry.texts[key] ?? '', locked: values[key] !== undefined, error: errors[key] ?? null, live: live[key] ?? '' })),
+      active: Math.min(this.entry.active, fields.length - 1),
+      focus: this.entry.focus,
+    };
+  }
+
+  /** The cursor snapped again, now that the typed values have changed. */
+  private relock(): void {
+    if (this.pointer && this.tool !== 'select') this.updateSnap(this.pointer);
+  }
+
+  private clearEntry(): void {
+    this.entry = { texts: {}, active: 0, focus: this.entry.focus };
+    this.ignoredSnap = null;
+  }
+
+  /** Typing starts a value in the active box (with this first character) and moves the keyboard there. False when the tool takes no value now. */
+  beginEntry(char: string): boolean {
+    const fields = this.entryFields();
+    if (fields.length === 0) return false;
+    const key = fields[Math.min(this.entry.active, fields.length - 1)]!;
+    this.entry = { ...this.entry, texts: { ...this.entry.texts, [key]: char }, focus: this.entry.focus + 1 };
+    this.relock();
+    this.changed();
+    return true;
+  }
+
+  /** A box's text, as it is now typed (empty: the cursor gives that value again). */
+  setEntry(key: EntryField, text: string): void {
+    const fields = this.entryFields();
+    if (!fields.includes(key)) return;
+    this.entry = { ...this.entry, texts: { ...this.entry.texts, [key]: text }, active: fields.indexOf(key) };
+    this.relock();
+    this.changed();
+  }
+
+  /** Tab: the next box (Shift+Tab: the one before). False when there are no boxes. */
+  nextEntry(reverse = false): boolean {
+    const n = this.entryFields().length;
+    if (n === 0) return false;
+    this.entry = { ...this.entry, active: (Math.min(this.entry.active, n - 1) + (reverse ? n - 1 : 1)) % n, focus: this.entry.focus + 1 };
+    this.changed();
+    return true;
+  }
+
+  /**
+   * The circle's box between diameter and radius. A typed value is carried over as the same circle: a plain number halved or doubled, an expression
+   * wrapped, so a variable it names still drives it. Only one dimension is ever made.
+   */
+  setCircleEntry(mode: 'diameter' | 'radius'): void {
+    if (mode === this.circleEntry) return;
+    const texts = { ...this.entry.texts };
+    const text = texts[this.circleEntry]?.trim();
+    delete texts[this.circleEntry];
+    if (text) texts[mode] = PLAIN_NUMBER.test(text) ? fmt(Number(text) * (mode === 'radius' ? 0.5 : 2)) : `(${text})${mode === 'radius' ? '/2' : '*2'}`;
+    this.circleEntry = mode;
+    this.entry = { ...this.entry, texts };
+    this.relock();
+    this.changed();
+  }
+
+  /** Enter: makes what the boxes and the cursor say, with the typed values as its dimensions. False, and nothing made, when a typed value cannot be used. */
+  commitEntry(): boolean {
+    const e = this.pointer;
+    if (!e || this.entryFields().length === 0) return false;
+    if (this.entryProblem()) {
+      this.changed();
+      return false;
+    }
+    const before = this.host.doc();
+    this.click(e);
+    this.changed();
+    return this.host.doc() !== before;
+  }
+
+  /** Esc in a box: drops what was typed. False when nothing was. */
+  cancelEntry(): boolean {
+    if (!Object.values(this.entry.texts).some((x) => x !== undefined && x !== '')) return false;
+    this.clearEntry();
+    this.relock();
+    this.changed();
+    return true;
   }
 
   /** Resolves when the operation being checked is done (for tests and for the UI to wait on). */
@@ -575,11 +840,13 @@ export class SketchController {
     this.inference = null;
     this.tangentTo = null;
     this.sweep = { total: 0, last: 0 };
+    this.clearEntry();
   }
 
-  /** Esc: ends the current chain or pick, then returns to selection (SolidWorks behaviour). */
+  /** Esc: drops the values typed in, ends the current chain or pick, then returns to selection (SolidWorks behaviour). */
   escape(): void {
     if (this.drag || this.box) { this.drag = null; this.box = null; this.press = null; this.host.dragPreview(null); }
+    else if (this.cancelEntry()) return;
     else if (this.candidate) { this.candidate = null; this.hover = null; this.candidates = []; this.press = null; }
     else if (this.dimensionDrag) { this.dimensionDrag = null; this.press = null; }
     else if (this.tool === 'mirror' || this.tool === 'offset' || isTransformTool(this.tool)) this.setTool('select');
@@ -774,6 +1041,7 @@ export class SketchController {
 
   pointerMove(e: PointerInput, pressed: boolean): void {
     this.cursor = e.p;
+    this.pointer = e;
     if (this.dimensionDrag && pressed) {
       const drag = this.dimensionDrag;
       drag.moved ||= dist(drag.from, e.p) > DRAG_PX * e.px;
@@ -790,6 +1058,7 @@ export class SketchController {
 
   pointerDown(e: PointerInput): void {
     this.cursor = e.p;
+    this.pointer = e;
     if (this.tool === 'select') {
       const hit = this.dimensionAt(e);
       if (hit) {
@@ -1064,10 +1333,11 @@ export class SketchController {
     this.tangentTo = null;
     this.lineTo = null;
     this.inference = null;
+    this.ignoredSnap = null;
     if (!cfg.enabled || e.ctrl) {
       // nothing snaps, and nothing is added by itself; Ctrl does it for as long as it is held (SolidWorks: hold Ctrl while sketching to keep
       // automatic relations from being added)
-      this.snapTarget = { kind: 'free', p: e.p };
+      this.snapTarget = this.lockSnap({ kind: 'free', p: e.p }, e.p);
       this.hover = null;
       return;
     }
@@ -1191,6 +1461,7 @@ export class SketchController {
       else if (drawingLine && from && cfg.angle) s = { kind: 'free', p: angleStep(from, s.p, cfg.angleStep) };
       else if (cfg.grid && makes) s = { kind: 'free', p: gridPoint(s.p, visibleGridSpacing(cfg.gridSpacing, e.px)) }; // the grid that is drawn
     }
+    s = this.lockSnap(s, e.p);
     this.snapTarget = s;
     this.hover = this.lineTo
       ? { id: this.lineTo.line, kind: 'line', q: s.p, d: 0 }
@@ -1258,6 +1529,9 @@ export class SketchController {
   private click(e: PointerInput): void {
     if (this.tool === 'dimension') return void this.dimensionClick(e);
     if (PICK_TOOLS.has(this.tool)) return this.operationClick(e);
+    // a value typed that cannot be used makes nothing: the click would not make what was typed (T09)
+    const problem = this.entryProblem();
+    if (problem) return this.host.notify(problem, 'error');
     this.updateSnap(e);
     const s = this.snapTarget;
     if (!s) return;
@@ -1301,6 +1575,7 @@ export class SketchController {
         }
         this.finishTwoClick(s);
         this.clicks = [];
+        this.clearEntry();
         return;
       case 'ellipse':
       case 'perimeterCircle':
@@ -1334,7 +1609,12 @@ export class SketchController {
     if ((this.host.automaticRelations?.() ?? true) && (this.inference === 'horizontal' || this.inference === 'vertical')) b.relation({ type: this.inference, a: line });
     if ((this.host.automaticRelations?.() ?? true) && this.tangentTo) b.relation({ type: 'tangent', a: this.tangentTo, b: line });
     if ((this.host.automaticRelations?.() ?? true) && this.lineTo) b.relation({ type: this.lineTo.kind, a: line, b: this.lineTo.line });
+    const typed = this.entryTexts();
+    if (typed.length !== undefined) b.dimension({ type: 'distance', a: line }, typed.length);
+    // the angle from the sketch's X axis, counter-clockwise to a line going up, clockwise to one going down (the value is never signed)
+    if (typed.angle !== undefined) b.dimension(s.p[1] < from.p[1] ? { type: 'angle', a: line, b: SKETCH_AXIS_H } : { type: 'angle', a: SKETCH_AXIS_H, b: line }, typed.angle);
     if (!this.commit(b)) return;
+    this.clearEntry();
     const first = this.chain?.first ?? p1;
     this.clicks = [];
     // Closing the loop on the first point ends the chain, like SolidWorks.
@@ -1360,10 +1640,16 @@ export class SketchController {
     const first = this.clicks[0]!;
     const b = this.builder();
     const [a, q] = [first.p, s.p];
+    const typed = this.entryTexts();
+    // a rectangle's width and height are the lengths of its first (horizontal) and second (vertical) sides
+    const sized = (sides: Id[]) => {
+      if (typed.width !== undefined) b.dimension({ type: 'distance', a: sides[0]! }, typed.width);
+      if (typed.height !== undefined) b.dimension({ type: 'distance', a: sides[1]! }, typed.height);
+    };
     switch (this.tool) {
       case 'rect': {
         if (Math.abs(q[0] - a[0]) < 1e-9 || Math.abs(q[1] - a[1]) < 1e-9) return;
-        b.rectangle([b.pointFor(first), b.newPoint([q[0], a[1]]), b.pointFor(s), b.newPoint([a[0], q[1]])]);
+        sized(b.rectangle([b.pointFor(first), b.newPoint([q[0], a[1]]), b.pointFor(s), b.newPoint([a[0], q[1]])]));
         break;
       }
       case 'centerRect': {
@@ -1371,7 +1657,7 @@ export class SketchController {
         if (Math.abs(q[0] - a[0]) < 1e-9 || Math.abs(q[1] - a[1]) < 1e-9) return;
         const center = b.pointFor(first);
         const corners = [b.pointFor(s), b.newPoint([opposite[0], q[1]]), b.newPoint(opposite), b.newPoint([q[0], opposite[1]])];
-        b.rectangle(corners);
+        sized(b.rectangle(corners));
         const diagonal = b.line(corners[0]!, corners[2]!, true);
         b.line(corners[1]!, corners[3]!, true);
         b.relation({ type: 'midpoint', point: center, line: diagonal });
@@ -1382,6 +1668,8 @@ export class SketchController {
         if (r < 1e-9) return;
         const circle = b.circle(b.pointFor(first), r);
         if ((this.host.automaticRelations?.() ?? true) && s.kind === 'point') b.relation({ type: 'pointOnCurve', point: s.id, curve: circle });
+        if (typed.diameter !== undefined) b.dimension({ type: 'diameter', circle }, typed.diameter);
+        if (typed.radius !== undefined) b.dimension({ type: 'radius', circle }, typed.radius);
         break;
       }
       case 'tangentArc': {
@@ -2196,16 +2484,22 @@ class Builder {
     return id;
   }
 
-  /** Four lines through the corners in order, with horizontal/vertical relations on the sides. */
-  rectangle(corners: Id[]): void {
+  /** Four lines through the corners in order, with horizontal/vertical relations on the sides. Returns the lines. */
+  rectangle(corners: Id[]): Id[] {
     const lines = corners.map((c, i) => this.line(c, corners[(i + 1) % 4]!));
     this.relation({ type: 'horizontal', a: lines[0]! });
     this.relation({ type: 'vertical', a: lines[1]! });
     this.relation({ type: 'horizontal', a: lines[2]! });
     this.relation({ type: 'vertical', a: lines[3]! });
+    return lines;
   }
 
   relation(body: Record<string, unknown> & { type: SketchConstraint['type'] }): void {
     this.constraints.push({ id: this.ids.take('c'), ...body } as SketchConstraint);
+  }
+
+  /** A driving dimension whose value is the expression as typed. */
+  dimension(body: Record<string, unknown> & { type: SketchConstraint['type'] }, value: string): void {
+    this.constraints.push({ id: this.ids.take('d'), ...body, value } as SketchConstraint);
   }
 }

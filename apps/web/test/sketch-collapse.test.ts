@@ -5,7 +5,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { t } from '@3db/i18n';
-import { applyCommand, createEmptyPart, DocHistory, resolveSketch, type Id, type SketchConstraint, type SketchFeature } from '@3db/model';
+import { applyCommand, createEmptyPart, DocHistory, resolveSketch, type Id, type PartDoc, type SketchConstraint, type SketchFeature } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { SketchController, type PointerInput, type SketchHost } from '../src/sketcher/controller';
 import { relationsOffered } from '../src/sketcher/relationsOffered';
@@ -25,10 +25,13 @@ function session() {
   const solve = (s: SketchFeature = sketch(), options?: unknown) => ({ ...solver.solve(resolveSketch(s, history.doc), { analyze: true, ...(options as object) }), seq: 0, ms: 0, problems: [] });
   const notices: string[] = [];
   const pending: { edit: Id | null } = { edit: null };
+  // solved once per document, as the store does: planegcs's answer to an under-defined sketch depends on what it solved before (PlaneGcsSolver.fresh),
+  // so a host that solved again on every look would make the result depend on how often the controller looks
+  let solved: { doc: PartDoc; payload: ReturnType<typeof solve> } | null = null;
   const host: SketchHost = {
     featureId: 's',
     doc: () => history.doc,
-    solved: () => solve(),
+    solved: () => (solved?.doc === history.doc ? solved.payload : (solved = { doc: history.doc, payload: solve() }).payload),
     execute: (c) => {
       try {
         history.execute(c);
