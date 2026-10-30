@@ -19,7 +19,7 @@
 ③ 依賴鏈：`schema.ts`（blob kind）→ `commands.ts`（只收 step／iges）→ `engine.ts`（依 kind 分派）→ `partFile.ts`（`.igs`）→ worker／store／對話框／說明／`help-links.json`；`refs.ts`／`dag.ts`／`PropertyManager.tsx` 以輸入特徵處理，與格式無關，不需改。
 ④ 零 mock：往返以獨立讀取器與真實 OCCT 量測；瀏覽器 e2e 走真實選單、對話框、下載與兩個真實 worker。
 
-全量：`npm test` 3826 通過（26 既有略過；第一輪的 help-manual 失敗是驗證手冊未同步新說明，以 `SYNC_MANUAL_HELP=1` 重生一行）。完整 `verify:ui` 兩輪 245／246；`manual-drawing-linked.js` 在乾淨 `bca2d80` 以 `--only` 重現同一數值（`box.centred:false`），為既有失敗。紅隊注入設定順序錯誤 8 項失敗，已還原。2026-10-30 使用者確認步驟 0 的 6 個對照檔在 eDrawings 全部正確；這 6 個檔由 OCCT 寫出器直接寫出、未經 `exportIges`，所以另以 `exportIges` 產生 6 個產品路徑對照檔（含切半與顏色），待使用者判定，判定前不宣稱產品輸出已通過 eDrawings。
+全量：`npm test` 3826 通過（26 既有略過；第一輪的 help-manual 失敗是驗證手冊未同步新說明，以 `SYNC_MANUAL_HELP=1` 重生一行）。完整 `verify:ui` 兩輪 245／246；`manual-drawing-linked.js` 在乾淨 `bca2d80` 以 `--only` 重現同一數值（`box.centred:false`），為既有失敗。紅隊注入設定順序錯誤 8 項失敗，已還原。2026-10-30 使用者確認步驟 0 的 6 個對照檔在 eDrawings 全部正確；這 6 個檔由 OCCT 寫出器直接寫出、未經 `exportIges`，所以另以 `exportIges` 產生 6 個產品路徑對照檔（含切半與顏色），使用者同日確認這 6 個也全部正確（含切半與顏色），產品輸出的 eDrawings 驗收通過。
 
 
 ## 2026-10-29：既有失敗分診（phase5 單元 6 項、verify:ui 15 項）

@@ -31,6 +31,6 @@
 
 ## 未完成
 
-- **eDrawings 判定**：2026-10-30 使用者確認步驟 0 的 6 個對照檔（方塊、整圈圓角、球，各兩種寫法）在 eDrawings 全部正確。注意這 6 個檔是直接以 OCCT `IGESControl_Writer` 寫出，**未經** `exportIges` 的切半（`seamless`）、顏色與名稱；它證明 eDrawings 讀得對 OCCT 的 IGES（包括未切半的整圈環面，與 STEP 的情形不同），但不等於產品輸出已驗。產品路徑的對照檔（`exportIges` 寫出的整圈圓角、球、上色定位板，各兩種寫法，共 6 個）已產生，待使用者判定。
+- **eDrawings 判定**：2026-10-30 使用者確認步驟 0 的 6 個對照檔（方塊、整圈圓角、球，各兩種寫法）在 eDrawings 全部正確。注意這 6 個檔是直接以 OCCT `IGESControl_Writer` 寫出，**未經** `exportIges` 的切半（`seamless`）、顏色與名稱；它證明 eDrawings 讀得對 OCCT 的 IGES（包括未切半的整圈環面，與 STEP 的情形不同），但不等於產品輸出已驗。產品路徑的對照檔（`exportIges` 寫出的整圈圓角、球、上色定位板，各兩種寫法，共 6 個）同日由使用者在 eDrawings 確認全部正確，含切半後的環面與球面及面顏色。
 - **別的 CAD 寫的 IGES**：目前沒有樣本，讀入只以本程式寫出的檔與模糊測試驗證。
 - **範圍外**：組合件 IGES 輸出、IGES 組合件結構、「插入零組件」接受 IGES。STEP 讀取是否有同類卡死未測。
