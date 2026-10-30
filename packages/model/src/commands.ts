@@ -323,6 +323,12 @@ function endCondition(value: EndCondition): void {
   if (value.type === 'upToBody' && value.body.kind !== 'body') throw new CommandError(t('cmd.upToBodyNeedsBody'));
 }
 
+/** With a second direction, neither one may be 平面對稱 (the engine refuses it at rebuild). Only the *edit* commands say so up front: structural documents
+ * keep the right to carry the combination so its failure stays visible in the tree, hence this is not part of `validateNewFeature`. */
+function refuseMid2(f: { dir1: EndCondition; dir2?: EndCondition | null }): void {
+  if (f.dir2 && (f.dir1.type === 'midPlane' || f.dir2.type === 'midPlane')) throw new CommandError(t('feature.mid2'));
+}
+
 /** The feature's sketch must come earlier in the history. */
 function sketchBefore(doc: PartDoc, sketchId: Id, index: number, label: string): SketchFeature {
   const at = doc.features.findIndex((x) => x.id === sketchId);
@@ -987,6 +993,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       f.dir1 = cmd.first;
       if (cmd.second) f.dir2 = cmd.second;
       else { delete f.dir2; delete f.draft2; }
+      refuseMid2(f);
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }
@@ -1001,6 +1008,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       }
       endCondition(cmd.value);
       f[cmd.dir] = cmd.value;
+      refuseMid2(f);
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }

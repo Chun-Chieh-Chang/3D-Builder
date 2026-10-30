@@ -2,6 +2,28 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-10-30：命令層前置擋「兩側對稱＋方向 2」（ADR 0203 §修正續，登記待辦收尾）
+
+承接「伸長除料的拖曳操控器方向修正」條目登記的三項後續待辦之首：`midPlane`＋`dir2` 的衝突原本只在再生層攔（engine `feature.mid2`，`tests/phase3/extrude-p1.test.ts` 覆蓋「錯誤樹上可見」），命令層卻可以用 `setExtrudeDirections`／`setEndCondition` 把文件編排進這個註定失敗的狀態（屬性面板因模式互斥繞不進去，腳本與直接命合同樣走得到）。
+
+### 1. 交付內容
+- `packages/model/src/commands.ts`：新 `refuseMid2`（與 engine 同一訊息鍵 `feature.mid2`），掛在 `setExtrudeDirections`（原子雙向）與 `setEndCondition`（單欄改值）指派之後、`checkExprs` 之前。刻意**不**掛 `validateNewFeature`：`build()` 等結構式文件保有攜帶這個組合的權利、其失敗仍在特徵樹可見（phase3 舊案例依賴此語意），編輯命令只斷「不能由介面造出它」。
+- 文件：[ADR 0203](docs/adr/0203-floating-editor-assembly-source-and-live-extrusion.md) §修正補一段；[verification-coverage](docs/verification-coverage.md) 的操控器列補命令層擋門。
+
+### 2. 紅隊四問（節錄）
+1. **輸入破壞**：數值語意一律交給既有 `endCondition`／`checkExprs`，本項只加組合合法性判斷，無數值篡改、無 Math.round 類修正。
+2. **原子性**：拒絕在 immer recipe 內拋出，整個命令不落地（文件逐字不變），不產生半套狀態或孤兒 Undo。
+3. **依賴鏈**：訊息鍵 `feature.mid2` 中英皆已在 i18n；命令層與再生層用同一句話，不另造措辭。
+4. **真值**：測試以 `serializePart` 對比拒絕前後逐字相等，不只看「有拋錯」。
+
+### 3. 驗證與反向對照
+- `tests/phase7/extrude-direction-editor.test.ts` 新增：兩種組合（first=兩側對稱／second=兩側對稱）× 兩個命令皆就地拒絕；先建雙向 blind 再把任一欄改成兩側對稱也拒絕；每次拒絕後文件逐字不變。原 2 項（模式切換原子性、運算式保留與復原）與 100 組種子原生體積測試不動、全過。
+- **反向對照**（AGENTS §2）：把 `refuseMid2` 改成空轉 → 新測恰在第一個 throw 斷言失敗（`expected [Function] to throw an error`），還原後 3 passed。
+- typecheck 0 錯；`tests/phase7/extrude-direction-editor.test.ts`＋`tests/phase3/extrude-p1.test.ts` 18 項通過（含以結構式建衝突文件、再生層仍照實回報的既有語意）；`lint:repo` Repository OK（273 documents）。
+- 登記待辦其餘兩項（反向切空氣時操控器的可見退路、除料類 fuzz 補 `reverse` 維度——螺旋掃出 fuzz 檔須獨立，AGENTS §3.5）未做，另行規劃。
+
+---
+
 ## 2026-10-30：草圖互動 P1 第一批：繪製時輸入尺寸（G01：直線／中心線、圓、邊角／中心矩形）
 
 依[方案](docs/design/sketch-interaction/plan.md) G01／B01–B04／T09。使用者於本輪確認四項設計：角度欄為 0°～180°（不含），方向由游標在起點上方或下方決定；只鎖部分欄位按 Enter 即完成，未鎖欄位取游標；鎖值與吸附衝突時鎖值優先、不加重合關係並於提示列說明；本批只做線／圓／矩形，槽與多邊形（G16、B06）留下一批。未升 Schema（只用既有 `distance`／`angle`／`radius`／`diameter` 尺寸）。
