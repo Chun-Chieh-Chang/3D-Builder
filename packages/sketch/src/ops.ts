@@ -3,6 +3,7 @@ import {
   constraintRefs,
   isDimension,
   isSketchAxis,
+  SKETCH_AXIS_H,
   SKETCH_ORIGIN,
   type CircleRadius,
   type EntityRefs,
@@ -102,11 +103,28 @@ const error = (key: PlainKey): { error: string } => ({ error: t(key) });
 // ---------------------------------------------------------------- slot (C1.8)
 
 /**
+ * The values typed in while drawing (P1, G01; G16, B06): each becomes the driving dimension named beside what it locks, kept as typed
+ * (an expression may name a variable). The controller only sends ones it has checked, so an out-of-range value never reaches here.
+ */
+export interface SlotEntry {
+  length?: string;
+  angle?: string;
+  width?: string;
+}
+
+export interface PolygonEntry {
+  /** The construction circle's radius through the corners ('radius'), or one side's length ('edge'). */
+  size?: string;
+  sizeKind: 'radius' | 'edge';
+  angle?: string;
+}
+
+/**
  * A straight slot: two arcs of radius `r` about the centers `c1` and `c2`, joined by two lines that touch them. The
  * sides are tangent to both arcs, and the arcs have equal radii, which leaves the five freedoms a slot has (both
  * centers and the width). Counter-clockwise: bottom line, arc about `c2`, top line, arc about `c1`.
  */
-export function slot(ids: IdAllocator, a1: P2 | { id?: Id; p: P2 }, a2: P2 | { id?: Id; p: P2 }, r: number): OpResult {
+export function slot(ids: IdAllocator, a1: P2 | { id?: Id; p: P2 }, a2: P2 | { id?: Id; p: P2 }, r: number, entry: SlotEntry = {}): OpResult {
   const [m1, m2] = [Array.isArray(a1) ? { p: a1 } : a1, Array.isArray(a2) ? { p: a2 } : a2];
   const [c1, c2] = [m1.p, m2.p];
   if (dist(c1, c2) < TINY) return error('sketch.slotCentersApart');
@@ -125,6 +143,14 @@ export function slot(ids: IdAllocator, a1: P2 | { id?: Id; p: P2 }, a2: P2 | { i
   const arc1 = b.arc(C1, S1, S2);
   for (const [line, arc] of [[bottom, arc2], [top, arc2], [top, arc1], [bottom, arc1]] as const) b.relation({ type: 'tangent', a: line, b: arc });
   b.relation({ type: 'equal', a: arc1, b: arc2 });
+  if (entry.length) b.dimension({ type: 'distance', a: C1, b: C2 }, entry.length);
+  if (entry.angle) {
+    // the centers line's direction, on the bottom line that runs along it; the drawn direction decides which ray the value turns
+    const az = Math.atan2(c2[1] - c1[1], c2[0] - c1[0]);
+    b.dimension(az < 0 ? { type: 'angle', a: bottom, b: SKETCH_AXIS_H } : { type: 'angle', a: SKETCH_AXIS_H, b: bottom }, entry.angle);
+  }
+  // the width between the sides is the end arcs' diameter
+  if (entry.width) b.dimension({ type: 'diameter', circle: arc1 }, entry.width);
   return { edit: { add: b.added } };
 }
 
@@ -135,7 +161,7 @@ export function slot(ids: IdAllocator, a1: P2 | { id?: Id; p: P2 }, a2: P2 | { i
  * equal sides, which leaves four freedoms (center, size, turn). `q` fixes the size and the turn: a corner when `circumscribed`
  * is false, the middle of a side when true (the construction circle is then still the one through the corners).
  */
-export function polygon(ids: IdAllocator, center: { id?: Id; p: P2 }, q: P2, sides: number, circumscribed = false): OpResult {
+export function polygon(ids: IdAllocator, center: { id?: Id; p: P2 }, q: P2, sides: number, circumscribed = false, entry: PolygonEntry = { sizeKind: 'radius' }): OpResult {
   if (!Number.isInteger(sides) || sides < 3 || sides > 100) return error('sketch.polygonSides');
   const pick = dist(center.p, q);
   if (pick < TINY) return error('sketch.polygonSize');
@@ -151,6 +177,23 @@ export function polygon(ids: IdAllocator, center: { id?: Id; p: P2 }, q: P2, sid
   const lines = corners.map((p, i) => b.line(p, corners[(i + 1) % sides]!));
   for (const p of corners) b.relation({ type: 'pointOnCurve', point: p, curve: ring });
   for (let i = 1; i < sides; i++) b.relation({ type: 'equal', a: lines[0]!, b: lines[i]! });
+  if (entry.size) {
+    // the size as typed (G16): the circle through the corners' radius, or one side's length
+    if (entry.sizeKind === 'radius') b.dimension({ type: 'radius', circle: ring }, entry.size);
+    else b.dimension({ type: 'distance', a: lines[0]! }, entry.size);
+  }
+  if (entry.angle) {
+    // what the angle box locked (G16, B06): a polygon picked by its corner keeps the first corner's direction on a
+    // construction radius to that corner; one picked by a side's middle keeps the first side's direction on the side.
+    // The drawn direction decides which ray the value turns, as a typed line's angle does.
+    if (circumscribed) {
+      const sideAz = turn + Math.PI / sides + Math.PI / 2;
+      b.dimension(sideAz < 0 ? { type: 'angle', a: lines[0]!, b: SKETCH_AXIS_H } : { type: 'angle', a: SKETCH_AXIS_H, b: lines[0]! }, entry.angle);
+    } else {
+      const radiusLine = b.line(c, corners[0]!, true);
+      b.dimension(turn < 0 ? { type: 'angle', a: radiusLine, b: SKETCH_AXIS_H } : { type: 'angle', a: SKETCH_AXIS_H, b: radiusLine }, entry.angle);
+    }
+  }
   return { edit: { add: b.added } };
 }
 

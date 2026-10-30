@@ -239,12 +239,12 @@ export type PreviewShape =
   | { kind: 'arc'; c: P2; r: number; a0: number; a1: number }
   | { kind: 'box'; a: P2; b: P2 };
 
-/** A value typed in while drawing (P1, G01): it becomes a driving dimension of what the click makes. */
-export type EntryField = 'length' | 'angle' | 'width' | 'height' | 'radius' | 'diameter';
+/** A value typed in while drawing (P1, G01): it becomes a driving dimension of what the click makes. 'edge' is a polygon's side length (G16). */
+export type EntryField = 'length' | 'angle' | 'width' | 'height' | 'radius' | 'diameter' | 'edge';
 
-/** The boxes next to the cursor: what is typed in each, what the cursor gives meanwhile, and why a typed value cannot be used. */
+/** The boxes next to the cursor: what is typed in each, what the cursor gives meanwhile, and why a typed value cannot be used. The label says what each box locks: a polygon's angle is the vertex's direction or the first side's, as the polygon option picks (B06). */
 export interface EntryView {
-  fields: { key: EntryField; text: string; locked: boolean; error: string | null; live: string }[];
+  fields: { key: EntryField; text: string; locked: boolean; error: string | null; live: string; label: string }[];
   active: number;
   /** Goes up each time typing should move the keyboard focus into the active box. */
   focus: number;
@@ -358,6 +358,10 @@ export class SketchController {
   private entry: { texts: Partial<Record<EntryField, string>>; active: number; focus: number } = { texts: {}, active: 0, focus: 0 };
   /** What the circle's box takes: its diameter, or its radius. Kept from circle to circle. */
   private circleEntry: 'diameter' | 'radius' = 'diameter';
+  /** What the polygon's size box takes: the construction circle's radius through the corners, or one side's length (G16). Kept from polygon to polygon. */
+  private polygonEntry: 'radius' | 'edge' = 'radius';
+  /** The length and angle typed for a slot's two centers, kept from the first phase into the one that types the width: the boxes of a phase are the only ones evaluated. */
+  private slotEntry: { length?: string; angle?: string } | null = null;
   /** The typed values evaluated, for the document and texts they were evaluated for. */
   private entryCache: { doc: PartDoc; key: string; values: Partial<Record<EntryField, number>>; errors: Partial<Record<EntryField, string>> } | null = null;
   /** What a typed value kept the cursor from snapping to, said in the hint. */
@@ -527,7 +531,7 @@ export class SketchController {
 
   // ------------------------------------------------------------------ values typed while drawing (P1, G01)
 
-  /** The boxes the click about to be made takes: a line's length and angle, a rectangle's width and height, a circle's diameter or radius. */
+  /** The boxes the click about to be made takes: a line's length and angle, a rectangle's width and height, a circle's diameter or radius, a slot's center distance and direction and then its width, a polygon's size and direction (P1, G01; G16). */
   private entryFields(): EntryField[] {
     switch (this.tool) {
       case 'line':
@@ -538,6 +542,10 @@ export class SketchController {
         return this.clicks.length === 1 ? ['width', 'height'] : [];
       case 'circle':
         return this.clicks.length === 1 ? [this.circleEntry] : [];
+      case 'slot':
+        return this.clicks.length === 1 ? ['length', 'angle'] : this.clicks.length === 2 ? ['width'] : [];
+      case 'polygon':
+        return this.clicks.length === 1 ? [this.polygonEntry, 'angle'] : [];
       default:
         return [];
     }
@@ -561,7 +569,11 @@ export class SketchController {
       try {
         params ??= new Parameters(doc);
         const v = params.evaluate(text, f === 'angle' ? 'angle' : 'length');
-        if (f === 'angle' ? !(v > 0 && v < Math.PI) : !(v > 0 && v <= MAX_ENTRY_MM)) errors[f] = t(f === 'angle' ? 'sketch.entry.angleRange' : 'sketch.entry.lengthRange', { value: text });
+        // a polygon's or slot's angle locks a direction from the sketch's X axis: exactly horizontal (0°) is a direction too, and
+        // the cursor below the start mirrors it down; a line's angle is an included angle, so 0° and 180° would say nothing (G16, B06)
+        const direction = f === 'angle' && (this.tool === 'slot' || this.tool === 'polygon');
+        if (f === 'angle' ? direction ? !(v >= 0 && v < Math.PI) : !(v > 0 && v < Math.PI) : !(v > 0 && v <= MAX_ENTRY_MM))
+          errors[f] = t(f === 'angle' ? (direction ? 'sketch.entry.dirRange' : 'sketch.entry.angleRange') : 'sketch.entry.lengthRange', { value: text });
         else values[f] = v;
       } catch (e) {
         errors[f] = e instanceof Error ? e.message : String(e);
@@ -636,6 +648,46 @@ export class SketchController {
         const r = v.radius ?? (v.diameter === undefined ? undefined : v.diameter / 2);
         return c && r !== undefined ? toward(c, r) : null;
       }
+      case 'slot': {
+        const c1 = this.clicks[0]?.p;
+        if (!c1) return null;
+        if (this.clicks.length === 1) {
+          // the second center, like a line's end: the typed length, and the typed direction from the cursor's side of the first center
+          if (v.angle === undefined) return toward(c1, v.length ?? dist(c1, p));
+          const az0 = Math.atan2(p[1] - c1[1], p[0] - c1[0]);
+          const az = Math.atan2(Math.sin(az0), Math.cos(az0)) < 0 ? -v.angle : v.angle;
+          return add(c1, scale([Math.cos(az), Math.sin(az)], v.length ?? dist(c1, p)));
+        }
+        // the third click puts a boundary line's point: the typed width/2 from the centers line, on the side the cursor is on
+        if (this.clicks.length === 2 && v.width !== undefined) {
+          const c2 = this.clicks[1]!.p;
+          const d = sub(c2, c1);
+          if (Math.hypot(d[0], d[1]) < 1e-12) return null;
+          const u = scale(d, 1 / Math.hypot(d[0], d[1]));
+          const foot = add(c1, scale(u, dot(sub(p, c1), u)));
+          const n: P2 = [-u[1], u[0]];
+          return add(foot, scale(n, (cross(u, sub(p, c1)) < 0 ? -1 : 1) * (v.width / 2)));
+        }
+        return null;
+      }
+      case 'polygon': {
+        const c = this.clicks[0]?.p;
+        const n = this.options.polygonSides;
+        // an unusable side count is the op's refusal; the cursor stays where it is
+        if (!c || this.clicks.length !== 1 || !Number.isInteger(n) || n < 3 || n > 100) return null;
+        const circ = this.options.circumscribed;
+        const R = v.radius ?? (v.edge === undefined ? undefined : v.edge / (2 * Math.sin(Math.PI / n)));
+        // what the angle box locks (G16, B06): the first corner's direction in a polygon picked by its corner, the first side's direction
+        // in one picked by the middle of a side — always the direction the cursor shows, mirrored when the cursor is past its break
+        const shownAz = circ ? Math.atan2(p[1] - c[1], p[0] - c[0]) + Math.PI / 2 : Math.atan2(p[1] - c[1], p[0] - c[0]);
+        const shown = Math.atan2(Math.sin(shownAz), Math.cos(shownAz));
+        const dir = v.angle === undefined ? shown : shown < 0 ? -v.angle : v.angle;
+        // the corner's own direction out of the box's: the polygon op rebuilds both from where this second click lands
+        const cornerAz = circ ? dir - Math.PI / n - Math.PI / 2 : dir;
+        const az = cornerAz + (circ ? Math.PI / n : 0);
+        const pick = R !== undefined ? (circ ? R * Math.cos(Math.PI / n) : R) : dist(c, p);
+        return add(c, scale([Math.cos(az), Math.sin(az)], pick));
+      }
       default:
         return null;
     }
@@ -664,6 +716,36 @@ export class SketchController {
         const c = this.clicks[0]?.p;
         return c ? { radius: fmt(dist(c, p)), diameter: fmt(2 * dist(c, p)) } : {};
       }
+      case 'slot': {
+        const c1 = this.clicks[0]?.p;
+        if (!c1) return {};
+        if (this.clicks.length === 1) {
+          const d = sub(p, c1);
+          return { length: fmt(Math.hypot(d[0], d[1])), angle: fmt((Math.abs(Math.atan2(d[1], d[0])) * 180) / Math.PI) };
+        }
+        const c2 = this.clicks[1]?.p;
+        if (!c2) return {};
+        const d = sub(c2, c1);
+        const l = Math.hypot(d[0], d[1]);
+        // the width the cursor shows: twice the boundary's distance from the centers line
+        return l > 1e-12 ? { width: fmt(2 * Math.abs(cross(scale(d, 1 / l), sub(p, c1)))) } : {};
+      }
+      case 'polygon': {
+        const c = this.clicks[0]?.p;
+        const n = this.options.polygonSides;
+        if (!c || this.clicks.length !== 1 || !Number.isInteger(n) || n < 3 || n > 100) return {};
+        const circ = this.options.circumscribed;
+        const d = dist(c, p);
+        // the size the cursor shows about the picked way: from a corner, or from the middle of a side
+        const out: Partial<Record<EntryField, string>> = {
+          radius: fmt(circ ? d * Math.cos(Math.PI / n) : d),
+          edge: fmt(2 * d * (circ ? Math.tan(Math.PI / n) : Math.sin(Math.PI / n))),
+        };
+        // the direction box's value: the first corner's, or the first side's, as the picked way says (G16, B06)
+        const shownAz = circ ? Math.atan2(p[1] - c[1], p[0] - c[0]) + Math.PI / 2 : Math.atan2(p[1] - c[1], p[0] - c[0]);
+        out.angle = fmt((Math.abs(Math.atan2(Math.sin(shownAz), Math.cos(shownAz))) * 180) / Math.PI);
+        return out;
+      }
       default:
         return {};
     }
@@ -675,10 +757,26 @@ export class SketchController {
     const { values, errors } = this.evaluatedEntry();
     const live = this.entryLive();
     return {
-      fields: fields.map((key) => ({ key, text: this.entry.texts[key] ?? '', locked: values[key] !== undefined, error: errors[key] ?? null, live: live[key] ?? '' })),
+      fields: fields.map((f) => ({ key: f, text: this.entry.texts[f] ?? '', locked: values[f] !== undefined, error: errors[f] ?? null, live: live[f] ?? '', label: this.entryLabel(f) })),
       active: Math.min(this.entry.active, fields.length - 1),
       focus: this.entry.focus,
     };
+  }
+
+  /** What a box says it takes: a polygon's angle is the vertex's direction or the first side's, as the polygon's picked way says (B06). */
+  private entryLabel(f: EntryField): string {
+    if (f === 'angle' && this.tool === 'polygon') {
+      return t(this.options.circumscribed ? 'sketch.entry.sideAngle' : 'sketch.entry.vertexAngle');
+    }
+    switch (f) {
+      case 'length': return t('sketch.entry.length');
+      case 'angle': return t('sketch.entry.angle');
+      case 'width': return t('sketch.entry.width');
+      case 'height': return t('sketch.entry.height');
+      case 'radius': return t('sketch.entry.radius');
+      case 'diameter': return t('sketch.entry.diameter');
+      case 'edge': return t('sketch.entry.edge');
+    }
   }
 
   /** The cursor snapped again, now that the typed values have changed. */
@@ -736,6 +834,30 @@ export class SketchController {
     this.changed();
   }
 
+  /**
+   * The polygon's size box between the construction circle's radius through the corners and one side's length (G16). A typed value is carried over
+   * as the same polygon: a plain number converted with the sides' own sine, an expression wrapped so a variable it names still drives it. Only one dimension is ever made.
+   */
+  setPolygonEntry(mode: 'radius' | 'edge'): void {
+    if (mode === this.polygonEntry) return;
+    const texts = { ...this.entry.texts };
+    const text = texts[this.polygonEntry]?.trim();
+    delete texts[this.polygonEntry];
+    if (text) texts[mode] = this.polygonSizeSwap(text, mode);
+    this.polygonEntry = mode;
+    this.entry = { ...this.entry, texts };
+    this.relock();
+    this.changed();
+  }
+
+  /** The same polygon size said the other way: a side is two radii and the sides' own angle apart, so 2·R·sin(180/側數). */
+  private polygonSizeSwap(text: string, mode: 'radius' | 'edge'): string {
+    const s = Math.sin(Math.PI / this.options.polygonSides);
+    if (PLAIN_NUMBER.test(text)) return fmt(mode === 'edge' ? Number(text) * 2 * s : Number(text) / (2 * s));
+    const deg = String(Number((180 / this.options.polygonSides).toFixed(10))); // sin()'s argument in degrees, kept exact enough to round-trip
+    return mode === 'edge' ? `(${text})*2*sin(${deg})` : `(${text})/(2*sin(${deg}))`;
+  }
+
   /** Enter: makes what the boxes and the cursor say, with the typed values as its dimensions. False, and nothing made, when a typed value cannot be used. */
   commitEntry(): boolean {
     const e = this.pointer;
@@ -745,9 +867,10 @@ export class SketchController {
       return false;
     }
     const before = this.host.doc();
+    const clicksBefore = this.clicks.length;
     this.click(e);
     this.changed();
-    return this.host.doc() !== before;
+    return this.host.doc() !== before || this.clicks.length !== clicksBefore || this.busy;
   }
 
   /** Esc in a box: drops what was typed. False when nothing was. */
@@ -850,6 +973,12 @@ export class SketchController {
     else if (this.candidate) { this.candidate = null; this.hover = null; this.candidates = []; this.press = null; }
     else if (this.dimensionDrag) { this.dimensionDrag = null; this.press = null; }
     else if (this.tool === 'mirror' || this.tool === 'offset' || isTransformTool(this.tool)) this.setTool('select');
+    else if (this.tool === 'slot' && this.clicks.length === 2 && this.slotEntry) {
+      this.clicks.pop();
+      this.entry = { texts: { ...this.slotEntry }, active: 0, focus: this.entry.focus + 1 };
+      this.slotEntry = null;
+      this.relock();
+    }
     else if (this.clicks.length > 0 || this.chain || this.picks.length > 0) this.resetTool();
     else if (this.tool !== 'select') this.tool = 'select';
     else this.selection.clear();
@@ -1540,14 +1669,39 @@ export class SketchController {
       case 'bezier': {
         this.clicks.push(s);if(this.clicks.length===4){const b=this.builder(),points=this.clicks.map(s=>b.pointFor(s));if(new Set(points).size===4){b.entities.push({id:b.ids.take('sp'),type:'spline',points,bezier:true});this.commit(b);}else this.host.notify(t('sketch.bezierInvalid'),'info');this.clicks=[];}return;
       }
-      case 'slot':
-      case 'polygon':
-        this.clicks.push(s);
-        if (this.clicks.length === (this.tool === 'slot' ? 3 : 2)) {
-          this.finishShape();
-          this.clicks = [];
+      case 'slot': {
+        if (this.clicks.length === 0) {
+          this.slotEntry = null;
+          this.clicks.push(s);
+          return;
         }
+        if (this.clicks.length === 1) {
+          const { values } = this.evaluatedEntry();
+          const hasTyped = values.length !== undefined || values.angle !== undefined;
+          this.slotEntry = hasTyped
+            ? { length: values.length !== undefined ? this.entry.texts.length!.trim() : undefined, angle: values.angle !== undefined ? this.entry.texts.angle!.trim() : undefined }
+            : null;
+          this.clicks.push(s);
+          this.clearEntry();
+          return;
+        }
+        const typed = this.entryTexts();
+        this.clicks.push(s);
+        this.finishShape(typed);
+        this.clicks = [];
         return;
+      }
+      case 'polygon': {
+        if (this.clicks.length === 0) {
+          this.clicks.push(s);
+          return;
+        }
+        const typed = this.entryTexts();
+        this.clicks.push(s);
+        this.finishShape(typed);
+        this.clicks = [];
+        return;
+      }
       case 'line':
       case 'centerline':
         return this.lineClick(s);
@@ -1735,16 +1889,22 @@ export class SketchController {
 
   // ------------------------------------------------------------------ slot, polygon, trim, round, offset, mirror (C1.8–C1.19)
 
-  private finishShape(): void {
+  private finishShape(lastTyped?: Partial<Record<EntryField, string>>): void {
     const [c1, c2, c3] = this.clicks as [Snap, Snap, Snap | undefined];
     const place = (s: Snap) => ({ p: s.p, ...(s.kind === 'point' && s.id !== SKETCH_ORIGIN ? { id: s.id } : {}) });
+    // the evaluated boxes of the phase the shape finishes in; a slot keeps the ones its second center was placed with
+    const typed = lastTyped ?? this.entryTexts();
+    const slotTyped = { ...this.slotEntry, width: typed.width };
+    const polygonTyped = { size: this.polygonEntry === 'radius' ? typed.radius : typed.edge, sizeKind: this.polygonEntry, angle: typed.angle };
     if (this.tool === 'slot') {
       const axis = sub(c2.p, c1.p);
       const width = c3 ? Math.abs(cross(unit(axis), sub(c3.p, c1.p))) : 0;
-      this.run(slot(this.allocator(), place(c1), place(c2), width));
+      this.run(slot(this.allocator(), place(c1), place(c2), width, slotTyped));
     } else {
-      this.run(polygon(this.allocator(), place(c1), c2.p, this.options.polygonSides, this.options.circumscribed));
+      this.run(polygon(this.allocator(), place(c1), c2.p, this.options.polygonSides, this.options.circumscribed, polygonTyped));
     }
+    this.slotEntry = null;
+    this.clearEntry();
   }
 
   /** One of the sketch's axes under the cursor (ADR 0170), and nothing else: the last thing the select tool looks for. */

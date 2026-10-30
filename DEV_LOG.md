@@ -2,6 +2,56 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-10-30：草圖互動 P1 第二批：狹槽（B05）與多邊形（B06 / G16）數值即時輸入、驅動拘束與分層復原
+
+依[草圖互動方案](docs/design/sketch-interaction/plan.md) B05、B06／G16 與[執行驗收表](docs/design/sketch-interaction/acceptance.md)。承接 P1 第一批，完成狹槽與多邊形繪製時的數值即時輸入、自動驅動尺寸、定向射線、Esc 分層取消與單步 Undo/Redo。未變更文件 Schema。
+
+### 1. 交付內容
+- `packages/i18n/src/zh-TW/sketch.ts` & `packages/i18n/src/en/sketch.ts`：擴充 `sketch.option.orientation`、`sketch.entry.edge`、`sketch.entry.sideAngle`、`sketch.entry.edgeAngle`、`sketch.entry.vertexAngle`、`sketch.entry.polygonMode` 等中英雙語翻譯。
+- `apps/web/src/components/Viewport.tsx`：`EntryBoxes` 修正 `f.label` 解析，新增外接圓半徑與邊長切換按鈕（`[data-entry-mode]`，`R→L` / `L→R`）。
+- `packages/sketch/src/ops.ts`：
+  - `slot()` 擴充支援 `SlotEntry`：接收第一階段 `length`、`angle` 與第二階段 `width`，自動在中心線建立長度 `distance` 尺寸、相對於水平軸 `SKETCH_AXIS_H` 的角度 `angle` 尺寸，以及圓弧直徑 `diameter` 尺寸。
+  - `polygon()` 擴充支援 `PolygonEntry`：接收外接圓半徑 `radius` 或邊長 `edge` 及方位角 `angle`；輸入角度時自動建立中心至第 1 頂點之構造射線（`ray`）並標註相對於水平軸之 `angle` 尺寸；無角度時支援頂點或邊水平拘束；自動標註外接圓半徑 `radius` 或邊長 `distance` 尺寸。
+- `apps/web/src/sketcher/controller.ts`：
+  - `entryFields()`：狹槽第一階段回傳 `['length', 'angle']`、第二階段回傳 `['width']`；多邊形回傳 `[polygonEntry, 'angle']`。
+  - `lockedPoint()` & `entryLive()`：計算並即時鎖定狹槽與多邊形之幾何座標與長度/角度/半徑/邊長數值。
+  - `click()` & `finishShape()`：落實多階段暫存（`slotEntry`），修復點擊後 `clicks.length` 遞增導致 `entryFields()` 提早為空的狀態競爭；修復純滑鼠點擊時的真值防呆。
+  - `commitEntry()`：支援多階段工具中間步驟推進與非同步試解狀態判定。
+- `tests/e2e/manual-sketch-entry.js`：擴充 B05 狹槽（雙階段輸入、尺寸斷言、Esc 分層與 Undo/Redo）與 B06 多邊形（半徑與邊長按鈕切換、射線角度尺寸與 Undo/Redo）真實端到端瀏覽器測試。
+
+### 2. 紅隊四問（AGENTS.md §2）
+1. **輸入破壞**：嚴格依循原生數值解析；非數字、零、負值或超出限制的數值在命令與輸入層顯式拒絕並就地標示錯誤，嚴禁以 `Math.round` 或 `Math.abs` 靜默篡改使用者意圖。
+2. **幾何相交與拘束冗餘**：狹槽中心線自動與兩端圓弧維持相切；多邊形構造方位線與角度尺寸對齊 X 軸，角度為 0 或指定定向時施加水平拘束，不重複添加衝突拘束。
+3. **依賴鏈完整性**：從 `schema.ts`（既有尺寸型別）-> `ops.ts` -> `controller.ts` -> `Viewport.tsx` -> `i18n` 全鏈路型別與屬性完全閉環，無拼圖遺漏。
+4. **規格真實性與零 Mock 原則**：所有測試均使用真實 PlaneGCS 求解並實體探針驗收幾何（長度與角度真值誤差 ≤ 1e-6），並包含 180 組全隨機幾何 Fuzzing 壓力測試。
+
+### 3. 失敗紀錄與 RCA / CAPA
+1. **多階段工具 entryFields 狀態競爭**：
+   - *現象*：多邊形或狹槽輸入數值後按 Enter 或點擊，生成的實體沒有尺寸拘束。
+   - *RCA*：在 `this.clicks.push(s)` 後呼叫 `finishShape()`，此時 `this.clicks.length` 已跳轉至完成態，`entryFields()` 判定該工具已無待輸入欄位而回傳 `[]`，導致 `entryTexts()` 變為 `{}`。
+   - *CAPA*：在 `this.clicks.push(s)` 前先萃取 `lastTyped = this.entryTexts()` 並傳遞給 `finishShape(lastTyped)`。
+2. **setPolygonEntry early-return 陷阱**：
+   - *現象*：呼叫 `setPolygonEntry('edge')` 無法將輸入框由 radius 切換為 edge。
+   - *RCA*：`setPolygonEntry` 中包含了 `if (!this.entryFields().includes(mode)) return;`，而切換前欄位清單尚未包含目標 `mode`，導致切換直接被 early-return。
+   - *CAPA*：移除該無效條件，僅保留 `if (mode === this.polygonEntry) return;`。
+3. **非同步試解與 commitEntry 判定**：
+   - *現象*：多階段工具第 1 階段按 Enter 時 `commitEntry()` 回傳 `false`。
+   - *RCA*：`finishShape` 呼叫 `this.run()` 啟動非同步試解時會標記 `this.busy = true`，且中間步驟僅改變 `this.clicks.length` 而未提交新文件（`host.doc() === before`）。
+   - *CAPA*：`commitEntry()` 成功條件擴充納入 `this.busy || this.clicks.length !== clicksBefore`。
+4. **純滑鼠繪製 slot 時按 Esc 殘留預覽線（`sketcher.test.ts` 回歸）**：
+   - *現象*：`sketcher.test.ts` 中純滑鼠點擊 2 點後按 Esc，期望清空所有點擊與預覽，卻殘留中心線預覽線。
+   - *RCA*：純滑鼠點擊第 2 點時 `slotEntry` 被賦值為 `{ length: undefined, angle: undefined }`（truthy 物件），導致 `escape()` 誤判為有輸入數值而執行 `clicks.pop()`（只退回第 1 點）。
+   - *CAPA*：在 `click()` 加上真值存在性防呆（`values.length !== undefined || values.angle !== undefined`），確保純滑鼠點擊時 `slotEntry` 保持 `null`，Esc 即時取消所有點擊並清除預覽。
+
+### 4. 確效與指標
+- `apps/web/test/sketch-entry.test.ts`：37/37 全數通過（包含 B05 狹槽、B06 多邊形半徑/邊長/方向角/水平拘束、Esc 分層，以及 180 組全隨機幾何 Fuzzing 壓力測試）。
+- `apps/web/test/sketcher.test.ts`：75/75 全數通過。
+- `apps/web/test/*`：29 個測試檔案、305 項全數通過。
+- `npm run typecheck`、`npm run lint:rules`、`npm run lint:repo`、`npm run lint:deps`、`npm run lint:i18n`：全數 PASS。
+- `npm run build`：構建通過（1.89s）。
+
+---
+
 ## 2026-10-30：命令層前置擋「兩側對稱＋方向 2」（ADR 0203 §修正續，登記待辦收尾）
 
 承接「伸長除料的拖曳操控器方向修正」條目登記的三項後續待辦之首：`midPlane`＋`dir2` 的衝突原本只在再生層攔（engine `feature.mid2`，`tests/phase3/extrude-p1.test.ts` 覆蓋「錯誤樹上可見」），命令層卻可以用 `setExtrudeDirections`／`setEndCondition` 把文件編排進這個註定失敗的狀態（屬性面板因模式互斥繞不進去，腳本與直接命合同樣走得到）。

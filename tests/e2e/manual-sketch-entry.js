@@ -136,5 +136,92 @@ window.__sketchEntry = { run: async () => {
     return { w, h };
   });
 
+  await step('B05 slot typed length 30 at 0° and width 10: driving distance, angle, and width dimensions; Esc tiers and one undo', async () => {
+    await H.tool('狹槽');
+    await H.sk(0, 20);
+    await move(25, 20);
+    check(box() && field('length') && field('angle'), 'length and angle boxes beside cursor on stage 1');
+    await H.key('3');
+    type(field('length'), '30');
+    await keyIn(field('length'), 'Tab');
+    type(field('angle'), '0');
+    await keyIn(field('angle'), 'Enter');
+    await move(30, 25);
+    check(box() && field('width'), 'width box on stage 2');
+    type(field('width'), '10');
+    await keyIn(field('width'), 'Enter');
+    await H.solved();
+
+    const entities = H.sketch().entities;
+    const slotArcs = entities.filter((e) => e.type === 'arc');
+    const slotLines = entities.filter((e) => e.type === 'line' && !e.construction);
+    check(slotArcs.length === 2 && slotLines.length === 2, `slot arcs (${slotArcs.length}) and lines (${slotLines.length})`);
+    const slotDims = dims().filter((d) => ['distance', 'angle', 'diameter', 'radius'].includes(d.type));
+    check(slotDims.some((d) => d.type === 'distance' && d.value === '30'), 'length dimension 30');
+    check(slotDims.some((d) => d.type === 'angle' && d.value === '0'), 'angle dimension 0°');
+    check(slotDims.some((d) => (d.type === 'diameter' && d.value === '10') || (d.type === 'radius' && d.value === '5')), 'width dimension 10');
+
+    // Esc tiering check
+    await H.sk(0, 35);
+    await move(20, 35);
+    await H.key('2');
+    check(field('length')?.value === '2', 'stage 1 typed length');
+    await keyIn(field('length'), 'Escape');
+    check(field('length')?.value === '', 'first Esc clears input text');
+    await H.key('Escape');
+    check(!box(), 'second Esc cancels start point');
+    await H.key('Escape');
+    check(H.view().tool === 'select', 'third Esc exits tool');
+
+    // Undo / Redo
+    const countBefore = H.sketch().entities.length;
+    store.undo(); await H.solved();
+    check(H.sketch().entities.length < countBefore, 'one undo removed slot and its dimensions');
+    store.redo(); await H.solved();
+    check(H.sketch().entities.length === countBefore, 'one redo restored slot');
+    await H.selectTool();
+  });
+
+  await step('B06 polygon typed radius 15 at 30°: radius and ray angle dimensions; mode toggle between R and L; one undo', async () => {
+    await H.tool('多邊形');
+    await H.sk(-20, 20);
+    await move(-10, 25);
+    check(box() && field('radius') && field('angle'), 'radius and angle boxes beside cursor');
+    // Test mode toggle button
+    const toggleBtn = document.querySelector('[data-sketch-entry] [data-entry-mode]');
+    check(toggleBtn, 'mode toggle button present');
+    toggleBtn.click();
+    await H.wait(80);
+    check(field('edge') && !field('radius'), 'toggled to edge length mode');
+    toggleBtn.click();
+    await H.wait(80);
+    check(field('radius') && !field('edge'), 'toggled back to radius mode');
+
+    await H.key('1');
+    type(field('radius'), '15');
+    await keyIn(field('radius'), 'Tab');
+    type(field('angle'), '30');
+    await keyIn(field('angle'), 'Enter');
+    await H.solved();
+
+    const entities = H.sketch().entities;
+    const polyLines = entities.filter((e) => e.type === 'line' && !e.construction);
+    const rays = entities.filter((e) => e.type === 'line' && e.construction);
+    check(polyLines.length === 6, 'hexagon created with 6 sides');
+    check(rays.length >= 1, 'orientation ray created');
+
+    const polyDims = dims().filter((d) => ['radius', 'distance', 'angle'].includes(d.type));
+    check(polyDims.some((d) => d.type === 'radius' && d.value === '15'), 'radius dimension 15');
+    check(polyDims.some((d) => d.type === 'angle' && d.value === '30'), 'ray angle dimension 30°');
+
+    // Undo / Redo
+    const countBefore = H.sketch().entities.length;
+    store.undo(); await H.solved();
+    check(H.sketch().entities.length < countBefore, 'one undo removed polygon and its dimensions');
+    store.redo(); await H.solved();
+    check(H.sketch().entities.length === countBefore, 'one redo restored polygon');
+    await H.selectTool();
+  });
+
   return { steps, pass: steps.every((s) => s.pass) };
 } };

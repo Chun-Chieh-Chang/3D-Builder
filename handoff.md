@@ -58,14 +58,24 @@
 
 ---
 
-## 3b. 2026-10-30 P1 第一批已完成：繪製時輸入尺寸（直線／中心線、圓、矩形）
+## 3b. 2026-10-30 P1 第一批與第二批已完成：繪製時輸入尺寸（直線／中心線、圓、矩形、狹槽、多邊形）
 
-- 依使用者確認的四項設計完成並驗收（見[驗收表 P1](docs/design/sketch-interaction/acceptance.md) 與 DEV_LOG 同日條目）：角度 0°～180° 由游標側定方向；部分鎖值 Enter 即完成；鎖值優先於吸附並提示；槽／多邊形留下一批。
-- 變更：`apps/web/src/sketcher/controller.ts`（entry 狀態、`lockSnap`、提交時加驅動尺寸）、`apps/web/src/components/Viewport.tsx` `EntryBoxes`、`apps/web/src/actions.ts`（數字鍵起始輸入、Tab）、`app.css`、i18n `sketch.entry.*`；新測試 `apps/web/test/sketch-entry.test.ts`（32 項）、`tests/e2e/manual-sketch-entry.js`；`apps/web/test/sketch-collapse.test.ts` 的 host 改為每文件只求解一次（RCA 見 DEV_LOG，門檻未改）。
+- **第一批（直線／中心線、圓、邊角／中心矩形）**：
+  - 依使用者確認的四項設計完成並驗收（見[驗收表 P1](docs/design/sketch-interaction/acceptance.md) 與 DEV_LOG 同日條目）：角度 0°～180° 由游標側定方向；部分鎖值 Enter 即完成；鎖值優先於吸附並提示。
+  - 變更：`apps/web/src/sketcher/controller.ts`（entry 狀態、`lockSnap`、提交時加驅動尺寸）、`apps/web/src/components/Viewport.tsx` `EntryBoxes`、`apps/web/src/actions.ts`（數字鍵起始輸入、Tab）、`app.css`、i18n `sketch.entry.*`。
+- **第二批（狹槽 B05、多邊形 B06 / G16）**：
+  - 狹槽（Slot，B05）：第一階段輸入中心線長度與角度，Tab 切換，Enter 前進到第二階段；第二階段輸入槽寬，Enter 完成狹槽；自動建立 `distance`、`angle`、`diameter` 3 個驅動尺寸；幾何圓弧半徑精確相符；單步 Undo 清空實體與尺寸，單步 Redo 恢復；Esc 多階段分層回退。純滑鼠繪製時加真值防呆，按 Esc 即時清除預覽線。
+  - 多邊形（Polygon，B06 / G16）：支援外接圓半徑模式（`radius`）與邊長模式（`edge`）數值輸入與切換按鈕；輸入角度時自動建立中心至第 1 頂點構造射線並標註相對於水平軸之驅動角度尺寸；無角度或角度 0° 時支援頂點或邊水平拘束；自動標註外接圓半徑或邊長尺寸；單步 Undo/Redo 原子復原。
+  - 變更：`packages/sketch/src/ops.ts`（`SlotEntry`、`PolygonEntry`）、`apps/web/src/sketcher/controller.ts`（多階段狀態競爭修復、`setPolygonEntry` early-return 修正、純滑鼠真值防呆）、`apps/web/src/components/Viewport.tsx`（切換按鈕）、`packages/i18n`（中英字典擴充）、`tests/e2e/manual-sketch-entry.js`（B05 與 B06 端到端實機步驟）。
+- **確效結果**：
+  - `apps/web/test/sketch-entry.test.ts`：**37/37 PASS**（含 180 組全隨機幾何 Fuzzing 壓力測試）。
+  - `apps/web/test/sketcher.test.ts`：**75/75 PASS**。
+  - `apps/web/test/*`：**29 檔 305 項全數 PASS**。
+  - `npm run build`：構建通過。
 - **下一步**：
-  1. P1 第二批：槽與多邊形（G16、B06）——多邊形半徑／邊長、方向角、頂點朝向或邊平行；沿用 `entryFields`／`lockedPoint`／`Builder.dimension`。
-  2. 既有限制另案：PlaneGCS 對約 900 個拘束、大多已定義的草圖 `Aborted(OOM)`（150 個標尺寸矩形可重現，100 個 52 ms；對照程式在工作階段暫存區，不在版本庫）。
-  3. E03：P1 輸入框在 macOS 鍵盤與 DPR2／不同縮放尚未驗證。
+  1. E03：P1 輸入框在 macOS 鍵盤與 DPR2／不同縮放待 CI／實機驗證。
+  2. 既有限制另案：PlaneGCS 對約 900 個拘束、大多已定義的草圖 `Aborted(OOM)`（150 個標尺寸矩形可重現，100 個 52 ms）。
+  3. 接續推進草圖互動方案 Phase P2。
 
 ## 4. 下一階段核心計畫：草圖互動改善方案 (P1 即時尺寸輸入)
 

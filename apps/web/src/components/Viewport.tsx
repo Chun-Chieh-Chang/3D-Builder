@@ -657,13 +657,16 @@ function EntryBoxes({ typed, at, overlay }: { typed: EntryView; at: P2 | null; o
   if (!sketcher || !v || !overlay || !at) return null;
   const screen = v.screenOf(overlay.frame, at);
   const error = typed.fields.find((f) => f.error)?.error;
-  const circle = typed.fields.find((f) => f.key === 'diameter' || f.key === 'radius');
+  const tool = sketcher.getView().tool;
+  // the size box whose way of saying it can be switched: a circle's diameter / radius, a polygon's radius / edge length (G16)
+  const circle = tool !== 'polygon' ? typed.fields.find((f) => f.key === 'diameter' || f.key === 'radius') : undefined;
+  const polygon = tool === 'polygon' ? typed.fields.find((f) => f.key === 'radius' || f.key === 'edge') : undefined;
   return (
     <div className="entry-box" data-sketch-entry style={{ left: screen.x, top: screen.y }} onPointerDown={(e) => e.stopPropagation()} title={t('sketch.entry.help')}>
       <div className="entry-fields">
         {typed.fields.map((f, i) => (
           <label key={f.key} className={i === typed.active ? 'active' : ''}>
-            <span>{t(`sketch.entry.${f.key}`)}</span>
+            <span>{f.label}</span>
             <input
               ref={(el) => void (inputs.current[i] = el)}
               data-entry={f.key}
@@ -694,6 +697,11 @@ function EntryBoxes({ typed, at, overlay }: { typed: EntryView; at: P2 | null; o
         {circle && (
           <button type="button" data-entry-mode title={t('sketch.entry.circleMode')} onClick={() => sketcher.setCircleEntry(circle.key === 'diameter' ? 'radius' : 'diameter')}>
             {circle.key === 'diameter' ? 'Ø→R' : 'R→Ø'}
+          </button>
+        )}
+        {polygon && (
+          <button type="button" data-entry-mode title={t('sketch.entry.polygonMode')} onClick={() => sketcher.setPolygonEntry(polygon.key === 'radius' ? 'edge' : 'radius')}>
+            {polygon.key === 'radius' ? 'R→L' : 'L→R'}
           </button>
         )}
       </div>

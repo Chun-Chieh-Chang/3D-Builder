@@ -342,15 +342,168 @@ describe('typing values while drawing (P1, G01)', () => {
     expect(c.getView().entry!.fields.every((f) => f.text === '')).toBe(true);
   });
 
-  it('fuzz: 150 random lines, rectangles and circles typed in, in every quadrant, solve to the typed values', () => {
+  it('B05: slot typed with length, angle and width produces driving dimensions; one undo step', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('slot');
+    click(c, 0, 0); // first center
+    move(c, 30, 10);
+    expect(c.getView().entry!.fields.map((f) => f.key)).toEqual(['length', 'angle']);
+    c.setEntry('length', '40');
+    c.setEntry('angle', '30');
+    expect(c.commitEntry()).toBe(true); // places second center
+
+    move(c, 20, 15);
+    expect(c.getView().entry!.fields.map((f) => f.key)).toEqual(['width']);
+    c.setEntry('width', '12');
+    expect(c.commitEntry()).toBe(true); // completes slot
+
+    await c.settled();
+    expect(dims(h)).toEqual([
+      expect.objectContaining({ type: 'distance', value: '40' }),
+      expect.objectContaining({ type: 'angle', value: '30' }),
+      expect.objectContaining({ type: 'diameter', value: '12' }),
+    ]);
+
+    const arcs = h.sketch().entities.filter((e) => e.type === 'arc');
+    expect(arcs).toHaveLength(2);
+    const arcGeo = geometry(h, arcs[0]!.id) as Extract<SolvedGeometry, { type: 'arc' }>;
+    expect(Math.abs(arcGeo.r - 6)).toBeLessThanOrEqual(MM);
+
+    // 1-step undo
+    h.history.undo();
+    expect(h.sketch().entities).toHaveLength(0);
+    expect(h.sketch().constraints).toHaveLength(0);
+    h.history.redo();
+    expect(h.sketch().entities.filter((e) => e.type === 'arc')).toHaveLength(2);
+    expect(dims(h)).toHaveLength(3);
+  });
+
+  it('B06: polygon typed with radius and angle sets driving radius and construction ray angle (G16)', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('polygon');
+    c.setOption('polygonSides', 6);
+    click(c, 0, 0);
+    move(c, 20, 10);
+    expect(c.getView().entry!.fields.map((f) => f.key)).toEqual(['radius', 'angle']);
+    c.setEntry('radius', '30');
+    c.setEntry('angle', '30');
+    expect(c.commitEntry()).toBe(true);
+
+    await c.settled();
+    expect(dims(h)).toEqual([
+      expect.objectContaining({ type: 'radius', value: '30' }),
+      expect.objectContaining({ type: 'angle', value: '30' }),
+    ]);
+
+    const circle = h.sketch().entities.find((e) => e.type === 'circle')!;
+    const circGeo = geometry(h, circle.id) as Extract<SolvedGeometry, { type: 'circle' }>;
+    expect(Math.abs(circGeo.r - 30)).toBeLessThanOrEqual(MM);
+
+    // 1-step undo
+    h.history.undo();
+    expect(h.sketch().entities).toHaveLength(0);
+    expect(h.sketch().constraints).toHaveLength(0);
+    h.history.redo();
+    expect(dims(h)).toHaveLength(2);
+  });
+
+  it('B06: polygon switched to edge length mode drives side length directly', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('polygon');
+    c.setOption('polygonSides', 6);
+    click(c, 0, 0);
+    move(c, 20, 0);
+    c.setPolygonEntry('edge');
+    expect(c.getView().entry!.fields[0]!.key).toBe('edge');
+    c.setEntry('edge', '15');
+    expect(c.commitEntry()).toBe(true);
+
+    await c.settled();
+    expect(dims(h)).toEqual([expect.objectContaining({ type: 'distance', value: '15' })]);
+    const linesMade = lines(h);
+    expect(linesMade).toHaveLength(6);
+    const sideGeo = lineOf(h, linesMade[0]!.id);
+    expect(Math.abs(length(sideGeo) - 15)).toBeLessThanOrEqual(MM);
+  });
+
+  it('B06: hexagon oriented with angle 0 locks vertex along the X axis, and circumscribed side angle 0 locks first side parallel to X', async () => {
+    // 1. Vertex to X axis: angle 0 on circumscribed=false
+    const h1 = new Host();
+    const c1 = new SketchController(h1);
+    c1.setTool('polygon');
+    c1.setOption('polygonSides', 6);
+    c1.setOption('circumscribed', false);
+    click(c1, 0, 0);
+    move(c1, 20, 0);
+    c1.setEntry('radius', '20');
+    c1.setEntry('angle', '0');
+    expect(c1.commitEntry()).toBe(true);
+    await c1.settled();
+    expect(dims(h1)).toEqual([
+      expect.objectContaining({ type: 'radius', value: '20' }),
+      expect.objectContaining({ type: 'angle', value: '0' }),
+    ]);
+
+    // 2. Side parallel to X: circumscribed=true with side angle 0
+    const h2 = new Host();
+    const c2 = new SketchController(h2);
+    c2.setTool('polygon');
+    c2.setOption('polygonSides', 6);
+    c2.setOption('circumscribed', true);
+    click(c2, 0, 0);
+    move(c2, 0, 20);
+    c2.setEntry('radius', '25');
+    c2.setEntry('angle', '0');
+    expect(c2.commitEntry()).toBe(true);
+    await c2.settled();
+    expect(dims(h2)).toEqual([
+      expect.objectContaining({ type: 'radius', value: '25' }),
+      expect.objectContaining({ type: 'angle', value: '0' }),
+    ]);
+  });
+
+  it('Esc layering for slot and polygon: clears input text, backs out to previous step, and cancels tool', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('slot');
+    click(c, 0, 0);
+    move(c, 20, 0);
+    c.setEntry('length', '30');
+    expect(c.getView().entry!.fields[0]!.locked).toBe(true);
+    c.escape(); // drops typed length
+    expect(c.getView().entry!.fields[0]!.text).toBe('');
+    expect(c.getView().tool).toBe('slot');
+
+    c.setEntry('length', '30');
+    expect(c.commitEntry()).toBe(true); // places second center, now in width phase
+    move(c, 20, 10);
+    c.setEntry('width', '10');
+    c.escape(); // drops typed width
+    expect(c.getView().entry!.fields[0]!.text).toBe('');
+    c.escape(); // cancels second center, backs up to first center
+    expect(c.getView().entry!.fields.map((f) => f.key)).toEqual(['length', 'angle']);
+    expect(c.getView().entry!.fields[0]!.text).toBe('30');
+    c.escape(); // drops restored typed length
+    expect(c.getView().entry!.fields[0]!.text).toBe('');
+    c.escape(); // cancels first center
+    expect(c.getView().entry).toBeNull();
+    c.escape(); // returns to select tool
+    expect(c.getView().tool).toBe('select');
+    expect(h.sketch().entities).toHaveLength(0);
+  });
+
+  it('fuzz: 180 random lines, rectangles, circles, slots and polygons typed in, in every quadrant, solve to the typed values', async () => {
     let seed = 20261030;
     const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
     const round = (v: number) => Number(v.toFixed(3));
-    for (let i = 0; i < 150; i++) {
+    for (let i = 0; i < 180; i++) {
       // each case in a sketch of its own, so a case is checked on its own and the solve stays small
       const h = new Host();
       const c = new SketchController(h);
-      const kind = (['line', 'rect', 'centerRect', 'circle'] as const)[i % 4]!;
+      const kind = (['line', 'rect', 'centerRect', 'circle', 'slot', 'polygon'] as const)[i % 6]!;
       const ox = round((rnd() - 0.5) * 400);
       const oy = round((rnd() - 0.5) * 400);
       const sx = rnd() < 0.5 ? -1 : 1;
@@ -378,6 +531,31 @@ describe('typing values while drawing (P1, G01)', () => {
         expect(c.commitEntry()).toBe(true);
         const g = geometry(h, h.sketch().entities.slice(before).find((e) => e.type === 'circle')!.id) as Extract<SolvedGeometry, { type: 'circle' }>;
         expect(Math.abs(2 * g.r - a)).toBeLessThanOrEqual(MM);
+      } else if (kind === 'slot') {
+        const angle = round(0.5 + rnd() * 179);
+        const width = round(Math.max(0.5, b / 4));
+        c.setEntry('length', String(a));
+        c.setEntry('angle', String(angle));
+        expect(c.commitEntry()).toBe(true);
+        c.pointerMove(at(ox + sx * 10, oy + sy * 10, { ctrl: true }), false);
+        c.setEntry('width', String(width));
+        expect(c.commitEntry()).toBe(true);
+        await c.settled();
+        const arcs = h.sketch().entities.slice(before).filter((e) => e.type === 'arc');
+        expect(arcs).toHaveLength(2);
+        const arcG = geometry(h, arcs[0]!.id) as Extract<SolvedGeometry, { type: 'arc' }>;
+        expect(Math.abs(arcG.r - width / 2)).toBeLessThanOrEqual(MM);
+      } else if (kind === 'polygon') {
+        const sides = 3 + (i % 6);
+        const angle = round(0.5 + rnd() * 179);
+        c.setOption('polygonSides', sides);
+        c.setEntry('radius', String(a));
+        c.setEntry('angle', String(angle));
+        expect(c.commitEntry()).toBe(true);
+        await c.settled();
+        const circ = h.sketch().entities.slice(before).find((e) => e.type === 'circle')!;
+        const circG = geometry(h, circ.id) as Extract<SolvedGeometry, { type: 'circle' }>;
+        expect(Math.abs(circG.r - a)).toBeLessThanOrEqual(MM);
       } else {
         c.setEntry('width', String(a));
         c.setEntry('height', String(b));
