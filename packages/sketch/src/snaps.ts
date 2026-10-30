@@ -5,7 +5,7 @@
  */
 import type { Id } from '@3db/model';
 import { add, closestOn, dist, dot, len, onSweep, polar, scale, sub, unit, type Geometry } from './interact';
-import { crossings, drawn, isCurve } from './ops';
+import { crossings, drawn, isCurve, type Curve } from './ops';
 import type { P2 } from './types';
 
 // ---------------------------------------------------------------- the settings
@@ -109,11 +109,21 @@ export function parseSnapSettings(raw: unknown): SnapSettings {
  * count (the dimension tool, ADR 0212: a crossing of a line and a circle has two places and tangency to settle, which it does not take on yet).
  */
 export function intersectionSnap(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySet<Id> = new Set(), linesOnly = false): { p: P2; a: Id; b: Id } | null {
-  const near = [...geometry].flatMap(([id, g]) => {
-    if (exclude.has(id) || !isCurve(g) || (linesOnly && g.type !== 'line')) return [];
+  const near: { id: Id; g: Curve }[] = [];
+  for (const [id, g] of geometry) {
+    if (exclude.has(id) || !isCurve(g) || (linesOnly && g.type !== 'line')) continue;
+    if (g.type === 'line') {
+      const minX = Math.min(g.a[0], g.b[0]) - tol;
+      const maxX = Math.max(g.a[0], g.b[0]) + tol;
+      const minY = Math.min(g.a[1], g.b[1]) - tol;
+      const maxY = Math.max(g.a[1], g.b[1]) + tol;
+      if (p[0] < minX || p[0] > maxX || p[1] < minY || p[1] > maxY) continue;
+    } else if (g.type === 'circle') {
+      if (Math.abs(p[0] - g.c[0]) > g.r + tol || Math.abs(p[1] - g.c[1]) > g.r + tol) continue;
+    }
     const q = closestOn(g, p);
-    return q && dist(p, q) <= tol ? [{ id, g }] : [];
-  });
+    if (q && dist(p, q) <= tol) near.push({ id, g });
+  }
   let best: { p: P2; a: Id; b: Id; d: number } | null = null;
   for (let i = 0; i < near.length; i++) {
     for (let j = i + 1; j < near.length; j++) {
@@ -133,6 +143,7 @@ export function quadrantSnap(geometry: Geometry, p: P2, tol: number, exclude: Re
   let best: { p: P2; curve: Id; center: Id; axis: 'horizontal' | 'vertical'; d: number } | null = null;
   for (const [id, g] of geometry) {
     if (exclude.has(id) || (g.type !== 'circle' && g.type !== 'arc')) continue;
+    if (Math.abs(p[0] - g.c[0]) > g.r + tol || Math.abs(p[1] - g.c[1]) > g.r + tol) continue;
     for (let k = 0; k < 4; k++) {
       const angle = (k * Math.PI) / 2;
       if (g.type === 'arc' && !(onSweep(g.a0, g.a1, angle) && Math.abs(angle - g.a0) > 1e-9 && Math.abs(angle - g.a1) > 1e-9)) continue;

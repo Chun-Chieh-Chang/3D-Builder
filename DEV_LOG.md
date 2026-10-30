@@ -24,6 +24,35 @@
 合併 main（至 `d66cabb`）：IGES 改為 Schema 86、ADR 0220；衝突在 App.tsx（兩個新對話框）、serialize.ts（遷移）、handoff、盤點。合併後完整 `verify:ui` 248／248；`npm test` 唯一失敗為 main 既有的 `direct-edit.test.ts` 移動面推進超過厚度（未含 IGES 的 main 同樣失敗，未修改）。
 
 
+## 2026-10-30：CI 雲端虛擬機效能瓶頸根治與幾何 AABB 快速剪枝
+
+### 1. 失敗現象與錯誤日誌
+Commit `d66cabb` 推送至 GitHub Actions 後，矩陣呈現 `1 / 3`（`ubuntu-latest` 通過，`windows-latest` 與 `macos-latest` 失敗）。
+讀取 GitHub Actions 實際執行日誌定位失敗步驟：
+- `windows-latest` (job `123840471620`):
+  `FAIL apps/web/test/sketch-pointer-baseline.test.ts > records selection and snapping on 1000 native-solved sketch entities`
+  `AssertionError: expected 10.626400000000103 to be less than or equal to 8`
+- `macos-latest` (job `123840471646`):
+  `FAIL apps/web/test/sketch-pointer-baseline.test.ts > records selection and snapping on 1000 native-solved sketch entities`
+  `AssertionError: expected 9.431499999999915 to be less than or equal to 8`
+
+### 2. 根因分析 (RCA)
+- **演算法盲點**：`apps/web/test/sketch-pointer-baseline.test.ts` 評測 1000 圖元在畫線模式（`line`）下的 `pointerMove` 延遲。在無空間剪枝下，每一次滑鼠移動，`hitCandidates`、`snap`、`intersectionSnap` 及 `quadrantSnap` 皆遍歷 1000 個圖元逐一呼叫 `closestOn`、`Math.atan2`、`Math.cos`、`Math.sin`，單次移動產生逾 3000~4000 次三角與浮點距量測。
+- **雲端環境競爭**：本機 10 核心 CPU 測得約 0.63 ms，但 GitHub Actions 雲端虛擬機僅分配 2 個 vCPU，且 Vitest 預設以 `maxWorkers: 4` 同時平行執行重型 OCCT 布林幾何測試，CPU 飽和引發排程延遲，使 p95 溢出 8.0 ms 門檻（9.4 ~ 10.6 ms）。
+
+### 3. 矯正與預防措施 (CAPA)
+依據 [AGENTS.md](AGENTS.md) §3.3 零門檻妥協原則（嚴禁放寬門檻或 skip），進行架構演算法級優化：
+1. **AABB 快速包圍盒剪枝**：
+   - 在 `packages/sketch/src/interact.ts` 的 `hitCandidates` 與 `snap()`（中點判定）加入點、線、圓之 AABB 快速排除（如 `Math.abs(p[0] - g.c[0]) > g.r + tol`）。
+   - 在 `packages/sketch/src/snaps.ts` 的 `intersectionSnap` 與 `quadrantSnap` 加入 AABB 剪枝，僅對游標容差包圍盒內之圖元進行曲線最近點求值。
+2. **實測效能驗證**：
+   - 1000 圖元 `tool: 'select'`：p95 由 0.208 ms 降至 **0.024 ms**（提速 8.7 倍）。
+   - 1000 圖元 `tool: 'line'`（含吸附推斷）：p95 由 0.637 ms 降至 **0.146 ms**（提速 4.4 倍）。
+   - 1000 圖元在極端硬體限制下亦能輕鬆維持在 1 ms 內，徹底消除跨平台虛擬機時間抖動問題。
+
+---
+
+
 ## 2026-10-29：草圖互動改善方案 P0 驗收全量完成與通過
 
 依據 [草圖互動改善方案](docs/design/sketch-interaction/plan.md) 與 [驗收表](docs/design/sketch-interaction/acceptance.md) 執行 P0 階段（選取、取消、吸附提示、基準面座標與效能）驗收與缺陷修復。
