@@ -1,5 +1,6 @@
 // await __featureEditor.floating();
 // await __featureEditor.drag();
+// await __featureEditor.cutDrag();
 // await __featureEditor.assembly();
 // await __featureEditor.guards();
 // await __featureEditor.datum();
@@ -29,6 +30,57 @@ M.drag=async()=>{
  send(button,'pointerdown',0);send(window,'pointermove',5);await volume(600*(depth+5));must(state().editing&&Number(state().doc.features.find(x=>x.id===f.id).dir1.depth)===depth+5,'native preview before release');await window.__shot?.('live-drag-before-release');send(window,'pointermove',-depth-4);await volume(2400);must(state().doc.features.find(x=>x.id===f.id).dir1.reverse,'crossing plane reverses');send(window,'pointerup',-depth-4);await apply();store.undo();await ready();must(!state().doc.features.some(x=>x.id===f.id),'single undo removes whole creation');store.redo();await volume(2400);
  const row=await H.treeClick(f.name);row.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));await H.waitFor(()=>state().editing,5000,'edit again');await ready();const btn=document.querySelector('[data-action="drag-extrude-preview"]');send(btn,'pointerdown',0);await H.wait(50);send(window,'pointermove',-2);await volume(3600);must(store.cancelFeatureGesture,'gesture cancellation registered');window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await volume(2400);must(state().editing,'Escape restores only gesture');document.querySelector('[data-floating-parameters] .pm-cancel').click();await volume(2400);return{pass:true,beforeRelease:true,reversed:true,undo:true,cancel:true};
 };
+/** 除料也要能用同一支操控器：拖進材料加深、跨面翻反向、反向切到空氣時如實報告。 */
+M.cutDrag=async()=>{
+ H.ready();if(state().recovery)store.discardRecovery();await H.project({});
+ // 方塊 30 × 20 × 30，頂面一張草圖：建構伸長除料（預設盲深 10 往材料內切）
+ const parts=[B.sketch('s',B.front,B.rectangle('r',0,0,30,20)),B.extrude('e','s','boss',{type:'blind',depth:'30'}),B.sketch('s2',B.face('e:cap:end'),B.rectangle('r2',0,0,30,20))];
+ await H.writeAt('除料件.3dbx',await io.writePartFile(B.build(...parts)));
+ await H.open('除料件.3dbx');await ready();
+ const block=18000;
+ await H.treeClick('s2');await H.action('特徵','伸長除料');
+ const f=await H.waitFor(()=>{const x=state().doc.features.find(y=>y.type==='extrude'&&y.op==='cut');return x&&state().result&&!state().rebuilding?x:null;},20000,'cut created');
+ const button=await H.waitFor(()=>document.querySelector('[data-action="drag-extrude-preview"]'),5000,'cut constructor handle');
+ must(!button.disabled,'numeric depth draggable');
+ const depth=Number(f.dir1.depth),v=store.viewer,frame=state().result.frames.get('s2'),center=state().result.faceFingerprints[state().result.faceNames.indexOf(`${f.id}:cap:end`)]?.center;
+ must(center,'the cut end cap is named');
+ // 除料的正值軸朝材料內（與法向相反）：操控器掛箭頭的同一個映射
+ const a=v.screenPoint(center),b=v.screenPoint(center.map((x,i)=>x-frame.normal[i])),len=Math.hypot(b[0]-a[0],b[1]-a[1]);
+ let axis=len<1e-4?[0,1/v.pixelSize()]:[(b[0]-a[0])/len,(b[1]-a[1])/len];
+ const r0=button.getBoundingClientRect(),from=[r0.x+r0.width/2,r0.y+r0.height/2],pid=91;
+ const send=(target,event,delta)=>target.dispatchEvent(new PointerEvent(event,{bubbles:true,cancelable:true,pointerId:pid,button:0,buttons:event==='pointerup'?0:1,clientX:from[0]+axis[0]*len*delta,clientY:from[1]+axis[1]*len*delta}));
+ send(button,'pointerdown',0);send(window,'pointermove',5);
+ await volume(block-30*20*(depth+5));
+ must(state().editing&&state().doc.features.find(x=>x.id===f.id).dir1.depth===String(depth+5),'native preview before release');
+ // 拖曳不放開時，掛在端面的把手要跟著指標 1:1 走（除料的痛點：以前會反向跑掉）
+ const r1=button.getBoundingClientRect(),at=[r1.x+r1.width/2,r1.y+r1.height/2],along=(at[0]-from[0])*axis[0]+(at[1]-from[1])*axis[1];
+ must(along>0.5*len*5&&along<1.5*len*5,'handle follows the pointer into the material, not away from it');
+ await window.__shot?.('cut-drag-deepen');
+ send(window,'pointermove',-(depth+4)); // 跨過草圖平面：正向除料反向，切到材料外
+ await H.waitFor(()=>{const d=state().doc.features.find(x=>x.id===f.id);return d.dir1.type==='blind'&&!!d.dir1.reverse;},5000,'crossing the plane reverses the cut');
+ await H.waitFor(()=>!state().rebuilding&&state().result?.features.find(x=>x.id===f.id)?.status==='error',10000,'reversed cut into air fails');
+ must(JSON.stringify(state().result.features.find(x=>x.id===f.id)).includes('除料沒有移除任何材料'),'the failure names the removal honestly');
+ must(!document.querySelector('[data-action="drag-extrude-preview"]'),'handle hides while the reversed cut has no end cap');
+ await window.__shot?.('cut-drag-reversed-error');
+ send(window,'pointermove',5); // 拉回正向：恢復可以套用的除料
+ await volume(block-30*20*(depth+5));
+ must(!state().result.features.some(x=>x.status==='error'),'pulling back clears the error');
+ send(window,'pointerup',5);await apply();await ready();await volume(block-30*20*(depth+5));
+ store.undo();await ready();must(!state().doc.features.some(x=>x.id===f.id),'single undo removes the whole creation');store.redo();await volume(block-30*20*(depth+5));
+ // 編輯既有除料：拖曳加深、Esc 只還原手勢
+ const row=await H.treeClick(f.name);row.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
+ await H.waitFor(()=>state().editing,5000,'edit again');await ready();
+ const btn=document.querySelector('[data-action="drag-extrude-preview"]');must(btn&&!btn.disabled,'edit handle');
+ send(btn,'pointerdown',0);await H.wait(50);
+ send(window,'pointermove',-2);await volume(block-30*20*(depth+3));
+ must(store.cancelFeatureGesture,'gesture cancellation registered');
+ window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+ await volume(block-30*20*(depth+5));must(state().editing,'Escape restores only the gesture');
+ document.querySelector('[data-floating-parameters] .pm-cancel').click();await volume(block-30*20*(depth+5));
+ await H.tidy();
+ return{pass:true,deepen:true,tracking:Math.round(along*10)/10,reversedFails:true,undo:true,escape:true};
+};
+
 M.assembly=async()=>{
  await setup();await H.action('檔案','新組合件');if(state().folderRequest)await H.modalButton('選擇資料夾…');const c=await H.insert('編輯件.3dbx');await H.insert('編輯件.3dbx',[.8,.7]);await H.loaded();await H.save('編輯組合.3dba');
  async function open(id,context=false){const twist=document.querySelector(`[data-twisty="${c.id}"]`);if(!document.querySelector(`[data-component-feature="${c.id}:${id}"]`))twist.click();const row=await H.waitFor(()=>document.querySelector(`[data-component-feature="${c.id}:${id}"]`),5000,'assembly feature row');if(context){row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:300}));await H.wait(50);document.querySelector('[data-action="edit-component-feature"]').click();}else row.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));await H.waitFor(()=>!state().asm&&state().editing?.featureId===id,20000,'source edit '+id);await ready();}

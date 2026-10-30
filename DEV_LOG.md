@@ -88,6 +88,34 @@ P1 草圖輸入尺寸的 fuzz 把 150 個標尺寸的矩形放進同一張草圖
 ---
 
 
+## 2026-10-30：伸長除料的拖曳操控器方向修正（紅隊檢討「反向除料」）
+
+### 1. 失敗現象（靜態紅隊推導 + 實機證實）
+檢討「伸長除料 → 反轉方向」全鏈路（schema→commands→engine→UI→訊息）時，幾何與資料鏈全部過關（資料鏈完整性、8 種終止條件反向統一翻號、除料無交集如實報「除料沒有移除任何材料（試試反轉方向）」、`setEndCondition` 原子驗證、`reverse: false` 正規化），但發現 [ADR 0203](docs/adr/0203-floating-editor-assembly-source-and-live-extrusion.md) 的建構／編輯拖曳操控器（`ExtrudePreviewHandle`）**不讀 `f.op`**：
+1. 對除料（伸長基準為切進材料，即引擎 `grow=-1`）而言，箭頭恆指向與實際切除方向相反（說明文字「沿箭頭拖曳即改真正的模型深度」在除料上不成立）；
+2. 拖曳時掛在端面的把手與指標以 1:−1 反向移動（標籤朝反方向跑掉）；
+3. 貼在面上的除料，把把手「拉進材料」這個自然加深方向反而會把值遞減到 0（戴「深度不能為零」整次還原），再往下拖就翻成 `reverse` 而切到材料外的空氣，每一幀都撞「除料沒有移除任何材料」；
+4. 反向除料時箭頭同樣反指；
+5. 衍生：反向切到空氣使重建失敗、`cap:end` 端面名稱消失時，操控器 `if(!center) return null` 靜默不渲染（無失效說明，屬既有可見性缺口，本輪未加退路，見「未做」）。
+
+### 2. 根因分析 (RCA)
+- **建構者偏差**：ADR 0203 的五個瀏覽器案例全是**填料**（`manual-feature-editor.js` 只有 blind/midPlane 填料拖曳），除料走同一支元件卻沒有任何案例；`draggedExtrusion` 的 100 組隨機投影測試也只測純函數、不含 op 語意。
+- 元件以 `frame.normal` 當正值軸，而引擎端除料的正值軸是 −法向；兩處對「方向」的定義沒有共用一個函數，靠各自的心算維持一致，除料一上場就露餡。
+
+### 3. 矯正與驗收 (CAPA)
+1. **抽出共用語意**（`apps/web/src/state/instantDepth.ts`）：`extrusionGrowSign(op)`（除料 −1，填料 +1）與 `previewArrowUnit(axis, value)`（箭頭跟隨當下成長方向），單元測試涵蓋 填料/除料 × 正向/反向 四象限：沿成長方向拖曳必加深、箭頭與成長同向、跨過草圖平面必然翻正深度＋反向旗標（`apps/web/test/instant-depth.test.ts`）。
+2. **元件修正**（`ExtrudePreviewHandle.tsx`）：正值軸改取 `frame.normal × extrusionGrowSign(f.op)` 的螢幕影像（端視替代比例尺同乘）；箭頭與把手改用 `previewArrowUnit`。只有除料分支受影響，填料行為與 ADR 0203 驗收時逐項相同。
+3. **新 e2e 案例** `manual-feature-editor.js` 的 `__featureEditor.cutDrag`：瓦件 30×20×30、頂面草圖建構伸長除料——拖進材料 +5 → 體積 18000→9000 且把手 1:1 跟著指標（斷言沿軸位移 0.5~1.5 倍）；跨過草圖平面 → `reverse:true` + 特徵如實出錯（訊息含「除料沒有移除任何材料」）且操控器暫時退場；拉回正向 → 恢復可套用、套用、單次復原/重做；編輯既有除料拖曳 −2 → 10200、Esc 只還原手勢。截圖 `out/feature-editor-cut/manual-feature-editor/__featureEditor_cutDrag/` 已逐一檢視（箭頭朝材料內、錯誤面板、反向勾選、套用停用、18000 顯示特徵被略過）。
+4. **反向對照**：把 `grow` 暫時還原為不問 op 的舊行為重跑 → `cutDrag` 恰在「拖進材料加深到 9000」處逾時（14.7s），其餘 5 案例照綠（證明修正只動除料分支且開關明確）；還原後 6/6 PASS。
+5. **環境**：typecheck 0 錯誤；`apps/web/test` 267/268（唯一失敗 `sketch-collapse.test.ts` 經stash驗證為**既有失敗**、與本輪無關）；lint:rules、lint:deps、lint:repo 過。
+
+### 4. 未做與限制（如實記載）
+- 操控器在「端面名稱被繼承掉」（袋底恰與下方本體的平行面重合）時仍是靜默不渲染，未加可見退路；`midPlane`＋`dir2` 衝突仍只在再生層攔截（命令層未擋）；除料除重的 fuzz 未加 `reverse` 維度——三項登記為後續待辦。
+- 本輪未量測 WASM Heap（沿用 ADR 0126 的 Worker 高水位回收，不新增布林模式）。
+- 工作Branch落後 origin/main 兩個提交，史料屬其他進行中工作階段（工程圖註記線），未pull未變更。
+
+---
+
 ## 2026-10-30：CI 雲端虛擬機效能瓶頸根治與幾何 AABB 快速剪枝
 
 ### 1. 失敗現象與錯誤日誌

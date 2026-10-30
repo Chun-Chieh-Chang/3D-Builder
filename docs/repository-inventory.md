@@ -8,7 +8,7 @@
 |---|---|
 | 零件／組合件／工程圖 Schema | 86／7／34 |
 | ADR 文件 | 219 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 203／199／249 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 203／199／250 |
 | 實機清單項目 | 92 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -454,7 +454,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 - [Phase 0 驗收紀錄](<phase0-verification.md>)
 - [Phase 1 驗收紀錄](<phase1-verification.md>)
-- [人工驗證清單的自動化覆蓋（更新至 2026-10-14）](<verification-coverage.md>)
+- [人工驗證清單的自動化覆蓋（更新至 2026-10-30）](<verification-coverage.md>)
 
 ### 清理紀錄
 
