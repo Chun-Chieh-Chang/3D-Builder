@@ -27,6 +27,7 @@
 - `tests/phase8/iges-fuzz.test.ts`：200 個壞檔（截斷、改位元組、刪行、重複行、壞數字，固定亂數種子），以子行程逐一讀，超過 15 秒即殺掉該行程、記為「停止」並從下一個繼續——與產品的試讀 worker 同一機制。結果：63 讀入、135 以 `KernelError` 拒絕、2 停止（#46 改位元組、#187 刪行），0 個其他錯誤、0 次當機；之後同一核心讀好檔體積不變。
 - 瀏覽器 `tests/e2e/phase8-iges.js`（獨立 dev server 5491）：對話框兩種寫法下載（`.igs`、實體 144／mm、實體 186／inch）、「開啟舊檔」開成「板子」新零件（資料 iges、體積 6000）、「輸入 STEP／IGES」（體積 6000）、卡死檔在 8 秒時限（測試調低）8.1 秒內停止並告知、未加入特徵、kernel worker 未受影響、零件仍可重建。對話框截圖檢查無溢出。
 - 全量：`npm test` 3826 項通過（26 項既有略過）；完整 `verify:ui`（本 worktree 的 dev server 5491、除錯埠 9433、樣本埠 5493）兩輪皆 245／246 通過。唯一失敗 `manual-drawing-linked.js`（`steps.0` 視圖未置中，`box.centred:false`）在同一 worktree 切回乾淨的 `bca2d80` 以 `--only` 重跑，數值完全相同，為既有失敗，與 IGES 無關。
+- 合併 main（2026-10-30，至 `d66cabb`，合併提交 `613a6b7`）後：完整 `verify:ui` 248／248 通過（`manual-drawing-linked.js` 的既有失敗已由 main 修好）。`npm test` 4003 項中 3976 通過、26 略過、1 失敗：`packages/kernel/test/direct-edit.test.ts` 的移動面「推進超過厚度」，在未含 IGES 的 `5360fda` 與 `d66cabb` 皆以相同訊息失敗，屬 main 既有失敗。合併後的第一輪 `verify:ui`（至 `5360fda`）有 2 項只在整批中失敗（`manual-assembly-section-captions`、`manual-feature-editor` 拖曳），單獨在 main 與合併分支皆通過，第二輪整批也通過。
 - 紅隊注入：把「建構後才設全域設定」的錯誤放回核心，8 項測試以實際結果失敗（實體類型、單位、B-rep 讀成散面），已還原。
 
 ## 未完成

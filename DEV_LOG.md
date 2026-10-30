@@ -21,6 +21,8 @@
 
 全量：`npm test` 3826 通過（26 既有略過；第一輪的 help-manual 失敗是驗證手冊未同步新說明，以 `SYNC_MANUAL_HELP=1` 重生一行）。完整 `verify:ui` 兩輪 245／246；`manual-drawing-linked.js` 在乾淨 `bca2d80` 以 `--only` 重現同一數值（`box.centred:false`），為既有失敗。紅隊注入設定順序錯誤 8 項失敗，已還原。2026-10-30 使用者確認步驟 0 的 6 個對照檔在 eDrawings 全部正確；這 6 個檔由 OCCT 寫出器直接寫出、未經 `exportIges`，所以另以 `exportIges` 產生 6 個產品路徑對照檔（含切半與顏色），使用者同日確認這 6 個也全部正確（含切半與顏色），產品輸出的 eDrawings 驗收通過。
 
+合併 main（至 `d66cabb`）：IGES 改為 Schema 86、ADR 0220；衝突在 App.tsx（兩個新對話框）、serialize.ts（遷移）、handoff、盤點。合併後完整 `verify:ui` 248／248；`npm test` 唯一失敗為 main 既有的 `direct-edit.test.ts` 移動面推進超過厚度（未含 IGES 的 main 同樣失敗，未修改）。
+
 
 ## 2026-10-29：草圖互動改善方案 P0 驗收全量完成與通過
 
