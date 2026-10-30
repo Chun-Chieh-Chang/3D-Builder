@@ -8,7 +8,7 @@ import { applyAssemblyCommand, applyCommand, createEmptyAssembly, parsePart, ser
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, solveAssembly, type MatePart } from '@3db/regen';
-import { DOWEL_PINS, SOCKET_SCREWS, STANDARD_FACES, standardLengths, standardName, standardPartDoc, standardProblem, standardSizes, WASHERS, type StandardSpec } from '@3db/library';
+import { DOWEL_PINS, SET_SCREWS, SOCKET_SCREWS, STANDARD_FACES, standardLengths, standardName, standardPartDoc, standardProblem, standardSizes, WASHERS, type StandardSpec } from '@3db/library';
 import { statuses } from '../phase1/builders';
 
 let kernel: Kernel;
@@ -42,6 +42,38 @@ const washerVolume = (size: string) => {
   const { d1, d2, h } = WASHERS[size]!;
   return Math.PI * ((d2 / 2) ** 2 - (d1 / 2) ** 2) * h;
 };
+
+describe('the cup point set screw', () => {
+  it.each(standardSizes('setScrew'))('%s rebuilds with the actual cup and socket volume', (size) => {
+    const { d, s, t, cup } = SET_SCREWS[size]!;
+    const doc = standardPartDoc({ kind: 'setScrew', size, length: 20 });
+    expect(problems(doc)).toEqual([]);
+    const body = rebuild(doc).body!;
+    for (const name of Object.values(STANDARD_FACES.setScrew)) expect(body.names.faces).toContain(name);
+    const expected = Math.PI * d * d / 4 * 20 - Math.sqrt(3) / 2 * s * s * t - Math.PI * (cup / 2) ** 2 * (cup / (2 * Math.sqrt(3))) / 3;
+    expect(volumeOf(doc)).toBeCloseTo(expected, 5);
+    expect(standardName({ kind: 'setScrew', size, length: 20 })).toBe(`ISO 4029 ${size}x20`);
+  });
+  it('rebuilds 100 seeded size and length combinations without failure', () => {
+    let seed = 4029;
+    const sizes = standardSizes('setScrew');
+    const lengths = standardLengths('setScrew');
+    for (let i = 0; i < 100; i++) {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      const size = sizes[seed % sizes.length]!;
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      const length = lengths[seed % lengths.length]!;
+      const regen = new Regenerator(kernel, solver);
+      const result = regen.rebuild(standardPartDoc({ kind: 'setScrew', size, length }));
+      expect(statuses(result).filter((status) => !status.endsWith('=ok'))).toEqual([]);
+      expect(kernel.massProps(result.body!.shape).volume).toBeGreaterThan(0);
+      regen.dispose();
+    }
+  });
+  it('rejects invalid and intersecting lengths', () => {
+    for (const length of [0, -1, NaN, Infinity, 1, 5]) expect(standardProblem({ kind: 'setScrew', size: 'M8', length })).not.toBeNull();
+  });
+});
 
 describe('the socket head cap screw, ISO 4762', () => {
   it.each(standardSizes('socketScrew'))('%s x 20: no problem, valid, the volume of head + shank less the hex socket', (size) => {

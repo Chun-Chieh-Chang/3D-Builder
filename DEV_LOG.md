@@ -4264,3 +4264,11 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
     1. **單一連續圓錐面替換（`Kernel.moveFace`）**：圓錐薄層改取原圓錐面 `adCone.Cone().Position().XDirection()` 對齊接縫方向；當完整圓錐台往外延伸（`distance > 0`）且圓錐軸向區間內無其他內部特徵面時，以由 `zFar` 至 `z1` 的完整解析圓錐台替換原 `[zFar, z0]` 圓錐區段（單獨 3 面圓錐台直接替換為 0 次布林，複合體先切除舊圓錐台再融合完整圓錐台並保留來源映射），使延伸後的 `loft1:side:sketch1.ci1` 保持為單一連續圓錐面。
     2. **3D 網格與工程圖邊線過濾（`Kernel.mesh`、`sameSurface.ts`、`drawingEdges.ts`）**：`sameSurface` 補齊同圓錐面判別（同 `convex`、同 `apex`、平行 `axis`、同 `|halfAngle|`）；`Kernel.mesh()` 排除單一面的封閉週期接縫邊（`adj.length === 1 && oc.BRep_Tool.IsClosed(edge, face)`，完整保留 `IsClosed === false` 的開放曲面自由邊界與 0 面的 3D 曲線本體）以及同圓錐面間的共軸圓形切分邊；`drawingEdges.ts` 同步排除同圓錐面共軸切分邊。
   - **驗證**：`packages/kernel/test/same-surface.test.ts`（7 項）、`tests/phase3/direct-edit.test.ts`（128 項，含 `TM0002138` 階梯軸圓錐延伸驗證僅輸出 6 條真實圓形輪廓邊、0 條縱向接縫與 0 條內部切分邊）、`tests/phase4b/split-line.test.ts`（6 項）、`tests/phase5/drawing-tangent-hidden.test.ts`（5 項）與 `typecheck`／`lint:rules`／`lint:deps`／`lint:i18n`／`lint:repo` 全數通過。
+
+
+## 2026-10-30：凹端內六角止付螺絲
+
+- 圖庫加入 ISO 4029 凹端、M3–M8，標稱外徑圓柱、120° 凹端及六角孔；沿用既有圖庫的無螺紋簡化模型，未建端部外倒角，尺寸供參考。六角對邊、凹端直徑與孔深參照 https://www.fasteners.eu/standards/ISO/4029/；凹端角參照 https://www.iso.org/standard/88197.html 。
+- 紅隊四問：非法尺寸與非有限、負、零長度拒絕；六角孔深與凹端深度之和不得達到長度，預先拒絕相交；以既有草圖、旋轉與切除鏈建模，測試持久面名稱與實體重建；以真實 OCCT 體積對解析圓柱、六角孔、圓錐凹端計算。100 組種子尺寸與長度實際重建；未宣稱量測 WASM Heap 洩漏。
+
+- 補充驗收：`phase4-library.js` 在瀏覽器選 ISO 4029 M6×20、產生專案零件檔、插入並檢查實際重建體積與料號，通過。獨立 Heap 測試以 `wasmMemory.buffer.byteLength` 量測並先確認基準 > 0：200 組重建由 128.00 MiB 到 128.00 MiB；隨後 1000 次剖面對照增加 532.88 MiB。200 次的零成長可能受既有餘裕吸收，不代表零洩漏；對照僅驗證量測可觀察到成長，不用來比較兩種情境的洩漏率。
