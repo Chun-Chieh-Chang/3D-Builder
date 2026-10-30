@@ -626,6 +626,112 @@ function dragPrimitives(sketch: SketchFeature, drag: SolveOptions['drag']): Prim
   return prims;
 }
 
+/**
+ * How much of the solver's memory a system takes, in unknowns plus equations (2026-10-30). planegcs is built with a fixed heap of 16 MiB that cannot grow
+ * (`emscripten_resize_heap` aborts) and solves a system with dense matrices, so what it needs grows with the square of the system: one sketch of 150
+ * dimensioned rectangles (1200 unknowns, 900 equations) aborted with `Aborted(OOM)` and left the module dead. Measured on one connected chain of points, the
+ * largest that solved was 1046 + 522 (horizontal only) and 602 + 600 (with a distance on each link), both above 1200 in this measure.
+ */
+const UNKNOWNS: Partial<Record<Prim['type'], number>> = { point: 2, circle: 1, arc: 3, ellipse: 1 };
+/**
+ * Independent parts of a sketch are solved together only up to this size, under half the smallest system measured to abort; a sketch smaller than it is
+ * solved in one system, exactly as before. One connected part larger than it is still solved whole: what the solver cannot hold it refuses (`SolverOverflow`).
+ */
+const BATCH_SIZE = 512;
+
+/** The objects a primitive refers to: its points and curves, and those whose parameters it uses ({ o_id }). */
+function refsOf(p: Prim): string[] {
+  const out: string[] = [];
+  for (const [k, v] of Object.entries(p)) {
+    if (k === 'id') continue;
+    if (k.endsWith('_id') && typeof v === 'string') out.push(v);
+    else if (k.endsWith('_ids') && Array.isArray(v)) out.push(...(v as string[]));
+    else if (v !== null && typeof v === 'object' && typeof (v as { o_id?: unknown }).o_id === 'string') out.push((v as { o_id: string }).o_id);
+  }
+  return out;
+}
+
+const GEOMETRY = new Set<Prim['type']>(['point', 'line', 'circle', 'arc', 'ellipse', 'bspline']);
+
+interface Batch {
+  prims: Prim[];
+  /** Unknowns plus equations (see `UNKNOWNS`). */
+  size: number;
+}
+
+/**
+ * The system split into parts that share no unknown, put back together into batches of up to `BATCH_SIZE` (2026-10-30). Fixed geometry (the origin, the
+ * axes, a pinned point, the helpers of a pattern) has no unknown and joins nothing: it goes with every batch that refers to it. Parts that share no unknown
+ * do not change each other's answer, so solving them apart is the same sketch; planegcs itself splits a system the same way, but only after it has built the
+ * dense matrices of the whole of it. The order of the primitives is kept, and a system that fits in one batch is returned as it is.
+ */
+function batches(prims: Prim[]): Batch[] {
+  const byId = new Map(prims.map((p) => [p.id, p]));
+  const fixed = (id: string): boolean => {
+    const p = byId.get(id);
+    if (!p) return true;
+    if (p.type === 'point') return p.fixed === true;
+    if (p.type === 'line') return fixed(p.p1_id) && fixed(p.p2_id);
+    return false;
+  };
+  const parent = new Map<string, string>();
+  const find = (id: string): string => {
+    let root = id;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    while (id !== root) {
+      const next = parent.get(id)!;
+      parent.set(id, root);
+      id = next;
+    }
+    return root;
+  };
+  /** The free objects a primitive ties together: a curve with its points, a relation with what it relates. */
+  const free = (p: Prim): string[] => [...(GEOMETRY.has(p.type) ? [p.id] : []), ...refsOf(p)].filter((id) => !fixed(id));
+  for (const p of prims) if (GEOMETRY.has(p.type) && !fixed(p.id)) parent.set(p.id, p.id);
+  for (const p of prims) {
+    const ids = free(p).filter((id) => parent.has(id));
+    for (const id of ids.slice(1)) {
+      const [a, b] = [find(ids[0]!), find(id)];
+      if (a !== b) parent.set(b, a);
+    }
+  }
+  // each part: its size and its primitives; the relations on fixed geometry only (they have no unknown) make a part of their own
+  const parts = new Map<string, { ids: string[]; size: number }>();
+  const LOOSE = '';
+  for (const p of prims) {
+    if (GEOMETRY.has(p.type) && fixed(p.id)) continue;
+    const first = free(p).find((id) => parent.has(id));
+    const key = first === undefined ? LOOSE : find(first);
+    let part = parts.get(key);
+    if (!part) parts.set(key, (part = { ids: [], size: 0 }));
+    part.ids.push(p.id);
+    part.size += GEOMETRY.has(p.type) ? (UNKNOWNS[p.type] ?? 0) : 1;
+  }
+  const total = [...parts.values()].reduce((n, part) => n + part.size, 0);
+  if (total <= BATCH_SIZE) return [{ prims, size: total }];
+  const groups: { ids: Set<string>; size: number }[] = [];
+  for (const part of parts.values()) {
+    const last = groups[groups.length - 1];
+    if (last && last.size + part.size <= BATCH_SIZE) {
+      part.ids.forEach((id) => last.ids.add(id));
+      last.size += part.size;
+    } else groups.push({ ids: new Set(part.ids), size: part.size });
+  }
+  return groups.map(({ ids, size }) => {
+    // with the fixed geometry the batch refers to, and what that refers to (an axis and its two points)
+    const need = [...ids];
+    for (let i = 0; i < need.length; i++) {
+      for (const id of refsOf(byId.get(need[i]!)!)) {
+        if (!ids.has(id) && byId.has(id)) {
+          ids.add(id);
+          need.push(id);
+        }
+      }
+    }
+    return { prims: prims.filter((p) => ids.has(p.id)), size };
+  });
+}
+
 const baseId = (gcsId: string) => gcsId.split('#')[0]!;
 const unique = (ids: (string | undefined)[]) =>
   [...new Set(ids.filter((id): id is string => typeof id === 'string').map(baseId))].filter((id) => id !== SKETCH_ORIGIN && !id.startsWith('@'));
@@ -640,10 +746,21 @@ const LENGTH_GRID = 1e10;
 const ANGLE_GRID = 1e12;
 const canon = (v: number, grid: number) => Math.round(v * grid) / grid + 0;
 
-function readGeometry(w: GcsWrapper, sketch: SketchFeature): Map<Id, SolvedGeometry> {
+/** The primitives as a solve left them, by id: solved, or where they started when it did not get there. */
+type Values = Map<string, Prim>;
+
+/** Where the primitives start: planegcs keeps what it is given and copies what it solves, so these are untouched by a solve. */
+const startValuesOf = (prims: Prim[]): Values => new Map(prims.map((p) => [p.id, p]));
+
+function readGeometry(values: Values, sketch: SketchFeature): Map<Id, SolvedGeometry> {
   const out = new Map<Id, SolvedGeometry>();
+  const get = <T extends Prim['type']>(id: Id, type: T): Extract<Prim, { type: T }> => {
+    const p = values.get(id);
+    if (p?.type !== type) throw new Error(`sketch object ${id} is not a sketch ${type}`);
+    return p as Extract<Prim, { type: T }>;
+  };
   const pt = (id: Id): [number, number] => {
-    const p = w.sketch_index.get_sketch_point(id);
+    const p = get(id, 'point');
     return [canon(p.x, LENGTH_GRID), canon(p.y, LENGTH_GRID)];
   };
   for (const e of sketch.entities) {
@@ -656,12 +773,12 @@ function readGeometry(w: GcsWrapper, sketch: SketchFeature): Map<Id, SolvedGeome
         out.set(e.id, { type: 'line', a: pt(e.p1), b: pt(e.p2), p1: e.p1, p2: e.p2, construction });
         break;
       case 'circle': {
-        const c = w.sketch_index.get_sketch_circle(e.id);
+        const c = get(e.id, 'circle');
         out.set(e.id, { type: 'circle', c: pt(e.center), r: canon(c.radius, LENGTH_GRID), center: e.center, construction });
         break;
       }
       case 'arc': {
-        const a = w.sketch_index.get_sketch_arc(e.id);
+        const a = get(e.id, 'arc');
         out.set(e.id, { type: 'arc', c: pt(e.center), r: canon(a.radius, LENGTH_GRID), a0: canon(a.start_angle, ANGLE_GRID), a1: canon(a.end_angle, ANGLE_GRID), center: e.center, start: e.start, end: e.end, construction });
         break;
       }
@@ -671,7 +788,7 @@ function readGeometry(w: GcsWrapper, sketch: SketchFeature): Map<Id, SolvedGeome
         const dx = major[0] - c[0];
         const dy = major[1] - c[1];
         const a = Math.hypot(dx, dy);
-        const primitive=w.sketch_index.get_primitive(e.id);
+        const primitive=values.get(e.id);
         const b = canon(primitive?.type==='ellipse'?primitive.radmin:e.minorRadius, LENGTH_GRID);
         const angle = canon(Math.atan2(dy, dx), ANGLE_GRID);
         out.set(e.id, {
@@ -721,15 +838,42 @@ function readGeometry(w: GcsWrapper, sketch: SketchFeature): Map<Id, SolvedGeome
   return out;
 }
 
+/** A connected part of a sketch larger than the solver's fixed heap holds (see `UNKNOWNS`): refused with this, not left to abort. */
+class SolverOverflow extends Error {}
+/** No solver module to solve with: the one in use aborted and the one loading in its place is not there yet (`PlaneGcsSolver.ready`). */
+class SolverUnavailable extends Error {}
+
+/** What a solve of a system gave, over all of its batches. */
+interface Run {
+  ok: boolean;
+  conflicting: string[];
+  redundant: string[];
+  dof: number;
+  values: Values;
+}
+
 /** Sketch solver backed by FreeCAD's PlaneGCS (LGPL) compiled to WASM. */
 export class PlaneGcsSolver implements SketchSolver {
+  /**
+   * A module loaded ahead (2026-10-30). A module that aborts is dead: its memory is left as it was at the abort, and a call into it can do anything. A
+   * solve is synchronous and loading a module is not, so the spare is put in its place at once, and another is loaded behind it.
+   */
+  private spare: GcsWrapper | null = null;
+  private loading: Promise<void> | null = null;
+  private loadError: unknown = null;
+  /** The smallest batch the solver aborted on: one as large is refused before it is tried, so that a second one, in the same rebuild, does not use up the spare. */
+  private overflow = Infinity;
+
   private constructor(
-    private w: GcsWrapper,
+    private w: GcsWrapper | null,
     private readonly wasmUrl?: string,
   ) {}
 
   static async create(wasmUrl?: string): Promise<PlaneGcsSolver> {
-    return new PlaneGcsSolver(await make_gcs_wrapper(wasmUrl), wasmUrl);
+    const [w, spare] = await Promise.all([make_gcs_wrapper(wasmUrl), make_gcs_wrapper(wasmUrl)]);
+    const solver = new PlaneGcsSolver(w, wasmUrl);
+    solver.spare = spare;
+    return solver;
   }
 
   /**
@@ -741,25 +885,84 @@ export class PlaneGcsSolver implements SketchSolver {
     const next = await make_gcs_wrapper(this.wasmUrl);
     const old = this.w;
     this.w = next;
-    old.destroy_gcs_module();
+    old?.destroy_gcs_module();
+    await this.ready();
   }
 
-  /** Loads a system and solves it; true when it converged (the solution is then applied). */
-  private run(prims: Prim[]): boolean {
-    const w = this.w;
-    w.clear_data();
-    w.push_primitives_and_params(prims);
-    let result = w.solve(Algorithm.DogLeg);
-    if (result !== SolveStatus.Success && result !== SolveStatus.Converged) {
-      result = w.solve(Algorithm.LevenbergMarquardt);
+  /** Waits until a module and a spare are loaded again after an abort; at once when nothing aborted. */
+  async ready(): Promise<void> {
+    while (!this.w || !this.spare) {
+      this.reload();
+      await this.loading;
+      const failed = this.loadError;
+      this.loadError = null;
+      if (failed) throw failed;
     }
-    const ok = result === SolveStatus.Success || result === SolveStatus.Converged;
-    if (ok) w.apply_solution();
-    return ok;
+  }
+
+  /** True while the solver has a module to solve with (false only between an abort with no spare and `ready`). */
+  get available(): boolean {
+    return this.w !== null;
+  }
+
+  /** Loads a module for what is missing: the one in use, else the spare. A failure is kept for `ready` to throw (no one may be waiting). */
+  private reload(): void {
+    this.loading ??= make_gcs_wrapper(this.wasmUrl).then(
+      (next) => {
+        this.loading = null;
+        if (!this.w) this.w = next;
+        else if (!this.spare) this.spare = next;
+        else next.destroy_gcs_module();
+      },
+      (e: unknown) => {
+        this.loading = null;
+        this.loadError = e;
+      },
+    );
+  }
+
+  /** Loads one batch and solves it, adding what it gives to `into`. A module that aborts is replaced (see `spare`) and never called again. */
+  private runBatch(batch: Batch, into: Run): void {
+    if (batch.size >= this.overflow) throw new SolverOverflow(t('regen.sketchTooLarge', { size: batch.size }));
+    const w = this.w;
+    if (!w) throw new SolverUnavailable(t('regen.solverReloading'));
+    try {
+      w.clear_data();
+      w.push_primitives_and_params(batch.prims);
+      let result = w.solve(Algorithm.DogLeg);
+      if (result !== SolveStatus.Success && result !== SolveStatus.Converged) {
+        result = w.solve(Algorithm.LevenbergMarquardt);
+      }
+      const ok = result === SolveStatus.Success || result === SolveStatus.Converged;
+      if (ok) w.apply_solution();
+      into.ok &&= ok;
+      into.conflicting.push(...w.get_gcs_conflicting_constraints());
+      into.redundant.push(...w.get_gcs_redundant_constraints());
+      into.dof += w.gcs.dof();
+      for (const p of w.sketch_index.get_primitives()) into.values.set(p.id, p);
+    } catch (e) {
+      if (!(e instanceof WebAssembly.RuntimeError)) throw e;
+      this.w = this.spare;
+      this.spare = null;
+      this.reload();
+      if (!/\bOOM\b/.test(e.message)) throw e;
+      this.overflow = Math.min(this.overflow, batch.size);
+      throw new SolverOverflow(t('regen.sketchTooLarge', { size: batch.size }));
+    }
+  }
+
+  /**
+   * Solves a system batch by batch (see `batches`); `ok` when every batch converged (each solution is then applied). When one did not, every value is where
+   * it started, as for a system solved whole.
+   */
+  private run(prims: Prim[]): Run {
+    const out: Run = { ok: true, conflicting: [], redundant: [], dof: 0, values: new Map() };
+    for (const batch of batches(prims)) this.runBatch(batch, out);
+    if (!out.ok) out.values = startValuesOf(prims);
+    return out;
   }
 
   solve(sketch: SketchFeature, options: SolveOptions = {}): SolvedSketch {
-    const w = this.w;
     const begin = startValues(options.initial);
     let prims: Prim[];
     try {
@@ -767,12 +970,23 @@ export class PlaneGcsSolver implements SketchSolver {
     } catch (e) {
       return { geometry: new Map(), status: 'failed', dof: 0, conflicting: [], redundant: [], message: (e as Error).message };
     }
+    try {
+      return this.solveMapped(sketch, options, begin, prims);
+    } catch (e) {
+      // too large for the solver, or no solver while one loads: refused, where it was stored (as for any solve that does not get there)
+      if (!(e instanceof SolverOverflow || e instanceof SolverUnavailable)) throw e;
+      return { geometry: readGeometry(startValuesOf(prims), sketch), status: 'failed', dof: 0, conflicting: [], redundant: [], message: e.message };
+    }
+  }
+
+  private solveMapped(sketch: SketchFeature, options: SolveOptions, begin: Start, prims: Prim[]): SolvedSketch {
     const pull = dragPrimitives(sketch, options.drag);
-    let ok = this.run([...prims, ...pull]);
+    let run = this.run([...prims, ...pull]);
+    let ok = run.ok;
     // a line the relations shrank to a point is not a solution (ADR 0211): the solve is made again with each such line held at the length it had, which
     // makes the relations turn it or move it; then the sketch is solved once more as it is, from where that left it, for its own freedoms and conflicts
     const before = lineLengths(sketch, begin);
-    let lost = ok ? lostLines(readGeometry(w, sketch), before) : [];
+    let lost = ok ? lostLines(readGeometry(run.values, sketch), before) : [];
     let answer: Map<Id, SolvedGeometry> | null = null;
     if (lost.length > 0) {
       const lines = new Map(sketch.entities.flatMap((e): [Id, Extract<SketchEntity, { type: 'line' }>][] => (e.type === 'line' ? [[e.id, e]] : [])));
@@ -798,8 +1012,8 @@ export class PlaneGcsSolver implements SketchSolver {
       for (let round = 0, rounds = holds.length + 1; round < rounds && holds.length > 0 && !placed; round++) {
         const keep: Prim[] = holds.map((id) => ({ id: `@keep:${id}`, type: 'p2p_distance', p1_id: lines.get(id)!.p1, p2_id: lines.get(id)!.p2, distance: before.get(id)! }));
         const held = this.run([...start, ...pull, ...keep]);
-        const refused = [...w.get_gcs_conflicting_constraints(), ...w.get_gcs_redundant_constraints()].filter((id) => id.startsWith('@keep:')).map((id) => id.slice('@keep:'.length));
-        if (held && refused.length === 0) placed = readGeometry(w, sketch);
+        const refused = [...held.conflicting, ...held.redundant].filter((id) => id.startsWith('@keep:')).map((id) => id.slice('@keep:'.length));
+        if (held.ok && refused.length === 0) placed = readGeometry(held.values, sketch);
         else if (refused.length === 0) break; // not the holds: the solver did not get there
         else {
           // one at a time: the solver names every hold that is in the conflict, and letting go of all of them leaves nothing held. The line that was lost is
@@ -811,28 +1025,26 @@ export class PlaneGcsSolver implements SketchSolver {
       if (placed && lostLines(placed, before).length === 0) {
         // the freedoms and conflicts are those of the sketch as it is, without the holds; the answer is the held one, which meets all of it: solved again
         // from there, a sketch that leaves the length free (two lines made one) slides along it
-        this.run(toPrimitives(sketch, startOf(placed)));
+        run = this.run(toPrimitives(sketch, startOf(placed)));
         ok = true;
         answer = placed;
         lost = [];
       }
       if (lost.length > 0) {
         // refused: the sketch is shown where it was stored (as for any solve that does not get there), not as solved and not as nothing
-        w.clear_data();
-        w.push_primitives_and_params(prims);
         const names = lost.join(', ');
-        return { geometry: readGeometry(w, sketch), status: 'failed', dof: 0, conflicting: [], redundant: [], message: t('regen.sketchCollapsed', { names }), collapsed: lost };
+        return { geometry: readGeometry(startValuesOf(prims), sketch), status: 'failed', dof: 0, conflicting: [], redundant: [], message: t('regen.sketchCollapsed', { names }), collapsed: lost };
       }
     }
-    const conflicting = unique(w.get_gcs_conflicting_constraints());
-    const redundant = unique(w.get_gcs_redundant_constraints());
-    const dof = w.gcs.dof();
+    const conflicting = unique(run.conflicting);
+    const redundant = unique(run.redundant);
+    const dof = run.dof;
     let status: SketchStatus;
     if (conflicting.length > 0 || redundant.length > 0) status = 'over';
     else if (!ok) status = 'failed';
     else status = dof === 0 ? 'fully' : 'under';
     const result: SolvedSketch = {
-      geometry: answer ?? readGeometry(w, sketch),
+      geometry: answer ?? readGeometry(run.values, sketch),
       status,
       dof,
       conflicting,
@@ -872,7 +1084,10 @@ export class PlaneGcsSolver implements SketchSolver {
       sketch.entities.every((e) => (e.type === 'point' || e.type === 'line' || e.type === 'circle') && !modelRefOf(e)) &&
       base.dof === 2 * pointCount + circleCount;
     /** Degrees of freedom the pin takes away; null when the pinned system did not converge. */
-    const probe = (prims: Prim[]): number | null => (this.run(prims) ? base.dof - this.w.gcs.dof() : null);
+    const probe = (prims: Prim[]): number | null => {
+      const r = this.run(prims);
+      return r.ok ? base.dof - r.dof : null;
+    };
     const points = new Map<Id, number | null>();
     const pointFreedom = (id: Id): number | null => {
       if (allFixed) return 0;

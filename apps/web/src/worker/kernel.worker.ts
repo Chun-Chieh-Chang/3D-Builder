@@ -294,6 +294,7 @@ const api: KernelApi = {
 
   async solveSketch({ seq, sketch, ...options }: SketchSolveRequest): Promise<SketchSolvePayload> {
     await loadSolver();
+    await solver.ready(); // after a sketch too large for its memory the solver loads a new module: see PlaneGcsSolver.spare
     const began = performance.now();
     let followed = sketch;
     if (sketch.entities.some((e) => modelRefOf(e))) {
