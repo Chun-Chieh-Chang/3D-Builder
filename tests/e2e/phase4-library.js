@@ -80,6 +80,17 @@ lib.run = async () => {
   await H.waitFor(() => [...(H.asm().solution?.mates.values() ?? [])].length === 2 && [...H.asm().solution.mates.values()].every((m) => m.status === 'ok'), 8000, 'both mates to hold');
   const pose = H.asm().solution.poses.get(screw.component.id);
   H.check(Math.abs(pose.position[1] - 1.6) < 1e-6 && Math.abs(pose.position[0]) < 1e-6 && Math.abs(pose.position[2]) < 1e-6, `the screw sits on the washer: ${JSON.stringify(pose.position)}`);
+  pm().querySelector('.pm-cancel').click();
+  await H.action('組合件', '插入零組件');
+  await H.waitFor(() => H.asm()?.insert?.files, 10000, 'the insert panel for the set screw');
+  const option = pm().querySelector('select option[value="setScrew"]');
+  H.check(option?.textContent.includes('ISO 4029') && option.textContent.includes('內六角止付螺絲'), 'the cup point set screw is listed');
+  const setScrew = await make('setScrew', 'M6', 20);
+  H.check(setScrew.path === '標準件/ISO 4029 M6x20.3dbx', `the set screw file: ${setScrew.path}`);
+  H.check(!setScrew.component.fixed, 'the set screw is inserted as a floating component');
+  await H.loaded();
+  const setBuilt = H.asm().builds.get(H.asm().files.get(setScrew.path).key);
+  H.check(setBuilt?.mass?.volume > 0 && setBuilt.properties['料號'] === 'ISO 4029 M6x20', 'the set screw has rebuilt geometry and its part number');
   console.log('phase4-library: all checks passed');
   return true;
 };

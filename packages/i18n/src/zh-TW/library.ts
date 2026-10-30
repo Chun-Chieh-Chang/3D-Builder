@@ -1,5 +1,6 @@
 /** library: the standard parts library (F6.1). */
 export const library = {
+  'library.kind.setScrew': '內六角止付螺絲（凹端）',
   'library.kind.socketScrew': '內六角螺絲',
   'library.kind.dowelPin': '圓柱定位銷',
   'library.kind.washer': '平墊圈',

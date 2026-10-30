@@ -2,6 +2,7 @@ import type { Translation } from '../index';
 
 /** library: the standard parts library (F6.1). */
 export const library: Translation = {
+  'library.kind.setScrew': 'Hex Socket Set Screw (Cup Point)',
   'library.kind.socketScrew': 'Socket Head Cap Screw',
   'library.kind.dowelPin': 'Dowel Pin',
   'library.kind.washer': 'Plain Washer',
