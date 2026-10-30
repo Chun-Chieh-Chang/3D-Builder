@@ -1,5 +1,9 @@
 /** Messages of direct editing (C10.1 move face, C10.2 delete face) from the kernel and the rebuild. */
 export const edit = {
+  'edit.pickMoveTarget': '在設計樹選取基準面，或在圖形區點選與端面平行的平面。',
+  'edit.moveTarget': '目標平面',
+  'edit.targetParallel': '目標必須是與移動端面平行的平面',
+  'edit.moveDistance': '給定距離',
   'edit.moveFace': '移動面',
   'edit.noFacesToDelete': '尚未選擇要刪除的面',
   'edit.faceOutOfRange': '面索引超出範圍：{index}',
@@ -9,6 +13,7 @@ export const edit = {
   'edit.deleteInvalid': '刪除面的結果不是有效的實體',
   'edit.distanceZero': '移動距離不能是 0',
   'edit.planeOnly': '移動面目前只支援平面',
+  'edit.moveFacePickPlane': '請先在圖形區選取要移動的平面，再按確定。',
   'edit.tangentNeighbour': '這個面與相鄰的面相切（例如邊緣有圓角），無法移動；請先移動連同的圓角，或先刪除圓角',
   'edit.noPointNearEdge': '找不到面上靠近邊線的點（邊太短或面太細）',
   'edit.noSurfacePoint': '找不到相鄰的面在邊線上的位置',

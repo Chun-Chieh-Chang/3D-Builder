@@ -164,8 +164,10 @@ async function main() {
     };
     /** The folder the screenshots of the script that runs go to (`--shots`), and what a script asked for with `await window.__shot('label')`. */
     let jobShots = null;
-    const takeShot = async ({ n, label }) => {
-      if (jobShots) {
+    const takeShot = async ({ n, label, dpr }) => {
+      if (dpr) {
+        await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: dpr, mobile: false });
+      } else if (jobShots) {
         const shot = await send('Page.captureScreenshot', { format: 'png' });
         mkdirSync(jobShots, { recursive: true });
         if (shot.result?.data) writeFileSync(join(jobShots, `${String(n).padStart(2, '0')}-${String(label).replace(/[^\w.-]+/g, '_').slice(0, 80)}.png`), Buffer.from(shot.result.data, 'base64'));
@@ -207,7 +209,8 @@ async function main() {
     await send('Page.addScriptToEvaluateOnNewDocument', {
       source: `window.__shotN = 0; window.__shotDone = 0;
 window.__samplesOrigin = 'http://127.0.0.1:${SAMPLES_PORT}/';
-window.__shot = async (label) => { const n = ++window.__shotN; window.__capture(JSON.stringify({ n, label })); for (let i = 0; i < 600 && window.__shotDone < n; i++) await new Promise((r) => setTimeout(r, 25)); };`,
+window.__shot = async (label) => { const n = ++window.__shotN; window.__capture(JSON.stringify({ n, label })); for (let i = 0; i < 600 && window.__shotDone < n; i++) await new Promise((r) => setTimeout(r, 25)); };
+window.__setDpr = async (dpr) => { const n = ++window.__shotN; window.__capture(JSON.stringify({ n, dpr })); for (let i = 0; i < 600 && window.__shotDone < n; i++) await new Promise((r) => setTimeout(r, 25)); };`,
     });
     await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });
     await send('Emulation.setFocusEmulationEnabled', { enabled: true }); // a headless page is not the focused window: without this a field never gets or loses focus (blur, autofocus)
@@ -219,6 +222,7 @@ window.__shot = async (label) => { const n = ++window.__shotN; window.__capture(
     };
     /** A fresh load of the page; the browser storage is emptied only when `clear` (a script that runs in two loads, like the recovery one, needs what the first left). */
     const freshPage = async (clear = true) => {
+      await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });
       await send('Page.navigate', { url: 'about:blank' });
       await sleep(300);
       if (clear) await send('Storage.clearDataForOrigin', { origin: ORIGIN, storageTypes: 'all' });
@@ -273,6 +277,7 @@ window.__shot = async (label) => { const n = ++window.__shotN; window.__capture(
             }
             const known = [];
             const bad = failures(value, known);
+            if (value && typeof value === 'object' && value.metrics) row.metrics = value.metrics;
             if (bad.length > 0) Object.assign(row, { status: 'FAIL', detail: bad.slice(0, 3).join('; ') });
             else if (known.length > 0) Object.assign(row, { status: 'KNOWN', detail: `known: ${known.join(' | ')}`, known });
           }

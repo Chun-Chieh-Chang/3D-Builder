@@ -336,6 +336,82 @@ function AssemblyWhatsWrong() {
   );
 }
 
+/** The symbol of a unit of $INSUNITS. */
+const DXF_UNITS: Record<number, string> = { 1: 'in', 2: 'ft', 3: 'mi', 4: 'mm', 5: 'cm', 6: 'm', 7: 'km', 8: 'µin', 9: 'mil', 10: 'yd', 11: 'Å', 12: 'nm', 13: 'µm', 14: 'dm', 15: 'dam', 16: 'hm' };
+
+/**
+ * 「匯入 DXF」 (F2.6, ADR 0219): what the file holds before anything is added — its unit and size (to see that the unit is right), each layer with how many
+ * entities it has, ticked to import, and the layers to bring in as construction geometry; what will be left out and how many entities cannot be read.
+ */
+export function DxfImportDialog() {
+  const open = useStore((s) => s.dxfImport);
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [construction, setConstruction] = useState<Set<string>>(new Set());
+  const ok = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    setChosen(new Set(open?.survey.layers.map((l) => l.name) ?? []));
+    setConstruction(new Set());
+    ok.current?.focus();
+  }, [open]);
+  if (!open) return null;
+  const { survey } = open;
+  const close = () => store.cancelDxfImport();
+  const toggle = (set: Set<string>, name: string, on: boolean) => {
+    const next = new Set(set);
+    if (on) next.add(name);
+    else next.delete(name);
+    return next;
+  };
+  const size = survey.bounds ? `${(survey.bounds.max[0] - survey.bounds.min[0]).toFixed(3)} × ${(survey.bounds.max[1] - survey.bounds.min[1]).toFixed(3)}` : null;
+  const left = Object.entries(survey.skipped).map(([type, k]) => `${type} ×${k}`);
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal" role="dialog" aria-label={t('dxfImport.title')} data-dialog="dxf-import" onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && close()}>
+        <h3>{t('dxfImport.title')}</h3>
+        <p className="muted">{t('dxfImport.file', { name: open.name })}</p>
+        <p>{survey.unit === null ? t('dxfImport.unitNone') : t('dxfImport.unit', { unit: DXF_UNITS[survey.unit] ?? String(survey.unit), scale: survey.scale })}</p>
+        {size && <p>{t('dxfImport.size', { size })}</p>}
+        {survey.layers.length === 0 ? (
+          <p className="hint">{t('dxfImport.nothing')}</p>
+        ) : (
+          <table className="dxf-layers">
+            <thead>
+              <tr>
+                <th>{t('dxfImport.layer')}</th>
+                <th>{t('dxfImport.entities')}</th>
+                <th>{t('dxfImport.asConstruction')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {survey.layers.map((l) => (
+                <tr key={l.name} data-dxf-layer={l.name}>
+                  <td>
+                    <label className="checkbox">
+                      <input type="checkbox" data-field="import" checked={chosen.has(l.name)} onChange={(e) => setChosen(toggle(chosen, l.name, e.target.checked))} /> {l.name}
+                    </label>
+                  </td>
+                  <td>{l.count}</td>
+                  <td>
+                    <input type="checkbox" data-field="construction" aria-label={t('dxfImport.asConstruction')} disabled={!chosen.has(l.name)} checked={construction.has(l.name)} onChange={(e) => setConstruction(toggle(construction, l.name, e.target.checked))} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {left.length > 0 && <p className="hint">{t('dxfImport.leftOut', { list: left.join(t('cmd.listSeparator')) })}</p>}
+        {survey.problems.length > 0 && <p className="hint">{t('dxfImport.surveyProblems', { n: survey.problems.length })}</p>}
+        <div className="modal-actions">
+          <button ref={ok} className="primary" data-action="dxf-import" disabled={chosen.size === 0} onClick={() => store.applyDxfImport([...chosen], [...construction].filter((n) => chosen.has(n)))}>
+            {t('dxfImport.import')}
+          </button>
+          <button onClick={close}>{t('export.cancel')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** 找到沒有儲存的零件 (B9.3): the copy autosave left in the browser when the last session ended with changes that were not saved. */
 export function RecoveryDialog() {
   const recovery = useStore((s) => s.recovery);

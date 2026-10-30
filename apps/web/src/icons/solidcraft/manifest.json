@@ -634,6 +634,7 @@
     "relink-component": "revert",
     "transparent-component": "body",
     "sketch-picture": "canvas",
+    "sketch-dxf": "import",
     "construction": "construction",
     "select-underdefined": "select",
     "sketch-end-tool": "select",

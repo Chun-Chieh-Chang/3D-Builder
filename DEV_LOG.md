@@ -2,9 +2,9 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
-## 2026-10-29：IGES 輸出與輸入（F1.4、F2.2，ADR 0219，Schema 85）
+## 2026-10-29：IGES 輸出與輸入（F1.4、F2.2，ADR 0220，Schema 86）
 
-在 worktree `claude/iges-exchange` 開發（主資料夾同時有另一工作階段在做 DXF 輸入，依 AGENTS.md §4 不共用資料夾）。設計、量測與驗證見 [ADR 0219](docs/adr/0219-iges-exchange.md)。
+在 worktree `claude/iges-exchange` 開發（主資料夾同時有另一工作階段在做 DXF 輸入，依 AGENTS.md §4 不共用資料夾）。設計、量測與驗證見 [ADR 0220](docs/adr/0220-iges-exchange.md)。原取 ADR 0219／Schema 85，2026-10-30 合併 main 時與 DXF 匯入（ADR 0219）及移動面（Schema 85）撞號，改為 0220／86。
 
 過程中的發現：
 
@@ -21,6 +21,84 @@
 
 全量：`npm test` 3826 通過（26 既有略過；第一輪的 help-manual 失敗是驗證手冊未同步新說明，以 `SYNC_MANUAL_HELP=1` 重生一行）。完整 `verify:ui` 兩輪 245／246；`manual-drawing-linked.js` 在乾淨 `bca2d80` 以 `--only` 重現同一數值（`box.centred:false`），為既有失敗。紅隊注入設定順序錯誤 8 項失敗，已還原。2026-10-30 使用者確認步驟 0 的 6 個對照檔在 eDrawings 全部正確；這 6 個檔由 OCCT 寫出器直接寫出、未經 `exportIges`，所以另以 `exportIges` 產生 6 個產品路徑對照檔（含切半與顏色），使用者同日確認這 6 個也全部正確（含切半與顏色），產品輸出的 eDrawings 驗收通過。
 
+
+## 2026-10-29：草圖互動改善方案 P0 驗收全量完成與通過
+
+依據 [草圖互動改善方案](docs/design/sketch-interaction/plan.md) 與 [驗收表](docs/design/sketch-interaction/acceptance.md) 執行 P0 階段（選取、取消、吸附提示、基準面座標與效能）驗收與缺陷修復。
+
+### 1. 交付與修正內容
+1. **輸入法 IME 組字防禦**：
+   - `apps/web/src/actions.ts` 全域快速鍵監聽、`apps/web/src/components/Viewport.tsx`（尺寸編輯器、剖面輸入）及 `PropertyManager.tsx` 加入 `e.isComposing || e.keyCode === 229` 判斷。防止在中文輸入法候選詞按 Esc 取消選字或按 Enter 確認選字時誤觸草圖工具取消或整張草圖退出。
+2. **吸附提示來源 ID 明示**：
+   - `apps/web/src/sketcher/controller.ts` 新增 `snapSources()`。在端點重合、中點、交點與相切吸附觸發時，吸附標籤標記參照對象 ID（如 `端點 · 重合 (p1, l1)`、`中點 (l1)`、`交點 (l1, l2)`），提供可追溯的幾何關係依據。
+3. **右鍵保留選取集合**：
+   - 修訂 `contextPick(e)`：當右鍵點選的圖元已在當前選取集合中、且未由 Tab 明確鎖定單一候選時，保留已有的多選集合；若使用 Tab 鎖定單一候選則僅選取該候選圖元。
+4. **工作平面狀態列呈現**：
+   - `PropertyManager.tsx` 狀態列加入 `sketchPlaneLabel(doc, f.plane)`，於 `[data-sketch-tool-status]` 顯示當前草圖名稱與工作基準面（如 `草圖 1 (前基準面) · 直線`）。
+5. **1000 圖元自由度診斷 fast-path**：
+   - 解決 1000 圖元自由度診斷造成畫面凍結的問題。`packages/sketch/src/planegcs.ts` 之 `analyze()` 引入 fast-path：在拘束數為 0、無文字／B-spline 且原生求解器確認 DOF 等於預期自由度（點×2 + 線×4 + 圓×3）時，直接判定所有圖元為完全欠拘束（`free`），略過逐一圖元試解（從 1000 次重複試解降為 0 次）。1000 圖元原生診斷耗時由逾時降至 23.3 ms。
+6. **跨平台 CI 矩陣入口補齊**：
+   - `.github/workflows/repository-integrity.yml` 將 `view-normal.test.ts`、`solve-options.test.ts`、`sketch-pointer-baseline.test.ts` 納入跨平台矩陣。
+
+### 2. 失敗紀錄與根因分析 (RCA) 與預防措施 (CAPA)
+1. **1000 圖元自由度診斷逾時**：
+   - *RCA*：自由度診斷 `analyze()` 原對所有圖元以單一圖元固定試解（1000 個圖元＝1000 次 PlaneGCS 試解）。在無拘束大量圖元情境下，反覆試解造成 CPU 長時間阻塞（逾 20 秒）。
+   - *CAPA*：加入無拘束全欠拘束 fast-path；同時在 `packages/sketch/test/solve-options.test.ts` 新增 150 組隨機點／線／圓組態（含固定點／固定半徑拘束），比對 fast-path 與完整試解路徑，確保自由度計數與狀態 100% 一致。
+2. **視角變更導致 E2E 點選漂移**：
+   - *RCA*：`manual-sketch-plane.js` 在中途步驟切換了相機方位，導致後續步驟（如 step 10 `H.at([0, 0, 28])`）的投影座標漂移到畫布邊界外。
+   - *CAPA*：將旋轉平面落點驗收排至最後 step 12，且在等角視圖下以 `H.frameSketch()` 重新置中焦點，確保點選座標穩定在畫布範圍內。
+3. **dirty 零件阻擋草圖重置**：
+   - *RCA*：在 E2E 效能重測前未處置 dirty 零件，直接呼叫 `newPart` 彈出未存檔對話框而未執行新建，導致後續 `addSketchItems` 圖元 ID 與舊草圖衝突。
+   - *CAPA*：加入 `if (store.getState().unsaved) await store.answerUnsaved('discard')` 守門，確保新測試必定於乾淨零件上執行。
+4. **右鍵點選殘留候選鎖定**：
+   - *RCA*：前一手左鍵測試留存了 `this.candidate`，導致後續右鍵測試按 Tab 時從 index 1 循環而非 0。
+   - *CAPA*：在右鍵候選測試前加入 `Escape` 連按清除前置狀態。
+
+### 3. 紅隊對抗四問核對
+- **輸入破壞**：IME 守門未阻擋標準 Esc/Enter 流程；fast-path 嚴格檢查拘束數為 0、無文字/曲線、原生 DOF == expected，任一條件不符立即退回完整試解，無靜默篡改或盲目假設。
+- **拓樸幾何相交**：未變更布林運算與拓樸核心；草圖座標反求使用真實 PlaneFrame 正交基底矩陣。
+- **依賴鏈完整性**：Controller、Store、UI 狀態列、SVG 吸附層與 E2E Harness 全鏈路對齊。
+- **規格真實性與零 Mock**：所有指標取自真實 CDP 事件與瀏覽器實測；Worker 往返、select p95、snap p95 均取自真實瀏覽器渲染，未以 Node 單元測試代理指標冒充。
+
+### 4. 驗收結果
+- **原生 Vitest**：
+  - `packages/sketch/test/solve-options.test.ts`, `apps/web/test/sketcher.test.ts`, `apps/web/test/sketch-pointer-baseline.test.ts`, `tests/phase8/view-normal.test.ts`：4 檔 100 項全部通過。
+  - 草圖相關套件全量（21 檔 309 項）：全數通過（6.91s，0 失敗）。
+- **瀏覽器 E2E 驗收 (`verify:ui`)**：
+  - `manual-sketch-plane.js` (35.7s PASS)
+  - `manual-sketch-selection-candidates.js` (26.5s PASS)
+  - `manual-sketch-session-rollback.js` (8.4s PASS)
+  - 結果：3 of 3 pass, 0 defects, 0 failures。
+- **實機效能數據**（Windows 11 Chrome，`out/sketch-p0-ui.json`）：
+  - 100 圖元：Worker roundtrip 50.3 ms、select p95 0.10 ms、line snap p95 0.20 ms。
+  - 1000 圖元：Worker roundtrip 333.9 ms、select p95 0.30 ms、line snap p95 2.30 ms（標準 ≤ 8.0 ms）。
+- 靜態檢查：`typecheck`, `lint:rules`, `lint:deps`, `lint:i18n`, `lint:repo`, `build` 全部通過。
+
+
+
+## 2026-10-29：P0草圖建立工具取消驗收
+
+快轉拉取510b6a9後，以真實PlaneGCS驗12種建立工具首點後Esc取消、第二次Esc回選取，逐一核對文件無半成品。只執行新增案例，1項通過；未更動產品程式，多階段及IME仍待驗，詳驗收表。
+
+## 2026-10-29：DXF 匯入以其他 CAD 存出的檔案驗證（ADR0219 驗收 #2）
+
+使用者同意從公開來源下載範例。下載開源 DXF 解析器 bjnortier/dxf（MIT，commit `cb571d1`）的 67 個測試檔到暫存資料夾：R12 到 2018，AutoCAD 格式、LibreCAD（dxfrw）、QCAD（dxflib）寫出。
+
+**第一輪 39 個整個被拒絕**，是讀取器的兩個錯：LibreCAD／QCAD 檔以 `999` 註解開頭（DXF 參考允許任何地方出現），AutoCAD 2013 以後的 `ACDSDATA` 區段以群組 70／71 開頭而非記錄。`readDxf` 改為略過 999、略過用不到的區段到其 ENDSEC（沒有 ENDSEC 仍拒絕）。修正後 66 個匯入，1 個（7413 條曲線）依設計超過上限被拒；全部通過 `sketchError`，近似 ≤ 0.001 mm；回報的問題（長度 0 的線、多邊形網格）都對過原始檔是真的。
+
+失敗萃取：手寫與本程式輸出的 DXF 都是「依參考寫的乾淨檔」，全部繞過了實際寫出程式的習慣（註解、私有區段）。23 項單元測試、200 組 Fuzz 全綠時，真實檔案仍有 58% 讀不進來——讀取類功能的驗收必須含外部程式寫出的檔案，不能以自產檔代替。
+
+真值不經匯入器：寫出程式記錄的 `$EXTMIN/$EXTMAX`（只用記錄得準的：LibreCAD 常寫 1e+20 佔位或鬆的範圍，`arc15` 的 y 最小記成 0 而真值約 34.5，這些不用）、依 DXF 參考從群組值算出的 ARC／ELLIPSE（兩方向量）、從原始頂點與凸度手算的面積。量測時一度以 2 萬個取樣點的最近點量「到真橢圓的距離」，8 m 長的曲線上間距約 1 mm，量出 0.45 mm——量測錯，改黃金分割後 ≤ 0.001，門檻未放寬。
+
+納入 11 個檔（`tests/fixtures/public-dxf/bjnortier-dxf`，README 記來源、授權、SHA-256）；新增 `dxf-import-external.test.ts` 8 項、`dxf-import-solid.test.ts` 的 `issue21` 伸長（體積相對 1e-9）、`dxf-import.test.ts` 讀取器邊界 1 項。反向對照：拿掉兩個修正，9 項中 8 項轉紅。臨時探針已移出版本庫（`zz-probe-dxf-external.test.ts` 在本工作階段暫存資料夾）。全量：型別檢查、lint:rules／i18n／repo、check-deps 通過；`npx vitest run` 3943 通過、1 失敗（`direct-edit.test.ts` 移動面那項，來自 `2ab5718`，與前一項相同，本次未處理）；瀏覽器 `phase3-sketch-dxf.js` 單獨通過。讀取器變更不影響畫面，未跑完整 verify:ui。
+
+## 2026-10-29：匯入 DXF 到草圖（ADR0219，F2.6）
+
+使用者問「用本系統開啟 DXF 呢」，當時只會輸出。依使用者選定的範圍（匯入草圖、只合併端點、文字轉草圖文字、尺寸略過、匯入前選圖層）實作，設計與做法見 [ADR0219](docs/adr/0219-dxf-import-into-sketch.md)。
+
+開發中發現並修正：①200 組隨機檔案的 Fuzz 找到首尾合併成同一點的貝茲段，`sketchError` 拒絕（「端點重複」）；改為以 de Casteljau 對半分。②NURBS 拆貝茲段的第一版以「起點索引 + j·p」取控制點，對非夾緊或重數不規則的節點不成立；改依局部支撐「每個節點值最後的索引往前 p 個」。③把形狀的有限檢查寫成 `JSON.stringify` 找 `null`，內容是「null」的文字會被誤拒；改為逐一列出數字檢查。④整圈的 ARC 原會被當成長度 0 拒絕；改為圓。⑤第一版測試的橢圓參考以 2 萬點最近點量偏差，取樣間距本身就有 0.0024 mm 誤差，量到 0.0012 超過 0.001 的上限——是量測錯，不是近似錯；改以黃金分割求最近點，並維持 0.001 不放寬。⑥對話框原寫「圖元數」，實際數的是匯入後的曲線與文字（一條聚合線是多段），e2e 量到 OUT 為 5 而非 2；改名為「曲線與文字數」。
+
+紅隊四問見 ADR。驗證：`dxf-import.test.ts` 23 項（含 200 組 Fuzz）、`dxf-import-solid.test.ts` 2 項（真實求解與伸長，體積相對 1e-9／1e-7）、瀏覽器 `phase3-sketch-dxf.js` 通過。全量：型別檢查、lint:rules／i18n／repo、check-deps 通過；`npx vitest run` 3826 通過、0 失敗、25 略過；完整 `verify:ui` 246 項 245 通過，唯一失敗 `manual-drawing-linked`（`box.centred:false`）單獨重跑相同，`git stash -u` 回到乾淨 HEAD 後以相同訊息重現，是既有失敗，本次未處理。提交前發現另一工作階段已推送 ADR 0218（移動面至目標平面，`2ab5718`），本項改為 ADR 0219 並重新 rebase；rebase 後型別檢查、lint 與 DXF／說明／圖示測試通過，`packages/kernel/test/direct-edit.test.ts`「refuses to push a face further into the material…」1 項失敗來自 `2ab5718`（本項未改 kernel／model／regen 任何檔案），未處理。**未完成的驗收**：以其他 CAD 存出的真實 DXF（R12／2000／2018）驗證，待使用者提供檔案或同意下載。
 
 ## 2026-10-29：既有失敗分診（phase5 單元 6 項、verify:ui 15 項）
 
@@ -4151,3 +4229,19 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 - **驗證**：`solve-options.test.ts` 新增 4 項（只有寬高的矩形：四角各 2、總和大於 dof 2；一個角在水平軸上：1 個方向、dof 1；圓心在原點的圓：只有半徑；完全定義與過多定義：不列出），14 項全過。瀏覽器實測：矩形＋未定半徑的圓為 dof 3，面板列 4 條直線與「圓 k1：半徑未定」；點一列選取該圖元；「選取全部」與 `selectUnderdefined` 結果相同；加尺寸成完全定義、再加矛盾尺寸成過多定義時清單都消失；復原兩次回到 dof 3 並再列出 5 列；0 Console 錯誤。字級 13px。
 - **`verify:ui` 完整一輪**（自己的伺服器）：219／238 通過。19 項不通過的，在**乾淨的 HEAD worktree** 重跑：15 項同樣失敗（既有，與本次無關；其中 `manual-c6`、`phase3-sketch-checks` 是 10-25 `6f6043b` 把按鈕改名為「套用已驗證修復」後腳本未跟上）；另外 4 項（`manual-assembly-section-captions`、`manual-d4`、`manual-drawing-projected-references`、`manual-gear-rack`）在乾淨 HEAD **只套用本次變更**時全數通過，連同 `manual-productivity`、`manual-constraint-diagnostics` 共 8／8，判定為主資料夾中其他工作階段未提交的工程圖／顯示變更所致。
 - **環境陷阱**：第一次跑時 5391 被別的 worktree 的 vite 佔用、第二次 5411 亦然，腳本全數載入失敗（0／238、0／21），結果作廢。跑 `verify:ui` 時 `VERIFY_UI_ORIGIN` 也要改成確認空著的埠，不只 DevTools 與樣本兩個埠。
+
+# 2026-10-29：移動面至目標平面並維持錐度（ADR 0218）
+
+- **需求**：疊層拉伸建立的錐體端面（或任意平面端面）需要像 SolidWorks 一樣選取與端面平行的目標平面（基準面或模型平面），自動延伸或縮短至該平面並保持原錐度，無須人工計算距離與末端半徑；同時防止「移動面」未選取端面即按確定建立空參考特徵。
+- **RCA**：
+  1. 既有 `store.commitEdit()` 未檢查 `moveFace` 的 `face.name` 是否已選取，導致未選面按 ✔ 會將空參考寫入特徵，重算時誤報「遺失參考」。
+  2. 既有 `MoveFaceFeature` 僅支援手動輸入距離 `distance`，缺乏關聯式目標平面 `target?: Ref` 與兩平行平面有向距離推導。
+  3. 核心幾何 `Kernel.moveFace` 的 `trim()` 對相鄰圓錐面以無界 `Geom_ConicalSurface` 建立 `BRepPrimAPI_MakeHalfSpace` 並做 `Common`，因雙葉圓錐跨越錐尖自相交，OCCT 會回傳空體積（0 體積卻回報成功）；此外 `ShapeUpgrade_UnifySameDomain` 合併同域圓錐面時會破壞圓錐接縫（seam edge）並汙染共享拓樸。
+- **修正（CAPA）**：
+  1. **Schema 85 與全鏈路目標參照**：`MoveFaceFeature` 新增 `target?: Ref`（支援 `datum` 與平面 `face`），串接 `commands.ts`（`planeRef` 順序與型別檢驗）、`refs.ts`（`mapRefs` 遺失參考替換）、`dag.ts`（`parentsOf` 連動重算）、`engine.ts`（平行檢驗與有向距離計算）與 `PropertyManager.tsx`／`store.ts`（支援設計樹點選基準面、下拉選單或圖形區點選平行模型面，並攔截空參考確認）。
+  2. **解析圓錐旋轉薄層（Analytic Revolved Cone Slab）**：當移動端面與單一凸圓錐面正交且為完整圓盤時，由圓錐頂點 `apex`、軸向 `axis` 與半角 `halfAngle` 解析推導起訖半徑 $r_0, r_1$，以 `BRepPrimAPI_MakeRevol` 建立精確圓錐台薄層並保留布林分面與來源，跳過會破壞圓錐接縫的 `unify`；若移動跨越錐尖（$z_0 \cdot z_1 \le 0$ 或 $|z_1| < 10^{-7}$）或結果體積 $\le 10^{-12}$ 立即拋出 `edit.moveInvalid`。
+- **紅隊四問**：
+  1. **輸入破壞**：拒絕未選端面確認、非平面目標、非平行目標平面、零位移（$z = 20$）、完全切穿基底（$z = 0, -5$）、到達或跨越錐尖（$z = 40, 45$）。
+  2. **拓樸與幾何相交**：跨越錐尖於前置參數解析直接攔截（`z0 * z1 <= 0`），不送入 OCCT 產生退化自交形狀；圓錐結果保留有效布林拓樸並檢查 `BRepCheck_Analyzer` 與實體體積 $> 10^{-12}$。
+  3. **依賴鏈完整性**：`schema.ts` → `serialize.ts` (v85) → `commands.ts` → `refs.ts` → `dag.ts` → `engine.ts` → `store.ts` → `PropertyManager.tsx` 全鏈路接線，測試涵蓋序列化讀回與修改目標基準面偏移距離後的自動重算。
+  4. **規格真實性與零 Mock**：以真實 OCCT 驗證 100 組隨機目標高度（涵蓋延伸與縮短）之解析圓錐台體積 $\frac{\pi h}{3}(R_1^2 + R_1 R_2 + R_2^2)$ 與端面面積 $\pi R_2^2$、平行模型面目標、使用者實際樣本 `TM0002138.3dbx` 延伸至前基準面，以及 `tests/e2e/manual-move-face-target.js` 瀏覽器端到端操作；不宣稱消除 OCCT 底層布林 Heap 成長。

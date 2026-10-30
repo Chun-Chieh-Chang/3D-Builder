@@ -1,12 +1,47 @@
 # 交接與接續工作
 
-更新日期：2026-10-28。接手先讀本檔、[產品現況](docs/project-state.md)與[AGENTS](AGENTS.md)，再看`git status --short --branch`、`git log -5 --oneline`。保留現有修改，乾淨時才`git pull --ff-only origin main`。
+更新日期：2026-10-29。接手先讀本檔、[產品現況](docs/project-state.md)與[AGENTS](AGENTS.md)，再看`git status --short --branch`、`git log -5 --oneline`。保留現有修改，乾淨時才`git pull --ff-only origin main`。
+
+## 接續入口（2026-10-29）
+
+本次接手基準為`92c2b3e`；遠端可能繼續更新，先看乾淨狀態再快轉拉取。使用者已核准[草圖互動改善方案](docs/design/sketch-interaction/plan.md)，P0（選取、取消、吸附提示、基準面座標與效能）已全數完成並通過原生測試與真實瀏覽器驗收。
+
+最近已納入拘束按鈕試解過濾（ADR0216）、草圖對模型輪廓拘束（ADR0217）、移動面到目標平面（ADR0218）、DXF匯入與公開外部樣本修正（ADR0219）。不要依舊盤點重新實作；本輪未重驗上述全部功能，證據讀DEV_LOG與各ADR。
+
+**接下來按順序處理：**
+
+1. **進入 P1 即時尺寸輸入（繪製中輸入數值建立拘束）。**
+   - 直線長度／角度、圓半徑／直徑、矩形寬高繪製中的鍵盤輸入。
+   - 產生真實驅動拘束，支援 Tab 切換欄位、Enter 確認及一次 Undo 復原。
+   - 延伸至槽與多邊形定向。
+2. **後續依 P2→P3→P4 推進。**
+   - P2：修改預覽／連續線弧／掃掠修剪。
+   - P3：畫布封閉區域選取。
+   - P4：關係、診斷與外部參照。
+   - P5：高階曲線、子區域與 3D 草圖先做獨立探針，不把規劃標成已實作。
+
+**P0 已驗收完成證據：**
+- **原生 Vitest**：4 檔 100 項原生測試 PASS；21 檔 309 項草圖套件全數 PASS（0 失敗，耗時 6.91s）。包含 150 組隨機組態（固定點/半徑）核對 1000 圖元 fast-path 自由度診斷結果。
+- **瀏覽器 E2E 驗收**（`verify:ui`）：3/3 通過（`manual-sketch-plane.js` 35.7s PASS、`manual-sketch-selection-candidates.js` 26.5s PASS、`manual-sketch-session-rollback.js` 8.4s PASS）。
+- **實測效能數據**（Windows Chrome，`out/sketch-p0-ui.json`）：
+  - 100 圖元：Worker 往返 50.3 ms、select p95 0.10 ms、line snap p95 0.20 ms。
+  - 1000 圖元：Worker 往返 333.9 ms、select p95 0.30 ms、line snap p95 2.30 ms（遠低於 8.0 ms 門檻）。
+- **互動完整性**：旋轉基準面落點 A01 正視／等角投影一致、中文 IME 組字防護（isComposing / keyCode 229）、右鍵 contextPick 保留現有多選與 Tab 鎖定候選、吸附提示附帶來源圖元 ID、草圖狀態列顯示工作平面名稱。
+- 完整紀錄見 [驗收表](docs/design/sketch-interaction/acceptance.md)。
+
+**操作守則：** 只跑新增／受影響案例，失敗只重試對應案例；瀏覽器驗收進行時不改原始碼；不得放寬容差或期限求綠。新缺陷記清根因、修正、測試與未驗限制。提交前核對文件盤點；out與暫存證據不隨Git搬移，接手依腳本重現。
 
 ## 本批工作
 
-最新交付（2026-10-29，分支 `claude/iges-exchange`，未併入 main）：IGES 輸出（修剪曲面／B-rep，mm／inch）與輸入（「開啟舊檔」及「輸入 STEP／IGES」），Schema 85，[ADR0219](docs/adr/0219-iges-exchange.md)。壞檔會讓 OCCT 讀取器無窮迴圈，輸入先在拋棄式 worker 限時試讀。`npm test` 全過；完整 `verify:ui` 245／246，唯一失敗 `manual-drawing-linked.js` 在 `bca2d80` 重現，為既有。eDrawings：OCCT 直接寫出的 6 個檔與 `exportIges` 寫出的 6 個檔（含切半與顏色），使用者皆確認正確。待辦：①併入 main 前先確認主資料夾另一工作階段的 DXF 變更（store.ts、files.ts、actions.ts、i18n 可能衝突，Schema 85 可能撞號）；③沒有他牌 CAD 的 IGES 樣本。
+最新交付（2026-10-30，分支 `claude/iges-exchange` 已合併 main `5360fda`）：IGES 輸出（修剪曲面／B-rep，mm／inch）與輸入（「開啟舊檔」及「輸入 STEP／IGES」），Schema 86，[ADR0220](docs/adr/0220-iges-exchange.md)。原取 Schema 85／ADR 0219，與 main 的移動面（Schema 85）及 DXF 匯入（ADR 0219）撞號，合併時改號。壞檔會讓 OCCT 讀取器無窮迴圈，輸入先在拋棄式 worker 限時試讀。eDrawings：OCCT 直接寫出的 6 個檔與 `exportIges` 寫出的 6 個檔（含切半與顏色），使用者皆確認正確。沒有他牌 CAD 的 IGES 樣本。合併後的驗證見 DEV_LOG。
 
-最新進行中：[草圖互動方案](docs/design/sketch-interaction/plan.md)已獲使用者明確核准執行。P0第一批交付候選清單／Tab選取、工具狀態與Esc拖曳還原（[ADR0215](docs/adr/0215-sketch-selection-candidates.md)）。精確進度及失敗只維護於[驗收表](docs/design/sketch-interaction/acceptance.md)：整合遠端6019692後175項相關測試通過，新增候選及交點UI三流程通過，候選截圖已檢視；舊平面流程改以等角視圖消除頂點投影重疊後原斷言全部通過，A03草圖完成／取消及Undo／Redo瀏覽器流程已通過；下一步補其餘P0驗收。P0尚未整階段通過、P1尚未開始，不能跳過待驗項宣稱完成。
+最新交付：[草圖互動方案 P0 階段完成與驗收通過](docs/design/sketch-interaction/plan.md)。包含：
+1. **輸入法與快速鍵防禦**：全域鍵盤監聽與尺寸輸入框加入 `isComposing || keyCode === 229` 判斷，避免 IME 組字期間 Esc/Enter 誤觸工具取消。
+2. **吸附提示來源 ID**：`snapSources()` 為端點、中點、交點與相切提示標示來源圖元 ID（如 `端點 · 重合 (p1, l1)`）。
+3. **右鍵保留選取**：`contextPick()` 在已有點選圖元且無 Tab 鎖定單一候選時，保留現有多選。
+4. **工作平面狀態顯示**：狀態列 `[data-sketch-tool-status]` 顯示草圖名稱與基準面名稱（`sketchPlaneLabel`）。
+5. **1000 圖元自由度診斷 fast-path**：針對無拘束純點線圓圖元略過重複試解，診斷從逾時降至 23.3 ms，並經 150 組隨機拘束對照確保診斷真值一致。
+6. **E2E 驗收腳本**：完成 `manual-sketch-plane.js` 旋轉自訂平面正視／等角實機驗收、`manual-sketch-selection-candidates.js` 25%/100%/400% 縮放與 DPR1/DPR2 右鍵候選及 100/1000 效能基準、`manual-sketch-session-rollback.js` 完成／取消與 Undo/Redo 驗證，全數 3/3 PASS。
 
 最新交付：[ADR0210](docs/adr/0210-projected-references-and-asymmetric-tolerances.md)。工程圖 Schema34；實際投影直線可作尺寸參照，自由曲線可取投影點，補剖切／細部漏選；等角方向正規化與折斷反變換修正。單一／批次尺寸明列非對稱／單向偏差，同正或同負可用，沿用 bilateral。206 個不同相關案例各有通過紀錄，新流程冷重開與舊兩流程各自通過；未全量重跑。投影簽名只作定位，必須從目前原生 HLR 求值；幾何／切面／離散化改變可能明示失效需重選，不能宣稱完整拓樸歷史追蹤。新原生測試已列入 CI，遠端結果待確認。
 

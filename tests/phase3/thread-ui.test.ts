@@ -56,6 +56,30 @@ describe('thread UI and actions integration (T-3)', () => {
     expect(FEATURE_LABEL.thread).toMatch(/螺牙|Thread/i);
   });
 
+  it('keeps Move Face open when no face has been selected and binds target planes from tree or view', () => {
+    store.newPart();
+    store.newMoveFace();
+    const editing = store.getState().editing;
+    expect(editing).not.toBeNull();
+    store.commitEdit();
+    expect(store.getState().editing?.featureId).toBe(editing?.featureId);
+    // Pick planar face to move
+    store.pick({ kind: 'face', name: 'loft1:cap:start', fingerprint: { type: 'plane', center: [0, 0, 10], size: 100 } });
+    // Tree click on a datum plane sets target directly
+    store.treeClick('plane:front');
+    const f1 = store.getState().doc.features.find((f) => f.id === editing?.featureId);
+    expect(f1?.type === 'moveFace' && f1.face.name).toBe('loft1:cap:start');
+    expect(f1?.type === 'moveFace' && f1.target).toEqual({ kind: 'datum', name: 'plane:front' });
+    // Target mode in graphics area accepts planar face and rejects cylindrical face
+    store.setMoveFacePick('target');
+    store.pick({ kind: 'face', name: 'loft1:side:0', fingerprint: { type: 'cylinder', center: [0, 0, 5], size: 50 } });
+    expect((store.getState().doc.features.find((f) => f.id === editing?.featureId) as any).target).toEqual({ kind: 'datum', name: 'plane:front' });
+    store.pick({ kind: 'face', name: 'base:cap:start', fingerprint: { type: 'plane', center: [0, 0, 0], size: 200 } });
+    expect((store.getState().doc.features.find((f) => f.id === editing?.featureId) as any).target?.name).toBe('base:cap:start');
+    store.cancelEdit();
+    expect(store.getState().doc.features.some((f) => f.type === 'moveFace')).toBe(false);
+  });
+
   it('determines action enablement based on sketch and idle state', () => {
     const threadAction = ACTIONS.find((a) => a.id === 'thread')!;
     const idleNoSketch: UiState = {

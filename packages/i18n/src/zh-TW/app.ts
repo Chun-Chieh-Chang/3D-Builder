@@ -35,6 +35,7 @@ export const app = {
   'act.offsetSketch': '偏移草圖',
   'act.angleSketch': '角度草圖',
   'act.sketchPicture': '草圖圖片…',
+  'act.sketchDxf': '匯入 DXF…',
   'act.construction': '幾何建構線',
   'act.exitSketch': '離開草圖',
   'act.undo': '復原',

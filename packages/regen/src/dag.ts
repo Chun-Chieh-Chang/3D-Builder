@@ -79,6 +79,8 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = fromRefs([...feature.faces, ...(feature.faceThickness ?? []).map((x) => x.face)]);
       break;
     case 'moveFace':
+      parents = fromRefs([feature.face, ...(feature.target ? [feature.target] : [])]);
+      break;
     case 'lipGroove':
       parents = fromRefs([feature.face]);
       break;

@@ -92,6 +92,8 @@ export interface DxfDocument {
   blocks: string[];
   /** The handles of the BLOCK and ENDBLK records, with the owner each says. */
   blockHandles: { handle: string; owner: string }[];
+  /** Each block's base point (groups 10, 20 of its BLOCK record): where an INSERT puts it. */
+  blockBases: Map<string, [number, number]>;
   /** What each block holds (the anonymous blocks of the dimensions, `*D1` …). */
   blockEntities: Map<string, (DxfPolyline | DxfSolid | DxfText | DxfLine | DxfArc | DxfCircle | DxfDimension | DxfEntity)[]>;
   entities: (DxfPolyline | DxfSolid | DxfText | DxfLine | DxfArc | DxfCircle | DxfDimension | DxfEntity)[];
@@ -113,7 +115,8 @@ function pairsOf(text: string): Pair[] {
   for (let i = 0; i < lines.length; i += 2) {
     const code = Number(lines[i]!.trim());
     if (!Number.isInteger(code)) throw new DxfError(t('dxf.badCode', { line: i + 1, text: lines[i]! }));
-    out.push([code, lines[i + 1]!]);
+    // 999 is a comment, which the DXF reference allows anywhere (LibreCAD and QCAD start their files with one)
+    if (code !== 999) out.push([code, lines[i + 1]!]);
   }
   return out;
 }
@@ -128,7 +131,7 @@ const numberOf = (pairs: Pair[], code: number, fallback = 0): number => {
 export function readDxf(text: string): DxfDocument {
   const pairs = pairsOf(text);
   if (pairs.length === 0 || pairs[pairs.length - 1]![0] !== 0 || pairs[pairs.length - 1]![1] !== 'EOF') throw new DxfError(t('dxf.noEof'));
-  const doc: DxfDocument = { version: '', header: new Map(), tables: new Map(), blocks: [], blockHandles: [], blockEntities: new Map(), entities: [], objects: [], sections: [] };
+  const doc: DxfDocument = { version: '', header: new Map(), tables: new Map(), blocks: [], blockHandles: [], blockBases: new Map(), blockEntities: new Map(), entities: [], objects: [], sections: [] };
   let i = 0;
   /** The records of a section: each starts at a group 0 and runs to the next. */
   const records = (): Pair[][] => {
@@ -182,6 +185,7 @@ export function readDxf(text: string): DxfDocument {
         if (kind === 'BLOCK') {
           block = first(rec, 2) ?? '';
           doc.blocks.push(block);
+          doc.blockBases.set(block, [numberOf(rec, 10), numberOf(rec, 20)]);
           doc.blockEntities.set(block, []);
         }
         doc.blockHandles.push({ handle: first(rec, 5) ?? '', owner: first(rec, 330) ?? '' });
@@ -192,7 +196,13 @@ export function readDxf(text: string): DxfDocument {
       for (const rec of records()) doc.entities.push(entityOf(rec));
     } else if (name === 'OBJECTS') {
       for (const rec of records()) doc.objects.push({ type: rec[0]![1], handle: first(rec, 5) ?? '', owner: first(rec, 330) ?? '', layer: '', pairs: rec });
-    } else records();
+    } else if (name === 'CLASSES') records();
+    else {
+      // a section this reader has no use for, whose groups need not be records (ACDSDATA of AutoCAD 2013 and later starts with groups 70 and 71): passed over to its ENDSEC
+      while (i < pairs.length && !(pairs[i]![0] === 0 && pairs[i]![1] === 'ENDSEC')) i++;
+      if (i >= pairs.length) throw new DxfError(t('dxf.noEndsec'));
+      i++;
+    }
   }
   return doc;
 }

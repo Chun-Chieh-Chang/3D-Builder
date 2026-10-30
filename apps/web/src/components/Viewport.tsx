@@ -621,6 +621,10 @@ function DimensionEditor({ id, overlay }: { id: string; overlay: SketchOverlay |
           setInvalid(false);
         }}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing || e.keyCode === 229) {
+            e.stopPropagation();
+            return;
+          }
           if (e.key === 'Enter') setInvalid(!store.setDimensionValue(id, text.trim()));
           if (e.key === 'Escape') store.editDimension(null);
           e.stopPropagation();
@@ -778,6 +782,10 @@ function SectionValue({ value, onCommit }: { value: number; onCommit: (at: numbe
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
+        if (e.nativeEvent.isComposing || e.keyCode === 229) {
+          e.stopPropagation();
+          return;
+        }
         if (e.key === 'Enter') e.currentTarget.blur();
         else if (e.key === 'Escape') {
           cancelled.current = true;

@@ -2467,7 +2467,34 @@ export class Kernel {
       // of any shape can be swept instead, and when every neighbour is a plane there is nothing to keep whole.
       const planarAround = [...sharing.keys()].every((g) => topo.faces[g]!.surface === 'plane');
       let made: Slab;
-      if (square && planarAround) made = sweep();
+      const adjacent = [...sharing.keys()];
+      const coneIndex = adjacent.length === 1 ? adjacent[0] : undefined;
+      const cone = coneIndex === undefined ? undefined : topo.faces[coneIndex]!.geometry;
+      const coneSlab = Boolean(cone?.type === 'cone' && cone.convex && Math.abs(dot3(cone.axis, n)) > 1 - 1e-10);
+      if (coneSlab && cone?.type === 'cone') {
+        // A cone half-space is not a bounded solid and OCCT can return an empty
+        // Common for it. Build the exact analytic annular slab by revolution.
+        const z0 = dot3(sub3(info.center, cone.apex), cone.axis);
+        const z1 = z0 + distance * dot3(n, cone.axis);
+        if (z0 * z1 <= 0 || Math.abs(z1) < 1e-7) throw new KernelError(t('edit.moveInvalid'));
+        const r0 = Math.abs(z0 * Math.tan(cone.halfAngle));
+        const r1 = Math.abs(z1 * Math.tan(cone.halfAngle));
+        if (Math.abs(info.area - Math.PI * r0 * r0) > 1e-6 * info.area) throw new KernelError(t('edit.notConvex'));
+        const helper: Vec3 = Math.abs(cone.axis[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+        const radial = cross3(cone.axis, helper);
+        const x = scale3(radial, 1 / Math.hypot(...radial));
+        const poly = arena.own(new oc.BRepBuilderAPI_MakePolygon());
+        for (const [z, r] of (z1 > z0 ? [[z0, 0], [z0, r0], [z1, r1], [z1, 0]] : [[z1, 0], [z1, r1], [z0, r0], [z0, 0]])) poly.Add(this.pnt(arena, add(add(cone.apex, cone.axis, z!), x, r!)));
+        poly.Close();
+        const section = arena.own(arena.own(new oc.BRepBuilderAPI_MakeFace(arena.own(poly.Wire()), true)).Face());
+        const axis = arena.own(new oc.gp_Ax1(this.pnt(arena, cone.apex), this.dir(arena, cone.axis)));
+        const revol = arena.own(new oc.BRepPrimAPI_MakeRevol(section, axis, 2 * Math.PI, false));
+        const slab = arena.own(this.build(revol, t('edit.moveFace'), arena));
+        const index = ShapeIndex.of(oc, slab, T.FACE, arena);
+        slabFaces.push(index);
+        made = { shape: slab, index, origins: index.keys.map(g => this.faceInfo(g, arena).surface === 'plane' ? [moved] : [{ rel: 'modified', kind: 'face', index: coneIndex! }]) };
+      }
+      else if (square && planarAround) made = sweep();
       else if (!square) made = trim();
       else {
         try {
@@ -2488,7 +2515,9 @@ export class Kernel {
         // only the faces round the moved one may be regrouped (see unify)
         const touched = new Set([faceIndex, ...sharing.keys()]);
         const apart = topo.edges.flatMap((e, ei) => (e.faces.length > 0 && e.faces.every((g) => !touched.has(g)) ? [edges.keys[ei]!] : []));
-        const unified = this.unify(raw, origins, arena, apart);
+        // Unification can corrupt cone seams, including the shared input.
+        // Keep Boolean faces with their original provenance for cone slabs.
+        const unified = coneSlab ? { shape: mk.Shape(), origins } : this.unify(raw, origins, arena, apart);
         if (!this.valid(unified.shape)) {
           unified.shape.delete();
           throw new KernelError(t('edit.moveInvalid'));
@@ -2504,6 +2533,10 @@ export class Kernel {
           return out;
         });
         const result = this.put(unified.shape);
+        if (!(this.massProps(result).volume > 1e-12)) {
+          this.release(result);
+          throw new KernelError(t('edit.moveInvalid'));
+        }
         // Pushed into the material by more than the body is thick there, the sweep comes out of the far side:
         // what is taken away is then less than the face's area times the distance. Never hand that over as done.
         if (square && distance < 0) {

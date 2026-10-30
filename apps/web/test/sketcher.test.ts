@@ -1450,3 +1450,254 @@ describe('P0 explicit sketch selection candidates', () => {
     }
   });
 });
+
+describe('P0 creation tool cancellation', () => {
+  it('cancels the first point before leaving each creation tool without committing a partial entity', () => {
+    for (const tool of ['line', 'centerline', 'rect', 'centerRect', 'circle', 'perimeterCircle', 'arc', 'threePointArc', 'ellipse', 'bezier', 'slot', 'polygon'] as const) {
+      const h = new Host();
+      const c = new SketchController(h);
+      const before = JSON.stringify(h.sketch());
+      c.setTool(tool);
+      click(c, 12, 12);
+      c.escape();
+      expect(c.getView().tool, `${tool}: first Escape`).toBe(tool);
+      expect(JSON.stringify(h.sketch()), `${tool}: no partial creation`).toBe(before);
+      c.escape();
+      expect(c.getView().tool, `${tool}: second Escape`).toBe('select');
+      expect(JSON.stringify(h.sketch()), `${tool}: no changes after leaving`).toBe(before);
+    }
+  });
+
+  it('supports multi-stage Escape layering, Undo/Redo after completed segments, and modification/transform tool Escape (A02, E05)', async () => {
+    // 1. Line chain: complete 2 segments, move for 3rd preview, Escape ends chain (keeping 2 segments), Escape returns to select, Undo/Redo restores each segment
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 20, 0);
+    click(c, 20, 15);
+    c.pointerMove(at(5, 15), false);
+    expect(c.getView().preview.length).toBeGreaterThan(0);
+    c.escape(); // ends active chain, stays in line tool
+    expect(c.getView().tool).toBe('line');
+    expect(c.getView().preview).toEqual([]);
+    expect(h.sketch().entities.filter((e) => e.type === 'line')).toHaveLength(2);
+    c.escape(); // leaves line tool -> select
+    expect(c.getView().tool).toBe('select');
+    h.history.undo();
+    h.resolve();
+    expect(h.sketch().entities.filter((e) => e.type === 'line')).toHaveLength(1);
+    h.history.undo();
+    h.resolve();
+    expect(h.sketch().entities.filter((e) => e.type === 'line')).toHaveLength(0);
+    h.history.redo();
+    h.resolve();
+    expect(h.sketch().entities.filter((e) => e.type === 'line')).toHaveLength(1);
+    h.history.redo();
+    h.resolve();
+    expect(h.sketch().entities.filter((e) => e.type === 'line')).toHaveLength(2);
+
+    // 2. 3-click and 4-click tools cancelled at intermediate click stages (>= 2 clicks) leave no partial entities
+    const saved = JSON.stringify(h.sketch());
+    for (const [tool, pts] of [
+      ['perimeterCircle', [[0, 25], [10, 30]]],
+      ['arc', [[0, 25], [10, 25]]],
+      ['threePointArc', [[0, 25], [10, 30]]],
+      ['ellipse', [[0, 25], [12, 25]]],
+      ['slot', [[0, 25], [15, 25]]],
+      ['bezier', [[0, 25], [5, 30], [10, 28]]],
+    ] as const) {
+      c.setTool(tool);
+      for (const [x, y] of pts) click(c, x, y);
+      c.pointerMove(at(15, 35), false);
+      expect(c.getView().preview.length, `${tool} preview active`).toBeGreaterThan(0);
+      c.escape();
+      expect(c.getView().tool, `${tool} stays active after cancelling clicks`).toBe(tool);
+      expect(c.getView().preview, `${tool} preview cleared`).toEqual([]);
+      expect(JSON.stringify(h.sketch()), `${tool} doc unchanged`).toBe(saved);
+      c.escape();
+      expect(c.getView().tool, `${tool} exits to select`).toBe('select');
+    }
+
+    // 3. Fillet / Chamfer / Dimension: cancel after 1st pick -> stays in tool with empty picks; 2nd Escape -> returns to select
+    for (const tool of ['sketchFillet', 'sketchChamfer', 'dimension'] as const) {
+      c.setTool(tool);
+      click(c, 10, 0);
+      expect(c.getView().picks).toHaveLength(1);
+      c.escape();
+      expect(c.getView().tool).toBe(tool);
+      expect(c.getView().picks).toEqual([]);
+      c.escape();
+      expect(c.getView().tool).toBe('select');
+      expect(JSON.stringify(h.sketch())).toBe(saved);
+    }
+
+    // 4. Pre-selection tools (mirror, offset, moveEntities, copyEntities, rotateEntities, scaleEntities, linearPattern, circularPattern, stretchEntities)
+    const lineId = h.sketch().entities.find((e) => e.type === 'line')!.id;
+    const ptId = h.sketch().entities.find((e) => e.type === 'point')!.id;
+    for (const tool of ['mirror', 'offset', 'moveEntities', 'copyEntities', 'rotateEntities', 'scaleEntities', 'linearPattern', 'circularPattern'] as const) {
+      c.select([lineId]);
+      c.setTool(tool);
+      expect(c.getView().tool).toBe(tool);
+      if (tool !== 'mirror' && tool !== 'offset') click(c, 0, 0); // 1st transform reference point
+      c.escape();
+      expect(c.getView().tool).toBe('select');
+      expect(JSON.stringify(h.sketch())).toBe(saved);
+    }
+    c.select([ptId]);
+    c.setTool('stretchEntities');
+    click(c, 0, 0);
+    c.escape();
+    expect(c.getView().tool).toBe('select');
+    expect(JSON.stringify(h.sketch())).toBe(saved);
+  });
+});
+
+describe('P0 selection workflows and dense snap trajectory replay (A05, A06)', () => {
+  it('supports bidirectional box selection, Ctrl multi-select, right-click selection/candidate preservation, and selectChain (A05)', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    // Draw a 3-segment connected chain plus an overlapping line on the first segment
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 20, 0);
+    click(c, 20, 15);
+    click(c, 0, 15);
+    c.escape();
+    click(c, 0, 0);
+    click(c, 20, 0, { ctrl: true });
+    c.escape();
+    c.setTool('select');
+
+    const lines = h.sketch().entities.filter((e) => e.type === 'line');
+    expect(lines).toHaveLength(4);
+    const [l1, l2, l3, l4] = lines.map((e) => e.id) as [string, string, string, string];
+
+    // Left-to-right box selection covering all entities
+    c.pointerDown(at(-5, -5));
+    c.pointerMove(at(25, 20), true);
+    c.pointerUp(at(25, 20));
+    expect(c.getView().selection).toEqual(expect.arrayContaining([l1, l2, l3, l4]));
+
+    // Right-to-left box selection covering only the top horizontal segment l3 (y = 15)
+    c.pointerDown(at(25, 20));
+    c.pointerMove(at(-5, 12), true);
+    c.pointerUp(at(-5, 12));
+    expect(c.getView().selection).toContain(l3);
+    expect(c.getView().selection).not.toContain(l1);
+
+    // Ctrl multi-select and toggle off
+    c.select([l2]);
+    c.pointerDown(at(10, 15, { ctrl: true }));
+    c.pointerUp(at(10, 15, { ctrl: true }));
+    expect(c.getView().selection).toEqual([l2, l3]);
+
+    // Right-click (contextPick) on an already-selected entity preserves the entire multi-selection, even near shared endpoint (20, 15)
+    expect(c.contextPick(at(20, 15))).toBe(l2);
+    expect(c.getView().selection).toEqual([l2, l3]);
+
+    // Right-click after Tab candidate lock selects the explicitly locked candidate
+    c.select([]);
+    c.pointerMove(at(10, 0), false);
+    expect(c.getView().candidates?.map((x) => x.id)).toEqual([l1, l4]);
+    expect(c.cycleCandidate()).toBe(true);
+    expect(c.getView().candidate).toBe(l4);
+    expect(c.contextPick(at(10, 0))).toBe(l4);
+    expect(c.getView().selection).toEqual([l4]);
+
+    // Chain selection (selectChain) from l2 collects the connected non-branching chain
+    c.select([l2]);
+    c.selectChain();
+    expect(c.getView().selection).toEqual(expect.arrayContaining([l2, l3]));
+  });
+
+  it('replays dense snap trajectories deterministically, identifies source entity IDs in hints, and respects Ctrl suppression (A06)', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    // Construct a dense cluster:
+    // l1 from (0, 0) to (20, 0) -> endpoint at (20, 0), midpoint at (10, 0)
+    // l2 from (14, -4) to (14, 8) -> crosses l1 at (14, 0), away from l2's midpoint (14, 2)
+    // ci1 centered at (25, 8) with radius 5 -> center at (25, 8), tangent from (0, 8)
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 20, 0);
+    c.escape();
+    click(c, 14, -4);
+    click(c, 14, 8);
+    c.escape();
+    c.setTool('circle');
+    click(c, 25, 8);
+    click(c, 30, 8);
+    c.escape();
+
+    const lines = h.sketch().entities.filter((e) => e.type === 'line') as Extract<SketchFeature['entities'][number], { type: 'line' }>[];
+    const [l1, l2] = [lines[0]!, lines[1]!];
+    const ci1 = h.sketch().entities.find((e) => e.type === 'circle') as Extract<SketchFeature['entities'][number], { type: 'circle' }>;
+
+    // Start a line from (0, 8) so tangent snap onto ci1 is active
+    c.setTool('line');
+    click(c, 0, 8);
+    const d = 25;
+    const phi = Math.acos(5 / d);
+    const base = Math.PI;
+    const tanPt: [number, number] = [25 + 5 * Math.cos(base - phi), 8 + 5 * Math.sin(base - phi)];
+
+    const trajectory: [number, number][] = [
+      [20.08, 0.06], // near endpoint l1.p2
+      [10.05, 0.04], // near midpoint of l1
+      [14.06, 0.05], // near intersection of l1 & l2 (away from midpoints 10,0 and 14,2)
+      [25.06, 8.05], // near center of ci1
+      [tanPt[0] + 0.05, tanPt[1] + 0.05], // near tangent on ci1
+      [40, 25], // free space away from all snaps
+    ];
+
+    const recordPass = (ctrl = false) =>
+      trajectory.map(([x, y]) => {
+        c.pointerMove(at(x, y, { ctrl }), false);
+        const v = c.getView();
+        return { kind: v.snap?.kind ?? null, p: v.snap?.p ?? null, inference: v.inference, hint: v.hint };
+      });
+
+    const pass1 = recordPass(false);
+    const pass2 = recordPass(false);
+    expect(pass2).toEqual(pass1);
+
+    // 1. Endpoint snap identifies point and line ID
+    expect(pass1[0]!.kind).toBe('point');
+    expect(pass1[0]!.inference).toBe('重合');
+    expect(pass1[0]!.hint).toContain(l1.p2);
+    expect(pass1[0]!.hint).toContain(l1.id);
+
+    // 2. Midpoint snap identifies line ID
+    expect(pass1[1]!.kind).toBe('midpoint');
+    expect(pass1[1]!.inference).toBe('中點');
+    expect(pass1[1]!.hint).toContain(l1.id);
+
+    // 3. Intersection snap identifies both intersecting line IDs
+    expect(pass1[2]!.kind).toBe('intersection');
+    expect(pass1[2]!.inference).toBe('交點');
+    expect(pass1[2]!.hint).toContain(l1.id);
+    expect(pass1[2]!.hint).toContain(l2.id);
+
+    // 4. Circle center snap identifies center point ID and circle ID
+    expect(pass1[3]!.kind).toBe('point');
+    expect(pass1[3]!.inference).toBe('重合');
+    expect(pass1[3]!.hint).toContain(ci1.center);
+    expect(pass1[3]!.hint).toContain(ci1.id);
+
+    // 5. Tangent snap identifies circle ID
+    expect(pass1[4]!.inference).toBe('相切');
+    expect(pass1[4]!.hint).toContain(ci1.id);
+
+    // 6. Leaving snap zone clears inference
+    expect(pass1[5]!.kind).toBe('free');
+    expect(pass1[5]!.inference).toBeNull();
+
+    // 7. Replaying with Ctrl held suppresses all snaps and inferences
+    const ctrlPass = recordPass(true);
+    for (const step of ctrlPass) {
+      expect(step.kind).toBe('free');
+      expect(step.inference).toBeNull();
+    }
+  });
+});

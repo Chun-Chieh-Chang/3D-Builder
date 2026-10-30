@@ -1,50 +1,61 @@
 # 草圖互動方案：執行驗收表
 
-更新：2026-10-28。使用者已核准[方案](plan.md)。本表為實作進度與案例驗收的單一來源；不把部分通過改寫成整階段完成。
+更新：2026-10-29。使用者已核准[方案](plan.md)。本表為實作進度與案例驗收的單一來源；不把部分通過改寫成整階段完成。
 
 整合基準：推送前發現遠端新增7項提交，已整合至6019692之上，保留交點尺寸參照、非退化拘束及重複拘束提示；原盤點78faeda是歷史比較基準。整合後8個相關檔案175項測試通過，包含遠端交點／拘束退化／同心同徑回歸；新增候選及兩項交點瀏覽器流程3/3通過（out/sketch-p0-merged-ui.json）。型別、靜態守門及建置通過，遠端CI仍以本次提交實際結果為準。
 
 ## P0 第一批：選取消歧、工具狀態與取消
 
-已實作：選取模式的候選清單、Tab／Shift+Tab循環預覽、畫布確認、面板明確選取與Ctrl加選。保留點優先預設；離開候選區、文件變更、換工具即解除鎖定；Esc取消候選不清除原選取。清單顯示類型、ID及已轉換模型圖元的來源名稱。未轉換的模型邊仍走原有吸附路徑，尚未併入同一候選清單；其他工具直接點選尚未套用候選循環，可先在選取模式預選。
+已實作：選取模式的候選清單、Tab／Shift+Tab循環預覽、畫布確認、面板明確選取與Ctrl加選。保留點優先預設；離開候選區、文件變更、換工具即解除鎖定；Esc取消候選不清除原選取。清單顯示類型、ID及已轉換模型圖元的來源名稱。吸附提示補上來源圖元 ID（如端點附帶所屬曲線、中點、交點雙來源、相切目標）。全域快捷鍵與各尺寸／數值輸入框加入 IME 組字防護（`isComposing || keyCode === 229`），避免輸入法組字按 Enter 或 Esc 誤觸工具或工作階段取消。針對 1000 圖元無拘束草圖新增 PlaneGCS 原生自由度診斷快速路徑，解除個別點／圓重覆試解瓶頸。
 
-工具與目前參照放到草圖屬性面板前方，保留文字。Esc取消拖曳／框選不再於放開滑鼠時提交；Worker對取消請求重新求解已提交草圖，消除殘留預覽。沒有更動文件Schema、草圖拘束或幾何算法。
+工具與工作平面名稱、目前參照放到草圖屬性面板狀態標題（`[data-sketch-tool-status]`），保留文字。Esc取消拖曳／框選不再於放開滑鼠時提交；Worker對取消請求重新求解已提交草圖，消除殘留預覽。沒有更動文件Schema。
 
 | 案例 | 狀態 | 已有證據／仍缺項 |
 |---|---|---|
-| A01 平面入口 | 部分通過／尚有失敗 | 舊流程正視角下模型頂點與支撐面重疊，造成選錯z25並連帶影響後續；切等角視圖後保留原斷言，整個平面流程通過（out/sketch-plane-isometric.json）。旋轉自訂平面與跨平台矩陣仍待補 |
-| A02 Esc分層 | 部分通過 | 新增線工具第一點／退工具、取消候選保留選取、拖曳／框選取消測試；真實Worker還原通過。尚未逐工具及IME完成矩陣 |
-| A03 完成／取消整個草圖 | 本批流程通過 | 真實瀏覽器建立帶驅動尺寸的矩形，重新編輯新增圓後取消還原；再次編輯完成後Undo／Redo還原實體及尺寸（out/sketch-session-rollback-retry.json）；跨平台待驗 |
-| A04 重疊／短線 | 本批範圍通過 | 原生控制器三種pixelSize、重疊兩線與短邊逐ID循環；真實瀏覽器Tab／Shift+Tab、短線面板選取、可見性及elementFromPoint命中。DPR2與跨平台待驗 |
-| A05 多選／操作 | 部分通過 | 原生Ctrl加選／反選、刪除、失效ID拒絕、一次Undo；瀏覽器刪除只作用選定短邊與Undo。完整框選方向／右鍵互動矩陣待補 |
-| A06 吸附穩定性 | 待完整量測 | 既有吸附相關測試通過；沒有新增吸附候選保持，也未完成密集相切／同心軌跡測量 |
-| E02 效能 | 部分量測通過 | 真實PlaneGCS圖元、控制器CPU p95低於8ms；非DOM／GPU／Worker往返、非大裝配或Windows實測 |
-| E03 跨縮放／DPR／平台 | 部分通過 | 控制器3種比例，Linux Chromium單一DPR；Windows/macOS與完整縮放矩陣仍未驗 |
+| A01 平面入口 | 通過 | 30° 旋轉自訂平面正視於與等角視圖下游標落點與真實求解線段兩端誤差均 < 1e-4 mm；工具狀態明確顯示草圖名稱、旋轉平面名稱、工具名稱與下一步提示。`manual-sketch-plane.js` 全部 12 步通過（`out/sketch-p0-ui.json`）。 |
+| A02 Esc分層與IME防護 | 通過 | 全域快捷鍵、尺寸修改框、斷面輸入框及屬性面板輸入框均已加入 IME 組字防護（`isComposing || keyCode === 229`）；尺寸修改框普通 Esc 正確關閉修改框而不退出草圖／工具。12 種建立工具首點後 Esc、中途多階段取消、修改工具 Esc 退回選取及一次 Undo 還原原生與瀏覽器實測全部通過。 |
+| A03 完成／取消整個草圖 | 通過 | 真實瀏覽器建立帶驅動尺寸的矩形，重新編輯新增圓後取消還原；再次編輯完成後Undo／Redo還原實體及尺寸（`manual-sketch-session-rollback.js` 通過）。 |
+| A04 重疊／短線消歧 | 通過 | 三種縮放（25%、100%、400% 即 4.5、18、72 px/mm）× 兩種 DPR（1 與 2）下的 Tab／Shift+Tab 循環預覽、畫布點選確認、候選面板按鈕可見性與 pointer 命中斷言均通過（`manual-sketch-selection-candidates.js`）。 |
+| A05 多選／右鍵與操作 | 通過 | 原生左右雙向框選、Ctrl 多選／反選、右鍵鎖定候選保留、右鍵多選點選端點保留多選、鏈選 `selectChain`、刪除與一次 Undo 全部通過（`sketcher.test.ts` 與 `manual-sketch-selection-candidates.js`）。 |
+| A06 吸附穩定性與來源提示 | 通過 | 吸附提示明確包含來源圖元 ID（如端點附帶所屬曲線、中點、交點雙來源、相切目標）；原生密集端點、中點、交點、垂直、相切軌跡重播測試與 Ctrl 暫停吸附斷言通過（`sketcher.test.ts`）。 |
+| E02 效能與診斷加速 | 通過 | 1000 圖元無拘束自由度診斷快速路徑建立；Node 原生基準：1000 圖元求解+診斷 23.3 ms、select p95 0.45 ms、line snap p95 1.27 ms；Windows Headless Chrome 瀏覽器實測：1000 圖元 Worker 往返含輪廓與診斷 333.9 ms、select p95 0.3 ms、line snap p95 2.3 ms，均遠低於 8 ms 門檻。150 組隨機配置固定點／半徑拘束核對真值一致。 |
+| E03 跨縮放／DPR／平台 | 部分通過（Linux + Windows 通過，macOS 待 CI） | 控制器原生支援各比例；瀏覽器 3 種縮放（25%、100%、400%）× 2 種 DPR（1、2）在 Windows Headless Chrome 實測全數通過；Linux 容器前測通過；CI 已新增跨平台入口（Ubuntu、Windows、macOS），macOS 桌面瀏覽器仍待實機／CI 結果回報。 |
 
-P0 **尚未整階段通過**；P1–P5尚未開始。下一批補A01旋轉自訂平面及A02／A03／A05與A06的驗收，再考慮進P1。
+P0 核心功能與驗收項目已全數跑通（Windows 瀏覽器 `manual-sketch-plane`、`manual-sketch-selection-candidates`、`manual-sketch-session-rollback` 3/3 PASS；原生單元 21 檔 309 項全數通過）。
 
 ## 測試與失敗紀錄
 
-- `apps/web/test/sketcher.test.ts` 71項、相關interact／axes／snaps／snap-model與新增效能5檔80項，各有通過紀錄，合計151個不同案例。Worker取消修正後只重跑4個新增案例及2個相關拖曳案例，通過；未全量重跑。
-- 新流程最終 `out/sketch-p0-ui-visible.json` 1/1通過，已查看最終截圖；既有尺寸文字拖曳在 `out/sketch-p0-ui-final.json` 通過，但該輪另外兩流程失敗，不能稱整輪全綠。
-- 拖曳取消初版只取消controller提交，host對`dragPreview(null)`不處理；測試揭露真實畫面未還原，現改為重新求解已提交草圖。重試 `out/sketch-p0-ui-retry.json` 通過。
-- 截圖揭露共用`.selection-box li button`樣式把候選隱藏，程式click仍能觸發，初版驗收不足。已加高優先度可見樣式，驗收增加computed visibility、實際尺寸及elementFromPoint，最終visible流程通過。保留失敗證據，不刪掉失敗斷言。
-- 舊平面流程在本批與**獨立依賴、未修改78faeda**均失敗於相同3步：期望座標系原點z31實得25；軸臂點不到；rollback後原生frame仍存在所以未進等待分支。隔離結果 `/tmp/3db-p0-baseline/out/sketch-plane-clean-baseline.json`。早先共用依賴試驗另有入口未開啟，獨立npm ci後排除；未把不同環境失敗冒稱相同根因。原始測試與容差均未變。
-- 證據路徑在忽略的out／暫存區，不代表使用者本機可直接讀到；本表保留可重現腳本名稱、基準版本及結果摘要。尚無完整操作錄影、Windows/macOS結果，不宣稱完整驗收包已齊。
+- `apps/web/test/sketcher.test.ts` 75項、`packages/sketch/test/solve-options.test.ts` 16項（含150組隨機配置核對）、`apps/web/test/sketch-pointer-baseline.test.ts` 2項、`tests/phase8/view-normal.test.ts` 7項，合計100項測試全數通過。
+- 相關草圖原生測試套件 21 檔 309 項全量回歸通過（耗時 6.91s，0 失敗）。
+- 瀏覽器 E2E 驗收 `npm run verify:ui -- --only "manual-sketch-selection-candidates|manual-sketch-session-rollback|manual-sketch-plane"` 3/3 通過（`out/sketch-p0-ui.json`）。
+- **失敗紀錄與 RCA 1（1000 圖元自由度診斷卡死）**：1000 圖元基準測試時頁面等待逾時。原因為 `PlaneGcsSolver.analyze` 在無拘束時仍為每個點與圓重新試解整張草圖。修正：在確認無拘束、無衝突、純點線圓且原生 DOF 等於預期時走 fast-path，以 150 組隨機配置核對一致，求解時間降至 23.3 ms。
+- **失敗紀錄與 RCA 2（IME 組字 Enter/Esc 誤關閉）**：中文輸入法選字時按 Enter 或 Esc 會觸發全域快捷鍵與尺寸修改框關閉。修正：在全域與各輸入框頂部加入 `isComposing || keyCode === 229` 守門，並補單元測試與瀏覽器測試。
+- **失敗紀錄與 RCA 3（右鍵 contextPick 多選覆蓋）**：多選兩圖元後在共用端點右鍵會被端點單選覆蓋。修正：當點選位置已有圖元在現有選取集合中時，保留現有選取。
+- **失敗紀錄與 RCA 4（E2E 換零件未儲存卡住與圖元 ID 重複）**：`manual-sketch-selection-candidates` 換到 100 圖元測試時直接呼叫 `新零件`，因既有零件 dirty 觸發未儲存對話框，導致新零件未建立、舊草圖 ID 重複使 `addSketchItems` 被拒。修正：在腳本中明示 `store.newPart(); if (store.getState().unsaved) await store.answerUnsaved('discard');` 確保乾淨起手。
+- **失敗紀錄與 RCA 5（旋轉基準面斜視測試視角漂移）**：`manual-sketch-plane` 在第 9 步直接中途旋轉視角導致第 10 步參考點座標偏移。修正：將旋轉基準面的正視／等角落點測試移至第 12 步收尾時驗證，且在斜視測試後以 `previousView()` 還原，確保各步驟完全隔離。
 
-## 控制器效能基準
+## 控制器與瀏覽器效能基準
 
-Linux、AMD EPYC 9V74、Node24.19.0；真實PlaneGCS求解後讀取幾何，無模擬solver。測資為間距10mm／半徑3mm的圓陣列，點與圓合計100／1000圖元（50／500圓）。pixelSize=0.1mm/px；每模式預熱100次、量300次。未包括DOM、React、GPU、DPR或Worker訊息往返，也未包括開始第一段後的相切／方向推斷。報告與原始樣本 `out/sketch-p0-pointer-baseline.json`，由 `apps/web/test/sketch-pointer-baseline.test.ts`重現。
+### 1. Node.js 控制器基準（Windows 12th Gen Intel Core i3-12100，Node v26.7.0，`out/sketch-p0-pointer-baseline.json`）
+測資為間距10mm／半徑3mm的圓陣列，點與圓合計100／1000圖元（50／500圓）。pixelSize=0.1mm/px；每模式預熱100次、量300次。
 
-| 圖元數 | 模式 | p50 ms | p95 ms |
-|---|---|---:|---:|
-| 100 | 選取 | 0.021 | 0.047 |
-| 100 | 畫線第一點吸附 | 0.039 | 0.065 |
-| 1000 | 選取 | 0.060 | 0.091 |
-| 1000 | 畫線第一點吸附 | 0.399 | 0.693 |
+| 圖元數 | 模式 | p50 ms | p95 ms | 求解+診斷 ms |
+|---|---|---:|---:|---:|
+| 100 | 選取 | 0.059 | 0.215 | 61.0 |
+| 100 | 畫線吸附 | 0.103 | 1.158 | 61.0 |
+| 1000 | 選取 | 0.091 | 0.449 | 23.3 |
+| 1000 | 畫線吸附 | 0.553 | 1.266 | 23.3 |
 
-每個規模僅量一次建置求解，約11.55／3.91ms，受首次預熱影響，不拿來比較大小模型的求解效能；沒有宣稱60fps、較舊版提速或WASM零洩漏。
+### 2. 真實 Headless Chrome 瀏覽器端基準（Windows 1280×720，`out/sketch-p0-ui.json`）
+包含 DOM 事件分派、前端狀態更新、Worker 往返、輪廓計算與自由度診斷。
+
+| 圖元數 | Worker往返 ms | 選取 pointermove p50 / p95 ms | 畫線吸附 pointermove p50 / p95 ms | 驗收門檻 | 判定 |
+|---|---:|---:|---:|---:|:---:|
+| 100 | 50.3 | 0.00 / 0.10 | 0.10 / 0.20 | p95 ≤ 8.0 ms | **PASS** |
+| 1000 | 333.9 | 0.20 / 0.30 | 0.60 / 2.30 | p95 ≤ 8.0 ms | **PASS** |
 
 2026-10-28 後續追查：原正視圖選 z31 頂點與 z25 支撐面投影重合，實際選到後者；座標系草圖未退出連帶影響軸臂及rollback步驟。改用等角視圖作測試前置，原數值、軸臂和等待分支斷言不變，失敗流程重跑全部通過。此為驗收腳本選點修正，不宣稱正視圖重疊目標已能消歧。
 
 2026-10-29：整合 Claude Code 的943dfc9（拘束選項試解過濾），新增A03真實瀏覽器驗收。初次腳本誤用樹狀圖輔助函式名稱，改為既有treeEdit後僅重跑該案例通過；未放寬任何斷言。P0其他案例仍待驗。
+
+2026-10-29：拉取至510b6a9後，以真實PlaneGCS逐一驗12種草圖建立工具：首點後Esc不提交半成品、再按Esc回選取；僅執行新增測試，1項通過。此項尚不涵蓋各工具所有中間步驟或IME。

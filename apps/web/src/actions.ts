@@ -322,6 +322,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'offset-sketch', get label() { return t('act.offsetSketch'); }, group: 'sketch', enabled: (s) => partIdle(s) && sketchPlane(s) !== null, run: () => store.newOffsetSketch() },
   { id: 'angle-sketch', get label() { return t('act.angleSketch'); }, group: 'sketch', enabled: (s) => partIdle(s) && sketchPlane(s) !== null, run: () => store.newAngleSketch() },
   { id: 'sketch-picture', get label() { return t('act.sketchPicture'); }, group: 'sketch-tool', enabled: sketching, run: () => void store.addSketchPicture() },
+  { id: 'sketch-dxf', get label() { return t('act.sketchDxf'); }, group: 'sketch-tool', enabled: sketching, run: () => void store.importSketchDxf() },
   ...SKETCH_TOOLS.map(
     (tool): UiAction => ({
       id: `tool-${tool}`,
@@ -523,7 +524,7 @@ function runViewKey(c: ViewKeyCommand): void {
 
 export function installShortcuts(): () => void {
   const onKey = (e: KeyboardEvent) => {
-    if (e.defaultPrevented) return; // A viewport gesture or local editor already owns this key.
+    if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return; // A viewport gesture, IME composition, or local editor already owns this key.
     if (e.key === 'Escape' && store.cancelFeatureGesture) { e.preventDefault(); e.stopImmediatePropagation(); store.cancelFeatureGesture(); return; }
     const target = e.target as HTMLElement | null;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) return;

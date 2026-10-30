@@ -196,7 +196,7 @@ describe('an IGES file in a part (F2.2: I4, I5, I6)', () => {
     const file = await readPartFile(bytes);
     expect(file.warnings).toEqual([]);
     expect(file.doc.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(file.doc.schemaVersion).toBeGreaterThanOrEqual(85); // the version that brought IGES data
+    expect(file.doc.schemaVersion).toBeGreaterThanOrEqual(86); // the version that brought IGES data
     expect(file.doc.blobs).toEqual([blob()]);
     expect(file.blobs.get(sha)).toEqual(igs);
     const after = new Regenerator(kernel, solver, file.blobs);

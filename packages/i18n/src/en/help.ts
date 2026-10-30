@@ -358,6 +358,15 @@ export const help: Translation = {
 
   'help.sketchPicture.see': 'sketch tool-line tool-dimension',
 
+  'help.sketchDxf.summary': 'Bring the lines, arcs, circles, ellipses, splines and texts of a DXF drawing into the sketch being edited.',
+
+  'help.sketchDxf.body':
+    'While a sketch is edited, press "Import DXF…" and pick an ASCII DXF file. The dialog shows its unit, its extent and how many entities each layer has; tick the layers to import (a layer such as the centre lines can come in as construction geometry) and press "Import": everything is added in one step, and one undo takes it back.\n\n- Read: lines, circles, arcs, ellipses, polylines (with bulges as arcs), splines, points, text and multiline text; blocks are expanded (nested, scaled, turned, mirrored, in arrays). Dimensions, hatches and the like are not imported and are counted after the import; paper space is not imported.\n- The unit is turned into mm by the file\'s $INSUNITS; a file that does not say its unit is imported in mm, and the dialog asks you to check the size by its extent.\n- Exact: lines, circles, arcs, whole ellipses, splines that are not rational (as Bézier pieces). Approximated (at most 0.001 mm off, said after the import): part of an ellipse, a rational spline, an arc scaled unevenly by a block. A spline given only by fit points cannot be reproduced exactly and is not imported.\n- Ends closer than a millionth of the drawing\'s size become one point, so an outline can be extruded or cut straight away; no other relation is added, and the sketch stays under-defined: add dimensions or "Fix" yourself.\n- An entity with a value that makes no sense (not a number, radius 0, length 0, not in the XY plane) is not imported and never changed; why is said, one by one, after the import. A file with more than 5000 curves, or whose blocks expand to too much, is not imported at all.\n- Binary DXF and DWG are not read: save as ASCII DXF in the CAD program first.',
+
+  'help.sketchDxf.keywords': 'DXF import drawing layers AutoCAD 2D sketch construction',
+
+  'help.sketchDxf.see': 'sketch sketch-picture tool-dimension',
+
   'help.extrude.summary': 'Pulls the selected sketch out to a thickness and adds it to the part.',
   'help.extrude.body':
     'Select a sketch, then press this command. In the panel:\n\n- End condition: blind, mid plane, through all, up to a face, up to next, up to a vertex, up to a body, offset from a surface.\n- Reverse direction, draft (with "draft inward"), direction 2 (pull the other way too), thin feature (only a wall of the given thickness; inward, mid plane or two different thicknesses).\n- When the sketch has several closed regions, the "Selected contours" list lets you take only some of them (at least one stays).\n- Merge result: when checked it joins the bodies it touches, otherwise it is a new body.\n\nChecked examples: a 20 × 10 rectangle, depth 10, is 2000 mm³; with a 3° outward draft about 2160.89; direction 2 with depth 4 is 2800; a thin wall of 2 inward is 1040.',
@@ -579,7 +588,7 @@ export const help: Translation = {
   'help.moveFace.summary': 'Pushes the selected flat face by a distance and extends the faces around it, to edit an imported model directly.',
 
   'help.moveFace.body':
-    'Click a planar face, type the "distance" and press ✔: the face moves along its outward normal and the neighboring faces extend or shorten with it; it is for editing imported models directly.\n\n- A negative value goes into the material.\n- Slanted faces keep their slope.\n- Faces tangent to it (fillets, for example) have to be dealt with first; otherwise the feature fails and says why.',
+    'Select the planar end face, click Target plane, then select a datum in the tree or a parallel planar model face in the graphics area. The target dropdown also selects datum planes. Confirm to extend or shorten automatically, preserving conical taper without calculating distance or radius. Target edits regenerate the feature. Targets must precede this feature; crossing the cone apex is rejected. Tangent fillets must be handled first. Choose Distance to return to distance mode.',
 
   'help.moveFace.keywords': 'move face direct edit imported distance',
 

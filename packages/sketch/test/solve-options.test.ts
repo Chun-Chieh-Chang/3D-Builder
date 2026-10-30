@@ -215,4 +215,118 @@ describe('relations added in Phase 1', () => {
     const dir = [a2[0] - a1[0], a2[1] - a1[1]];
     expect(Math.abs(radius[0]! * dir[0]! + radius[1]! * dir[1]!)).toBeLessThan(1e-6);
   });
+
+  it('matches native pinned-point and pinned-radius DOF probes across 150 random configurations (including unconstrained fast-path)', () => {
+    let seed = 20261029;
+    const next = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 0x100000000;
+    };
+    let fastPathCount = 0;
+    let constrainedCount = 0;
+    for (let i = 0; i < 150; i++) {
+      const entities: SketchEntity[] = [];
+      const constraints: SketchConstraint[] = [];
+      const nPoints = 2 + (i % 5);
+      for (let p = 0; p < nPoints; p++) {
+        entities.push({
+          id: `p${p}`,
+          type: 'point',
+          x: Math.round((next() * 80 - 40) * 100) / 100,
+          y: Math.round((next() * 80 - 40) * 100) / 100,
+        });
+      }
+      const nLines = i % 3;
+      for (let l = 0; l < nLines && l + 1 < nPoints; l++) {
+        const p1 = `p${l}`;
+        const p2 = `p${l + 1}`;
+        const a = entities[l] as Extract<SketchEntity, { type: 'point' }>;
+        const b = entities[l + 1] as Extract<SketchEntity, { type: 'point' }>;
+        if (Math.hypot(b.x - a.x, b.y - a.y) < 1) b.x += 5;
+        entities.push({ id: `l${l}`, type: 'line', p1, p2 });
+      }
+      const nCircles = (i >> 1) % 3;
+      for (let c = 0; c < nCircles; c++) {
+        entities.push({
+          id: `ci${c}`,
+          type: 'circle',
+          center: `p${c % nPoints}`,
+          radius: Math.round((2 + next() * 15) * 100) / 100,
+        });
+      }
+      const constrained = i % 2 === 1;
+      if (constrained) {
+        constrainedCount++;
+        constraints.push({ id: 'fix0', type: 'fix', point: 'p0' });
+        if (nLines > 0 && i % 4 === 1) {
+          const a = entities[0] as Extract<SketchEntity, { type: 'point' }>;
+          const b = entities[1] as Extract<SketchEntity, { type: 'point' }>;
+          b.y = a.y;
+          if (Math.abs(b.x - a.x) < 1) b.x = a.x + 10;
+          constraints.push({ id: 'h0', type: 'horizontal', a: 'l0' });
+        }
+        if (nCircles > 0 && i % 3 === 0) {
+          const ci = entities.find((e) => e.id === 'ci0') as Extract<SketchEntity, { type: 'circle' }>;
+          constraints.push({ id: 'r0', type: 'radius', circle: 'ci0', value: String(ci.radius) });
+        }
+      } else {
+        fastPathCount++;
+      }
+      const s = sketch(entities, constraints);
+      const analyzed = solver.solve(s, { analyze: true });
+      expect(analyzed.status).not.toBe('failed');
+      expect(analyzed.conflicting).toEqual([]);
+      expect(analyzed.redundant).toEqual([]);
+
+      // Verify every point and circle against direct native solver probes with explicit fix/radius constraints
+      const initial = {
+        points: entities.filter((e): e is Extract<SketchEntity, { type: 'point' }> => e.type === 'point').map((p) => {
+          const g = analyzed.geometry.get(p.id);
+          return { id: p.id, x: g?.type === 'point' ? g.p[0] : p.x, y: g?.type === 'point' ? g.p[1] : p.y };
+        }),
+        radii: entities.filter((e): e is Extract<SketchEntity, { type: 'circle' }> => e.type === 'circle').map((c) => {
+          const g = analyzed.geometry.get(c.id);
+          return { id: c.id, radius: g?.type === 'circle' ? g.r : c.radius };
+        }),
+      };
+      const pointDof = new Map<string, number>();
+      for (const p of initial.points) {
+        const pinned: SketchFeature = {
+          ...s,
+          entities: s.entities.map((e) => (e.type === 'point' && e.id === p.id ? { ...e, x: p.x, y: p.y } : e)),
+          constraints: [
+            ...s.constraints.filter((c) => !(c.type === 'fix' && c.point === p.id)),
+            { id: `@pin_${p.id}`, type: 'fix', point: p.id },
+          ],
+        };
+        const pr = solver.solve(pinned, { initial });
+        pointDof.set(p.id, analyzed.dof - pr.dof);
+      }
+      for (const e of entities) {
+        const pts = e.type === 'point' ? [e.id] : e.type === 'line' ? [e.p1, e.p2] : e.type === 'circle' ? [e.center] : [];
+        const freePts = pts.map((id) => ({ id, dof: pointDof.get(id)! })).filter((x) => x.dof !== 0);
+        let radiusFree = false;
+        if (e.type === 'circle') {
+          const hasRadius = s.constraints.some((c) => (c.type === 'radius' || c.type === 'diameter') && c.circle === e.id && c.driving !== false);
+          if (!hasRadius) {
+            const g = analyzed.geometry.get(e.id) as Extract<SolvedGeometry, { type: 'circle' }>;
+            const pr = solver.solve(
+              { ...s, constraints: [...s.constraints, { id: `@rad_${e.id}`, type: 'radius', circle: e.id, value: String(g.r) }] },
+              { initial },
+            );
+            radiusFree = analyzed.dof - pr.dof > 0;
+          }
+        }
+        const expectedStatus = freePts.length === 0 && !radiusFree ? 'fully' : 'under';
+        expect(analyzed.entityStatus?.get(e.id)).toBe(expectedStatus);
+        if (expectedStatus === 'under') {
+          expect(analyzed.entityFreedom?.get(e.id)).toEqual({ points: freePts, radius: radiusFree });
+        } else {
+          expect(analyzed.entityFreedom?.has(e.id)).toBe(false);
+        }
+      }
+    }
+    expect(fastPathCount).toBe(75);
+    expect(constrainedCount).toBe(75);
+  });
 });
