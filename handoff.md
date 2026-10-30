@@ -8,9 +8,10 @@
 ## 1. 接續入口與當前代碼基準 (Current Baseline)
 
 - **目前分支**：`main`
-- **最新 Commit**：`5360fda` (`feat(sketch): complete sketch interaction P0 validation and DOF diagnosis fast-path`)
-- **遠端狀態**：本地 `main` 已與 `origin/main`（`5360fda`）同步。
-- **工作區狀態**：工作區已整合圓錐/柱面非輪廓接縫線消除與移動面幾何修復，所有本機靜態檢查與 Smoke Tests 已 100% 跑通，準備提交。
+- **最新 Commit**：`5594208` (`perf(sketch): eliminate Map allocation in snap curve hit testing`)
+- **遠端狀態**：本地 `main` 已與 `origin/main`（`5594208`）同步。
+- **CI 狀態**：GitHub Actions 三平台矩陣（`ubuntu-latest`, `windows-latest`, `macos-latest`）**`✔ 3 / 3` 全數綠燈通過**（Run `40989457377`）。
+- **工作區狀態**：乾淨無任何未追蹤或未提交修改。
 
 ---
 
