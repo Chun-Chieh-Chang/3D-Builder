@@ -75,7 +75,14 @@
 - **下一步**：
   1. E03：P1 輸入框在 macOS 鍵盤與 DPR2／不同縮放待 CI／實機驗證。
   2. 既有限制另案：PlaneGCS 對約 900 個拘束、大多已定義的草圖 `Aborted(OOM)`（150 個標尺寸矩形可重現，100 個 52 ms）。
-  3. 接續推進草圖互動方案 Phase P2。
+  3. 接續推進草圖互動方案 Phase P2。（已開工，見 §3c）
+
+## 3c. 2026-10-30 P2 已開工：P2-1 共用操作計畫預覽管道（G06，trim 為代表）已完成並確效
+
+- **範圍**：方案 P2「修改預覽與連續路徑」的第一刀。此前修剪／延伸／圓角／倒角／偏移／鏡射六個 PICK 工具點擊即提交、無最終結果預覽；P2-1 建立共用管道——hover 以**與提交同一純 op** 算候選 `SketchEdit`，預覽以 `remove`／`change`／`add` 三角色畫在發生位置，確認才試解提交，取消零文件變更、預覽不產生 Undo。Schema 未變更。
+- **接法**（續作 P2-2 的人必讀）：`apps/web/src/sketcher/controller.ts` 的 `operationPlan()`（在 `updateSnap` 的 PICK 分支以暫存 `IdAllocator` 呼叫純 op）＋模組層 `editPreviewShapes(edit, geometry)`（新增圖元用 op 在 `Parts.point` 攜帶的暫存座標渲染）；`PreviewShape.role` → `overlay.ts previewCurves` 著色 → `theme.ts`／`app.css` 的 `--sketch-op-{add,change,remove}`。計畫在文件版本變更後由 `snapshot()` 丟棄（`candidateDoc` 同一模式），`leave()`／`resetTool()` 也清。
+- **確效**：新 `apps/web/test/sketch-op-preview.test.ts` 3 項（真值差 ≤1e-6、hover 文件不變、一次 Undo）；`apps/web` 30 檔 308 項全過；typecheck／lint 四項 PASS；`verify:ui --only manual-sketch-entry` 1/1（新主題變數實機解析）。證據見 DEV_LOG 同日「P2 第一刀」條目與[驗收表](docs/design/sketch-interaction/acceptance.md)新節。
+- **下一刀**：P2-2 把延伸／圓角／倒角／偏移／鏡射接進 `operationPlan()`（每隻工具決定 hover 計畫的觸發時機，鏡射／偏移沿用 `picks` 選取），之後 P2-3 偏移兩側／封口、P2-4 掃掠修剪、P2-5 延伸選邊界、P2-6 相切弧接續。
 
 ## 4. 下一階段核心計畫：草圖互動改善方案 (P1 即時尺寸輸入)
 
