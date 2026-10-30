@@ -1,4 +1,4 @@
-import type { Kernel, MeshData, ShapeId, Topology } from '@3db/kernel';
+import { sameSurface, type Kernel, type MeshData, type ShapeId, type Topology } from '@3db/kernel';
 import type { ElementNames } from '@3db/naming';
 import { normalizedViewAxes, rightOf, sheetUp, type ViewAxes, type ViewEdge, type ViewEdgeSet, type ViewVertex } from '@3db/model';
 import { refOf } from './drawingDimensions';
@@ -40,8 +40,15 @@ export function viewEdges(
   // one face, and it is not planar. Nor is the vertex where a whole circle starts and ends: a point of the B-rep, not of the shape. Neither is offered, so that
   // pointing at a hole's outline picks the hole and not the point its circle happens to start at (SolidWorks offers neither).
   const seam = (ei: number) => {
-    const fs = topology.edges[ei]!.faces;
-    return fs.length === 1 && topology.faces[fs[0]!]?.surface !== 'plane';
+    const e = topology.edges[ei]!;
+    const fs = e.faces;
+    if (fs.length === 1 && topology.faces[fs[0]!]?.surface !== 'plane') return true;
+    if (fs.length === 2 && e.geometry?.type === 'circle') {
+      const g0 = topology.faces[fs[0]!]?.geometry;
+      const g1 = topology.faces[fs[1]!]?.geometry;
+      if (g0?.type === 'cone' && g1?.type === 'cone' && sameSurface(g0, g1) && 1 - Math.abs(dot(e.geometry.normal, g0.axis)) <= 1e-6) return true;
+    }
+    return false;
   };
   const closed = (ei: number) => {
     const vs = topology.edges[ei]!.vertices;

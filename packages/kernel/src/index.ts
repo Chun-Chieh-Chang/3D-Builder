@@ -4,3 +4,4 @@ export type { LoadOptions } from './occt';
 export { anyHit, buildBvh, nearestHit, nearestHitAt, triangleNormal, type Bvh } from './rays';
 export { forEachSample, type SampleMesh } from './sampling';
 export { planSectionPath, rightOfPolyline, turnRows, type PathPlane, type SectionPathPlan } from './sectionPath';
+export { inheritBodySurface, sameSurface } from './sameSurface';

@@ -332,6 +332,43 @@ describe('Move Face target plane', () => {
     // Base cylinder (r=15, h=4 at z=-4..0) + extended cone from z=0 (r=10) to z=30 (r=4)
     const expectedVol = Math.PI * 15 * 15 * 4 + (Math.PI * 30 / 3) * (100 + 40 + 16);
     expect(volume(r)).toBeCloseTo(expectedVol, 3);
+    expect(r.body!.names.faces.filter((n) => n.startsWith('loft:side:'))).toEqual(['loft:side:a.ca']);
+  });
+  it('unifies the extended loft cone and omits periodic UV seam lines from mesh.edgeRanges on a stepped shaft (TM0002138)', () => {
+    const p1: Feature = { id: 'p1', name: 'p1', type: 'refPlane', suppressed: false, def: { mode: 'offset', plane: front, distance: '2' } };
+    const p2: Feature = { id: 'p2', name: 'p2', type: 'refPlane', suppressed: false, def: { mode: 'offset', plane: front, distance: '10' } };
+    const doc = build(
+      p1,
+      p2,
+      sketch('sketch0', { kind: 'datum', name: 'p2' }, circle('ci3', 0, 0, 16)),
+      extrude('extrude1', 'sketch0', 'boss', { type: 'blind', depth: '5' }),
+      sketch('sketch1', { kind: 'datum', name: 'p1' }, circle('ci1', 0, 0, 11)),
+      sketch('sketch2', { kind: 'datum', name: 'p2' }, circle('ci2', 0, 0, 15)),
+      { id: 'loft1', name: 'loft1', type: 'loft', suppressed: false, op: 'boss', sections: ['sketch1', 'sketch2'] },
+      sketch('sketch4', { kind: 'datum', name: 'p2' }, circle('ci4', 0, 0, 14)),
+      extrude('extrude2', 'sketch4', 'boss', { type: 'blind', depth: '30' }),
+      { id: 'move1', name: 'move1', type: 'moveFace', suppressed: false, face: face('loft1:cap:start'), distance: '5', target: front },
+    );
+    const r = rebuild(doc);
+    expect(statuses(r).filter((x) => !x.endsWith('=ok'))).toEqual([]);
+    expect(valid(r)).toBe(true);
+    const body = r.body!;
+    // The conical side face remains a single undivided face (no #1 / #2 split):
+    expect(body.names.faces.filter((n) => n.startsWith('loft1:side:'))).toEqual(['loft1:side:sketch1.ci1']);
+    const mesh = kernel.mesh(body.shape);
+    const visibleEdgeNames: string[] = [];
+    for (let g = 0; g < mesh.edgeRanges.length; g += 3) {
+      visibleEdgeNames.push(body.names.edges[mesh.edgeRanges[g + 2]!]!);
+    }
+    // Only the 6 circular contour edges are emitted; none of the single-face longitudinal UV seam edges appear:
+    expect(visibleEdgeNames.sort()).toEqual([
+      '{extrude1:cap:end|extrude1:side:sketch0.ci3}',
+      '{extrude1:cap:end|extrude2:side:sketch4.ci4}',
+      '{extrude1:cap:start|extrude1:side:sketch0.ci3}',
+      '{extrude1:cap:start|loft1:side:sketch1.ci1}',
+      '{extrude2:cap:end|extrude2:side:sketch4.ci4}',
+      '{loft1:cap:start|loft1:side:sketch1.ci1}',
+    ]);
   });
   it.each(Array.from({ length: 100 }, (_, i) => 1 + (((i + 1) * 16807) % 2147483647 % 38000) / 1000))('moves a loft cone to datum height %s preserving its analytic taper', (height) => {
     const doc = coneTarget(height);

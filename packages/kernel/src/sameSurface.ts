@@ -19,12 +19,13 @@ const offLine = (p: V, o: V, d: V) => {
 
 /**
  * Whether two faces lie on one analytic surface, whichever way round it is parametrized (an axis or a normal the other way counts): the same plane,
- * the same cylinder or sphere. Cones, tori and freeform surfaces are not compared: never the same.
+ * the same cylinder, cone or sphere. Tori and freeform surfaces are not compared: never the same.
  */
 export function sameSurface(a: SurfaceGeometry | undefined, b: SurfaceGeometry | undefined): boolean {
   if (!a || !b || a.type !== b.type) return false;
   if (a.type === 'plane' && b.type === 'plane') return parallel(a.normal, b.normal) && Math.abs(dot(sub(b.origin, a.origin), a.normal)) / len(a.normal) <= LENGTH;
   if (a.type === 'cylinder' && b.type === 'cylinder') return Math.abs(a.radius - b.radius) <= LENGTH && parallel(a.axis, b.axis) && offLine(b.origin, a.origin, a.axis) <= LENGTH;
+  if (a.type === 'cone' && b.type === 'cone') return a.convex === b.convex && len(sub(a.apex, b.apex)) <= 1e-5 && parallel(a.axis, b.axis) && Math.abs(Math.abs(a.halfAngle) - Math.abs(b.halfAngle)) <= 1e-6;
   if (a.type === 'sphere' && b.type === 'sphere') return Math.abs(a.radius - b.radius) <= LENGTH && len(sub(a.center, b.center)) <= LENGTH;
   return false;
 }

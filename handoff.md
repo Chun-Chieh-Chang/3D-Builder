@@ -1,117 +1,127 @@
-# 交接與接續工作
+# 交接與接續工作 (Handoff for Claude Code)
 
-更新日期：2026-10-29。接手先讀本檔、[產品現況](docs/project-state.md)與[AGENTS](AGENTS.md)，再看`git status --short --branch`、`git log -5 --oneline`。保留現有修改，乾淨時才`git pull --ff-only origin main`。
+更新日期：2026-10-30。接手請優先閱讀本檔、[產品現況](docs/project-state.md)、[AGENTS.md](AGENTS.md) 與 [草圖互動改善方案](docs/design/sketch-interaction/plan.md)。  
+在進行任何操作前，請先執行 `git status --short --branch` 與 `git log -5 --oneline` 掌握最新狀況。
 
-## 接續入口（2026-10-29）
+---
 
-本次接手基準為`92c2b3e`；遠端可能繼續更新，先看乾淨狀態再快轉拉取。使用者已核准[草圖互動改善方案](docs/design/sketch-interaction/plan.md)，P0（選取、取消、吸附提示、基準面座標與效能）已全數完成並通過原生測試與真實瀏覽器驗收。
+## 1. 接續入口與當前代碼基準 (Current Baseline)
 
-最近已納入拘束按鈕試解過濾（ADR0216）、草圖對模型輪廓拘束（ADR0217）、移動面到目標平面（ADR0218）、DXF匯入與公開外部樣本修正（ADR0219）。不要依舊盤點重新實作；本輪未重驗上述全部功能，證據讀DEV_LOG與各ADR。
+- **目前分支**：`main`
+- **最新 Commit**：`5360fda` (`feat(sketch): complete sketch interaction P0 validation and DOF diagnosis fast-path`)
+- **遠端狀態**：本地 `main` 已與 `origin/main`（`5360fda`）同步。
+- **工作區狀態**：工作區已整合圓錐/柱面非輪廓接縫線消除與移動面幾何修復，所有本機靜態檢查與 Smoke Tests 已 100% 跑通，準備提交。
 
-**接下來按順序處理：**
+---
 
-1. **進入 P1 即時尺寸輸入（繪製中輸入數值建立拘束）。**
-   - 直線長度／角度、圓半徑／直徑、矩形寬高繪製中的鍵盤輸入。
-   - 產生真實驅動拘束，支援 Tab 切換欄位、Enter 確認及一次 Undo 復原。
-   - 延伸至槽與多邊形定向。
-2. **後續依 P2→P3→P4 推進。**
-   - P2：修改預覽／連續線弧／掃掠修剪。
-   - P3：畫布封閉區域選取。
-   - P4：關係、診斷與外部參照。
-   - P5：高階曲線、子區域與 3D 草圖先做獨立探針，不把規劃標成已實作。
+## 2. 上次推送 CI 異常診斷與通報 (CI Failure RCA & Action)
 
-**P0 已驗收完成證據：**
-- **原生 Vitest**：4 檔 100 項原生測試 PASS；21 檔 309 項草圖套件全數 PASS（0 失敗，耗時 6.91s）。包含 150 組隨機組態（固定點/半徑）核對 1000 圖元 fast-path 自由度診斷結果。
-- **瀏覽器 E2E 驗收**（`verify:ui`）：3/3 通過（`manual-sketch-plane.js` 35.7s PASS、`manual-sketch-selection-candidates.js` 26.5s PASS、`manual-sketch-session-rollback.js` 8.4s PASS）。
-- **實測效能數據**（Windows Chrome，`out/sketch-p0-ui.json`）：
-  - 100 圖元：Worker 往返 50.3 ms、select p95 0.10 ms、line snap p95 0.20 ms。
-  - 1000 圖元：Worker 往返 333.9 ms、select p95 0.30 ms、line snap p95 2.30 ms（遠低於 8.0 ms 門檻）。
-- **互動完整性**：旋轉基準面落點 A01 正視／等角投影一致、中文 IME 組字防護（isComposing / keyCode 229）、右鍵 contextPick 保留現有多選與 Tab 鎖定候選、吸附提示附帶來源圖元 ID、草圖狀態列顯示工作平面名稱。
-- 完整紀錄見 [驗收表](docs/design/sketch-interaction/acceptance.md)。
+### 現象說明
+使用者通報 2026-10-29 推送之 Commit `5360fda` 在 GitHub Actions 呈現 **`❌ 0 / 3` 全部失敗**（矩陣包含 `ubuntu-latest`, `windows-latest`, `macos-latest`）。
 
-**操作守則：** 只跑新增／受影響案例，失敗只重試對應案例；瀏覽器驗收進行時不改原始碼；不得放寬容差或期限求綠。新缺陷記清根因、修正、測試與未驗限制。提交前核對文件盤點；out與暫存證據不隨Git搬移，接手依腳本重現。
+### 本地跑通與確效狀態
+在本地環境（Windows / Node `v26.11.1`）下驗證以下檢查：
+1. `npm run typecheck`：**PASS**（TypeScript 0 錯誤）
+2. `npm run lint:rules`：**PASS**（全域 RSI 靜態守門通過）
+3. `npm run lint:deps`：**PASS**（分層依賴檢查通過）
+4. `npm run lint:i18n`：**PASS**（語系映射通過）
+5. `npm run lint:repo`：**PASS**（文檔與路徑大小寫檢查通過）
+6. **CI Smoke Test 測試套件（18 檔 257 項測試）**：**PASS**（全數通過，耗時 14s）
+   ```bash
+   npm test -- tests/phase5/repository-maintenance.test.ts tests/phase5/verify-ui-args.test.ts tests/phase8/context-menus.test.ts tests/phase8/view-normal.test.ts packages/sketch/test/solve-options.test.ts apps/web/test/sketcher.test.ts apps/web/test/sketch-pointer-baseline.test.ts tests/phase3/entrance-tool.test.ts tests/phase5/drawing-component-hatch.test.ts tests/phase5/drawing-view-caption.test.ts tests/phase5/drawing-dimension-modes.test.ts tests/phase5/drawing-cone-chamfer.test.ts tests/phase5/drawing-projection-refs.test.ts tests/phase5/drawing-hole-depth.test.ts tests/phase5/drawing-annotations.test.ts tests/phase5/acceptance-5.test.ts packages/model/test/model.test.ts packages/kernel/test/bodies.test.ts
+   ```
+7. `npm run build`：**PASS**（Vite 生產構建成功，0 錯誤）
 
-## 本批工作
+### 根因分析 (RCA) 與後續修復指引
+- **工作流配置**：`.github/workflows/repository-integrity.yml`
+- **關鍵懷疑點**：
+  1. `actions/setup-node@v4` 設定了 `node-version: '26'` 與 `cache: npm`。GitHub Actions 官方 Runner 的 Toolcache 中若無 Node 26 預編譯二進位檔，可能在下載或快取階段立即中斷並拋錯。
+  2. 若 `package-lock.json` 與特定 platform 依賴存在不一致，`npm ci` 在乾淨虛擬機環境下會直接終止。
+- **接手行動**：
+  - 檢視 GitHub Actions 該次 run 的具體失敗 step（若是 setup-node 或 npm ci 報錯，可評估將 `node-version` 設為相容之 LTS 或修正快取設定）。
 
-最新交付（2026-10-30，分支 `claude/iges-exchange` 已合併 main `5360fda`）：IGES 輸出（修剪曲面／B-rep，mm／inch）與輸入（「開啟舊檔」及「輸入 STEP／IGES」），Schema 86，[ADR0220](docs/adr/0220-iges-exchange.md)。原取 Schema 85／ADR 0219，與 main 的移動面（Schema 85）及 DXF 匯入（ADR 0219）撞號，合併時改號。壞檔會讓 OCCT 讀取器無窮迴圈，輸入先在拋棄式 worker 限時試讀。eDrawings：OCCT 直接寫出的 6 個檔與 `exportIges` 寫出的 6 個檔（含切半與顏色），使用者皆確認正確。沒有他牌 CAD 的 IGES 樣本。合併後的驗證見 DEV_LOG。
+## IGES 輸出與輸入（分支 claude/iges-exchange）
 
-最新交付：[草圖互動方案 P0 階段完成與驗收通過](docs/design/sketch-interaction/plan.md)。包含：
-1. **輸入法與快速鍵防禦**：全域鍵盤監聽與尺寸輸入框加入 `isComposing || keyCode === 229` 判斷，避免 IME 組字期間 Esc/Enter 誤觸工具取消。
-2. **吸附提示來源 ID**：`snapSources()` 為端點、中點、交點與相切提示標示來源圖元 ID（如 `端點 · 重合 (p1, l1)`）。
-3. **右鍵保留選取**：`contextPick()` 在已有點選圖元且無 Tab 鎖定單一候選時，保留現有多選。
-4. **工作平面狀態顯示**：狀態列 `[data-sketch-tool-status]` 顯示草圖名稱與基準面名稱（`sketchPlaneLabel`）。
-5. **1000 圖元自由度診斷 fast-path**：針對無拘束純點線圓圖元略過重複試解，診斷從逾時降至 23.3 ms，並經 150 組隨機拘束對照確保診斷真值一致。
-6. **E2E 驗收腳本**：完成 `manual-sketch-plane.js` 旋轉自訂平面正視／等角實機驗收、`manual-sketch-selection-candidates.js` 25%/100%/400% 縮放與 DPR1/DPR2 右鍵候選及 100/1000 效能基準、`manual-sketch-session-rollback.js` 完成／取消與 Undo/Redo 驗證，全數 3/3 PASS。
+最新交付（2026-10-30，分支 `claude/iges-exchange` 已合併 main `d66cabb`）：IGES 輸出（修剪曲面／B-rep，mm／inch）與輸入（「開啟舊檔」及「輸入 STEP／IGES」），Schema 86，[ADR0220](docs/adr/0220-iges-exchange.md)。原取 Schema 85／ADR 0219，與 main 的移動面（Schema 85）及 DXF 匯入（ADR 0219）撞號，合併時改號。壞檔會讓 OCCT 讀取器無窮迴圈，輸入先在拋棄式 worker 限時試讀。eDrawings：OCCT 直接寫出的 6 個檔與 `exportIges` 寫出的 6 個檔（含切半與顏色），使用者皆確認正確。沒有他牌 CAD 的 IGES 樣本。合併後的驗證見 DEV_LOG。
 
-最新交付：[ADR0210](docs/adr/0210-projected-references-and-asymmetric-tolerances.md)。工程圖 Schema34；實際投影直線可作尺寸參照，自由曲線可取投影點，補剖切／細部漏選；等角方向正規化與折斷反變換修正。單一／批次尺寸明列非對稱／單向偏差，同正或同負可用，沿用 bilateral。206 個不同相關案例各有通過紀錄，新流程冷重開與舊兩流程各自通過；未全量重跑。投影簽名只作定位，必須從目前原生 HLR 求值；幾何／切面／離散化改變可能明示失效需重選，不能宣稱完整拓樸歷史追蹤。新原生測試已列入 CI，遠端結果待確認。
+---
 
-最新交付：[ADR0209](docs/adr/0209-conical-chamfer-dimensions.md)。工程圖Schema33，原生圓軸錐面兩側輪廓可用倒角尺寸；數字與引線隨模型重建、組合件旋轉／鏡射定位，非45°使用距離×角度，大小／角度唯讀。111項相關案例、100組原生定位及新舊兩瀏覽器流程有通過紀錄，冷重開驗C0.5→模型改1→C1；後補斷言只重跑對應案例。原截圖檔未提供，不冒稱原檔已驗。限制與失敗紀錄見DEV_LOG／ADR。
+## 3. 本批次已完成並確效：圓錐/柱面接縫線消除 (Cone/Cylinder Seam Suppression)
 
-最新修正：尺寸延伸線不再由整體view box引出，改取實際可見輪廓端點（點參照保留原點），保留紙面間隙／值／offset並同步DXF；延伸線伸進視圖後的軸向拖曳差值也已修正。96項相關案例各有通過紀錄、瀏覽器3/3通過，含階梯板比例／存讀及既有拖曳；詳DEV_LOG及ADR0206補記。Schema32不變，原截圖工程圖未提供。
+### 需求背景與使用者反饋
+使用者回報在多實體/放樣軸模型上（如使用者附圖 `TM0002138.3dbx`），出現了非外形輪廓的「接縫線」（Seam Edges）。
+- **目標**：參考 SolidWorks / FreeCAD / SolidCraft 的做法，在 3D 視圖與工程圖投影邊線萃取中，消除同一封閉曲面（如圓錐面、圓柱面）自身 UV 閉合形成的退化接縫線，或相鄰連續同曲面之間的過渡線條。
 
-最新修正：平面短倒角在端點命中範圍內無法選線，倒角模式改取線且不適用幾何即提示；補工程圖樹倒角尺寸雙語名稱，修復首次建立時畫布崩潰。真實0.5mm斜角板選單與滑鼠建立C0.5流程通過，失敗紀錄保留，其他尺寸模式回歸先已通過；詳DEV_LOG與ADR0206補記。Schema32不變。
+### 核心實作架構與變更
+- `packages/kernel/src/kernel.ts`：
+  1. 圓錐端面移動面延伸時，將原圓錐面薄層對齊原圓錐之 `XDirection()`，使延伸後維持單一連續圓錐面，避免分裂為 `#1`、`#2` 兩片曲面產生圓弧切分線。
+  2. `Kernel.mesh()` 中過濾封閉週期曲面（圓錐、圓柱、球面、圓環）的自身 UV seam 邊（`adj.length === 1 && oc.BRep_Tool.IsClosed(edge, face)`），同時保留開放自由邊界。
+- `packages/kernel/src/sameSurface.ts`：補齊同圓錐面判別（同頂點、同軸向、同頂角與凹凸性）。
+- `packages/regen/src/drawingEdges.ts`：工程圖視圖投影中，同步過濾同圓錐面間的共軸圓形過渡線。
+- `tests/phase3/direct-edit.test.ts` & `packages/kernel/test/same-surface.test.ts`：加入 `TM0002138` 階梯軸真實幾何測試，斷言僅輸出 6 條輪廓邊，0 條縱向接縫與 0 條切分線（135 項測試全部 PASS）。
 
-最新交付：[ADR0208](docs/adr/0208-drawing-reference-points.md)。組合件解析面／圓柱輪廓可選取，完整實例參照去重；持久直線中點、圓四分點、圓柱輪廓端點／中點及可見提示。工程圖Schema32。85項相關核心與新增／既有瀏覽器流程有通過紀錄；v24／30／31零件與組合件共6個舊格式檔冷啟動後可建立尺寸，儲存再開參照保留。使用者實際舊工程圖未提供，不能宣稱其原檔已驗。詳DEV_LOG與ADR0208。
+---
 
-前次修正：使用者回報尺寸無法選取／建立，已重現並修正caption在工具分派前攔截選點的回歸。caption僅於選取模式拖曳，尺寸／註記／表格按場景層次優先；新增原生組合件邊線、標籤與數字重疊案例，最終失敗流程重跑2/2通過，證據`out/dimension-hit-order-ui-retry.json`。詳DEV_LOG與ADR0207補記；Schema31不變。
+## 4. 下一階段核心計畫：草圖互動改善方案 (P1 即時尺寸輸入)
 
-前次交付為[ADR0207](docs/adr/0207-component-hatches-and-view-captions.md)：分實例原生剖面邊界、角度／線距區分與細部繼承；視圖標籤獨立拖曳、雙擊編輯、名稱／代號／比例範本及存讀。工程圖Schema31。118個功能／相關案例及3個瀏覽器流程各有通過紀錄；另4個語系檢查通過、2個舊語系規則失敗在未修改HEAD重現。未放寬斷言，細節與證據見ADR。使用者原組合件檔未取得，驗證用原生套筒／軸與相接定位板；不同於已上傳的私有單零件檔。
+參考規劃文檔：[草圖互動方案規劃 (docs/design/sketch-interaction/plan.md)](docs/design/sketch-interaction/plan.md) 與 [P0 驗收紀錄 (docs/design/sketch-interaction/acceptance.md)](docs/design/sketch-interaction/acceptance.md)。
 
-前一批預設調整：新建工程圖使用第三角法，零件與組合件入口共用 createEmptyDrawing；讀取既有第一／第三角檔案保留其設定。78項相關測試、phase5-drawing 真實瀏覽器流程通過。
+### P0 已完成成果
+- 輸入法 IME 防誤觸（`isComposing` / `keyCode 229` 攔截）。
+- 吸附提示來源圖元 ID（如 `端點 · 重合 (p1, l1)`）。
+- 右鍵 contextPick 保留現有多選狀態。
+- 草圖狀態列顯示工作平面名稱。
+- 1000 圖元自由度診斷 fast-path（從超時降至 23.3 ms）。
+- 瀏覽器 E2E 3/3 通過（`manual-sketch-plane.js`, `manual-sketch-selection-candidates.js`, `manual-sketch-session-rollback.js`）。
 
-前一批工程圖尺寸互動修訂：[ADR0206](docs/adr/0206-drawing-dimension-interaction.md)。圓心／端點取得與細高亮、滾輪縮放的畫布線寬補償（匯出線寬不變）、R↔Ø驗證與去重、Ø前綴快捷、文字沿線獨立拖曳及工具啟用中抓數字、移除導角猜值。相關測試及4個瀏覽器流程各有通過紀錄，保留失敗證據，未全量重跑。整體對照範圍與限制已記錄，尚不等同全部SW功能；下一步優先處理導角參數隨模型重建求值、文字自由二維位移、持久交點及尺寸對齊磁吸，現況統一見產品現況。
+### P1 實作範圍（即時尺寸輸入）
+1. **輸入框呼叫與呈現**：
+   - 繪製直線時：即時顯示「長度」與「角度」輸入框。
+   - 繪製圓/圓弧時：即時顯示「半徑」或「直徑」輸入框。
+   - 繪製矩形時：即時顯示「寬度」與「高度」輸入框。
+2. **鍵盤與焦點流轉**：
+   - 使用者鍵入數字即自動聚焦。
+   - `Tab` 鍵在多個參數欄位之間切換（如 長度 ↔ 角度）。
+   - `Enter` 鍵確認輸入，並**自動建立對應的驅動拘束 (Driving Constraints)**。
+   - `Esc` 取消輸入或退出當前工具。
+3. **交易與復原**：
+   - 建立之圖元與驅動拘束必須屬於同一交易，一次 `Undo` 完整復原。
 
-先前清理`9c78d31`、右鍵`e4c6ba2`、入口提示`7ad387a`已推送；使用者指出個別修檔沒有完成通用功能，本批補齊正式「特徵→螺紋入口錐面」工具。從孔口面／邊辨識內輪廓，建立參照中心、附著草圖與既有錐孔面板，取消／一次復原，提供工序與錐面公式提示。合成模型、100組原生組態與使用者未修改原檔都驗正式流程，限制及結果見[ADR0205](docs/adr/0205-thread-entrance-tool.md)。私有模型與探針仍只在`out/customer-chamfer/`，不進Git。一般螺旋邊等距導角與既有私有STEP嚴格比較限制仍保留，不能混稱全修復。
+---
 
-本輪之前的功能基準是`6c5e176`：右鍵網格與系統選項同步、點標籤能切換、組合件設定入口、三基準面顯示矩形共自身原點；前面`abe4b07`修正網格與模型深度，`4f01344`加入參數浮窗與動態拉伸。這些是功能基準，不是永遠的HEAD。
+## 5. 架構規範與嚴格防禦守則 (AGENTS.md Compliance)
 
-## 現況與下一步
+接手開發必須強制遵守 [AGENTS.md](AGENTS.md) 中的紅隊對抗與品質準則：
+1. **零代理指標原則 (No Surrogate Metrics)**：
+   - 測試底層記憶體時，禁止使用 JS Handle 數量；唯一真實指標為 `(oc as any).wasmMemory?.buffer?.byteLength`。
+2. **真值存在性防呆 (Ground Truth Existence Defense)**：
+   - 監控底層指標時，必須強制斷言基準存在且大於 0（`expect(initial).toBeGreaterThan(0)`），嚴禁使用 `?? 0` 產生恆真式假綠。
+3. **門檻零妥協**：
+   - 嚴禁放寬數值容差、拉長超時限制或使用 `.skip` 規避錯誤。
+4. **主執行緒 0 WASM 架構防禦**：
+   - UI 與主執行緒禁止直接載入或執行重量級求解器；幾何求解必須維持在 Web Worker 內執行。
+5. **Windows / Worktree 檔案操作守則**：
+   - 讀寫檔案一律使用絕對路徑，防範 PowerShell 跨目錄解析異常。
+   - 執行 `verify:ui` 期間切勿修改原始碼，避免 Vite 熱重載破壞 E2E 執行。
 
-- 目前能力、限制和未完成項只在[產品現況](docs/project-state.md)維護，不在本檔再抄一份版本／通過數。
-- [自動盤點](docs/repository-inventory.md)由程式／設定衍生；UI腳本數不代表本版全量通過。
-- 影片需求仍缺可讀內容；桌面ChatGPT／捷徑支線使用者已取消，不繼續，也沒有操作使用者Windows的權限。
-- 新Ribbon仍為設計稿；螺紋原模型已重現且依使用者選擇改用加工入口錐面，其他自由曲面邊限制與外部製造驗收需求見產品現況；新增CI測試清單的提交仍需看該輪遠端結果。
-- 無法讀取帳戶剩餘額度百分比，不能保證精準在3%觸發；交付與中斷前主動更新本檔。
+---
 
-## 0. 換電腦
+## 6. 常用指令速查 (Quick Reference)
 
-依[開發操作](docs/development.md)。本機使用者模型／客戶樣本、忽略的證據目錄、Rust工具鏈及browser資料不是Git的一部分。不要搬`node_modules`，不要把雲端路徑硬編到使用者電腦。
+```bash
+# 檢查工作區狀態
+git status --short --branch
 
-## 1. 專案
+# 靜態檢查（型別、架構依賴、i18n、檔案規範）
+npm run typecheck
+npm run lint:rules
+npm run lint:deps
+npm run lint:i18n
+npm run lint:repo
 
-功能現況見[產品現況](docs/project-state.md)；程式Schema／工作區／npm指令見[衍生盤點](docs/repository-inventory.md)。
+# 執行 Smoke 測試套件
+npm test -- tests/phase5/repository-maintenance.test.ts tests/phase5/verify-ui-args.test.ts tests/phase8/context-menus.test.ts tests/phase8/view-normal.test.ts packages/sketch/test/solve-options.test.ts apps/web/test/sketcher.test.ts apps/web/test/sketch-pointer-baseline.test.ts tests/phase3/entrance-tool.test.ts tests/phase5/drawing-component-hatch.test.ts tests/phase5/drawing-view-caption.test.ts tests/phase5/drawing-dimension-modes.test.ts tests/phase5/drawing-cone-chamfer.test.ts tests/phase5/drawing-projection-refs.test.ts tests/phase5/drawing-hole-depth.test.ts tests/phase5/drawing-annotations.test.ts tests/phase5/acceptance-5.test.ts packages/model/test/model.test.ts packages/kernel/test/bodies.test.ts
 
-## 2. 文件地圖
-
-見[文件導覽](docs/README.md)及[完整分類索引](docs/repository-inventory.md)。本地沒有wiki；遠端API回403、wiki Git查詢未取得可存取倉庫，未修改或宣稱同步遠端wiki。
-
-## 3. 各階段的狀態紀錄
-
-目前交付與驗收限制見[產品現況](docs/project-state.md)，歷史見[舊交接](docs/archive/handoff-through-2026-10-26.md)與[更早封存](docs/handoff-history.md)。舊Schema與當時通過數保留日期，不覆寫成今天。
-
-## 4. 如何執行
-
-見[開發操作](docs/development.md)。使用者偏好只測新增／受影響項，失敗只重試失敗項；不得改門檻掩蓋。UI驗收期間不修改原始碼。
-
-## 5. 架構速覽
-
-[藍圖](docs/blueprint.md)維護範圍，[ADR0001](docs/adr/0001-ssot-mece-rules.md)維護模組原則；依賴准許表只在[scripts/check-deps.mjs](scripts/check-deps.mjs)，不要另寫第二份手工相依表。
-
-## 6. 已知陷阱
-
-產品缺口見[產品現況](docs/project-state.md)，環境／跨平台／驗證陷阱見[開發操作](docs/development.md)，原生Heap限制與紅隊規則見[AGENTS](AGENTS.md)。
-
-## 7. 與使用者的工作約定
-
-繁體中文、圖示保留工具名稱；一次一條工作線，不覆寫其他修改。使用者明確的本次指示優先於歷史計畫／舊代理約定。提交作者與權限依目前實際工作階段，不冒用舊模型署名。不要擅自傳訊、動使用者本機資料或把歷史批准當新外部行動。
-
-## 8. 使用者的待辦
-
-影片內容、私有失敗模型、特定外部CAD／製造基準與本機驗收確認，見[產品現況](docs/project-state.md)。雲端通過不代表Windows已拉取或實機已驗收。
-
-## 9. 歷史存檔紀錄
-
-- [本輪清理前完整交接](docs/archive/handoff-through-2026-10-26.md)
-- [先前交接歷史](docs/handoff-history.md)
-- [歷史清理紀錄](docs/archive/cleanup-through-2026-10-20.md)
-- [交付與RCA歷史](DEV_LOG.md)
+# 建置生產版本
+npm run build
+```
