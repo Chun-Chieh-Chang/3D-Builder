@@ -177,6 +177,13 @@ describe('move face (C10.1)', () => {
     expect(volume(r.shape)).toBeCloseTo(40 * 30 * 0.5, 6);
   });
 
+  it('refuses a push of exactly the thickness, which leaves no body', () => {
+    const base = block();
+    const before = k.liveShapes;
+    expect(() => k.moveFace(base, top(base, 20), -20)).toThrow('不是有效的實體');
+    expect(k.liveShapes).toBe(before);
+  });
+
   it('refuses a face with a smooth (filleted) neighbour', () => {
     const base = block();
     const edge = k.topology(base).edges.findIndex((e) => Math.abs(e.mid[0] - 40) < 1e-9 && Math.abs(e.mid[2] - 20) < 1e-9);
