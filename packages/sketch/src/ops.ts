@@ -600,7 +600,7 @@ export function mergePoints(sketch: Pick<SketchFeature, 'entities' | 'constraint
 
 // ---------------------------------------------------------------- where curves meet (trim, extend)
 
-type Curve = Extract<SolvedGeometry, { type: 'line' | 'circle' | 'arc' }>;
+export type Curve = Extract<SolvedGeometry, { type: 'line' | 'circle' | 'arc' }>;
 export const isCurve = (g: SolvedGeometry | undefined): g is Curve => g?.type === 'line' || g?.type === 'circle' || g?.type === 'arc';
 
 const TAU = Math.PI * 2;

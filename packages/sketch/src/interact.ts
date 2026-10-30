@@ -238,8 +238,22 @@ export function hitCandidates(geometry: Geometry, p: P2, tol: number, exclude: R
   };
   for (const [id, g] of geometry) {
     if (exclude.has(id)) continue;
-    if (g.type === 'point') consider({ id, kind: 'point', q: g.p, d: dist(p, g.p) });
-    else {
+    if (g.type === 'point') {
+      if (Math.abs(p[0] - g.p[0]) > tol || Math.abs(p[1] - g.p[1]) > tol) continue;
+      consider({ id, kind: 'point', q: g.p, d: dist(p, g.p) });
+    } else if (g.type === 'circle') {
+      if (Math.abs(p[0] - g.c[0]) > g.r + tol || Math.abs(p[1] - g.c[1]) > g.r + tol) continue;
+      const q = closestOn(g, p)!;
+      consider({ id, kind: g.type, q, d: dist(p, q) });
+    } else if (g.type === 'line') {
+      const minX = Math.min(g.a[0], g.b[0]) - tol;
+      const maxX = Math.max(g.a[0], g.b[0]) + tol;
+      const minY = Math.min(g.a[1], g.b[1]) - tol;
+      const maxY = Math.max(g.a[1], g.b[1]) + tol;
+      if (p[0] < minX || p[0] > maxX || p[1] < minY || p[1] > maxY) continue;
+      const q = closestOn(g, p)!;
+      consider({ id, kind: g.type, q, d: dist(p, q) });
+    } else {
       const q = closestOn(g, p)!;
       consider({ id, kind: g.type, q, d: dist(p, q) });
     }
@@ -398,9 +412,18 @@ export function snap(geometry: Geometry, p: P2, tol: number, exclude: ReadonlySe
   let best: { line: Id; p: P2; d: number } | null = null;
   for (const [id, g] of byMidpoint ? geometry : []) {
     if ((g.type !== 'line' && g.type !== 'arc') || exclude.has(id)) continue;
-    const m = g.type === 'line' ? mid(g.a, g.b) : arcMidpoint(g); // SolidWorks and FreeCAD snap to the middle of an arc too
-    const d = dist(p, m);
-    if (d <= tol && (!best || d < best.d)) best = { line: id, p: m, d };
+    if (g.type === 'line') {
+      const mx = (g.a[0] + g.b[0]) * 0.5;
+      const my = (g.a[1] + g.b[1]) * 0.5;
+      if (Math.abs(p[0] - mx) > tol || Math.abs(p[1] - my) > tol) continue;
+      const d = dist(p, [mx, my]);
+      if (d <= tol && (!best || d < best.d)) best = { line: id, p: [mx, my], d };
+    } else {
+      const m = arcMidpoint(g);
+      if (Math.abs(p[0] - m[0]) > tol || Math.abs(p[1] - m[1]) > tol) continue;
+      const d = dist(p, m);
+      if (d <= tol && (!best || d < best.d)) best = { line: id, p: m, d };
+    }
   }
   if (best) return { kind: 'midpoint', line: best.line, p: best.p };
   if (byCurve && hit && hit.kind !== 'point' && hit.kind !== 'origin') return { kind: 'curve', id: hit.id, p: hit.q };

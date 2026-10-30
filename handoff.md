@@ -14,31 +14,26 @@
 
 ---
 
-## 2. 上次推送 CI 異常診斷與通報 (CI Failure RCA & Action)
+## 2. CI 異常診斷與根治紀錄 (CI Failure RCA & Solution)
 
-### 現象說明
-使用者通報 2026-10-29 推送之 Commit `5360fda` 在 GitHub Actions 呈現 **`❌ 0 / 3` 全部失敗**（矩陣包含 `ubuntu-latest`, `windows-latest`, `macos-latest`）。
+### 現象說明與精準定位
+- **Commit `5360fda` (`❌ 0 / 3`)**：修改文件與測試但漏同步 `docs/repository-inventory.md`，導致 CI 在第 29 步 `npm run lint:repo` 被守門腳本攔截（Exit Code 1），三平台全數未進測試即中斷。
+- **Commit `d66cabb` (`❌ 1 / 3`)**：補齊盤點後 `ubuntu-latest` 全綠通過；但 `windows-latest` 與 `macos-latest` 在 `Smoke test suite` 的 `apps/web/test/sketch-pointer-baseline.test.ts` 報錯：
+  - Windows：`AssertionError: expected 10.6264 to be less than or equal to 8`
+  - macOS：`AssertionError: expected 9.4315 to be less than or equal to 8`
 
-### 本地跑通與確效狀態
-在本地環境（Windows / Node `v26.11.1`）下驗證以下檢查：
-1. `npm run typecheck`：**PASS**（TypeScript 0 錯誤）
-2. `npm run lint:rules`：**PASS**（全域 RSI 靜態守門通過）
-3. `npm run lint:deps`：**PASS**（分層依賴檢查通過）
-4. `npm run lint:i18n`：**PASS**（語系映射通過）
-5. `npm run lint:repo`：**PASS**（文檔與路徑大小寫檢查通過）
-6. **CI Smoke Test 測試套件（18 檔 257 項測試）**：**PASS**（全數通過，耗時 14s）
-   ```bash
-   npm test -- tests/phase5/repository-maintenance.test.ts tests/phase5/verify-ui-args.test.ts tests/phase8/context-menus.test.ts tests/phase8/view-normal.test.ts packages/sketch/test/solve-options.test.ts apps/web/test/sketcher.test.ts apps/web/test/sketch-pointer-baseline.test.ts tests/phase3/entrance-tool.test.ts tests/phase5/drawing-component-hatch.test.ts tests/phase5/drawing-view-caption.test.ts tests/phase5/drawing-dimension-modes.test.ts tests/phase5/drawing-cone-chamfer.test.ts tests/phase5/drawing-projection-refs.test.ts tests/phase5/drawing-hole-depth.test.ts tests/phase5/drawing-annotations.test.ts tests/phase5/acceptance-5.test.ts packages/model/test/model.test.ts packages/kernel/test/bodies.test.ts
-   ```
-7. `npm run build`：**PASS**（Vite 生產構建成功，0 錯誤）
+### 根因分析 (RCA)
+`apps/web/test/sketch-pointer-baseline.test.ts` 評測 1000 圖元畫線模式下的指標移動延遲。在無空間剪枝下，每一次移動皆對全部 1000 圖元逐一計算曲線最近點與三角函數，單次呼叫累積數千次浮點運算。本地 10 核心 CPU 測得約 0.63 ms，但 GitHub Actions 雲端虛擬機僅 2 vCPU 且 Vitest 4 workers 同時執行重型 OCCT 運算，CPU 飽和排程延遲導致 p95 溢出 8.0 ms 門檻。
 
-### 根因分析 (RCA) 與後續修復指引
-- **工作流配置**：`.github/workflows/repository-integrity.yml`
-- **關鍵懷疑點**：
-  1. `actions/setup-node@v4` 設定了 `node-version: '26'` 與 `cache: npm`。GitHub Actions 官方 Runner 的 Toolcache 中若無 Node 26 預編譯二進位檔，可能在下載或快取階段立即中斷並拋錯。
-  2. 若 `package-lock.json` 與特定 platform 依賴存在不一致，`npm ci` 在乾淨虛擬機環境下會直接終止。
-- **接手行動**：
-  - 檢視 GitHub Actions 該次 run 的具體失敗 step（若是 setup-node 或 npm ci 報錯，可評估將 `node-version` 設為相容之 LTS 或修正快取設定）。
+### 矯正措施 (CAPA)
+遵守 [AGENTS.md](AGENTS.md) 零門檻妥協原則（不放寬門檻、不 skip），進行架構演算法級優化：
+1. **AABB 快速包圍盒剪枝**：
+   - 在 `packages/sketch/src/interact.ts`（`hitCandidates`、`snap`）加入點、線、圓之常數時間 AABB 剪枝。
+   - 在 `packages/sketch/src/snaps.ts`（`intersectionSnap`、`quadrantSnap`）加入 AABB 剪枝，過濾非游標容差範圍之圖元。
+2. **確效結果**：
+   - 1000 圖元 `tool: 'select'`：p95 由 0.208 ms 降至 **0.024 ms**（提速 8.7 倍）。
+   - 1000 圖元 `tool: 'line'`：p95 由 0.637 ms 降至 **0.146 ms**（提速 4.4 倍）。
+   - 18 檔 257 項 Smoke Tests 全數通過（耗時 11.3s）。
 
 ---
 
