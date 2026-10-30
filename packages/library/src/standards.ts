@@ -12,8 +12,8 @@ import { applyCommand, BOM_PART_NO_NAMES, createEmptyPart, type Feature, type Pa
  * Reference values: check them against the standard of your company before relying on them.
  */
 
-export type StandardKind = 'socketScrew' | 'dowelPin' | 'washer';
-export const STANDARD_KINDS: readonly StandardKind[] = ['socketScrew', 'dowelPin', 'washer'];
+export type StandardKind = 'socketScrew' | 'setScrew' | 'dowelPin' | 'washer';
+export const STANDARD_KINDS: readonly StandardKind[] = ['socketScrew', 'setScrew', 'dowelPin', 'washer'];
 
 export interface StandardSpec {
   kind: StandardKind;
@@ -23,7 +23,7 @@ export interface StandardSpec {
   length?: number;
 }
 
-export const STANDARD_NUMBER: Record<StandardKind, string> = { socketScrew: 'ISO 4762', dowelPin: 'ISO 8734', washer: 'ISO 7089' };
+export const STANDARD_NUMBER: Record<StandardKind, string> = { socketScrew: 'ISO 4762', setScrew: 'ISO 4029', dowelPin: 'ISO 8734', washer: 'ISO 7089' };
 
 /** ISO 4762: thread diameter, head diameter (largest), head height, hex socket across flats, socket depth (least), mm. */
 export const SOCKET_SCREWS: Readonly<Record<string, { d: number; dk: number; k: number; s: number; t: number }>> = {
@@ -34,6 +34,15 @@ export const SOCKET_SCREWS: Readonly<Record<string, { d: number; dk: number; k: 
   M8: { d: 8, dk: 13, k: 8, s: 6, t: 4 },
   M10: { d: 10, dk: 16, k: 10, s: 8, t: 5 },
   M12: { d: 12, dk: 18, k: 12, s: 10, t: 6 },
+};
+
+/** ISO 4029 cup point: nominal diameter, socket across flats, conservative socket depth, maximum cup diameter (mm). */
+export const SET_SCREWS: Readonly<Record<string, { d: number; s: number; t: number; cup: number }>> = {
+  M3: { d: 3, s: 1.5, t: 2, cup: 1.4 },
+  M4: { d: 4, s: 2, t: 2.5, cup: 2 },
+  M5: { d: 5, s: 2.5, t: 3, cup: 2.5 },
+  M6: { d: 6, s: 3, t: 3.5, cup: 3 },
+  M8: { d: 8, s: 4, t: 5, cup: 5 },
 };
 
 /** ISO 7089 (normal series): inner diameter, outer diameter, thickness, mm. */
@@ -62,15 +71,15 @@ const SCREW_LENGTHS = [6, 8, 10, 12, 16, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80]
 const PIN_LENGTHS = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 35, 40, 45, 50, 55, 60, 70, 80];
 
 /** The sizes of a kind, in order. */
-export const standardSizes = (kind: StandardKind): string[] => Object.keys(kind === 'socketScrew' ? SOCKET_SCREWS : kind === 'washer' ? WASHERS : DOWEL_PINS);
+export const standardSizes = (kind: StandardKind): string[] => Object.keys(kind === 'socketScrew' ? SOCKET_SCREWS : kind === 'setScrew' ? SET_SCREWS : kind === 'washer' ? WASHERS : DOWEL_PINS);
 
 /** The lengths a kind comes in (empty for a washer, which has none). */
-export const standardLengths = (kind: StandardKind): number[] => (kind === 'socketScrew' ? SCREW_LENGTHS : kind === 'dowelPin' ? PIN_LENGTHS : []);
+export const standardLengths = (kind: StandardKind): number[] => (kind === 'socketScrew' ? SCREW_LENGTHS : kind === 'setScrew' ? [8, 10, 12, 16, 20, 25, 30, 35, 40] : kind === 'dowelPin' ? PIN_LENGTHS : []);
 
 /** 「ISO 4762 M6x20」, 「ISO 8734 6m6x20」, 「ISO 7089 M6」: what the part is called, its file name and its part number. */
 export function standardName(spec: StandardSpec): string {
   const n = STANDARD_NUMBER[spec.kind];
-  if (spec.kind === 'socketScrew') return `${n} ${spec.size}x${spec.length}`;
+  if ((spec.kind === 'socketScrew' || spec.kind === 'setScrew')) return `${n} ${spec.size}x${spec.length}`;
   if (spec.kind === 'dowelPin') return `${n} ${spec.size}m6x${spec.length}`;
   return `${n} ${spec.size}`;
 }
@@ -78,6 +87,7 @@ export function standardName(spec: StandardSpec): string {
 /** The faces of each part by their persistent names, for mates (`concentric` on a shank, `coincident` on an underside …). */
 export const STANDARD_FACES = {
   socketScrew: { tip: 'revolve1:side:sketch1.tip', shank: 'revolve1:side:sketch1.shank', under: 'revolve1:side:sketch1.under', headSide: 'revolve1:side:sketch1.headSide', top: 'revolve1:side:sketch1.top' },
+  setScrew: { top: 'revolve1:side:sketch1.top', shank: 'revolve1:side:sketch1.shank', cup: 'revolve1:side:sketch1.cup' },
   dowelPin: { top: 'revolve1:side:sketch1.top', chamferTop: 'revolve1:side:sketch1.chamferTop', side: 'revolve1:side:sketch1.side', chamferBottom: 'revolve1:side:sketch1.chamferBottom', bottom: 'revolve1:side:sketch1.bottom' },
   washer: { bottom: 'revolve1:side:sketch1.bottom', outer: 'revolve1:side:sketch1.outer', top: 'revolve1:side:sketch1.top', bore: 'revolve1:side:sketch1.bore' },
 } as const;
@@ -126,6 +136,20 @@ function revolved(points: Pt[], lines: string[], axisTop: Pt): Feature[] {
 /** A variable of the part, by name. */
 const variable = (doc: PartDoc, name: string, value: number): PartDoc => applyCommand(doc, { type: 'addVariable', variable: { id: `var_${name}`, name, expr: String(value) } });
 
+function socketHexagon(s: number): Pick<SketchFeature, 'entities' | 'constraints'> {
+  const R = s / Math.sqrt(3);
+  const hx = (i: number): Pt => {
+    const a = (Math.PI / 3) * i;
+    const x = R * Math.cos(a);
+    const y = R * Math.sin(a);
+    const half = 's/(2*sqrt(3))';
+    const xs = [`s/sqrt(3)`, half, half, `s/sqrt(3)`, half, half];
+    return { id: `h${i}`, x: xs[i]!, y: i === 0 || i === 3 ? '0' : 's/2', at: [Math.abs(x) < 1e-12 ? 0 : x, Math.abs(y) < 1e-12 ? 0 : y] };
+  };
+  const hexagon = polygon('h', [0, 1, 2, 3, 4, 5].map(hx), ['hl0', 'hl1', 'hl2', 'hl3', 'hl4', 'hl5']);
+  return hexagon;
+}
+
 function screw(spec: StandardSpec): { vars: [string, number][]; features: Feature[] } {
   const row = SOCKET_SCREWS[spec.size]!;
   const L = spec.length!;
@@ -140,21 +164,34 @@ function screw(spec: StandardSpec): { vars: [string, number][]; features: Featur
   ];
   const lines = ['tip', 'shank', 'under', 'headSide', 'top', 'axisEdge'];
   // the hex socket: a hexagon of s across the flats about the axis, cut into the head from its top
-  const R = s / Math.sqrt(3);
-  const hx = (i: number): Pt => {
-    const a = (Math.PI / 3) * i;
-    const x = R * Math.cos(a);
-    const y = R * Math.sin(a);
-    const half = 's/(2*sqrt(3))';
-    const xs = [`s/sqrt(3)`, half, half, `s/sqrt(3)`, half, half];
-    return { id: `h${i}`, x: xs[i]!, y: i === 0 || i === 3 ? '0' : 's/2', at: [Math.abs(x) < 1e-12 ? 0 : x, Math.abs(y) < 1e-12 ? 0 : y] };
-  };
-  const hexagon = polygon('h', [0, 1, 2, 3, 4, 5].map(hx), ['hl0', 'hl1', 'hl2', 'hl3', 'hl4', 'hl5']);
+  const hexagon = socketHexagon(s);
   return {
     vars: [['d', d], ['dk', dk], ['k', k], ['L', L], ['s', s], ['t', row.t]],
     features: [
       ...revolved(points, lines, { id: 'ax2', x: '0', y: 'k', at: [0, k] }),
       sketchOn('sketch2', `${t('feature.sketch')}2`, { kind: 'face', name: STANDARD_FACES.socketScrew.top }, hexagon),
+      { id: 'cut1', type: 'extrude', name: `${t('feature.extrude')}2`, suppressed: false, sketch: 'sketch2', op: 'cut', dir1: { type: 'blind', depth: 't' } },
+    ],
+  };
+}
+
+function setScrew(spec: StandardSpec): { vars: [string, number][]; features: Feature[] } {
+  const { d, s, t: depth, cup } = SET_SCREWS[spec.size]!;
+  const L = spec.length!;
+  // Cup included angle 120 degrees. The thread is represented by its nominal cylinder.
+  const h = cup / (2 * Math.sqrt(3));
+  const points: Pt[] = [
+    { id: 'q0', x: '0', y: '0', at: [0, 0] },
+    { id: 'q1', x: 'd/2', y: '0', at: [d / 2, 0] },
+    { id: 'q2', x: 'd/2', y: 'L', at: [d / 2, -L] },
+    { id: 'q3', x: 'cup/2', y: 'L', at: [cup / 2, -L] },
+    { id: 'q4', x: '0', y: 'L-cup/(2*sqrt(3))', at: [0, -L + h] },
+  ];
+  return {
+    vars: [['d', d], ['s', s], ['t', depth], ['cup', cup], ['L', L]],
+    features: [
+      ...revolved(points, ['top', 'shank', 'tip', 'cup', 'axisEdge'], { id: 'ax2', x: '0', y: 'L', at: [0, -L] }),
+      sketchOn('sketch2', `${t('feature.sketch')}2`, { kind: 'face', name: STANDARD_FACES.setScrew.top }, socketHexagon(s)),
       { id: 'cut1', type: 'extrude', name: `${t('feature.extrude')}2`, suppressed: false, sketch: 'sketch2', op: 'cut', dir1: { type: 'blind', depth: 't' } },
     ],
   };
@@ -189,9 +226,10 @@ function washer(spec: StandardSpec): { vars: [string, number][]; features: Featu
 
 /** Why a spec cannot be made, or null when it can. */
 export function standardProblem(spec: StandardSpec): string | null {
-  const table = spec.kind === 'socketScrew' ? SOCKET_SCREWS : spec.kind === 'washer' ? WASHERS : DOWEL_PINS;
+  const table = spec.kind === 'socketScrew' ? SOCKET_SCREWS : spec.kind === 'setScrew' ? SET_SCREWS : spec.kind === 'washer' ? WASHERS : DOWEL_PINS;
   if (!table[spec.size]) return t('library.badSize', { kind: t(`library.kind.${spec.kind}`), size: spec.size });
   if (spec.kind !== 'washer' && !(typeof spec.length === 'number' && spec.length > 0 && Number.isFinite(spec.length))) return t('library.badLength', { length: String(spec.length) });
+  if (spec.kind === 'setScrew' && spec.length! <= SET_SCREWS[spec.size]!.t + SET_SCREWS[spec.size]!.cup / (2 * Math.sqrt(3))) return t('library.badLength', { length: String(spec.length) });
   return null;
 }
 
@@ -202,7 +240,7 @@ export function standardProblem(spec: StandardSpec): string | null {
 export function standardPartDoc(spec: StandardSpec): PartDoc {
   const problem = standardProblem(spec);
   if (problem) throw new Error(problem);
-  const made = spec.kind === 'socketScrew' ? screw(spec) : spec.kind === 'dowelPin' ? pinPart(spec) : washer(spec);
+  const made = spec.kind === 'socketScrew' ? screw(spec) : spec.kind === 'setScrew' ? setScrew(spec) : spec.kind === 'dowelPin' ? pinPart(spec) : washer(spec);
   let doc = createEmptyPart();
   for (const [name, value] of made.vars) doc = variable(doc, name, value);
   made.features.forEach((feature, index) => {
