@@ -25,6 +25,16 @@ const move = async (u, v) => {
   H.ptr('pointermove', c.x, c.y);
   await H.wait(80);
 };
+/** A sketch click that says which one failed, with the view state at that moment. */
+const sk = async (u, v, label) => {
+  const t = H.toClient(u, v);
+  try {
+    await H.sk(u, v);
+  } catch (e) {
+    const r = H.rect();
+    throw new Error(`${label}: toClient(${Math.round(t.x)}, ${Math.round(t.y)}) rect(${Math.round(r.left)}, ${Math.round(r.top)}, w ${Math.round(r.width)}, h ${Math.round(r.height)}) pxPerMm ${H.pxPerMm().toFixed(2)} | ${e.message}`);
+  }
+};
 const dims = () => H.sketch().constraints.filter((c) => ['distance', 'angle', 'radius', 'diameter'].includes(c.type));
 
 window.__sketchEntry = { run: async () => {
@@ -138,7 +148,11 @@ window.__sketchEntry = { run: async () => {
 
   await step('B05 slot typed length 30 at 0° and width 10: driving distance, angle, and width dimensions; Esc tiers and one undo', async () => {
     await H.tool('狹槽');
-    await H.sk(0, 20);
+    // the slot is diffed against a snapshot: earlier steps of this script already drew lines, a circle and a rectangle in the same sketch,
+    // so absolute counts would see them too; dims are diffed the same way so a pre-existing distance 30 / angle 30 cannot stand in for the slot's own
+    const bEnt = H.sketch().entities, bDims = new Set(dims().map((d) => JSON.stringify(d)));
+    const bLines = bEnt.filter((e) => e.type === 'line' && !e.construction).length, bArcs = bEnt.filter((e) => e.type === 'arc').length;
+    await sk(0, 20, 'B05 slot stage-1 start');
     await move(25, 20);
     check(box() && field('length') && field('angle'), 'length and angle boxes beside cursor on stage 1');
     await H.key('3');
@@ -153,16 +167,16 @@ window.__sketchEntry = { run: async () => {
     await H.solved();
 
     const entities = H.sketch().entities;
-    const slotArcs = entities.filter((e) => e.type === 'arc');
-    const slotLines = entities.filter((e) => e.type === 'line' && !e.construction);
-    check(slotArcs.length === 2 && slotLines.length === 2, `slot arcs (${slotArcs.length}) and lines (${slotLines.length})`);
-    const slotDims = dims().filter((d) => ['distance', 'angle', 'diameter', 'radius'].includes(d.type));
-    check(slotDims.some((d) => d.type === 'distance' && d.value === '30'), 'length dimension 30');
-    check(slotDims.some((d) => d.type === 'angle' && d.value === '0'), 'angle dimension 0°');
-    check(slotDims.some((d) => (d.type === 'diameter' && d.value === '10') || (d.type === 'radius' && d.value === '5')), 'width dimension 10');
+    const slotArcs = entities.filter((e) => e.type === 'arc').length - bArcs;
+    const slotLines = entities.filter((e) => e.type === 'line' && !e.construction).length - bLines;
+    check(slotArcs === 2 && slotLines === 2, `slot arcs (+${slotArcs}) and lines (+${slotLines})`);
+    const slotDims = dims().filter((d) => !bDims.has(JSON.stringify(d)));
+    check(slotDims.some((d) => d.type === 'distance' && d.value === '30'), `slot length dimension 30: ${JSON.stringify(slotDims)}`);
+    check(slotDims.some((d) => d.type === 'angle' && d.value === '0'), 'slot angle dimension 0°');
+    check(slotDims.some((d) => (d.type === 'diameter' && d.value === '10') || (d.type === 'radius' && d.value === '5')), 'slot width dimension 10');
 
-    // Esc tiering check
-    await H.sk(0, 35);
+    // Esc tiering check (a start click inside the canvas: at this framing v=35 would be above the visible canvas)
+    await sk(0, 28, 'B05 esc-tier click');
     await move(20, 35);
     await H.key('2');
     check(field('length')?.value === '2', 'stage 1 typed length');
@@ -184,7 +198,11 @@ window.__sketchEntry = { run: async () => {
 
   await step('B06 polygon typed radius 15 at 30°: radius and ray angle dimensions; mode toggle between R and L; one undo', async () => {
     await H.tool('多邊形');
-    await H.sk(-20, 20);
+    // a snapshot baseline as in B05: the five lines and slot already in the sketch must not count as the hexagon's sides,
+    // and B01's angle 30° must not stand in for the ray's angle dimension
+    const bEnt = H.sketch().entities, bDims = new Set(dims().map((d) => JSON.stringify(d)));
+    const bLines = bEnt.filter((e) => e.type === 'line' && !e.construction).length, bRays = bEnt.filter((e) => e.type === 'line' && e.construction).length;
+    await sk(-20, 20, 'B06 polygon start');
     await move(-10, 25);
     check(box() && field('radius') && field('angle'), 'radius and angle boxes beside cursor');
     // Test mode toggle button
@@ -205,13 +223,13 @@ window.__sketchEntry = { run: async () => {
     await H.solved();
 
     const entities = H.sketch().entities;
-    const polyLines = entities.filter((e) => e.type === 'line' && !e.construction);
-    const rays = entities.filter((e) => e.type === 'line' && e.construction);
-    check(polyLines.length === 6, 'hexagon created with 6 sides');
-    check(rays.length >= 1, 'orientation ray created');
+    const polyLines = entities.filter((e) => e.type === 'line' && !e.construction).length - bLines;
+    const rays = entities.filter((e) => e.type === 'line' && e.construction).length - bRays;
+    check(polyLines === 6, `hexagon created with +${polyLines} sides`);
+    check(rays >= 1, `orientation ray created (+${rays})`);
 
-    const polyDims = dims().filter((d) => ['radius', 'distance', 'angle'].includes(d.type));
-    check(polyDims.some((d) => d.type === 'radius' && d.value === '15'), 'radius dimension 15');
+    const polyDims = dims().filter((d) => !bDims.has(JSON.stringify(d)));
+    check(polyDims.some((d) => d.type === 'radius' && d.value === '15'), `polygon radius dimension 15: ${JSON.stringify(polyDims)}`);
     check(polyDims.some((d) => d.type === 'angle' && d.value === '30'), 'ray angle dimension 30°');
 
     // Undo / Redo

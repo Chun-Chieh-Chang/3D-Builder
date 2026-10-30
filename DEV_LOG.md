@@ -42,6 +42,10 @@
    - *現象*：`sketcher.test.ts` 中純滑鼠點擊 2 點後按 Esc，期望清空所有點擊與預覽，卻殘留中心線預覽線。
    - *RCA*：純滑鼠點擊第 2 點時 `slotEntry` 被賦值為 `{ length: undefined, angle: undefined }`（truthy 物件），導致 `escape()` 誤判為有輸入數值而執行 `clicks.pop()`（只退回第 1 點）。
    - *CAPA*：在 `click()` 加上真值存在性防呆（`values.length !== undefined || values.angle !== undefined`），確保純滑鼠點擊時 `slotEntry` 保持 `null`，Esc 即時取消所有點擊並清除預覽。
+5. **交接審查：`manual-sketch-entry.js` 從未完整跑通（B05 實體計數與 Esc 分層點）**：
+   - *現象*：獨立重跑 `verify:ui -- --only "manual-sketch-entry"`，B05 失敗於 `slot arcs (2) and lines (7)`、B06 失敗於六邊形實體計數；改快照差值後又暴露 Esc 分層檢查的 `H.sk(0,35)` 在 720px headless 視窗落到畫布外（toClient y = -8），表示該交付自審時此步驟與 B06 後半從未被執行過，與「e2e 通過」的宣稱不符。
+   - *RCA*：①B05/B06 實體斷言用絕對計數，把前序步驟畫進同張草圖的直線 1 條與矩形 4 條也算了進來（7 = 5 + 2）；②尺寸斷言 `dims().some(...)` 對全草圖過濾，B01 既有的 distance 30／angle 30 尺寸會在槽／多邊形沒有產生對應尺寸時也通過（恆真斷言，違反 §3.1）；③Esc 分層的點擊點 (0,35) 超出畫布可視範圍，從未驗證過。
+   - *CAPA*：改為「步驟開頭快照 → 差值」計數，尺寸以 JSON 差集挑出本步驟新增者（消除恆真）；Esc 分層點擊改 (0,28)（畫布內）；`H.sk` 包裝為帶標籤的 `sk`，失敗時回報是哪一個點擊與當下視圖狀態。重跑 1/1 PASS，且差值斷言同時證明產品行為正確（槽 +2 弧 +2 線、尺寸 30／0°／10；多邊形 +6 邊、半徑 15、角 30°）。
 
 ### 4. 確效與指標
 - `apps/web/test/sketch-entry.test.ts`：37/37 全數通過（包含 B05 狹槽、B06 多邊形半徑/邊長/方向角/水平拘束、Esc 分層，以及 180 組全隨機幾何 Fuzzing 壓力測試）。
@@ -49,6 +53,7 @@
 - `apps/web/test/*`：29 個測試檔案、305 項全數通過。
 - `npm run typecheck`、`npm run lint:rules`、`npm run lint:repo`、`npm run lint:deps`、`npm run lint:i18n`：全數 PASS。
 - `npm run build`：構建通過（1.89s）。
+- **交接審查覆核（§3.5）**：受影響 vitest 146/146（sketch-entry 37＋sketcher 75＋sketch ops 34）、`verify:ui -- --only "manual-sketch-entry"` 修正後 1/1 PASS、`e89fa60` 三平台 CI（ubuntu／macOS／windows）全綠。注意：CI 的 macOS job 只跑單元、lint 與 build，**不跑瀏覽器 e2e**；E03 的 macOS 瀏覽器鍵盤／DPR 驗證仍待實機。另發現 CI 原生測試清單未含 `apps/web/test/sketch-entry.test.ts`（登記待辦）。
 
 ---
 
