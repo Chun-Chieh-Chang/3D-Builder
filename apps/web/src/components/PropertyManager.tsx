@@ -119,7 +119,7 @@ import { Icon } from './Icon';
 import type { ControllerView, SketchController, SketchFix } from '../sketcher/controller';
 import type { SketchIssue } from '@3db/sketch/check';
 import type { EntityFreedom } from '@3db/sketch';
-import type { ContourChoice } from '@3db/sketch/profiles';
+import { sameContour, type ContourChoice } from '@3db/sketch/profiles';
 
 /**
  * What an expression comes to in this document, for showing next to the box (D2.4): the value when it is
@@ -1039,6 +1039,8 @@ function ThinBox({ f }: { f: ExtrudeFeature | RevolveFeature }) {
 /** 「所選輪廓」 (C1.34): which of the sketch's closed regions a boss or cut uses. Nothing chosen means all of them. */
 function ContourBox({ f }: { f: ExtrudeFeature | RevolveFeature | SweepFeature }) {
   const doc = useStore((s) => s.doc);
+  const pick = useStore((s) => s.contourPick);
+  const hover = useStore((s) => s.contourHover);
   const [choices, setChoices] = useState<ContourChoice[] | null>(null);
   useEffect(() => {
     let live = true;
@@ -1048,9 +1050,12 @@ function ContourBox({ f }: { f: ExtrudeFeature | RevolveFeature | SweepFeature }
       live = false;
     };
   }, [f.sketch, doc]);
+  // picking in the graphics area belongs to the panel it was started from: closing the panel ends it (G10, P3)
+  useEffect(() => () => store.stopContourPick(), [f.id]);
   if (choices !== null && choices.length < 2) return null; // one contour (or none) is not a choice
-  const same = (a: readonly string[], b: readonly string[]) => a.length > 0 && a.filter((id) => b.includes(id)).length / new Set([...a, ...b]).size >= 0.5;
-  const chosen = (c: ContourChoice) => !f.contours || f.contours.some((w) => same(w, c.ids));
+  const picking = pick?.featureId === f.id;
+  const lit = picking && hover !== null && choices !== null && hover < choices.length ? choices[hover]!.ids.join('+') : null;
+  const chosen = (c: ContourChoice) => !f.contours || f.contours.some((w) => sameContour(w, c.ids));
   const toggle = (c: ContourChoice) => {
     if (!choices) return;
     const next = choices.filter((x) => (x === c ? !chosen(x) : chosen(x)));
@@ -1060,9 +1065,13 @@ function ContourBox({ f }: { f: ExtrudeFeature | RevolveFeature | SweepFeature }
   return (
     <>
       <h4 className="sub">{t('contour.title')}</h4>
+      <button type="button" data-field="contourPick" className={picking ? 'active' : ''} onClick={() => (picking ? store.stopContourPick() : store.startContourPick(f.id))}>
+        {t(picking ? 'contour.pickStop' : 'contour.pick')}
+      </button>
+      {picking && <p className="hint">{t('contour.pickHint')}</p>}
       {choices === null && <p className="muted">{t('contour.loading')}</p>}
       {choices?.map((c, i) => (
-        <label key={c.ids.join('+')} className="pm-row checkbox">
+        <label key={c.ids.join('+')} className={`pm-row checkbox${lit === c.ids.join('+') ? ' contour-hover' : ''}`} data-contour={i}>
           <input type="checkbox" checked={chosen(c)} onChange={() => toggle(c)} />
           <span>
             {t('contour.item', {

@@ -6,10 +6,11 @@ import { ExtrudePreviewHandle } from './ExtrudePreviewHandle';
 import { InstantDepthHandle } from './InstantDepthHandle';
 import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, settingsOf, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
-import { cubeFacets, Viewer, type DatumDisplay, type DisplayMode, type PlaneDisplay, type SectionPlane, type SketchOverlay, type StandardView } from '@3db/render';
+import { cubeFacets, Viewer, type DatumDisplay, type DisplayMode, type OverlayFill, type PlaneDisplay, type SectionPlane, type SketchOverlay, type StandardView } from '@3db/render';
 import { ACTIONS, shortcutOf } from '../actions';
 import { chosen, pickable, prompt } from '../state/datumSlots';
 import { sample } from '@3db/sketch/interact';
+import { sameContour } from '@3db/sketch/profiles';
 import { buildOverlay, SKETCH_COLORS } from '../sketcher/overlay';
 import type { EntryView } from '../sketcher/controller';
 import type { P2 } from '@3db/sketch';
@@ -119,6 +120,8 @@ export function Viewport() {
   const bootError = useStore((s) => s.bootError);
   const fitRequest = useStore((s) => s.fitRequest);
   const view = useSketcherView();
+  const contourPick = useStore((s) => s.contourPick);
+  const contourHover = useStore((s) => s.contourHover);
   const gridVisible = useStore(s => s.options.showGrid);
   const gridSpacing = useStore(s => s.options.snap.gridSpacing);
   const documentSerial=useStore(s=>s.documentSerial);
@@ -400,17 +403,31 @@ export function Viewport() {
     v.setOrigin(isShown(doc, ORIGIN_KEY));
     const px = v.pixelSize();
     const overlays: SketchOverlay[] = [];
+    // 「在畫布選取輪廓」 (G10, P3): its sketch is shown (even when a feature has hidden it) and its closed regions are filled —
+    // the one under the cursor, the chosen ones and the rest — with the same choices the list shows.
+    const pickedFeature = contourPick ? doc.features.find((f) => f.id === contourPick.featureId) : undefined;
+    const pickedContours = pickedFeature && 'contours' in pickedFeature ? pickedFeature.contours ?? null : null;
     for (const [id, geometry] of result?.sketchGeometry ?? []) {
       const frame = result?.frames.get(id);
-      if (!frame || id === editing?.featureId || !isShown(doc, id)) continue;
+      const forced = id === contourPick?.sketchId;
+      if (!frame || id === editing?.featureId || (!forced && !isShown(doc, id))) continue;
       const status = result?.features.find((f) => f.id === id)?.sketch?.status;
       const color = status === 'over' ? SKETCH_COLORS.over : status === 'fully' ? SKETCH_COLORS.fully : SKETCH_COLORS.under;
       const curves: SketchOverlay['curves'] = [];
       for (const g of geometry.values()) if (g.type !== 'point') curves.push({ points: sample(g, px), color, dashed: g.construction });
-      overlays.push({ frame, curves, points: [], labels: [] });
+      const fills: OverlayFill[] = [];
+      if (forced && contourPick) {
+        contourPick.outlines.forEach((o, i) => {
+          const c = contourPick.choices[i];
+          const on = pickedContours === null || (c !== undefined && pickedContours.some((w) => sameContour(w, c.ids)));
+          const hovered = contourHover === i;
+          fills.push({ outer: o.outer, holes: o.holes, color: hovered ? SKETCH_COLORS.hover : on ? SKETCH_COLORS.selected : SKETCH_COLORS.preview, opacity: hovered ? 0.3 : on ? 0.26 : 0.14 });
+        });
+      }
+      overlays.push({ frame, curves, points: [], labels: [], ...(fills.length > 0 ? { fills } : {}) });
     }
     v.setSketches(overlays);
-  }, [doc, result, editing?.featureId, zoomBand]);
+  }, [doc, result, editing?.featureId, zoomBand, contourPick, contourHover]);
 
   // The pictures of the sketch being edited, under its curves (ADR 0116): decoded once per image, and drawn again when a picture changes.
   const pictureCount = useRef(0);
@@ -468,6 +485,25 @@ export function Viewport() {
     });
     return () => v.setToolHandler(null);
   }, [sketching, editing?.featureId, modelTool]);
+
+  // 「在畫布選取輪廓」 (G10, P3): while picking, the left button chooses a closed region of the sketch and the cursor lights it.
+  // The view is still turned with the middle button, which a tool handler does not take.
+  useEffect(() => {
+    const v = store.viewer;
+    const frame = contourPick ? result?.frames.get(contourPick.sketchId) : undefined;
+    if (!v || !contourPick || !frame || sketching) return;
+    v.setToolHandler((e) => {
+      if (e.type === 'leave') return void store.setContourHover(null);
+      const p = v.planePoint(e.clientX, e.clientY, frame);
+      if (!p) return;
+      if (e.type === 'move') return void store.setContourHover(store.contourAt(p));
+      if (e.type === 'down') {
+        store.setContourHover(store.contourAt(p));
+        store.contourPickClick(p, e.ctrl || e.shift);
+      }
+    });
+    return () => v.setToolHandler(null);
+  }, [contourPick, result, sketching]);
 
   useEffect(() => {
     const v = store.viewer;

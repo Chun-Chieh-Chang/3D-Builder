@@ -70,7 +70,7 @@ import { DrawingStore, type DrawingSource, type DrawingState } from './drawing';
 import { dxfText, flatPatternDxf, importDxf, surveyDxf, type DxfImport, type DxfSurvey } from '@3db/drawing';
 import type { FlatReport, SheetCheck } from '@3db/regen';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
-import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
+import { contourChoices, findProfiles, outlineContains, pickContourSelection, regionOutline, type ContourChoice, type RegionOutline } from '@3db/sketch/profiles';
 import type { ModelItem } from '@3db/sketch/ops';
 import type { PickFilter, Snap, Viewer } from '@3db/render';
 import { captureVertexAnchor, resolveVertexAnchor } from './measureAnchors';
@@ -322,6 +322,13 @@ export interface UiState {
   dimensionEdit: Id | null;
   /** The picture of the sketch being edited whose scale is being set from two points of it (ADR 0116), and the points clicked so far (in the plane of the sketch). */
   pictureScale: { pictureId: Id; points: [number, number][] } | null;
+  /**
+   * 「在畫布選取輪廓」 (C1.34, G10): the boss or cut whose sketch's closed regions are being picked in the graphics area, with
+   * what can be picked — the regions as the list numbers them and their outlines for filling and hit-testing.
+   */
+  contourPick: { featureId: Id; sketchId: Id; choices: ContourChoice[]; outlines: RegionOutline[] } | null;
+  /** The region the cursor is over while picking (an index into `contourPick.outlines`), or null. */
+  contourHover: number | null;
   /** 「匯入 DXF」 (F2.6): the file read and what it holds, while its dialog is open. */
   dxfImport: { name: string; text: string; survey: DxfSurvey } | null;
   /** Feature whose 「確認刪除」 dialog is open (B2.8). */
@@ -587,6 +594,8 @@ class AppStore {
       sketchSolve: null,
       dimensionEdit: null,
       pictureScale: null,
+      contourPick: null,
+      contourHover: null,
       dxfImport: null,
       confirmDelete: null,
       whatsWrong: false,
@@ -2619,7 +2628,7 @@ class AppStore {
   private leaveSession(): void {
     this.sketcher = null;
     this.modelSnap = [];
-    this.set({ editing: null, sketchSolve: null, dimensionEdit: null, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
+    this.set({ editing: null, sketchSolve: null, dimensionEdit: null, contourPick: null, contourHover: null, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
     this.requestRebuild();
   }
 
@@ -3059,6 +3068,51 @@ class AppStore {
     if (sketch?.type !== 'sketch') return [];
     const solved = await this.api.solveSketch({ seq: -1, sketch: resolveSketch(sketch, doc) });
     return solved.status === 'failed' ? [] : contourChoices(findProfiles(sketch, solved).regions);
+  }
+
+  /**
+   * Starts picking a boss or cut's contours in the graphics area (C1.34, G10): its sketch's closed regions are filled, the one
+   * under the cursor is highlighted and a click chooses it. The sketch is shown while this lasts, even when it is a hidden one.
+   */
+  startContourPick(featureId: Id): void {
+    const doc = this.history.doc;
+    const feature = findFeature(doc, featureId);
+    const sketchId = feature && 'sketch' in feature ? feature.sketch : undefined;
+    if (!sketchId) return;
+    const sketch = findFeature(doc, sketchId);
+    if (sketch?.type !== 'sketch') return;
+    const geometry = this.state.result?.sketchGeometry.get(sketch.id);
+    if (!geometry) return void this.notify(t('contour.pickNone'), 'info');
+    const regions = findProfiles(sketch, { geometry }).regions;
+    if (regions.length < 2) return void this.notify(t('contour.pickNone'), 'info');
+    this.set({ contourPick: { featureId, sketchId: sketch.id, choices: contourChoices(regions), outlines: regions.map(regionOutline) }, contourHover: null });
+  }
+
+  stopContourPick(): void {
+    if (this.state.contourPick || this.state.contourHover !== null) this.set({ contourPick: null, contourHover: null });
+  }
+
+  /** The region of the sketch plane under `p` while picking, or null (a hole or outside every region is none). */
+  contourAt(p: [number, number]): number | null {
+    const pick = this.state.contourPick;
+    if (!pick) return null;
+    const i = pick.outlines.findIndex((o) => outlineContains(o, p));
+    return i < 0 ? null : i;
+  }
+
+  setContourHover(i: number | null): void {
+    if (this.state.contourHover !== i) this.set({ contourHover: i });
+  }
+
+  /** A click on the sketch plane while picking: that region alone, or with Ctrl added to (or taken from) the choice. */
+  contourPickClick(p: [number, number], additive: boolean): void {
+    const pick = this.state.contourPick;
+    if (!pick) return;
+    const i = this.contourAt(p);
+    if (i === null) return;
+    const feature = findFeature(this.history.doc, pick.featureId);
+    const chosen = feature && 'contours' in feature ? feature.contours ?? null : null;
+    this.execute({ type: 'setContours', featureId: pick.featureId, contours: pickContourSelection(pick.choices, chosen, i, additive) });
   }
 
   editDimension(id: Id | null): void {

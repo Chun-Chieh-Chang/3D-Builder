@@ -597,6 +597,9 @@ export function installShortcuts(): () => void {
       if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey && store.sketcher?.nextEntry(e.shiftKey)) { e.preventDefault(); return; }
       if (e.key === 'Escape') return void store.sketcher?.escape();
       if (e.key === 'Delete') return void store.sketcher?.deleteSelection();
+    } else if (s.contourPick && e.key === 'Escape') {
+      // picking contours in the view ends first; Esc again closes the PropertyManager (G10, P3)
+      return void store.stopContourPick();
     } else if (s.editing) {
       if (e.key === 'Enter') {const button=document.querySelector<HTMLButtonElement>('[data-floating-parameters] .pm-ok');if(button)return void button.click();return void store.commitEdit();}
       if (e.key === 'Escape') return void store.cancelEdit();

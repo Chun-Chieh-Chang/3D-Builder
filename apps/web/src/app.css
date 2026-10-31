@@ -254,6 +254,8 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .pm-group h4 { margin: 0 0 6px; font-size: 12px; color: var(--accent); }
 .pm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; }
 .pm-row.checkbox { justify-content: flex-start; }
+/* the contour the cursor is over in the graphics area (G10): lit in the list too, so the two say the same thing */
+.pm-row.contour-hover { background: var(--accent-hover); border-radius: 3px; }
 .pm-row select { font: inherit; padding: 3px; min-width: 0; max-width: 62%; }
 .pm-row > span:first-child { flex: 0 0 auto; max-width: 45%; }
 .value-input { display: inline-flex; align-items: center; gap: 4px; }

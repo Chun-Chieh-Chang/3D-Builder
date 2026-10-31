@@ -140,6 +140,25 @@ function contains(poly: P2[], p: P2): boolean {
   return inside;
 }
 
+/**
+ * The outline of a region (G10, P3): the outer boundary and its holes as polygons, for filling it on the sketch plane and
+ * for deciding what the cursor is over.
+ */
+export interface RegionOutline {
+  outer: P2[];
+  holes: P2[][];
+}
+
+/** The outer boundary and holes of a region as polygons, sampled the same way the area and nesting tests are. */
+export function regionOutline(region: Region2): RegionOutline {
+  return { outer: sample(region.outer), holes: region.holes.map(sample) };
+}
+
+/** Whether a point is in a region: inside its outer boundary and outside every hole. */
+export function outlineContains(outline: RegionOutline, p: P2): boolean {
+  return contains(outline.outer, p) && !outline.holes.some((h) => contains(h, p));
+}
+
 function reverse(loop: Loop2): Loop2 {
   return loop
     .slice()
@@ -185,6 +204,24 @@ export function contourChoices(regions: Region2[]): ContourChoice[] {
   });
 }
 
+/** Whether two remembered contours name the same region: they share at least half of what they name (the rule the contour list uses). */
+export function sameContour(a: readonly Id[], b: readonly Id[]): boolean {
+  return a.length > 0 && a.filter((id) => b.includes(id)).length / new Set([...a, ...b]).size >= 0.5;
+}
+
+/**
+ * Which contours stay chosen after one of them is clicked (G10, P3): a plain click takes only it, Ctrl adds it or — when more
+ * than one is chosen — takes it away. At least one stays, so Ctrl on the only chosen one leaves it; null is all of them.
+ */
+export function pickContourSelection(choices: readonly ContourChoice[], chosen: readonly (readonly Id[])[] | null, clicked: number, additive: boolean): Id[][] | null {
+  const isChosen = (c: ContourChoice) => chosen === null || chosen.some((w) => sameContour(w, c.ids));
+  const chosenIdx = choices.flatMap((c, i) => (isChosen(c) ? [i] : []));
+  let next = !additive ? [clicked] : chosenIdx.includes(clicked) ? chosenIdx.filter((i) => i !== clicked) : [...chosenIdx, clicked];
+  if (next.length === 0) next = [clicked];
+  if (next.length >= choices.length) return null;
+  return next.sort((a, b) => a - b).map((i) => [...choices[i]!.ids]);
+}
+
 /**
  * The regions a feature uses: each remembered contour picks the region whose boundary shares most entities with it (at least half of
  * them, so a fillet that adds an arc to a selected rectangle does not lose it). A contour with no such region is `missing`.
@@ -210,7 +247,7 @@ export function selectContours(regions: Region2[], wanted: readonly (readonly Id
  * Closed-profile detection (C1.33): walks non-construction curves into loops and nests them
  * into regions (outer CCW, holes CW). Branches and open ends are reported, not guessed.
  */
-export function findProfiles(sketch: SketchFeature, solved: SolvedSketch): ProfileResult {
+export function findProfiles(sketch: SketchFeature, solved: Pick<SolvedSketch, 'geometry'>): ProfileResult {
   const nodes = new Nodes();
   const pointPos = new Map<Id, P2>([[SKETCH_ORIGIN, [0, 0]]]);
   for (const [id, g] of solved.geometry) if (g.type === 'point') pointPos.set(id, g.p);

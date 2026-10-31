@@ -41,6 +41,19 @@ export interface OverlayLabel {
 }
 
 /**
+ * A see-through area on the plane, drawn under the overlay's lines (G10, P3): a closed region a boss or cut can use, the one
+ * the cursor is over, or the chosen ones.
+ */
+export interface OverlayFill {
+  /** The outer boundary and the holes cut out of it, in the plane's 2D coordinates. */
+  outer: P2[];
+  holes: P2[][];
+  color: number;
+  /** 0..1. */
+  opacity: number;
+}
+
+/**
  * 2D drawing on a plane, shown on top of the model (A4.2): the sketch being edited with its
  * previews, dimensions and relation symbols. Colours and layout are decided by the caller.
  */
@@ -49,6 +62,8 @@ export interface SketchOverlay {
   curves: OverlayCurve[];
   points: OverlayPoint[];
   labels: OverlayLabel[];
+  /** Areas filled under the lines, when closed regions are shown (G10, P3). */
+  fills?: OverlayFill[];
 }
 
 export function toWorld(frame: PlaneFrame, p: P2): THREE.Vector3 {
@@ -56,21 +71,42 @@ export function toWorld(frame: PlaneFrame, p: P2): THREE.Vector3 {
   return new THREE.Vector3(o[0] + x[0] * p[0] + y[0] * p[1], o[1] + x[1] * p[0] + y[1] * p[1], o[2] + x[2] * p[0] + y[2] * p[1]);
 }
 
+/** A plane's basis as a matrix: a point (x, y, 0) maps to origin + x·xDir + y·yDir. */
+function planeMatrix(frame: PlaneFrame): THREE.Matrix4 {
+  const m = new THREE.Matrix4().makeBasis(new THREE.Vector3(...frame.xDir), new THREE.Vector3(...frame.yDir), new THREE.Vector3(...frame.normal));
+  m.setPosition(new THREE.Vector3(...frame.origin));
+  return m;
+}
+
 /** Lines and points of an overlay; `px` (world units per pixel) keeps dashes a constant size on screen. */
 export function buildOverlayObjects(overlay: SketchOverlay, px: number): THREE.Group {
   const group = new THREE.Group();
+  // A fill is see-through, and three draws every opaque object before any see-through one — so with fills present the lines and
+  // points are made see-through too (at full opacity, so they look exactly as before) and put after the fills by their order.
+  const layered = (overlay.fills?.length ?? 0) > 0;
   const materials = new Map<string, THREE.LineBasicMaterial>();
   const material = (color: number, dashed: boolean) => {
-    const key = `${color}:${dashed}`;
+    const key = `${color}:${dashed}:${layered}`;
     let m = materials.get(key);
     if (!m) {
       m = dashed
-        ? new THREE.LineDashedMaterial({ color, dashSize: 6 * px, gapSize: 4 * px, depthTest: false })
-        : new THREE.LineBasicMaterial({ color, depthTest: false });
+        ? new THREE.LineDashedMaterial({ color, dashSize: 6 * px, gapSize: 4 * px, depthTest: false, transparent: layered })
+        : new THREE.LineBasicMaterial({ color, depthTest: false, transparent: layered });
       materials.set(key, m);
     }
     return m;
   };
+  const matrix = planeMatrix(overlay.frame);
+  for (const f of overlay.fills ?? []) {
+    if (f.outer.length < 3) continue;
+    const shape = new THREE.Shape(f.outer.map(([x, y]) => new THREE.Vector2(x, y)));
+    for (const h of f.holes) if (h.length >= 3) shape.holes.push(new THREE.Path(h.map(([x, y]) => new THREE.Vector2(x, y))));
+    const g = new THREE.ShapeGeometry(shape);
+    g.applyMatrix4(matrix);
+    const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: f.color, transparent: true, opacity: f.opacity, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+    mesh.renderOrder = -1;
+    group.add(mesh);
+  }
   for (const c of overlay.curves) {
     if (c.points.length < 2) continue;
     const g = new THREE.BufferGeometry().setFromPoints(c.points.map((p) => toWorld(overlay.frame, p)));
@@ -86,7 +122,7 @@ export function buildOverlayObjects(overlay: SketchOverlay, px: number): THREE.G
     const colors = new Float32Array(pts.length * 3);
     pts.forEach((p, i) => new THREE.Color(p.color).toArray(colors, i * 3));
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    group.add(new THREE.Points(g, new THREE.PointsMaterial({ size, sizeAttenuation: false, vertexColors: true, depthTest: false })));
+    group.add(new THREE.Points(g, new THREE.PointsMaterial({ size, sizeAttenuation: false, vertexColors: true, depthTest: false, transparent: layered })));
   }
   return group;
 }
