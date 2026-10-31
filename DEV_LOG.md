@@ -2,6 +2,43 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-10-31:草圖互動 P3 第一刀:畫布選區與清單同步(G10)
+
+封閉輪廓現在可以在畫布上直接選:伸長/旋轉/掃出特徵的草圖會把**合法閉合輪廓淡填色**畫在平面上,游標移到哪一個,清單中對應那一列同時亮起;單擊只留那一個,Ctrl 加入或移除(至少留一個),選滿即等於「不指定」。沿用既有 `contours` 資料與 IDs,**Schema 未變更**;孔洞是真的挖掉的洞,點在洞裡不算選到。取消(Esc 先停選取、再一次關閉 PropertyManager)、體積與存讀都逐項驗過。
+
+### 1. 交付內容
+- `packages/sketch/src/profiles.ts`:
+  - `RegionOutline` 與 `regionOutline(region)`:外邊界與孔洞取樣成多邊形,與面積/嵌套判定用同一套取樣。
+  - `outlineContains(outline, p)`:在外邊界內、且不在任何孔洞內。
+  - `sameContour(a, b)`:共享圖元達一半即視為同一輪廓(原清單內的 inline 版本抽出來共用)。
+  - `pickContourSelection(choices, chosen, clicked, additive)`:單擊只留被點的那個;Ctrl 未選則加入、已選則移除;**永不為空**(只剩一個時 Ctrl 點它仍保留);選滿全部時回 `null`(等於「全部/不指定」)。
+  - `findProfiles` 的第二參數放寬為 `Pick<SolvedSketch, 'geometry'>`——主執行緒可以用 Worker 已解的 `sketchGeometry` 呼叫,不必為了填色再跑一次求解器。
+- `packages/render/src/overlay.ts`:
+  - `OverlayFill { outer, holes, color, opacity }` 與 `SketchOverlay.fills?`;`planeMatrix(frame)` 把平面座標系轉成矩陣。
+  - 填色以 `THREE.Shape`(孔洞為 `THREE.Path.holes`)+ `ShapeGeometry`,套平面矩陣,材質 `transparent`、`depthTest:false`、`depthWrite:false`、`DoubleSide`,`renderOrder = -1`。
+  - 有填色時曲線/點材質改為 `transparent:true`(alpha 仍為 1),讓 three 把它們排在填色之後;沒有填色的 overlay 完全維持原樣。
+- `apps/web/src/state/store.ts`:`contourPick`/`contourHover` 狀態;`startContourPick(featureId)` 取該特徵草圖的 Worker 求解幾何,少於 2 個合法區域時提示 `contour.pickNone` 而不進入;`stopContourPick`、`contourAt(p)`、`setContourHover(i)`、`contourPickClick(p, additive)` 以 `setContours` 寫回;`leaveSession` 一併清除。
+- `apps/web/src/components/Viewport.tsx`:顯示草圖的 effect 在選取期間**強制顯示**該草圖(即使被特徵隱藏),並為每個區域加填色(未選 `preview` 0.14、已選 `selected` 0.26、hover `hover` 0.30);選取期間安裝 tool handler:以 `planePoint` 取平面座標 → `contourAt` 判定,`move` 設 hover、`down` 設 hover 並寫回選取、`leave` 清 hover。tool handler 只接管左鍵,中鍵旋轉照舊。
+- `apps/web/src/components/PropertyManager.tsx`:`ContourBox` 加「在畫布選取 / 結束選取」按鈕與提示;游標所在的那一列加 `.contour-hover`;面板卸載即停止選取;原本 inline 的 `same()` 改用 `sameContour`。
+- `apps/web/src/actions.ts`:選取中按 Esc 先停選取,再一次 Esc 才關閉 PropertyManager(取消特徵)。
+- i18n:`contour.pick`、`contour.pickStop`、`contour.pickHint`、`contour.pickNone`(zh-TW / en 各 4 條)。
+- 測試:`packages/sketch/test/profiles-pick.test.ts`(5 項,不經 WASM 求解器)、`tests/e2e/manual-contour-pick.js`(10 步,實機 UI)。
+
+### 2. 紅隊四問(AGENTS.md §2)
+1. **輸入破壞**:特徵沒有草圖、草圖解不出、或合法區域少於 2 個 → 只提示 `contour.pickNone`,不進入選取;點在孔洞或所有區域之外 → `contourAt` 回 `null`,點擊不寫任何命令;Ctrl 點唯一已選的區域仍保留它,`pickContourSelection` 不會回空陣列,命令層的 `cmd.contoursEmpty` 也仍在守門。
+2. **幾何相交破壞**:填色是「外邊界減孔洞」,孔洞以 `Shape.holes` 實作,並以真實像素驗證(區域內 >50 px 變化、孔洞內 ≤2 px)。這**不是** G11 的交叉/分岔子區域:重疊輪廓仍不能被分割,填色只表示「這是可直接使用的合法閉合輪廓」,不宣稱可再分割拉伸。
+3. **依賴鏈完整性**:Schema/命令未變(`contours` 自 C1.34 即存在);鏈路 `startContourPick → contourAt/outlineContains → pickContourSelection → setContours`;顯示靠 `isShown` 的覆寫而非改文件;畫布與清單共用 `sameContour`,兩邊的「已選」定義只有一份。
+4. **規格真實性與零 Mock**:e2e 以真實幾何與真實像素斷言——三個輪廓體積 9214.6 / 7214.6 / 8214.6 / 1000 mm³、填色像素差、hover 與清單同一列、孔洞點擊無效、Esc 兩段後文件無此特徵、存檔重開後 `contours` 仍是同一個區域。
+
+### 3. 確效與指標
+- `apps/web` + `packages/sketch` 全量 **51 檔 567 項**通過(含新增 5 項);`npx tsc -p tsconfig.json` 0 錯誤。
+- 完整 `verify:ui` **252/252** 通過(0 失敗,新增 `manual-contour-pick` 1 例);typecheck、lint:rules/deps/repo/i18n 全 PASS。
+- 仍缺:G11 交叉/分岔子區域(留 P5,須先做平面區域分割與持久子邊參照);畫布只支援單擊與 Ctrl 切換,沒有框選多個區域。
+
+### 4. e2e 紅隊抓到的兩個測試設計錯誤
+1. **在俯視圖用「同一點的螢幕位移」證明中鍵旋轉是錯的**:俯視時旋轉多為繞視軸的深度方向變化,量到 1.27 px,第一版因此把「有轉動」判成 false。改以 `cubeMatrix()` 改變 + 全畫面像素差 >2000 為證據,並保留「轉完仍能 hover 與選取」的斷言。教訓與 §3.1 同源:不要用一個受視角投影影響的代理量,去證明另一個量。
+2. **e2e 必須把草圖擺在 PropertyManager 沒遮住的區域**:第一版直接對 canvas 派送事件在畫面中央,而面板蓋住右半邊,點擊落在面板上。改為先 `setView('top')`,再以中鍵+Ctrl 把草圖平移到畫布約 32% 寬處;點選前確認該位置只有目標圖元。
+
 ## 2026-10-31:草圖互動 P2 第六刀:線與相切弧互換仍保留鏈(G05)
 
 直線、中心線與相切弧三種繪製工具彼此切換時保留鏈:切到相切弧時,鏈的終點就是起點,單擊即為終點;相切弧提交後以弧的終點續鏈,繞回首點即結束鏈。相切仍由既有推斷決定——只有沿切線方向才加 `tangent`,偏離時不偷偷加錯相切;Esc 結束鏈且不留半成品。

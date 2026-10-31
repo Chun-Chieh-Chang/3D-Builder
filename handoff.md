@@ -137,6 +137,19 @@
 - **確效**:`apps/web` + `packages/sketch` 50 檔 **562 項**;typecheck、lint:rules/deps/repo/i18n 全 PASS;完整 `verify:ui` **251/251**;新增 e2e `manual-tangent-chain.js` 1/1。**提交前徵詢**。
 - **下一刀**:P3 區域式建模入口(G10)。
 
+## 3g. 2026-10-31 P3-1 進行中:畫布選區與清單同步(G10)
+
+- **目標(G10)**:伸長/旋轉/掃出的草圖,合法閉合輪廓在畫布淡填色、hover 與清單同亮、單擊單選 / Ctrl 加減(永不為零),沿用既有 contour IDs 與 `setContours`,不改 Schema。對應 P3 驗收出口「矩形帶圓孔 / 多個分離輪廓畫布選區、清單同步;實體體積、取消、存讀正確」。G11(交叉/分岔子區域)不在本階段。
+- **實作**:
+  - `packages/sketch/src/profiles.ts`:`regionOutline` / `outlineContains`(孔洞內不算命中)/ `sameContour`(共享一半圖元;清單的 inline 版抽出共用)/ `pickContourSelection`(單擊、Ctrl 加減、至少留一個、選滿回 `null`);`findProfiles` 第二參數放寬為 `Pick<SolvedSketch,'geometry'>`,主執行緒可直接用 Worker 的 `sketchGeometry`。
+  - `packages/render/src/overlay.ts`:`SketchOverlay.fills` + `OverlayFill`;`THREE.Shape`(孔洞為 `Path.holes`)+ `ShapeGeometry` + 平面矩陣,`renderOrder=-1`,有填色時線/點材質改 `transparent` 以維持排序。
+  - `apps/web/src/state/store.ts`:`contourPick`/`contourHover`;`startContourPick` 少於 2 個合法區域即提示 `contour.pickNone`;`contourAt`/`setContourHover`/`contourPickClick`;`leaveSession` 清除。
+  - `apps/web/src/components/Viewport.tsx`:選取期間強制顯示該草圖(即使被特徵隱藏)並加填色;tool handler 只接管左鍵,以 `planePoint` 取平面座標判定。
+  - `apps/web/src/components/PropertyManager.tsx`:「在畫布選取 / 結束選取」按鈕、hover 列高亮、卸載即停;`actions.ts` 的 Esc 先停選取再關閉面板;i18n 4 條 × 2 語。
+- **紅隊抓到(測試設計,非產品缺陷)**:① 俯視圖用「同一點螢幕位移」證明中鍵旋轉是錯的(量到 1.27 px),改以 `cubeMatrix()` + 全畫面像素差 >2000。② e2e 必須先把草圖平移到 PropertyManager 沒遮住的區域(約 32% 寬),否則點擊落在面板底下。
+- **確效**:`apps/web` + `packages/sketch` **51 檔 567 項**;typecheck PASS;完整 `verify:ui` **252/252**;新增 e2e `manual-contour-pick.js` 1/1(10 步)。**提交前徵詢**。
+- **下一刀**:P3 到此完成;進入 P4「診斷、關係與參照」,建議先 G12(關係標記跨 anchor 避讓與雙向高亮)、再 G13、G15,P4-4 依 P0 量測修 G04/14/18。
+
 ## 4. 下一階段核心計畫：草圖互動改善方案 (P1 即時尺寸輸入)
 
 參考規劃文檔：[草圖互動方案規劃 (docs/design/sketch-interaction/plan.md)](docs/design/sketch-interaction/plan.md) 與 [P0 驗收紀錄 (docs/design/sketch-interaction/acceptance.md)](docs/design/sketch-interaction/acceptance.md)。
