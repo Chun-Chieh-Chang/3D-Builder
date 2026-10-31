@@ -125,6 +125,18 @@
 - **已知缺口**:獨立 Split 需定義 ID/尺寸/外部參照繼承(P5);以自由曲線為邊界留 P5。
 - **下一刀**:P2-6 相切弧接續(提交前徵詢)。
 
+## 3f. 2026-10-31 P2-6 進行中:線與相切弧互換仍保留鏈(G05 部分)
+
+- **目標(G05)**:直線、中心線、相切弧互相切換時保留鏈與鏈端;相切仍由既有推斷決定,不偷偷加錯相切;Esc 無半成品。對應 T03:「直線→相切弧→直線,跨工具仍保留切向;中途 Esc 與取消無半成品、無多餘關係」。
+- **實作**(`apps/web/src/sketcher/controller.ts`):
+  - `CHAIN_TOOLS`(line/centerline/tangentArc);`setTool` 只在舊、新皆為鏈工具時帶過 `chain`。
+  - `chainSnap()` 把鏈端當吸附點;`tangentArc` 的 click/preview 以 `clicks[0] ?? chainSnap()` 為起點,單擊即終點;`snapshot` 的 `step` 在有鏈時視為 1,提示改問終點。
+  - `finishTwoClick` 的 tangentArc 以 `this.commit(b)` 成功為前提才設 `nextChain`;`end === chainFirst` 時收鏈。
+  - 重合判定:在 `lineClick`/`finishTwoClick` 以 `dist(起點, 落點) < 1e-9` 直接返回,不建零長段。
+- **交付前紅隊抓到的回歸**:第一版守門用 `PICK_PX * px`(7px 拾取半徑)判「同一個點」,吞掉被對齊吸附拉近鏈端的合法點 → `manual-thread` 由 PASS 變 FAIL(乾淨 HEAD 單跑通過,證明是本刀造成)。改為 1e-9 重合判定並補回歸測試(`draws on when a snapped click lands near the chain end`)。
+- **確效**:`apps/web` + `packages/sketch` 50 檔 **562 項**;typecheck、lint:rules/deps/repo/i18n 全 PASS;完整 `verify:ui` **251/251**;新增 e2e `manual-tangent-chain.js` 1/1。**提交前徵詢**。
+- **下一刀**:P3 區域式建模入口(G10)。
+
 ## 4. 下一階段核心計畫：草圖互動改善方案 (P1 即時尺寸輸入)
 
 參考規劃文檔：[草圖互動方案規劃 (docs/design/sketch-interaction/plan.md)](docs/design/sketch-interaction/plan.md) 與 [P0 驗收紀錄 (docs/design/sketch-interaction/acceptance.md)](docs/design/sketch-interaction/acceptance.md)。
