@@ -203,4 +203,6 @@ export const sketch: Translation = {
   'sketch.option.distance1': 'Distance 1',
   'sketch.option.distance2': 'Distance 2',
   'sketch.option.offset': 'Offset distance',
+  'sketch.option.offsetBoth': 'Both sides',
+  'sketch.option.offsetCaps': 'Cap ends',
 };

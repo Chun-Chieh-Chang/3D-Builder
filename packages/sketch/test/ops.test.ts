@@ -493,6 +493,43 @@ describe('offset (C1.17)', () => {
     const tee = start([point('p', 0, 0), point('a', 5, 0), point('b', 0, 5), point('c', -5, 0), line('A', 'p', 'a'), line('B', 'p', 'b'), line('C', 'p', 'c')]);
     expect(offset(sketchOf(tee), solve(tee).geometry, ids(tee), ['A', 'B', 'C'], 1, [1, 1])).toMatchObject({ error: expect.stringContaining('分岔') });
   });
+
+  it('offsets both sides at once: one copy each way, each side driven by its own distance (G09, P2-3)', () => {
+    const doc0 = rectangle();
+    const doc = run(doc0, offset(sketchOf(doc0), solve(doc0).geometry, ids(doc0), original, 2, [15, 10], { both: true }));
+    everyRefExists(doc);
+    const s = solve(doc);
+    expect(s.status).toBe('fully');
+    expect(s.redundant).toEqual([]);
+    const made = copies(doc, original);
+    expect(made).toHaveLength(8); // four legs on each side
+    const xs = made.flatMap((id) => [lineOf(s, id).a[0], lineOf(s, id).b[0]]);
+    expect([...new Set(xs.map((v) => Math.round(v * 1e6) / 1e6))].sort((a, b) => a - b)).toEqual([-2, 2, 28, 32]);
+    const ys = made.flatMap((id) => [lineOf(s, id).a[1], lineOf(s, id).b[1]]);
+    expect([...new Set(ys.map((v) => Math.round(v * 1e6) / 1e6))].sort((a, b) => a - b)).toEqual([-2, 2, 18, 22]);
+    // each side has one driving distance of its own; the other three legs of that side name it (the originals' width/height dimensions name only one leg, so they have no `b`)
+    const dims = sketchOf(doc).constraints.filter((k) => k.type === 'distance' && k.b !== undefined) as Extract<SketchConstraint, { type: 'distance' }>[];
+    expect(dims).toHaveLength(8);
+    const driving = dims.filter((k) => k.value === '2');
+    expect(driving).toHaveLength(2);
+  });
+
+  it('refuses a both-sides offset when one side cannot be built, and caps close an open chain (G09, P2-3)', () => {
+    // a circle whose inner side would have no radius left: R5 offset by 6 leaves −1
+    const ring = start([point('c', 0, 0), { id: 'C', type: 'circle', center: 'c', radius: 5 }], [{ id: 'f', type: 'coincident', a: 'c', b: SKETCH_ORIGIN }, { id: 'r', type: 'radius', circle: 'C', value: '5' }]);
+    expect(offset(sketchOf(ring), solve(ring).geometry, ids(ring), ['C'], 6, [20, 0], { both: true })).toMatchObject({ error: expect.stringContaining('太大') });
+
+    // caps: an open chain's two free ends are closed by lines perpendicular to a line leg, so the offset and the original enclose a strip
+    const corner = start([point('p', 0, 0), point('qa', 20, 0), point('qb', 0, 20), line('A', 'p', 'qa'), line('B', 'p', 'qb')]);
+    const doc = run(corner, offset(sketchOf(corner), solve(corner).geometry, ids(corner), ['A', 'B'], 3, [10, 10], { caps: true }));
+    everyRefExists(doc);
+    const s = solve(doc);
+    expect(s.conflicting).toEqual([]);
+    expect(copies(doc, ['A', 'B'])).toHaveLength(4); // the two offset legs and the two caps
+    const perps = sketchOf(doc).constraints.filter((k) => k.type === 'perpendicular');
+    expect(perps).toHaveLength(2);
+    expect(findProfiles(sketchOf(doc), s).regions).toHaveLength(1);
+  });
 });
 
 describe('entities that follow the model (C1.18, C1.26)', () => {

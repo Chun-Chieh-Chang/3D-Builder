@@ -201,4 +201,6 @@ export const sketch = {
   'sketch.option.distance1': '距離 1',
   'sketch.option.distance2': '距離 2',
   'sketch.option.offset': '偏移距離',
+  'sketch.option.offsetBoth': '兩側',
+  'sketch.option.offsetCaps': '封口',
 } as const;

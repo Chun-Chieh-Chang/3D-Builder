@@ -67,6 +67,20 @@ P0 核心功能與驗收項目已全數跑通（Windows 瀏覽器 `manual-sketch
 回歸：`apps/web` 30 檔 **313 項**通過；typecheck／lint 全 PASS；完整 `verify:ui` **249/250**——唯一失敗 `manual-drawing-linked` 依乾淨 HEAD `--only` 對照（同簽名 `box.centred:false`，mid[1]=173.5 對 172.5）與 DEV_LOG 2026-10-29 先例判定為**既有／環境性失敗**，非本批造成，另案追蹤。
 
 
+## P2-3:偏移兩側與封口(G09 部分)
+
+2026-10-31。`offset()` 沿用 P2-1/P2-2 的預覽管道,本批加上「兩側同時偏移」與「開放鏈兩端封口」,並把兩個選項接到 PropertyManager;因為 hover 與提交呼叫同一個純 op,結果預覽免費獲得。
+
+| 案例 | 狀態 | 證據/仍缺項 |
+|---|---|---|
+| G09 兩側偏移 | 通過 | `offset()` 主體收斂為 `runSide(forced)`;`entry.both` 時跑 `[1, -1]` 兩趟,各側以自己的驅動距離偏移。`ops.test.ts`:矩形四腿兩側共 8 條複本,外擴/內縮各 2(x∈{−2,2,28,32}、y∈{−2,2,18,22}),求解 `fully`、`redundant` 空;每側 1 條驅動距離(值 2),含指名者每側 4 條。任一側不成立(R5 圓內縮 6 → −1)即回 `sketch.offsetTooSmall`,不靜默只做一側。`sketch-op-preview.test.ts`:兩側 hover 預覽 2 條 `add` 平行線(y∈{−5,5}),點擊落成 3 條線、預覽清空、一次 Undo 完整還原。 |
+| G09 封口 | 通過 | `entry.caps` 於非環狀鏈兩端各加一直線接回原端點,直線腿加 `perpendicular`。`ops.test.ts`:兩線開放鏈封口得 4 條新線(2 腿 + 2 封口)、2 條 `perpendicular`、`findProfiles.regions` 1 個封閉區域、`conflicting` 空。`sketch-op-preview.test.ts`:封口 hover 預覽 3 條 `add`、點擊落成 4 條線、預覽清空、一次 Undo 還原。 |
+| 預覽=提交結果 | 通過 | 兩側/封口皆走既有管道;hover 與 `operationClick` 傳同一 `entry`。`setOption` 變更選項時丟棄依舊選項畫出的 `opPlan` 並在游標仍在時立即重算(不留失配預覽)。 |
+| 已知缺口 | 記錄待辦 | 曲線(自由曲線)offset 仍留 P5 探針;掃掠修剪 P2-4、延伸選邊界 P2-5、相切弧接續 P2-6。 |
+
+回歸:`apps/web` + `packages/sketch` 全量 **50 檔 550 項**通過(含新增 4 項);typecheck、lint:rules/deps/repo/i18n 全 PASS;完整 `verify:ui` **249/250**——唯一失敗 `manual-drawing-linked`(同簽名 `centred:false`)為既有/環境性失敗,另案追蹤。
+
+
 ## 測試與失敗紀錄
 
 - `apps/web/test/sketcher.test.ts` 75項、`packages/sketch/test/solve-options.test.ts` 16項（含150組隨機配置核對）、`apps/web/test/sketch-pointer-baseline.test.ts` 2項、`tests/phase8/view-normal.test.ts` 7項，合計100項測試全數通過。

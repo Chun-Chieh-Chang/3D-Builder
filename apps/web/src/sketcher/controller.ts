@@ -156,6 +156,10 @@ export interface ToolOptions {
   chamferDistance1: number;
   chamferDistance2: number;
   offsetDistance: number;
+  /** 偏移 copies to both sides at once (G09, P2-3). */
+  offsetBoth: boolean;
+  /** 偏移 closes an open chain's two ends with straight lines. */
+  offsetCaps: boolean;
   /** 「修復草圖」 closes gaps up to this wide (mm). */
   gapTolerance: number;
   /**
@@ -191,6 +195,8 @@ const DEFAULT_OPTIONS: ToolOptions = {
   chamferDistance1: 5,
   chamferDistance2: 5,
   offsetDistance: 5,
+  offsetBoth: false,
+  offsetCaps: false,
   gapTolerance: 0.1,
   keepRelations: false,
   transformCopy: false,
@@ -533,6 +539,9 @@ export class SketchController {
 
   setOption<K extends keyof ToolOptions>(key: K, value: ToolOptions[K]): void {
     this.options = { ...this.options, [key]: value };
+    // a plan was drawn from the old option: drop it, and (if the pointer is on the sketches) draw the new one right away
+    this.opPlan = null;
+    if (this.pointer && PICK_TOOLS.has(this.tool)) this.updateSnap(this.pointer);
     this.changed();
   }
 
@@ -1954,7 +1963,7 @@ export class SketchController {
       // the offset needs no curve under the pointer: the cursor only says which side the copy goes to
       if (this.picks.length === 0) return null; // the tool takes a pre-selection (setTool refuses without one)
       const geometry = this.geometry();
-      const plan = offset(this.sketch(), geometry, this.allocator(), this.picks, this.options.offsetDistance, e.p);
+      const plan = offset(this.sketch(), geometry, this.allocator(), this.picks, this.options.offsetDistance, e.p, { both: this.options.offsetBoth, caps: this.options.offsetCaps });
       if ('error' in plan) return null;
       return { doc: this.host.doc(), target: this.hover?.id ?? '', shapes: editPreviewShapes(plan.edit, geometry) };
     }
@@ -2022,7 +2031,7 @@ export class SketchController {
         return;
       }
       case 'offset':
-        this.run(offset(sketch, geometry, ids, this.picks, this.options.offsetDistance, e.p), () => this.setTool('select'));
+        this.run(offset(sketch, geometry, ids, this.picks, this.options.offsetDistance, e.p, { both: this.options.offsetBoth, caps: this.options.offsetCaps }), () => this.setTool('select'));
         return;
       case 'mirror': {
         const hit = this.pickedCurve(e, true);

@@ -265,6 +265,66 @@ describe('operation preview of the shared plan (G06, P2-1: trim)', () => {
     c.setTool('select');
   });
 
+  it('an offset drawn to both sides previews two copies, and the click lands them (G09, P2-3)', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 20, 0);
+    c.escape();
+    const counts = { entities: h.sketch().entities.length, constraints: h.sketch().constraints.length };
+
+    c.select(['l1']);
+    c.setTool('offset');
+    c.setOption('offsetBoth', true);
+    move(c, 10, 5);
+    const seen = overview(c).filter((x) => x.kind === 'line' && x.role === 'add');
+    expect(seen).toHaveLength(2); // one copy on each side
+    const ys = seen.map((x) => (x.s as Extract<PreviewShape, { kind: 'line' }>).a[1]).map((v) => Math.round(v * 1e6) / 1e6).sort((a, b) => a - b);
+    expect(ys).toEqual([-5, 5]);
+    expect(h.sketch().entities).toHaveLength(counts.entities);
+
+    click(c, 10, 5); // the confirming click submits the same plan
+    await c.settled();
+    expect(h.sketch().entities.filter((e) => e.type === 'line' && !e.construction)).toHaveLength(3);
+    expect(c.getView().preview).toEqual([]);
+
+    h.history.undo();
+    h.resolve();
+    expect(h.sketch().entities).toHaveLength(counts.entities);
+    expect(h.sketch().constraints).toHaveLength(counts.constraints);
+    c.setTool('select');
+  });
+
+  it('封口 previews the closing lines of an open chain, and the click makes them (G09, P2-3)', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 20, 0);
+    c.escape(); // one open chain: a single line has two free ends
+    const counts = { entities: h.sketch().entities.length, constraints: h.sketch().constraints.length };
+
+    c.select(['l1']);
+    c.setTool('offset');
+    c.setOption('offsetCaps', true);
+    move(c, 10, 5);
+    const seen = overview(c).filter((x) => x.kind === 'line' && x.role === 'add');
+    expect(seen).toHaveLength(3); // the copy and its two caps
+    expect(h.sketch().entities).toHaveLength(counts.entities);
+
+    click(c, 10, 5); // the confirming click submits the same plan
+    await c.settled();
+    expect(h.sketch().entities.filter((e) => e.type === 'line' && !e.construction)).toHaveLength(4);
+    expect(c.getView().preview).toEqual([]);
+
+    h.history.undo();
+    h.resolve();
+    expect(h.sketch().entities).toHaveLength(counts.entities);
+    expect(h.sketch().constraints).toHaveLength(counts.constraints);
+    c.setTool('select');
+  });
+
   it('hover on another line previews the mirrored copy the click then makes', async () => {
     const h = new Host();
     const c = new SketchController(h);

@@ -119,6 +119,13 @@ export interface PolygonEntry {
   angle?: string;
 }
 
+export interface OffsetEntry {
+  /** Offset copies on both sides of the selected chain at once. */
+  both?: boolean;
+  /** Close an open chain's two ends with straight lines, so the offset forms a closed loop. */
+  caps?: boolean;
+}
+
 /**
  * A straight slot: two arcs of radius `r` about the centers `c1` and `c2`, joined by two lines that touch them. The
  * sides are tangent to both arcs, and the arcs have equal radii, which leaves the five freedoms a slot has (both
@@ -912,120 +919,146 @@ function heading(l: Leg, p: P2): P2 {
  * first at a driving distance `d` and the others at "the same" (an expression naming the first), so changing one changes
  * all; an arc or circle is about the same center with its new radius as a dimension. The ends of an open chain are not
  * pinned along their curve.
+ *
+ * `entry.both` (G09, P2-3) offsets both sides at once, each side a chain of its own with its own driving distance; `entry.caps`
+ * closes an open chain's two ends with straight lines back to the original end points (perpendicular to a line leg), so the
+ * offset reads as a closed loop.
  */
-export function offset(sketch: Pick<SketchFeature, 'entities' | 'name'>, geometry: Geometry, ids: IdAllocator, entityIds: Id[], d: number, toward: P2): OpResult {
+export function offset(sketch: Pick<SketchFeature, 'entities' | 'name'>, geometry: Geometry, ids: IdAllocator, entityIds: Id[], d: number, toward: P2, entry: OffsetEntry = {}): OpResult {
   const chosen = sketch.entities.filter((e): e is Leg['entity'] | Extract<SketchEntity, { type: 'circle' }> => entityIds.includes(e.id) && (e.type === 'line' || e.type === 'arc' || e.type === 'circle'));
   if (chosen.length === 0) return error('sketch.offsetNothing');
   if (!(d > TINY)) return error('sketch.offsetDistance');
+  const both = entry.both ?? false;
+  const caps = entry.caps ?? false;
   const b = new Parts(ids);
-  let first: string | null = null;
-  const lineDistance = (original: Id, copy: Id) => {
-    if (first === null) first = `D${b.dimension({ type: 'distance', a: original, b: copy }, d).slice(1)}@${sketch.name}`;
-    else b.dimension({ type: 'distance', a: original, b: copy }, first);
-  };
+  const sides: (1 | -1 | null)[] = both ? [1, -1] : [null];
 
-  const circles = chosen.filter((e) => e.type === 'circle');
-  for (const e of circles) {
-    const g = geometry.get(e.id);
-    if (g?.type !== 'circle') continue;
-    const r = dist(toward, g.c) < g.r ? g.r - d : g.r + d;
-    if (!(r > TINY)) return error('sketch.offsetTooSmall');
-    const copy = b.circle(e.center, r, e.construction);
-    b.dimension({ type: 'radius', circle: copy }, r);
-  }
-
-  // chains of curves that share end points
-  const open = chosen.filter((e): e is Leg['entity'] => e.type !== 'circle');
-  const users = new Map<Id, Leg['entity'][]>();
-  for (const e of open) for (const p of e.type === 'line' ? [e.p1, e.p2] : [e.start, e.end]) users.set(p, [...(users.get(p) ?? []), e]);
-  if ([...users.values()].some((u) => u.length > 2)) return error('sketch.offsetBranch');
-  const seen = new Set<Id>();
-  const ends = (e: Leg['entity']): [Id, Id] => (e.type === 'line' ? [e.p1, e.p2] : [e.start, e.end]);
-  const place = (id: Id): P2 => {
-    const g = geometry.get(id);
-    return g?.type === 'point' ? g.p : [0, 0];
-  };
-  const order = [...open.filter((e) => ends(e).some((p) => users.get(p)!.length === 1)), ...open]; // open chains start at an end
-  for (const startEntity of order) {
-    if (seen.has(startEntity.id)) continue;
-    const legs: Leg[] = [];
-    let cur: Leg['entity'] | undefined = startEntity;
-    let from = ends(startEntity).find((p) => users.get(p)!.length === 1) ?? ends(startEntity)[0];
-    while (cur && !seen.has(cur.id)) {
-      seen.add(cur.id);
-      const [e0, e1] = ends(cur);
-      const flip = from !== e0;
-      const to = flip ? e0 : e1;
-      const g = geometry.get(cur.id);
-      if (g?.type !== 'line' && g?.type !== 'arc') return error('sketch.offsetNothing');
-      legs.push({ id: cur.id, entity: cur, g, from, to, fromAt: place(from), toAt: place(to), flip });
-      from = to;
-      cur = users.get(to)!.find((x) => x.id !== cur!.id);
-    }
-    const loop = legs.length > 1 && legs[0]!.from === legs.at(-1)!.to;
-    if (legs.length === 1 && legs[0]!.from === legs[0]!.to) return error('sketch.offsetBranch');
-
-    // the side: left or right of the way of travel, as the click lies from the curve nearest it
-    let best = { dist: Infinity, side: 1 };
-    for (const l of legs) {
-      const near = closestOn(l.g, toward);
-      if (!near) continue;
-      const dd = dist(near, toward);
-      if (dd < best.dist) best = { dist: dd, side: cross(heading(l, near), sub(toward, near)) >= 0 ? 1 : -1 };
-    }
-    const shift = (l: Leg, p: P2): P2 => add(p, scale(perp(heading(l, p)), best.side * d));
-    const bent = legs.map((l): Curve | string => {
-      if (l.g.type === 'line') {
-        const [da, db] = [shift(l, l.g.a), shift(l, l.g.b)];
-        return { type: 'line', a: da, b: db, p1: l.g.p1, p2: l.g.p2, construction: l.g.construction };
-      }
-      const p = l.fromAt;
-      const outward = dot(perp(heading(l, p)), unit(sub(p, l.g.c))) * best.side; // +1: the offset runs away from the center
-      const r = l.g.r + outward * d;
-      return r > TINY ? { type: 'circle', c: l.g.c, r, center: l.g.center, construction: l.g.construction } : 'small';
-    });
-    if (bent.includes('small')) return error('sketch.offsetTooSmall');
-    const curves = bent as Curve[];
-
-    // where consecutive offset curves meet: the corner of the offset chain. Curves that run on into each other (tangent)
-    // meet where the old corner slid sideways; a line and an arc keep a tangent relation there, since the two equations
-    // "on the line" and "on the circle" would otherwise lean the same way and fix nothing.
-    const joint = (i: number): { at: P2; tangent: boolean } | null => {
-      const [l, m] = [legs[i]!, legs[(i + 1) % legs.length]!];
-      const next = curves[(i + 1) % legs.length]!;
-      const slid = shift(l, l.toAt);
-      const tangent = Math.abs(cross(heading(l, l.toAt), heading(m, l.toAt))) < 1e-6 && dot(heading(l, l.toAt), heading(m, l.toAt)) > 0;
-      if (tangent) return l.g.type === m.g.type ? null : { at: slid, tangent };
-      const meets = crossings(curves[i]!, next).sort((x, y) => dist(x, slid) - dist(y, slid));
-      return meets[0] ? { at: meets[0], tangent } : null;
+  /** Builds one offset (one side): `forced` is the side, or null to read it from `toward`. */
+  const runSide = (forced: 1 | -1 | null): OpResult | null => {
+    let first: string | null = null;
+    const lineDistance = (original: Id, copy: Id) => {
+      if (first === null) first = `D${b.dimension({ type: 'distance', a: original, b: copy }, d).slice(1)}@${sketch.name}`;
+      else b.dimension({ type: 'distance', a: original, b: copy }, first);
     };
-    const count = loop ? legs.length : legs.length - 1;
-    const joints = Array.from({ length: count }, (_, i) => joint(i));
-    if (joints.some((j) => j === null)) return error('sketch.offsetNoJoin');
-    const corners: P2[] = [
-      loop ? joints.at(-1)!.at : shift(legs[0]!, legs[0]!.fromAt),
-      ...joints.map((j) => j!.at),
-      ...(loop ? [] : [shift(legs.at(-1)!, legs.at(-1)!.toAt)]),
-    ];
-    // corners[i] is where leg i starts, corners[i + 1] where it ends (a loop's last corner is its first)
-    const pts = (loop ? corners.slice(0, legs.length) : corners).map((p) => b.point(p));
-    const at = (i: number): Id => pts[i % pts.length]!;
-    const made = legs.map((l, i): Id => {
-      const [p, q] = [at(i), at(i + 1)];
-      if (l.entity.type === 'line') return b.line(p, q, l.entity.construction);
-      const copy = l.flip ? b.arc(l.entity.center, q, p, l.entity.construction) : b.arc(l.entity.center, p, q, l.entity.construction);
-      b.dimension({ type: 'radius', circle: copy }, (curves[i] as Extract<Curve, { type: 'circle' }>).r);
-      return copy;
-    });
-    legs.forEach((l, i) => {
-      if (l.entity.type !== 'line') return;
-      const n = legs.length;
-      // an arc this line runs tangent into at either end; each tangent relation takes the place of one of "parallel" and "distance"
-      const arcs = [loop || i > 0 ? (joints[(i - 1 + n) % n]!.tangent ? made[(i - 1 + n) % n]! : null) : null, joints[i]?.tangent ? made[(i + 1) % n]! : null].filter((x): x is Id => x !== null);
-      for (const arc of arcs) b.relation({ type: 'tangent', a: made[i]!, b: arc });
-      if (arcs.length === 0) b.relation({ type: 'parallel', a: l.id, b: made[i]! });
-      if (arcs.length < 2) lineDistance(l.id, made[i]!);
-    });
+
+    const circles = chosen.filter((e) => e.type === 'circle');
+    for (const e of circles) {
+      const g = geometry.get(e.id);
+      if (g?.type !== 'circle') continue;
+      const r = forced === null ? (dist(toward, g.c) < g.r ? g.r - d : g.r + d) : forced === 1 ? g.r + d : g.r - d;
+      if (!(r > TINY)) return error('sketch.offsetTooSmall');
+      const copy = b.circle(e.center, r, e.construction);
+      b.dimension({ type: 'radius', circle: copy }, r);
+    }
+
+    // chains of curves that share end points
+    const open = chosen.filter((e): e is Leg['entity'] => e.type !== 'circle');
+    const users = new Map<Id, Leg['entity'][]>();
+    for (const e of open) for (const p of e.type === 'line' ? [e.p1, e.p2] : [e.start, e.end]) users.set(p, [...(users.get(p) ?? []), e]);
+    if ([...users.values()].some((u) => u.length > 2)) return error('sketch.offsetBranch');
+    const seen = new Set<Id>();
+    const ends = (e: Leg['entity']): [Id, Id] => (e.type === 'line' ? [e.p1, e.p2] : [e.start, e.end]);
+    const place = (id: Id): P2 => {
+      const g = geometry.get(id);
+      return g?.type === 'point' ? g.p : [0, 0];
+    };
+    const order = [...open.filter((e) => ends(e).some((p) => users.get(p)!.length === 1)), ...open]; // open chains start at an end
+    for (const startEntity of order) {
+      if (seen.has(startEntity.id)) continue;
+      const legs: Leg[] = [];
+      let cur: Leg['entity'] | undefined = startEntity;
+      let from = ends(startEntity).find((p) => users.get(p)!.length === 1) ?? ends(startEntity)[0];
+      while (cur && !seen.has(cur.id)) {
+        seen.add(cur.id);
+        const [e0, e1] = ends(cur);
+        const flip = from !== e0;
+        const to = flip ? e0 : e1;
+        const g = geometry.get(cur.id);
+        if (g?.type !== 'line' && g?.type !== 'arc') return error('sketch.offsetNothing');
+        legs.push({ id: cur.id, entity: cur, g, from, to, fromAt: place(from), toAt: place(to), flip });
+        from = to;
+        cur = users.get(to)!.find((x) => x.id !== cur!.id);
+      }
+      const loop = legs.length > 1 && legs[0]!.from === legs.at(-1)!.to;
+      if (legs.length === 1 && legs[0]!.from === legs[0]!.to) return error('sketch.offsetBranch');
+
+      // the side: left or right of the way of travel, as the click lies from the curve nearest it (or the one the caller forced)
+      let best = { dist: Infinity, side: 1 };
+      for (const l of legs) {
+        const near = closestOn(l.g, toward);
+        if (!near) continue;
+        const dd = dist(near, toward);
+        if (dd < best.dist) best = { dist: dd, side: cross(heading(l, near), sub(toward, near)) >= 0 ? 1 : -1 };
+      }
+      const side = forced ?? best.side;
+      const shift = (l: Leg, p: P2): P2 => add(p, scale(perp(heading(l, p)), side * d));
+      const bent = legs.map((l): Curve | string => {
+        if (l.g.type === 'line') {
+          const [da, db] = [shift(l, l.g.a), shift(l, l.g.b)];
+          return { type: 'line', a: da, b: db, p1: l.g.p1, p2: l.g.p2, construction: l.g.construction };
+        }
+        const p = l.fromAt;
+        const outward = dot(perp(heading(l, p)), unit(sub(p, l.g.c))) * side; // +1: the offset runs away from the center
+        const r = l.g.r + outward * d;
+        return r > TINY ? { type: 'circle', c: l.g.c, r, center: l.g.center, construction: l.g.construction } : 'small';
+      });
+      if (bent.includes('small')) return error('sketch.offsetTooSmall');
+      const curves = bent as Curve[];
+
+      // where consecutive offset curves meet: the corner of the offset chain. Curves that run on into each other (tangent)
+      // meet where the old corner slid sideways; a line and an arc keep a tangent relation there, since the two equations
+      // "on the line" and "on the circle" would otherwise lean the same way and fix nothing.
+      const joint = (i: number): { at: P2; tangent: boolean } | null => {
+        const [l, m] = [legs[i]!, legs[(i + 1) % legs.length]!];
+        const next = curves[(i + 1) % legs.length]!;
+        const slid = shift(l, l.toAt);
+        const tangent = Math.abs(cross(heading(l, l.toAt), heading(m, l.toAt))) < 1e-6 && dot(heading(l, l.toAt), heading(m, l.toAt)) > 0;
+        if (tangent) return l.g.type === m.g.type ? null : { at: slid, tangent };
+        const meets = crossings(curves[i]!, next).sort((x, y) => dist(x, slid) - dist(y, slid));
+        return meets[0] ? { at: meets[0], tangent } : null;
+      };
+      const count = loop ? legs.length : legs.length - 1;
+      const joints = Array.from({ length: count }, (_, i) => joint(i));
+      if (joints.some((j) => j === null)) return error('sketch.offsetNoJoin');
+      const corners: P2[] = [
+        loop ? joints.at(-1)!.at : shift(legs[0]!, legs[0]!.fromAt),
+        ...joints.map((j) => j!.at),
+        ...(loop ? [] : [shift(legs.at(-1)!, legs.at(-1)!.toAt)]),
+      ];
+      // corners[i] is where leg i starts, corners[i + 1] where it ends (a loop's last corner is its first)
+      const pts = (loop ? corners.slice(0, legs.length) : corners).map((p) => b.point(p));
+      const at = (i: number): Id => pts[i % pts.length]!;
+      const made = legs.map((l, i): Id => {
+        const [p, q] = [at(i), at(i + 1)];
+        if (l.entity.type === 'line') return b.line(p, q, l.entity.construction);
+        const copy = l.flip ? b.arc(l.entity.center, q, p, l.entity.construction) : b.arc(l.entity.center, p, q, l.entity.construction);
+        b.dimension({ type: 'radius', circle: copy }, (curves[i] as Extract<Curve, { type: 'circle' }>).r);
+        return copy;
+      });
+      legs.forEach((l, i) => {
+        if (l.entity.type !== 'line') return;
+        const n = legs.length;
+        // an arc this line runs tangent into at either end; each tangent relation takes the place of one of "parallel" and "distance"
+        const arcs = [loop || i > 0 ? (joints[(i - 1 + n) % n]!.tangent ? made[(i - 1 + n) % n]! : null) : null, joints[i]?.tangent ? made[(i + 1) % n]! : null].filter((x): x is Id => x !== null);
+        for (const arc of arcs) b.relation({ type: 'tangent', a: made[i]!, b: arc });
+        if (arcs.length === 0) b.relation({ type: 'parallel', a: l.id, b: made[i]! });
+        if (arcs.length < 2) lineDistance(l.id, made[i]!);
+      });
+
+      // 封口 (G09): an open chain's two ends are closed by straight lines back to the original end points, so the offset is a loop.
+      if (caps && !loop) {
+        const startCap = b.line(legs[0]!.from, pts[0]!);
+        const endCap = b.line(legs.at(-1)!.to, pts[pts.length - 1]!);
+        if (legs[0]!.entity.type === 'line') b.relation({ type: 'perpendicular', a: made[0]!, b: startCap });
+        if (legs.at(-1)!.entity.type === 'line') b.relation({ type: 'perpendicular', a: made[made.length - 1]!, b: endCap });
+      }
+    }
+    return null;
+  };
+
+  for (const forced of sides) {
+    const r = runSide(forced);
+    if (r) return r;
   }
   return { edit: { add: b.added } };
 }

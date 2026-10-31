@@ -248,7 +248,19 @@ function ToolOptionsBox({ view, sketcher }: { view: ControllerView; sketcher: Sk
         </>
       );
     case 'offset':
-      return <OptionNumber label={t('sketch.option.offset')} value={o.offsetDistance} onChange={(v) => sketcher.setOption('offsetDistance', v)} />;
+      return (
+        <>
+          <OptionNumber label={t('sketch.option.offset')} value={o.offsetDistance} onChange={(v) => sketcher.setOption('offsetDistance', v)} />
+          <label className="pm-row checkbox">
+            <input type="checkbox" name="offsetBoth" checked={o.offsetBoth} onChange={(e) => sketcher.setOption('offsetBoth', e.target.checked)} />
+            <span>{t('sketch.option.offsetBoth')}</span>
+          </label>
+          <label className="pm-row checkbox">
+            <input type="checkbox" name="offsetCaps" checked={o.offsetCaps} onChange={(e) => sketcher.setOption('offsetCaps', e.target.checked)} />
+            <span>{t('sketch.option.offsetCaps')}</span>
+          </label>
+        </>
+      );
     case 'stretchEntities':
     case 'moveEntities':
     case 'copyEntities':

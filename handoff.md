@@ -77,13 +77,14 @@
   2. 既有限制另案：PlaneGCS 對約 900 個拘束、大多已定義的草圖 `Aborted(OOM)`（150 個標尺寸矩形可重現，100 個 52 ms）。
   3. 接續推進草圖互動方案 Phase P2。（已開工，見 §3c）
 
-## 3c. 2026-10-30/31 P2 進行中：P2-1 預覽管道與 P2-2 六工具鋪開（G06 完成）已確效
+## 3c. 2026-10-30/31 P2 進行中:P2-1/P2-2 已提交,P2-3 偏移兩側與封口
 
-- **P2-1（G06 管道，`925378a`）**：此前修剪／延伸／圓角／倒角／偏移／鏡射六個 PICK 工具點擊即提交、無最終結果預覽；P2-1 建立共用管道——hover 以**與提交同一純 op** 算候選 `SketchEdit`，預覽以 `remove`／`change`／`add` 三角色畫在發生位置，確認才試解提交，取消零文件變更、預覽不產生 Undo。Schema 未變更。
-- **P2-2（六工具鋪開，本批未提交的部分即此刀）**：`operationPlan()` 擴為全部 PICK 工具；抽出 `cornerPair()` 供 hover 與 `operationClick` 共用（角落行為逐項保持原樣）；偏移特例 hover 無命中也出計畫（點擊本就不做 hitTest，游標僅決定邊）；鏡射 hover 需在映軸曲線上。測試 8 項、全庫 313 項。**已知缺口**：鏡射以草圖軸參照時 hover 無預覽（點擊可提交）；偏移兩側／封口留 P2-3。
-- **接法**（續作 P2-3 的人必讀）：`apps/web/src/sketcher/controller.ts` 的 `operationPlan()`（在 `updateSnap` 的 PICK 分支以暫存 `IdAllocator` 呼叫純 op）＋模組層 `editPreviewShapes(edit, geometry)`（新增圖元用 op 在 `Parts.point` 攜帶的暫存座標渲染）；`PreviewShape.role` → `overlay.ts previewCurves` 著色 → `theme.ts`／`app.css` 的 `--sketch-op-{add,change,remove}`。計畫在文件版本變更後由 `snapshot()` 丟棄（`candidateDoc` 同一模式），`leave()`／`resetTool()` 也清。
-- **確效**：`apps/web` 30 檔 **313 項**全過；typecheck／lint 全 PASS；完整 `verify:ui` **249/250**——唯一失敗 `manual-drawing-linked` 已以乾淨 HEAD `--only` 對照＋DEV_LOG 2026-10-29 先例（同一 `centred:false` 在 `bca2d80` 重現）判定為**既有／環境性失敗**，非本工作線造成，另案追蹤（同 E03 macOS）。
-- **下一刀**：P2-3 偏移兩側／封口（`packages/sketch/src/ops.ts` 的 `offset()` 增 `entry: OffsetEntry`：`both`／`caps`；`ToolOptions` 增 `offsetBoth`／`offsetCaps`＋PropertyManager 兩個核取方塊＋i18n；預覽經既有管道自動獲得；`setOption` 需檢查 opPlan 失配），之後 P2-4 掃掠修剪、P2-5 延伸選邊界、P2-6 相切弧接續。
+- **P2-1(G06 管道,`925378a`)**:此前修剪/延伸/圓角/倒角/偏移/鏡射六個 PICK 工具點擊即提交、無最終結果預覽;P2-1 建立共用管道——hover 以**與提交同一純 op** 算候選 `SketchEdit`,預覽以 `remove`/`change`/`add` 三角色畫在發生位置,確認才試解提交,取消零文件變更、預覽不產生 Undo。Schema 未變更。
+- **P2-2(六工具鋪開,已提交 `7a9b808`)**:`operationPlan()` 擴為全部 PICK 工具;抽出 `cornerPair()` 供 hover 與 `operationClick` 共用(角落行為逐項保持原樣);偏移特例 hover 無命中也出計畫(點擊本就不做 hitTest,游標僅決定邊);鏡射 hover 需在映軸曲線上。測試 8 項、全庫 313 項。**已知缺口**:鏡射以草圖軸參照時 hover 無預覽(點擊可提交)。
+- **P2-3(偏移兩側與封口,本批未提交的部分即此刀)**:`packages/sketch/src/ops.ts` 新增 `OffsetEntry { both?, caps? }`,`offset()` 主體收斂為 `runSide(forced: 1|-1|null)`(`null` 由 `toward` 決定=原行為;`both` 跑 `[1,-1]` 兩趟,各側自己的驅動距離;`caps` 於非環狀鏈兩端加直線接回原端點、直線腿加 `perpendicular`)。`apps/web` 的 `ToolOptions` 增 `offsetBoth`/`offsetCaps`(預設 false)+PropertyManager 兩個核取方塊+i18n;`operationPlan()`/`operationClick` 傳同一 `entry`(預覽自動獲得);`setOption()` 丟棄並在游標仍在時重算 `opPlan`。測試 4 項(`ops.test.ts` 2、`sketch-op-preview.test.ts` 2),全量 `apps/web`+`packages/sketch` **50 檔 550 項**。**已知缺口**:曲線(自由曲線)offset 留 P5 探針。
+- **接法**(續作 P2-4 的人必讀):`apps/web/src/sketcher/controller.ts` 的 `operationPlan()`(在 `updateSnap` 的 PICK 分支以暫存 `IdAllocator` 呼叫純 op)+模組層 `editPreviewShapes(edit, geometry)`(新增圖元用 op 在 `Parts.point` 攜帶的暫存座標渲染);`PreviewShape.role` → `overlay.ts previewCurves` 著色 → `theme.ts`/`app.css` 的 `--sketch-op-{add,change,remove}`。計畫在文件版本變更後由 `snapshot()` 丟棄(`candidateDoc` 同一模式),`leave()`/`resetTool()` 也清。
+- **確效**:P2-1/P2-2 完整 `verify:ui` 皆 **249/250**——唯一失敗 `manual-drawing-linked` 已以乾淨 HEAD `--only` 對照+DEV_LOG 2026-10-29 先例(同一 `centred:false` 在 `bca2d80` 重現)判定為**既有/環境性失敗**,非本工作線造成,另案追蹤(同 E03 macOS);P2-3 同為 **249/250**(唯一失敗 `manual-drawing-linked`,既有/環境性)。
+- **下一刀**:P2-4 拖曳掃掠修剪(掃過多段一次復原、重複穿越去重、Esc 清預覽);之後 P2-5 延伸選邊界、P2-6 相切弧接續。
 
 ## 4. 下一階段核心計畫：草圖互動改善方案 (P1 即時尺寸輸入)
 

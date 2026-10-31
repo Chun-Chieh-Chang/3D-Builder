@@ -2,6 +2,34 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-10-31：草圖互動 P2 第三刀：偏移兩側與封口（G09 部分）
+
+`offset()` 沿用 P2-1/P2-2 的預覽管道，本批加上「兩側同時偏移」與「開放鏈兩端封口」，並把選項接到 PropertyManager（結果預覽免費獲得——hover 與提交同一個純 op）。
+
+### 1. 交付內容
+- `packages/sketch/src/ops.ts`：新 `export interface OffsetEntry { both?: boolean; caps?: boolean }`；`offset(..., entry: OffsetEntry = {})` 把主體收斂為 `runSide(forced: 1|-1|null)`（`null` 為由 `toward` 決定，沿用原行為；`both` 時跑 `[1, -1]` 兩趟，各側自己的驅動距離）；`caps` 於非環狀鏈末端以直線接回原端點，直線腿另加 `perpendicular`。
+- `apps/web/src/sketcher/controller.ts`：`ToolOptions` 增 `offsetBoth`／`offsetCaps`（預設 false）；`operationPlan()` 與 `operationClick` 的 offset 分支傳入 `entry`；`setOption()` 現在會丟棄依舊選項畫出的 `opPlan` 並在游標還在時立即重算（選項變更不得留下失配的預覽）。
+- `apps/web/src/components/PropertyManager.tsx`：偏移區兩個核取方塊（`offsetBoth`／`offsetCaps`）。
+- `packages/i18n/{en,zh-TW}/sketch.ts`：`sketch.option.offsetBoth`（Both sides／兩側）、`sketch.option.offsetCaps`（Cap ends／封口）。
+- 測試：`packages/sketch/test/ops.test.ts` 新增 2 項；`apps/web/test/sketch-op-preview.test.ts` 新增 2 項（合計 10 項）。
+
+### 2. 紅隊四問（AGENTS.md §2）
+1. **輸入破壞**：距離沿用 `offsetDistance` 的檢查（`d > 0` 否則錯誤）；「兩側」下若任一側不成立（如 R5 圓內縮 6 → −1）即回 `sketch.offsetTooSmall`，不靜默只做一側。
+2. **幾何相交破壞**：封口僅加在非環狀鏈；分岔／無交點／過小半徑仍由既有 `offsetBranch`／`offsetNoJoin`／`offsetTooSmall` 攔截。
+3. **依賴鏈完整性**：`OffsetEntry` 零改動 `SketchEdit`；選項在 controller→PropertyManager→i18n 四處同步；`setOption` 的計畫失效與 P2-1 的 `snapshot()` 模式一致。
+4. **規格真實性與零 Mock**：op 測試以真實 PlaneGCS 求解斷言幾何——兩側複本外擴與內縮各 2（x∈{−2,2,28,32}、y∈{−2,2,18,22}）、`fully`、每側一個驅動距離；封口後 4 條新線、2 條 `perpendicular`、與原鏈合成 1 個封閉區域（`findProfiles.regions`）。
+
+### 3. 失敗紀錄與 RCA / CAPA
+1. **大範圍函式替換只比對到簽名行**：第一次以「簽名行」為 `oldString` 換入整段新函式，導致新函式之後殘留舊函式主體與一段誤植的草稿文字。RCA：範圍替換的 `oldString` 必須涵蓋**要移除的整段**，不能只錨單行。CAPA：`git checkout` 還原該檔後，以完整函式原文為 `oldString` 重做，並以 `Select-String` 確認檔內只剩一個 `export function offset` 與無 `Wait` 殘留。此為編輯操作錯誤，未進入提交。
+2. **測試斷言計數錯誤**：兩側偏移的距離拘束以為每側 1 條；實際每側 4 條（1 條驅動 + 3 條指名它）。CAPA：斷言改為「驅動距離（值 `2`）每側 1 條、合計 2 條；含指名者合計 8 條」，照實對齊既有單側行為。
+
+### 4. 確效與指標
+- `apps/web` + `packages/sketch` 全量 **50 檔 550 項**通過（含新增 4 項）；typecheck、lint:rules／deps／repo／i18n 全 PASS。
+- 完整 `verify:ui`:**249/250**——唯一失敗 `manual-drawing-linked`(同簽名 `box.centred:false`、`mid[1]=173.5` 對 172.5)為既有/環境性失敗,非本批造成,另案追蹤。
+- 仍缺：曲線（自由曲線）offset 仍在 P5 探針；鏡射以草圖軸參照時 hover 無預覽（P2-2 已記錄）；掃掠修剪（P2-4）、延伸選邊界（P2-5）、相切接續（P2-6）。
+
+
+
 ## 2026-10-31：草圖互動 P2 第二刀：操作計畫預覽鋪開至全部六個 PICK 工具（G06 完成）
 
 承接 P2-1 的共用管道，本批把 `operationPlan()` 從 trim 一隻擴為全部 PICK 工具，hover 預覽延伸／圓角／倒角／偏移／鏡射的提交結果；G06「共用操作計畫」就此完整。
