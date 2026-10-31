@@ -138,6 +138,9 @@ type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'tr
 /** Tools that pick existing geometry instead of placing points: no snapping, the element under the cursor is what counts. */
 const PICK_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'trim', 'extend', 'sketchFillet', 'sketchChamfer', 'offset', 'mirror']);
 
+/** Drawing tools that keep the chain when one is switched for another, so a path runs on from where the last segment ended. */
+const CHAIN_TOOLS: ReadonlySet<ToolId> = new Set(['line', 'centerline', 'tangentArc']);
+
 /** One way out of an over-defined sketch: delete this relation or dimension, or make this dimension a reference. */
 export interface SketchFix {
   id: Id;
@@ -432,7 +435,9 @@ export class SketchController {
 
     if (this.message && (this.tool !== 'select' || this.message.selection !== [...this.selection].join(','))) this.message = null;
     const drawingLine = this.tool === 'line' || this.tool === 'centerline';
-    const step = this.tool === 'dimension' ? Math.min(this.picks.length, 2) : drawingLine && this.chain ? 1 : this.clicks.length;
+    // line, centerline and tangent arc read a chain as "the start is fixed": the next click is the far end (G05, P2-6)
+    const chained = !!this.chain && (drawingLine || this.tool === 'tangentArc');
+    const step = this.tool === 'dimension' ? Math.min(this.picks.length, 2) : chained ? 1 : this.clicks.length;
     return {
       entry: this.entryView(),
       dimensionDrag: this.dimensionDrag?.moved ? { id: this.dimensionDrag.id, position: this.dimensionDrag.position } : undefined,
@@ -938,9 +943,12 @@ export class SketchController {
       this.notice(why);
       return;
     }
+    // line, centerline and tangent arc hand the chain over to each other (G05, P2-6); any other tool ends it
+    const keepChain = this.chain && CHAIN_TOOLS.has(tool) && CHAIN_TOOLS.has(this.tool) ? this.chain : null;
     this.tool = tool;
     this.quick = null;
     this.resetTool();
+    this.chain = keepChain;
     this.picks = chosen;
     if (tool !== 'select') this.selection.clear();
     this.changed();
@@ -1692,6 +1700,13 @@ export class SketchController {
     return this.clicks[0]?.p ?? null;
   }
 
+  /** The chain's current end as a snap, so the next segment starts there without a click of its own (G05, P2-6). */
+  private chainSnap(): Snap | null {
+    if (!this.chain) return null;
+    const p = this.positionOf(this.chain.from);
+    return p ? { kind: 'point', id: this.chain.from, p } : null;
+  }
+
   private positionOf(id: Id): P2 | null {
     if (id === SKETCH_ORIGIN) return [0, 0];
     const g = this.geometry().get(id);
@@ -1774,9 +1789,7 @@ export class SketchController {
       case 'rect':
       case 'centerRect':
       case 'circle':
-      case 'tangentArc':
         if (this.clicks.length === 0) {
-          if (this.tool === 'tangentArc' && !this.tangentStart(s)) return this.host.notify(t('sketch.tangentFromEnd'), 'info');
           this.clicks.push(s);
           return;
         }
@@ -1784,6 +1797,24 @@ export class SketchController {
         this.clicks = [];
         this.clearEntry();
         return;
+      case 'tangentArc': {
+        // A chain left by the previous segment fixes the start, so the click only sets the end (G05, P2-6).
+        const from = this.clicks[0] ?? this.chainSnap();
+        if (!from) {
+          if (!this.tangentStart(s)) return this.host.notify(t('sketch.tangentFromEnd'), 'info');
+          this.clicks.push(s);
+          return;
+        }
+        if (!this.tangentStart(from)) {
+          this.clicks = [];
+          return this.host.notify(t('sketch.tangentFromEnd'), 'info');
+        }
+        if (this.clicks.length === 0) this.clicks.push(from); // the chain's end stands in for the first click
+        this.finishTwoClick(s);
+        this.clicks = [];
+        this.clearEntry();
+        return;
+      }
       case 'ellipse':
       case 'perimeterCircle':
       case 'threePointArc':
@@ -1808,7 +1839,10 @@ export class SketchController {
       return;
     }
     const b = this.builder();
-    const from = this.chain ? ({ kind: 'point', id: this.chain.from, p: this.positionOf(this.chain.from) ?? s.p } as Snap) : this.clicks[0]!;
+    const at = this.chain ? this.positionOf(this.chain.from) : this.clicks[0]!.p;
+    // A click on the very point the segment starts from makes no segment, as for a zero-size rectangle; a chain keeps running (T03).
+    if (at && dist(at, s.p) < 1e-9) return;
+    const from = this.chain ? ({ kind: 'point', id: this.chain.from, p: at ?? s.p } as Snap) : this.clicks[0]!;
     const p1 = this.chain ? this.chain.from : b.pointFor(from);
     const p2 = b.pointFor(s);
     if (p1 === p2) return;
@@ -1848,6 +1882,8 @@ export class SketchController {
     const b = this.builder();
     const [a, q] = [first.p, s.p];
     const typed = this.entryTexts();
+    /** The chain the next segment continues from, set only when a tangent arc commits (G05, P2-6). */
+    let nextChain: { from: Id; first: Id } | null = null;
     // a rectangle's width and height are the lengths of its first (horizontal) and second (vertical) sides
     const sized = (sides: Id[]) => {
       if (typed.width !== undefined) b.dimension({ type: 'distance', a: sides[0]! }, typed.width);
@@ -1882,6 +1918,7 @@ export class SketchController {
       case 'tangentArc': {
         const start = this.tangentStart(first);
         if (!start || first.kind !== 'point') return;
+        if (dist(a, q) < 1e-9) return; // a click on the very point the arc leaves from makes no arc (T03)
         const center = tangentArcCenter(a, start.dir, q);
         if (!center) return;
         const ccw = cross(start.dir, sub(center, a)) > 0;
@@ -1889,10 +1926,14 @@ export class SketchController {
         if (end === first.id) return;
         const arc = ccw ? b.arc(b.newPoint(center), first.id, end) : b.arc(b.newPoint(center), end, first.id);
         b.relation({ type: 'tangent', a: start.curve, b: arc });
+        // The path runs on from the arc's end; closing it on the point it started from ends the chain.
+        const chainFirst = this.chain?.first ?? first.id;
+        nextChain = end === chainFirst ? null : { from: end, first: chainFirst };
         break;
       }
     }
-    this.commit(b);
+    if (!this.commit(b)) return;
+    if (nextChain) this.chain = nextChain;
   }
 
   private finishThreeClick(): void {
@@ -2661,17 +2702,20 @@ export class SketchController {
           }
         } else if (c1) shapes.push({ kind: 'line', a: c1.p, b: cursor, construction: true });
         break;
-      case 'tangentArc':
-        if (c1) {
-          const start = this.tangentStart(c1);
-          const center = start && tangentArcCenter(c1.p, start.dir, cursor);
+      case 'tangentArc': {
+        // the chain's end stands in for the first click (G05, P2-6)
+        const from = this.clicks[0] ?? this.chainSnap();
+        if (from) {
+          const start = this.tangentStart(from);
+          const center = start && tangentArcCenter(from.p, start.dir, cursor);
           if (start && center) {
-            const r = dist(center, c1.p);
-            const [s, e] = cross(start.dir, sub(center, c1.p)) > 0 ? [c1.p, cursor] : [cursor, c1.p];
-            shapes.push({ kind: 'arc', c: center, r, a0: Math.atan2(s[1] - center[1], s[0] - center[0]), a1: Math.atan2(e[1] - center[1], e[0] - center[0]) });
+            const r = dist(center, from.p);
+            const [s2, e2] = cross(start.dir, sub(center, from.p)) > 0 ? [from.p, cursor] : [cursor, from.p];
+            shapes.push({ kind: 'arc', c: center, r, a0: Math.atan2(s2[1] - center[1], s2[0] - center[0]), a1: Math.atan2(e2[1] - center[1], e2[0] - center[0]) });
           }
         }
         break;
+      }
     }
     return shapes;
   }
