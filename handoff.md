@@ -83,7 +83,7 @@
 - **P2-2(六工具鋪開,已提交 `7a9b808`)**:`operationPlan()` 擴為全部 PICK 工具;抽出 `cornerPair()` 供 hover 與 `operationClick` 共用(角落行為逐項保持原樣);偏移特例 hover 無命中也出計畫(點擊本就不做 hitTest,游標僅決定邊);鏡射 hover 需在映軸曲線上。測試 8 項、全庫 313 項。**已知缺口**:鏡射以草圖軸參照時 hover 無預覽(點擊可提交)。
 - **P2-3(偏移兩側與封口,本批未提交的部分即此刀)**:`packages/sketch/src/ops.ts` 新增 `OffsetEntry { both?, caps? }`,`offset()` 主體收斂為 `runSide(forced: 1|-1|null)`(`null` 由 `toward` 決定=原行為;`both` 跑 `[1,-1]` 兩趟,各側自己的驅動距離;`caps` 於非環狀鏈兩端加直線接回原端點、直線腿加 `perpendicular`)。`apps/web` 的 `ToolOptions` 增 `offsetBoth`/`offsetCaps`(預設 false)+PropertyManager 兩個核取方塊+i18n;`operationPlan()`/`operationClick` 傳同一 `entry`(預覽自動獲得);`setOption()` 丟棄並在游標仍在時重算 `opPlan`。測試 4 項(`ops.test.ts` 2、`sketch-op-preview.test.ts` 2),全量 `apps/web`+`packages/sketch` **50 檔 550 項**。**已知缺口**:曲線(自由曲線)offset 留 P5 探針。
 - **接法**(續作 P2-4 的人必讀):`apps/web/src/sketcher/controller.ts` 的 `operationPlan()`(在 `updateSnap` 的 PICK 分支以暫存 `IdAllocator` 呼叫純 op)+模組層 `editPreviewShapes(edit, geometry)`(新增圖元用 op 在 `Parts.point` 攜帶的暫存座標渲染);`PreviewShape.role` → `overlay.ts previewCurves` 著色 → `theme.ts`/`app.css` 的 `--sketch-op-{add,change,remove}`。計畫在文件版本變更後由 `snapshot()` 丟棄(`candidateDoc` 同一模式),`leave()`/`resetTool()` 也清。
-- **確效**:P2-1/P2-2 完整 `verify:ui` 皆 **249/250**——唯一失敗 `manual-drawing-linked` 已以乾淨 HEAD `--only` 對照+DEV_LOG 2026-10-29 先例(同一 `centred:false` 在 `bca2d80` 重現)判定為**既有/環境性失敗**,非本工作線造成,另案追蹤(同 E03 macOS);P2-3、P2-4 同為 **249/250**(唯一失敗 `manual-drawing-linked`,既有/環境性,已定案為測試側問題;P2-4 為 250 列、0 新增失敗)。P2-3 已提交 `d5adf65`、CI 綠;P2-4 待提交。
+- **確效**:P2-1/P2-2 完整 `verify:ui` 皆 **249/250**——唯一失敗 `manual-drawing-linked` 已以乾淨 HEAD `--only` 對照+DEV_LOG 2026-10-29 先例(同一 `centred:false` 在 `bca2d80` 重現)判定為**既有/環境性失敗**,非本工作線造成,另案追蹤(同 E03 macOS);P2-3、P2-4 同為 **249/250**(唯一失敗 `manual-drawing-linked`,既有/環境性,已定案為測試側問題;P2-4 為 250 列、0 新增失敗)。P2-3 已提交 `d5adf65`、P2-4 已提交 `baad645`,CI 皆綠。修好 `manual-drawing-linked`後(`f92164c`)基準為 **250/250**。
 - **下一刀**:P2-4 拖曳掃掠修剪(掃過多段一次復原、重複穿越去重、Esc 清預覽);之後 P2-5 延伸選邊界、P2-6 相切弧接續。
 
 ## 3d. 2026-10-31 P2-4 進行中:拖曳掃掠修剪(G07)
@@ -104,13 +104,13 @@
   1. 兩相鄰段同時被修剪時,`trim()` 內部 `dropEnd` 以「原始草圖」判斷端點是否他處仍被引用,可能留下孤立點;需以測試確認(必要時改為修剪後再判斷)。
   2. sweep 期間覆寫 `opPlan`;需測「放開後無殘留預覽」「Esc 後無殘留」。
   3. 既有限制:穿過與曲線重疊的「點」(如原點)時 `hitTest` 會回該點,該曲線不被修剪——與既有單擊 trim 同行為,非本刀新增(驗證場景已避開原點)。
-- **下一步**:徵詢使用者同意後提交並推送(訊息擬 `feat(sketch): drag-sweep trim (G07, P2-4)`),`git status` + `gh run list` 確認;之後套用 `tests/e2e/manual-drawing-linked.js` 的另一提交(方案 A),再進 P2-5 延伸選邊界。測試已在 `apps/web/test/sketch-op-preview.test.ts` 新增 describe「拖曳掃掠修剪 (G07, P2-4)」4 項:三段一筆各修一次+單一 Undo、同一筆反向重穿去重、空拖曳不加 Undo、Esc 取消。
+- **下一步**:P2-4 已提交並推送(`baad645`,CI 綠);`tests/e2e/manual-drawing-linked.js` 的方案 A 修正也已另開 `test:` 提交(`f92164c`,`--only` 1/1 通過,基準回到 **250/250**)。接著進 P2-5 延伸選邊界(每刀提交前徵詢),P2-6 相切弧接續。測試在 `apps/web/test/sketch-op-preview.test.ts` 新增 describe「拖曳掃掠修剪 (G07, P2-4)」4 項。
 
-### 另案已定案:P2-4 之後單獨修 `manual-drawing-linked`
+### 另案已修並提交:`manual-drawing-linked` 換投影後最適比例不屬於該步(方案 A)
 
 - **根因(2026-10-31 定位;非產品錯、亦非「環境性」)**:該腳本 step 1 先 `H.newDrawing()`(第三角)才 `setSheet({projection:'first'})`。新圖的「最適比例」在該圖 views 的 lines 與 features 都齊時即套用一次(ADR 0147),而調色盤預覽(`ensurePalette`)與檔案三視圖**共用同一個請求 id**(`keyOf()` 回零件 key;`requestOf()` 的 `id`/`featureId` = `key|JSON.stringify(axes)`),所以快取幾乎立刻可用、fit 常在 `H.newDrawing()` 內就已套用。`autoScalePending` 用掉後,換投影會重排三視圖(`packages/drawing/src/layout.ts` 的 `cell(direction, projection)`)並產生新 axes 的請求,但**不會重算 fit**,圖紙因此留著第三角的 shift;第一角內容量到的中心 `[215,173.5]` 與 A3 可繪區中心 `[215,172.5]` 固定差 1.0 mm → `box.centred:false`;`centreViews()` 仍回非 null → 「自動排版」可按下 → `nothingToDo:false`。
 - **反證**:同一輪 step 7(按「自動排版」後斷言 `box.centred && panelButton().disabled`)通過,`verify:ui` 每腳本最多印 3 個失敗步驟而只出現 `.steps.0` → 置中邏輯本身正確,壞的只是「測試自己換了投影、而 fit 不屬於那一步」。
-- **修法(方案 A,測試側,已選定)**:在**空圖紙**上先 `setSheet({projection:'first'})`,再按「標準三視圖」——空圖紙 `views.length===0` 時 `autoScaleWhenReady()` 會等待,加視圖後 fit 只用第一角跑一次,無競態;step 1 語意(「新圖已置中、自動排版無事可做」)原樣保留。驗證以 `npm run verify:ui -- --only manual-drawing-linked`,另開 `test:` 提交。
+- **修法(方案 A,測試側,已選定)**:在**空圖紙**上先 `setSheet({projection:'first'})`,再按「標準三視圖」——空圖紙 `views.length===0` 時 `autoScaleWhenReady()` 會等待,加視圖後 fit 只用第一角跑一次,無競態;step 1 語意(「新圖已置中、自動排版無事可做」)原樣保留。驗證以 `npm run verify:ui -- --only manual-drawing-linked`,另開 `test:` 提交。**結果**:已提交 `f92164c`(CI 綠),單腳本驗證 `npm run verify:ui -- --only manual-drawing-linked` **1/1 通過**。
 - **方案 B(產品側,未採用)**:換投影時若圖仍是全新(無 `at`/`scale`、shift 未被動過)就重跑最適比例;與「使用者放過的視圖保留原位」相衝,需 ADR,暫擱置。
 
 ## 4. 下一階段核心計畫：草圖互動改善方案 (P1 即時尺寸輸入)

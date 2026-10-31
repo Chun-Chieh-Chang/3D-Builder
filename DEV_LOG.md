@@ -2,6 +2,25 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-10-31:`manual-drawing-linked` e2e 修正:換投影後的最適比例不屬於該步(測試側)
+
+完整 `verify:ui` 長期為 **249/250**,唯一失敗 `manual-drawing-linked` step 1:`box.centred:false`(內容中心 `[215,173.5]` 對 A3 可繪區中心 `[215,172.5]`,差 1.0 mm)且 `nothingToDo:false`。本項定位為**測試腳本的問題**,不是產品錯,也不是環境性失敗;已修正並另開 `test:` 提交(`f92164c`)。
+
+### 1. 根因 (RCA)
+- 腳本 step 1 先 `H.newDrawing()`(新圖預設**第三角**)才 `setSheet({ projection: 'first' })`。
+- 新圖的「最適比例」由 `autoScaleWhenReady()` 在該圖 views 的 lines 與 features 都齊時**套用一次**(ADR 0147);調色盤預覽(`ensurePalette`)與檔案三視圖**共用同一個請求 id**(`keyOf()` 回零件 key;`requestOf()` 的 `id`/`featureId` = ``key|JSON.stringify(axes)``),所以快取幾乎立刻可用、fit 常在 `H.newDrawing()` 內就已用第三角套用。
+- `autoScalePending` 用掉後,換投影只會**重排**三視圖(`packages/drawing/src/layout.ts` 的 `cell(direction, projection)`)並產生新 axes 的請求,**不會重算 fit**;圖紙因此留著第三角的 `shift`,第一角內容量到的中心偏 1.0 mm,`centreViews()` 仍回非 null → 「自動排版」按鈕可按下。
+- **反證**:同一腳本 step 7(按「自動排版」後斷言 `box.centred && panelButton().disabled`)通過——置中邏輯本身正確,壞的只是「測試換了投影、而 fit 不屬於那一步」。
+
+### 2. 修法(方案 A,測試側)
+- 在**空圖紙**上先 `setSheet({ projection: 'first' })`,再按「標準三視圖」。空圖紙 `views.length===0` 時 `autoScaleWhenReady()` 直接 return、不消耗 `autoScalePending`,加視圖後 fit 只用第一角跑一次,無競態;step 1 語意(「新圖就是置中的、自動排版無事可做」)原樣保留。
+- 未採用方案 B(產品側):換投影時若圖仍是全新就重跑最適比例——與「使用者放過的視圖保留原位」相衝,需 ADR,暫擱置。
+
+### 3. 驗證
+- `npm run verify:ui -- --only manual-drawing-linked`:**1/1 通過**(修正前同腳本 FAIL)。
+- `npm run lint:repo`:OK(270 documents、13 workspaces、250 browser calls,數量不變)。
+- 提交 `f92164c`(CI 綠),`verify:ui` 基準回到 **250/250**。
+
 ## 2026-10-31:草圖互動 P2 第四刀:拖曳掃掠修剪(G07)
 
 修剪工具支援「按下滑過多段」:一筆畫過的每條曲線各以既有純 `trim()` 修剪一次(同一片段只處理一次),放開時折成**單一** `editSketch`(一次 Undo);空拖曳不加 Undo;`Esc` 取消零文件變更。G07 互動完成。
