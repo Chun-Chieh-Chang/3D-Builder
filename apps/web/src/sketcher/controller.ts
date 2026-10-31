@@ -505,7 +505,7 @@ export class SketchController {
       case 'trim':
         return t('sketch.hint.trim');
       case 'extend':
-        return t('sketch.hint.extend');
+        return t(this.picks.length > 0 ? 'sketch.hint.extendBoundary' : 'sketch.hint.extend');
       case 'offset':
         return t('sketch.hint.offset');
       case 'mirror':
@@ -931,7 +931,7 @@ export class SketchController {
 
   setTool(tool: ToolId): void {
     // mirror, offset and the transforms act on what is selected when the tool starts (SolidWorks takes a pre-selection too)
-    const chosen = tool==='stretchEntities' ? [...this.selection].filter(id=>this.sketch().entities.some(e=>e.id===id&&e.type==='point')) : tool === 'mirror' || isTransformTool(tool) ? this.mirrorTargets() : tool === 'offset' ? this.offsetTargets() : [];
+    const chosen = tool==='stretchEntities' ? [...this.selection].filter(id=>this.sketch().entities.some(e=>e.id===id&&e.type==='point')) : tool === 'mirror' || isTransformTool(tool) ? this.mirrorTargets() : tool === 'offset' ? this.offsetTargets() : tool === 'extend' ? this.extendBoundaryTargets() : [];
     if ((tool === 'mirror' || tool === 'offset' || isTransformTool(tool)) && chosen.length === 0) {
       const why = t(tool==='stretchEntities'?'sketch.hint.stretch':tool === 'mirror' ? 'sketch.needMirrorSelection' : tool === 'offset' ? 'sketch.needOffsetSelection' : 'sketch.needTransformSelection');
       this.host.notify(why, 'info');
@@ -950,6 +950,15 @@ export class SketchController {
   private mirrorTargets(): Id[] {
     const s = this.sketch();
     return s.entities.filter((e) => this.selection.has(e.id)).map((e) => e.id);
+  }
+
+  /**
+   * The boundary the extend tool has been given (G08, P2-5): the first selected curve, if any. Extend goes to that curve,
+   * crossing any in between; with nothing selected it keeps its default of the nearest curve in the way.
+   */
+  private extendBoundaryTargets(): Id[] {
+    const first = this.sketch().entities.find((e) => this.selection.has(e.id) && e.type !== 'point' && e.type !== 'text');
+    return first ? [first.id] : [];
   }
 
   /** The selected lines, arcs and circles, and the curves joined to them end to end (a chain is offset as a whole). */
@@ -2002,7 +2011,7 @@ export class SketchController {
       case 'trim':
       case 'extend':
         if (g.type === 'point') return null;
-        plan = (this.tool === 'trim' ? trim : extend)(sketch, geometry, ids, hit.id, e.p);
+        plan = this.tool === 'trim' ? trim(sketch, geometry, ids, hit.id, e.p) : extend(sketch, geometry, ids, hit.id, e.p, this.picks[0]);
         break;
       case 'sketchFillet':
       case 'sketchChamfer': {
@@ -2063,7 +2072,7 @@ export class SketchController {
       case 'trim':
       case 'extend': {
         const hit = this.pickedCurve(e);
-        if (hit) this.run((this.tool === 'trim' ? trim : extend)(sketch, geometry, ids, hit.id, e.p));
+        if (hit) this.run(this.tool === 'trim' ? trim(sketch, geometry, ids, hit.id, e.p) : extend(sketch, geometry, ids, hit.id, e.p, this.picks[0]));
         return;
       }
       case 'sketchFillet':

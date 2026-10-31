@@ -79,6 +79,7 @@ export const sketch = {
   'sketch.trimNotCurve': '只能修剪直線、圓弧或圓',
   'sketch.extendNotCurve': '只能延伸直線或圓弧',
   'sketch.extendNothing': '這一端往前沒有可以延伸到的圖元',
+  "sketch.extendBoundaryMissed": "所選邊界不在這個方向的延伸路徑上;請改選延伸會經過的圖元。",
   "sketch.extendOverlap": "延伸路徑已有重疊圖元；請改點最外側線段的端點附近。",
   "sketch.extendPointInvalid": "延伸位置必須是有限座標。",
   "sketch.extendCompleted": "已延伸至下一個圖元。",
@@ -182,6 +183,7 @@ export const sketch = {
   'sketch.hint.corner2': '再按一下第二條直線。',
   'sketch.hint.trim': '按一下要修剪掉的那一段。',
   'sketch.hint.extend': '按一下要延伸的那一端附近。',
+  'sketch.hint.extendBoundary': '按一下要延伸到所選邊界的圖元(會跨過中間的圖元)。',
   'sketch.hint.offset': '按一下要偏移到的那一側。',
   'sketch.hint.mirror': '按一下鏡射軸（一條直線，可以是中心線）。',
 

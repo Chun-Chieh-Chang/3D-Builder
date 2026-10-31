@@ -93,6 +93,19 @@ P0 核心功能與驗收項目已全數跑通（Windows 瀏覽器 `manual-sketch
 
 回歸:`apps/web` + `packages/sketch` 全量 **50 檔 554 項**通過(含新增 4 項);typecheck、lint:rules/deps/repo/i18n 全 PASS;完整 `verify:ui` **249/250**(唯一失敗 `manual-drawing-linked` 為既有/環境性,已定案並將於下一提交單獨修;見 [handoff §3d](../../../handoff.md))。
 
+## P2-5:延伸明示邊界(G08 部分)
+
+2026-10-31。延伸工具可**先選一條曲線作為邊界**(預選即邊界,與 offset/mirror 同一模式):延伸跨過中間的曲線直達所選邊界。未預選時維持既有「取該方向首個有效交點」的預設。
+
+| 案例 | 狀態 | 證據/仍缺項 |
+|---|---|---|
+| C03 明示目標可越過近線 | 通過 | e2e `manual-extend-rectangle.js`:矩形外放 x=30、x=40 兩條平行目標線;選 x=40 為邊界後延伸矩形邊 → 接續段 `(20,0)-(40,0)` 一筆跨過 x=30,原矩形與尺寸不變、一次 Undo 還原;隨後既有步驟仍測「未選邊界 → 先到 x=30」與「遞進到 x=40」。`ops.test.ts` 同情境(有/無邊界、邊界=本體)以真實求解核對。 |
+| 預覽=提交結果 | 通過 | `sketch-op-preview.test.ts`:預選遠牆、hover 於短檔 → 預覽 `change` a=[-10,0] b=[16,0](跨過 x=10);點擊提交後 geometry 相同;未預選 → b=[10,0]。 |
+| 明示拒絕而非靜默改目標 | 通過 | `ops.test.ts`:邊界在端點後方 → `sketch.extendBoundaryMissed`(不退回最近、不縮短);選定遠邊界但接續段與既有共線段重疊 → `sketch.extendOverlap`;`boundary === entityId` → 回舊預設最近交點。 |
+| 已知缺口 | 記錄待辦 | 獨立 Split(P5:須定義 ID/尺寸/外部參照繼承,不能只畫新線);以自由曲線為邊界留 P5;相切弧接續 P2-6。 |
+
+回歸:`apps/web` + `packages/sketch` 全量 **50 檔 557 項**通過(含新增 3 項);typecheck、lint:rules/deps/repo/i18n 全 PASS;完整 `verify:ui` **250/250** 通過(0 失敗)。
+
 ## 測試與失敗紀錄
 
 - `apps/web/test/sketcher.test.ts` 75項、`packages/sketch/test/solve-options.test.ts` 16項（含150組隨機配置核對）、`apps/web/test/sketch-pointer-baseline.test.ts` 2項、`tests/phase8/view-normal.test.ts` 7項，合計100項測試全數通過。

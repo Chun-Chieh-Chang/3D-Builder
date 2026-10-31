@@ -1110,12 +1110,12 @@ export const help = {
   'help.toolTrim.keywords': '修剪 剪掉 交點 線段',
 
   'help.toolTrim.see': 'tool-extend tool-sketchFillet concept.sketch-snaps tool-line sketch',
-  'help.toolExtend.summary': '延伸：點線的一端，延伸到擋住它的線。',
+  'help.toolExtend.summary': '延伸：點線的一端，延伸到擋住它的線；也可先選一條曲線作為邊界。',
 
   'help.toolExtend.body':
-    '按一下直線或圓弧要延伸的那一端附近：那一端延伸到路上遇到的第一條線。\n\n- 未共用的端點會改到目標線上；舊端點連同其關係、原曲線的線長與相等關係會移除。\n- 這一端和其他圖元共用時，會保留原圖元與角點，接續新增共線線段（圓弧則新增同圓弧段）；矩形的相鄰邊與尺寸不會被拉動。原線段尺寸保留，延伸段是另一個圖元。已有重疊延伸段時請改點最外側線段。\n- 這一端往前沒有可以延伸到的圖元時，也會說明。\n- 只能延伸直線或圓弧。',
+    '按一下直線或圓弧要延伸的那一端附近：那一端延伸到路上遇到的第一條線。\n\n- 未共用的端點會改到目標線上；舊端點連同其關係、原曲線的線長與相等關係會移除。\n- 這一端和其他圖元共用時，會保留原圖元與角點，接續新增共線線段（圓弧則新增同圓弧段）；矩形的相鄰邊與尺寸不會被拉動。原線段尺寸保留，延伸段是另一個圖元。已有重疊延伸段時請改點最外側線段。\n- 這一端往前沒有可以延伸到的圖元時，也會說明。\n- 先選一條曲線再啟動延伸時，該曲線就是邊界：那一端會延伸到邊界，跨過中間的圖元（明示目標可以越過較近的圖元）。未預選時沿用原本「最近的一條線」。邊界在端點後方、或延伸不會經過它時，會明確拒絕。\n- 只能延伸直線或圓弧。',
 
-  'help.toolExtend.keywords': '延伸 延長 端點 擋住',
+  'help.toolExtend.keywords': '延伸 延長 端點 擋住 邊界',
 
   'help.toolExtend.see': 'tool-trim tool-sketchFillet concept.sketch-snaps tool-line sketch',
   'help.toolOffset.summary': '把選取的圖元向一側偏移一個距離。',

@@ -472,3 +472,63 @@ describe('drag-sweep trim (G07, P2-4)', () => {
     c.setTool('select');
   });
 });
+
+describe('extend to a chosen boundary (G08, P2-5)', () => {
+  /** A stub reaching x=9, a wall at x=10 and a farther wall at x=16. */
+  function scene(c: SketchController): void {
+    c.setTool('line');
+    click(c, -10, 0);
+    click(c, 9, 0);
+    c.escape();
+    for (const x of [10, 16]) {
+      click(c, x, -5);
+      click(c, x, 5);
+      c.escape();
+    }
+  }
+  const verticalAt = (h: Host, x: number): string => [...h.last!.geometry].find(([, g]) => g.type === 'line' && g.a[0] === x && g.b[0] === x)![0];
+
+  it('a preselected curve is the boundary: preview and click cross the nearer curve to reach it', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    scene(c);
+    const counts = { entities: h.sketch().entities.length, constraints: h.sketch().constraints.length };
+    const farId = verticalAt(h, 16);
+    const nearId = verticalAt(h, 10);
+
+    c.select([farId]); // the chosen boundary (G08): a curve the user picks first
+    c.setTool('extend');
+    move(c, 8.5, 0);
+    expect(overview(c)).toEqual([
+      { kind: 'line', role: 'change', s: expect.objectContaining({ kind: 'line', role: 'change', a: [-10, 0], b: [16, 0] }) },
+    ]);
+    expect(h.sketch().entities).toHaveLength(counts.entities); // hover commits nothing
+
+    click(c, 8.5, 0); // the confirming click submits the same plan
+    await c.settled();
+    const l1 = h.last!.geometry.get('l1')! as Extract<SolvedGeometry, { type: 'line' }>;
+    expect(l1.b[0]).toBeCloseTo(16, 6);
+    expect(l1.b[1]).toBeCloseTo(0, 6);
+    const near = h.last!.geometry.get(nearId)! as Extract<SolvedGeometry, { type: 'line' }>;
+    expect(near.a[0]).toBeCloseTo(10, 6); // the curve it crossed is untouched
+    expect(c.getView().preview).toEqual([]);
+
+    h.history.undo();
+    h.resolve();
+    expect(h.sketch().entities).toHaveLength(counts.entities);
+    expect(h.sketch().constraints).toHaveLength(counts.constraints);
+    c.setTool('select');
+  });
+
+  it('with nothing preselected the extend keeps its default: the nearest curve in the way', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    scene(c);
+    c.setTool('extend');
+    move(c, 8.5, 0);
+    expect(overview(c)).toEqual([
+      { kind: 'line', role: 'change', s: expect.objectContaining({ kind: 'line', role: 'change', a: [-10, 0], b: [10, 0] }) },
+    ]);
+    c.setTool('select');
+  });
+});

@@ -1102,12 +1102,12 @@ export const help: Translation = {
   'help.toolTrim.keywords': 'trim cut crossing segment',
 
   'help.toolTrim.see': 'tool-extend tool-sketchFillet concept.sketch-snaps tool-line sketch',
-  'help.toolExtend.summary': 'Extends: click the end of a line to lengthen it up to the line in its way.',
+  'help.toolExtend.summary': 'Extends: click the end of a line to lengthen it up to the line in its way; select a curve first and that curve becomes the boundary.',
 
   'help.toolExtend.body':
-    'Click near the end of a line or arc to extend: that end grows until it meets the first curve in its way.\n\n- For a free endpoint, the new end lies on the target curve; the old endpoint and its relations, as well as whole-curve length and equality relations, are removed.\n- A shared end is preserved along with its original entity: a collinear line or same-circle arc continues from it. Rectangle neighbors and dimensions stay put. The original length remains its own dimension; the continuation is a separate entity. If an extension already overlaps the path, pick the outermost segment instead.\n- When there is nothing ahead of the end to extend to, it says so too.\n- Only lines and arcs can be extended.',
+    'Click near the end of a line or arc to extend: that end grows until it meets the first curve in its way.\n\n- For a free endpoint, the new end lies on the target curve; the old endpoint and its relations, as well as whole-curve length and equality relations, are removed.\n- A shared end is preserved along with its original entity: a collinear line or same-circle arc continues from it. Rectangle neighbors and dimensions stay put. The original length remains its own dimension; the continuation is a separate entity. If an extension already overlaps the path, pick the outermost segment instead.\n- When there is nothing ahead of the end to extend to, it says so too.\n- Select a curve before starting Extend and it is taken as the boundary: the end grows to that curve, crossing any curves in between (an explicit target past a nearer one). With nothing selected, the nearest curve in its way is used, as before. A boundary behind the end, or one the extension does not meet, is refused.\n- Only lines and arcs can be extended.',
 
-  'help.toolExtend.keywords': 'extend lengthen end meet curve',
+  'help.toolExtend.keywords': 'extend lengthen end meet curve boundary',
 
   'help.toolExtend.see': 'tool-trim tool-sketchFillet concept.sketch-snaps tool-line sketch',
   'help.toolOffset.summary': 'Offsets the selected entities to one side by a distance.',

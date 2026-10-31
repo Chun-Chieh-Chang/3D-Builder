@@ -2,6 +2,26 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-10-31:草圖互動 P2 第五刀:延伸明示邊界(G08 部分)
+
+延伸工具可先選一條曲線作為邊界:延伸會**跨過中間的曲線**直達所選邊界。未預選時維持既有「取該方向首個有效交點」的預設。邊界在端點後方或不在延伸路徑上時明確拒絕(不縮短、不靜默改目標);重疊段仍拒絕。G08 的「明示目標選擇」到此完成(獨立 Split 仍留 P5)。
+
+### 1. 交付內容
+- `packages/sketch/src/ops.ts`:`extend(..., boundary?: Id)`。候選交點(`hitsOf` 的 ahead 命中)依 `reach` 排序;`boundary` 有值且非本體時改取「該邊界的命中」,取不到即回 `sketch.extendBoundaryMissed`(不退回最近,避免靜默改目標);`boundary === entityId` 視同未指定,回舊預設。`extensionOverlaps` 仍把關重疊。
+- `apps/web/src/sketcher/controller.ts`:`setTool('extend')` 由 `extendBoundaryTargets()` 以當前選取的第一條非點、非文字圖元種入 `picks`(與 offset/mirror 同一模式,但**未預選不阻止**進入,保住舊預設);`operationPlan()`/`operationClick` 的 extend 分支傳 `this.picks[0]`(preview 因與提交同一 pure op 自動跨過近線)。提示在 `picks` 非空時改顯 `sketch.hint.extendBoundary`。
+- i18n:`sketch.extendBoundaryMissed`、`sketch.hint.extendBoundary`(zh-TW/en)。
+
+### 2. 紅隊四問(AGENTS.md §2)
+1. **輸入破壞**:`boundary` 非本體才作用;非曲線圖元不會成為邊界(`extendBoundaryTargets` 排除 point/text);`extend()` 對非直線/圓弧仍回 `sketch.extendNotCurve`;click 非有限座標回 `sketch.extendPointInvalid`。
+2. **幾何相交破壞**:邊界在後方或不在路徑上 → `sketch.extendBoundaryMissed`(明確拒絕,不縮短);重疊段 → `sketch.extendOverlap`;共用端點仍走 ADR 0194 的接續段(不拉走角點)。
+3. **依賴鏈完整性**:op 簽名、controller 的 setTool/preview/click/hint 全數接線;新 i18n key 兩語齊備並經 `lint:i18n`;無 Schema 變更。
+4. **規格真實性與零 Mock**:`ops.test.ts` 以真實求解驗證「有邊界 → b=[16,0] 跨過 x=10 的牆、無邊界 → [10,0]、邊界在後 → 拒絕、邊界=本體 → 回預設、重疊 → 拒絕」;`sketch-op-preview.test.ts` 以真實 solver 驗 hover 預覽 b=[16,0] 與提交同值、無預選時 b=[10,0];e2e `manual-extend-rectangle.js` 以實機 UI 驗「選遠線 → 延伸跨過近線直達 x=40」並一次 Undo。
+
+### 3. 確效與指標
+- `apps/web` + `packages/sketch` 全量 **50 檔 557 項**通過(含新增 3 項);typecheck、lint:rules/deps/repo/i18n 全 PASS。
+- 完整 `verify:ui`:**250/250** 通過(0 失敗)。
+- 仍缺:獨立 Split(P5,需定義 ID/尺寸/外部參照繼承)、以自由曲線為邊界(留 P5);P2-6 相切弧接續。
+
 ## 2026-10-31:`manual-drawing-linked` e2e 修正:換投影後的最適比例不屬於該步(測試側)
 
 完整 `verify:ui` 長期為 **249/250**,唯一失敗 `manual-drawing-linked` step 1:`box.centred:false`(內容中心 `[215,173.5]` 對 A3 可繪區中心 `[215,172.5]`,差 1.0 mm)且 `nothingToDo:false`。本項定位為**測試腳本的問題**,不是產品錯,也不是環境性失敗;已修正並另開 `test:` 提交(`f92164c`)。

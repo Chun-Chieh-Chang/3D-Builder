@@ -81,6 +81,7 @@ export const sketch: Translation = {
   'sketch.trimNotCurve': 'Only lines, arcs and circles can be trimmed',
   'sketch.extendNotCurve': 'Only lines and arcs can be extended',
   'sketch.extendNothing': 'There is no entity beyond this end to extend to',
+  "sketch.extendBoundaryMissed": "The chosen boundary is not in the way of this extension. Pick an entity the extension crosses.",
   "sketch.extendOverlap": "The extension overlaps an existing entity. Pick near the outer end of the outermost segment.",
   "sketch.extendPointInvalid": "The extension position must have finite coordinates.",
   "sketch.extendCompleted": "Extended to the next entity.",
@@ -184,6 +185,7 @@ export const sketch: Translation = {
   'sketch.hint.corner2': 'Click the second line.',
   'sketch.hint.trim': 'Click the piece to trim away.',
   'sketch.hint.extend': 'Click near the end to extend.',
+  'sketch.hint.extendBoundary': 'Click the entity to extend to the chosen boundary (it crosses what lies in between).',
   'sketch.hint.offset': 'Click the side to offset to.',
   'sketch.hint.mirror': 'Click the mirror axis (a line, a centerline will do).',
 

@@ -400,6 +400,29 @@ describe('extend (C1.16)', () => {
     const extra = sketchOf(continued).entities.find(e => e.type === 'line' && !sketchOf(joined).entities.some(old => old.id === e.id))!;
     expect(lineOf(solve(continued), extra.id).b).toEqual([10, 0]);
   });
+
+  it('extends to a chosen boundary past a nearer curve, and refuses a boundary behind or an overlapping run (G08, P2-5)', () => {
+    const far = () => [point('v0', 16, -5), point('v1', 16, 5), line('V', 'v0', 'v1')];
+    const behind = () => [point('k0', -4, -5), point('k1', -4, 5), line('K', 'k0', 'k1')];
+    const doc0 = start([point('a', 0, 0), point('b', 5, 0), line('L', 'a', 'b'), ...wall(), ...far(), ...behind()]);
+    const geometry = solve(doc0).geometry;
+
+    // no boundary: the nearest curve in the way, unchanged (保留舊預設)
+    const nearest = run(doc0, extend(sketchOf(doc0), geometry, ids(doc0), 'L', [4.5, 0]));
+    expect(lineOf(solve(nearest), 'L').b.map((v) => Math.round(v * 1e6) / 1e6)).toEqual([10, 0]);
+    // the chosen boundary is crossed past the nearer wall
+    const toFar = run(doc0, extend(sketchOf(doc0), geometry, ids(doc0), 'L', [4.5, 0], 'V'));
+    everyRefExists(toFar);
+    expect(lineOf(solve(toFar), 'L').b.map((v) => Math.round(v * 1e6) / 1e6)).toEqual([16, 0]);
+    // a boundary behind the end is refused, not shortened to
+    expect(extend(sketchOf(doc0), geometry, ids(doc0), 'L', [4.5, 0], 'K')).toMatchObject({ error: expect.stringContaining('不在這個方向') });
+    // the boundary being the curve itself falls back to the nearest
+    const same = run(doc0, extend(sketchOf(doc0), geometry, ids(doc0), 'L', [4.5, 0], 'L'));
+    expect(lineOf(solve(same), 'L').b.map((v) => Math.round(v * 1e6) / 1e6)).toEqual([10, 0]);
+    // an overlapping run is still refused, even when the far boundary is chosen
+    const over = start([point('a', 0, 0), point('b', 5, 0), line('L', 'a', 'b'), point('m0', 6, 0), point('m1', 8, 0), line('M', 'm0', 'm1'), ...far()]);
+    expect(extend(sketchOf(over), solve(over).geometry, ids(over), 'L', [4.5, 0], 'V')).toMatchObject({ error: expect.stringContaining('重疊') });
+  });
 });
 
 describe('offset (C1.17)', () => {

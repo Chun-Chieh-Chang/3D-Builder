@@ -857,11 +857,14 @@ function extensionOverlaps(geometry:Geometry,id:Id,g:Extract<Curve,{type:'line'|
 }
 
 /**
- * Lengthens the end of a line or arc nearest `click` until it meets the first curve in its way. The new end lies on that
- * curve; the old end goes (with what was attached to it), and so do the length and equalities of the whole curve. An end
- * shared with another entity is kept: an adjacent collinear line (or same-circle arc) continues from it without changing the original curves or dimensions.
+ * Lengthens the end of a line or arc nearest `click` until it meets the first curve in its way — or, when `boundary` names
+ * another curve (G08, P2-5), until it meets that curve, crossing any curves in between (an explicit target past a nearer
+ * one). The new end lies on that curve; the old end goes (with what was attached to it), and so do the length and
+ * equalities of the whole curve. An end shared with another entity is kept: an adjacent collinear line (or same-circle arc)
+ * continues from it without changing the original curves or dimensions. A boundary that lies behind the end (or does not
+ * meet the extension at all) is refused rather than shortening the curve.
  */
-export function extend(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometry: Geometry, ids: IdAllocator, entityId: Id, click: P2): OpResult {
+export function extend(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometry: Geometry, ids: IdAllocator, entityId: Id, click: P2, boundary?: Id): OpResult {
   if(!click.every(Number.isFinite))return error('sketch.extendPointInvalid');
   const e = sketch.entities.find((x) => x.id === entityId);
   const g = geometry.get(entityId);
@@ -870,9 +873,13 @@ export function extend(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, 
   const atEnd = dist(click, at1) < dist(click, at0);
   const span = spanOf(g);
   const reach = (h: Hit): number => (g.type === 'line' ? (atEnd ? h.u - span : -h.u) : atEnd ? h.u - span : TAU - h.u);
-  const next = hitsOf(geometry, entityId, g, true)
+  const wanted = boundary !== undefined && boundary !== entityId;
+  const ahead = hitsOf(geometry, entityId, g, true)
     .filter((h) => reach(h) > SAME && (g.type === 'line' || h.u > span))
-    .sort((x, y) => reach(x) - reach(y))[0];
+    .sort((x, y) => reach(x) - reach(y));
+  const chosen = wanted ? ahead.find((h) => h.other === boundary) : undefined;
+  if (wanted && !chosen) return error('sketch.extendBoundaryMissed');
+  const next = chosen ?? ahead[0];
   if (!next) return error('sketch.extendNothing');
   const field = e.type === 'line' ? (atEnd ? 'p2' : 'p1') : atEnd ? 'end' : 'start';
   const old = (e as unknown as Record<string, Id>)[field]!;
