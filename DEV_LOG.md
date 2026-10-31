@@ -2,6 +2,33 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-10-31：草圖互動 P2 第二刀：操作計畫預覽鋪開至全部六個 PICK 工具（G06 完成）
+
+承接 P2-1 的共用管道，本批把 `operationPlan()` 從 trim 一隻擴為全部 PICK 工具，hover 預覽延伸／圓角／倒角／偏移／鏡射的提交結果；G06「共用操作計畫」就此完整。
+
+### 1. 交付內容
+- `apps/web/src/sketcher/controller.ts`：
+  - `operationPlan()` 擴為 switch 全工具：延伸／修剪同路；圓角／倒角經新抽出的 `cornerPair()`；偏移呼叫 `offset(picks, d, e.p)`；鏡射呼叫 `mirror(picks, hit.id)`。op 回傳錯誤或角落未成對時 hover 不預覽（無假綠）。
+  - **抽出 `cornerPair(g, hitId)`** 供 hover 與 `operationClick` 共用：交於同一點的兩線回 `{pair}`；點上線數 ≠2 回 `{report}`（點擊時才通知 `sketch.cornerPick`）；hover 在線上但未先揀第一條回 `null`（無預覽、點擊時存第一條）。`operationClick` 的圓角／倒角分支改用同一函式，行為逐項保持原樣（report→notify、存 pick、成功→清 picks）。
+  - **特例（偏移）**：偏移的確認點不需落在任何圖元上——游標只決定抄到哪一側。`operationPlan()` 對 offset 跳過 hover 命中要求（`target` 填 `hover?.id ?? ''`），`picks` 由 `setTool('offset')` 的預選供應（未預選早退，與 `setTool` 拒絕空選一致）。
+- 新測試 5 項（`sketch-op-preview.test.ts` 合計 8 項，真實求解）：延伸 stub 顯示 `change` 形狀 (−10,0)→(10,0)；圓角 hover 於角落點顯示 `add` 弧 r=5 與兩腿 `change`；倒角 `add` 斜線；偏移（預選線、hover 在線外）`add` 平行線 (0,5)-(20,5)；鏡射（hover 必須在鏡射軸曲線上）`add` 鏡射線 (0,0)-(-10,0)。各項皆含「點擊提交同計畫、提交後無殘留預覽、一次 Undo 還原」。
+
+### 2. 紅隊四問（AGENTS.md §2）
+1. **輸入破壞**：本批無新數值入口（半徑／距離沿用既有選項預設 5）；op 錯誤回傳直接無預覽，未做任何默認修正。
+2. **幾何相交破壞**：退化與失敗幾何（角落線數≠2、偏移未預選、欠 `picks` 的鏡射、op 顯式錯誤）hover 皆無計畫；點擊與 hover 同 op，無「預覽可提交不可」分岔。
+3. **依賴鏈完整性**：hover 與 click 完全共用 `cornerPair`——角落分支（cornerPick 通知、存第一條線、成功清 picks）逐項回歸通過，點擊行為未動。
+4. **規格真實性與零 Mock**：五項新測試全部以真實 PlaneGCS 求解斷言提交後幾何（延伸→端點 x=10；圓角→弧 r=5；偏移→原線 y=0 不動、複本 y=5），Undo 後以逐項計數還原驗證。
+
+### 3. 失敗紀錄與 RCA / CAPA
+1. **offset／mirror 兩項測試首版預覽為空**：首版一律要求 hover 命中圖元。RCA：offset 的點擊路徑本來就不做 hitTest（游標僅決定邊），mirror 的首版游標點 (5,5) 不在鏡射軸曲線上——預覽是提交的鏡像，hover 條件應取自點擊路徑的實際需求，而非想當然。CAPA：`operationPlan` 對 offset 特別放行；mirror 測試改為 hover 在軸曲線上 (0,1)。
+2. **完整 `verify:ui` 三度逾時（每次 60 分鐘 foreground 無輸出）**：非測試失敗，是批與機器負載問題。CAPA：改為背景執行＋全程記錄至檔案，跑完通知（§3.3 零妥協——不放寬任何腳本自身的門檻）。
+3. **`manual-drawing-linked` 今日 3/3 失敗判定**（整批、單獨帶改動、單獨乾淨 HEAD）：step 1 `box.centred:false`，mid[1]=173.5 對 172.5 固定差 1.0 mm。依規則以 `git stash push` 收下 P2-2 改動後在乾淨 HEAD `2404a44` 單跑 `--only` 重現同一簽名與同一數值 → **既有失敗**；且 DEV_LOG 2026-10-29 條目早有先例——同一 `centred:false` 在乾淨 `bca2d80` 就重現過。昨日「單獨 2/2 過」屬環境窗口。工程圖程式自 `e54a57a` 以來未變、本工作線只動草圖疊加層。另案追蹤（含 E03 macOS），不阻塞本批。
+
+### 4. 確效與指標
+- `apps/web` 全量 30 檔 **313 項**通過（含新增 5 項）；typecheck 無誤；`lint:rules`／`deps`／`repo`／`i18n` 全 PASS。
+- 完整 `verify:ui`：**249/250**（唯一失敗為上列既有項）。既有不穩項 `assembly-section-captions` 本輪通過。
+- 仍缺：鏡射以草圖軸（非曲線）參照時 hover 無預覽（點擊仍可提交，`pickedCurve(…, true)` 支援；hover 的 `hitTest` 軸開關不載 mirror）——照實記錄，留待後續與 hover 軸列一起評估；偏移兩側／封口（P2-3）、掃掠修剪（P2-4）、延伸選邊界（P2-5）、相切接續（P2-6）。
+
 ## 2026-10-30：草圖互動 P2 第一刀：共用操作計畫預覽管道（G06，trim 為代表）
 
 依[草圖互動方案](docs/design/sketch-interaction/plan.md) P2「修改預覽與連續路徑」。此前修剪／延伸／圓角／倒角／偏移／鏡射六個 PICK 工具都是點擊立即提交、無最終結果預覽（G06）。本批建立共用管道：hover 時以**與提交完全相同的純 op** 算出候選 `SketchEdit`，預覽以 `remove`／`change`／`add` 三種角色畫在發生位置；確認才試解提交，取消零文件變更、預覽不產生 Undo；文件 Schema 未變更。

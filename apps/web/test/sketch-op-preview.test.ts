@@ -153,4 +153,146 @@ describe('operation preview of the shared plan (G06, P2-1: trim)', () => {
     expect(h.sketch().entities).toHaveLength(counts.entities);
     expect(h.sketch().constraints).toHaveLength(counts.constraints);
   });
+
+  it('hover on a short stub previews it extended to its first crossing, and the click lands there', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, -10, 0);
+    click(c, 9, 0);
+    c.escape();
+    click(c, 10, -5);
+    click(c, 10, 5);
+    c.escape();
+    const counts = { entities: h.sketch().entities.length, constraints: h.sketch().constraints.length };
+
+    c.setTool('extend');
+    move(c, 8.5, 0);
+    const seen = overview(c);
+    expect(seen).toEqual([{ kind: 'line', role: 'change', s: expect.objectContaining({ kind: 'line', role: 'change', a: [-10, 0], b: [10, 0] }) }]);
+    expect(h.sketch().entities).toHaveLength(counts.entities);
+
+    click(c, 8.5, 0); // the confirming click submits the same plan
+    await c.settled();
+    const l1 = h.last!.geometry.get('l1')! as Extract<SolvedGeometry, { type: 'line' }>;
+    expect(l1.b[0]).toBeCloseTo(10, 6);
+    expect(l1.b[1]).toBeCloseTo(0, 6);
+    expect(c.getView().preview).toEqual([]); // the plan went with the document revision it was built from
+
+    h.history.undo();
+    h.resolve();
+    expect(h.sketch().entities).toHaveLength(counts.entities);
+    expect(h.sketch().constraints).toHaveLength(counts.constraints);
+    c.setTool('select');
+  });
+
+  it('hover on a corner point previews the fillet that the click then makes', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 10, 0);
+    click(c, 10, 10);
+    c.escape();
+    const counts = { entities: h.sketch().entities.length, constraints: h.sketch().constraints.length };
+
+    c.setTool('sketchFillet');
+    move(c, 10.001, 0.001); // the corner both lines meet at
+    const seen = overview(c);
+    expect(seen.some((x) => x.kind === 'arc' && x.role === 'add')).toBe(true);
+    expect(seen.filter((x) => x.kind === 'line' && x.role === 'change').length).toBe(2); // both legs shorten by the radius
+    const plan = seen.find((x) => x.kind === 'arc' && x.role === 'add')! as { s: Extract<PreviewShape, { kind: 'arc' }> };
+    expect(plan.s.r).toBeCloseTo(5, 9); // the option's fillet radius
+    expect(h.sketch().entities).toHaveLength(counts.entities);
+
+    click(c, 10.001, 0.001); // the click previews nothing by itself: same plan, same result
+    await c.settled();
+    const arcs = h.sketch().entities.filter((e) => e.type === 'arc');
+    expect(arcs).toHaveLength(1);
+    const g = h.last!.geometry.get(arcs[0]!.id)! as Extract<SolvedGeometry, { type: 'arc' }>;
+    expect(g.r).toBeCloseTo(5, 6);
+    expect(c.getView().preview).toEqual([]);
+
+    h.history.undo();
+    h.resolve();
+    expect(h.sketch().entities).toHaveLength(counts.entities);
+    c.setTool('select');
+  });
+
+  it('hover on the same corner previews the chamfer bevel the click then makes', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 10, 0);
+    click(c, 10, 10);
+    c.escape();
+
+    c.setTool('sketchChamfer');
+    move(c, 10.001, 0.001);
+    const seen = overview(c);
+    expect(seen.some((x) => x.kind === 'line' && x.role === 'add')).toBe(true); // the bevel is a straight piece
+    c.setTool('select');
+  });
+
+  it('hover beside a selected line previews the offset copy the click then makes', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 20, 0);
+    c.escape();
+    const counts = { entities: h.sketch().entities.length, constraints: h.sketch().constraints.length };
+
+    c.select(['l1']);
+    c.setTool('offset');
+    move(c, 10, 5); // above the line: that is the side the copy goes to
+    const seen = overview(c);
+    expect(seen).toEqual([{ kind: 'line', role: 'add', s: expect.objectContaining({ kind: 'line', role: 'add', a: [0, 5], b: [20, 5] }) }]);
+    expect(h.sketch().entities).toHaveLength(counts.entities);
+
+    click(c, 10, 5); // the confirming click submits the same plan
+    await c.settled();
+    const lines = h.sketch().entities.filter((e) => e.type === 'line' && !e.construction);
+    expect(lines).toHaveLength(2);
+    const g = h.last!.geometry.get('l1')! as Extract<SolvedGeometry, { type: 'line' }>;
+    expect(g.a[1]).toBeCloseTo(0, 6); // the original stays where it was
+    expect(c.getView().preview).toEqual([]);
+
+    h.history.undo();
+    h.resolve();
+    expect(h.sketch().entities).toHaveLength(counts.entities);
+    c.setTool('select');
+  });
+
+  it('hover on another line previews the mirrored copy the click then makes', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 10, 0);
+    c.escape();
+    click(c, 0, 0);
+    click(c, 0, 10);
+    c.escape();
+    const counts = { entities: h.sketch().entities.length, constraints: h.sketch().constraints.length };
+
+    c.select(['l1']); // what gets mirrored
+    c.setTool('mirror');
+    move(c, 0, 1); // the vertical line is the mirror: the hover must be on it
+    const seen = overview(c);
+    expect(seen).toEqual([{ kind: 'line', role: 'add', s: expect.objectContaining({ kind: 'line', role: 'add', a: [0, 0], b: [-10, 0] }) }]);
+    expect(h.sketch().entities).toHaveLength(counts.entities);
+
+    click(c, 0, 1); // the confirming click submits the same plan
+    await c.settled();
+    const lines = h.sketch().entities.filter((e) => e.type === 'line' && !e.construction);
+    expect(lines).toHaveLength(3);
+    expect(c.getView().preview).toEqual([]);
+
+    h.history.undo();
+    h.resolve();
+    expect(h.sketch().entities).toHaveLength(counts.entities);
+    c.setTool('select');
+  });
 });

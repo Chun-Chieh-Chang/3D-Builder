@@ -1930,16 +1930,62 @@ export class SketchController {
   }
 
   /**
+   * The two lines a corner op (fillet or chamfer) takes: both lines meeting at the picked point, or the hovered line with one
+   * picked before it. `report` marks a point that does not join exactly two lines, for the click to say so; null while no corner
+   * is complete — a hover has no plan then, and the click either stores the first line or does nothing.
+   */
+  private cornerPair(g: SolvedGeometry, hitId: Id): { pair: [Id, Id] } | { report: true } | null {
+    if (g.type === 'point') {
+      const lines = [...this.geometry()].filter(([, x]) => x.type === 'line' && (x.p1 === hitId || x.p2 === hitId)).map(([id]) => id);
+      if (lines.length !== 2) return { report: true };
+      return { pair: [lines[0]!, lines[1]!] };
+    }
+    if (g.type !== 'line' || this.picks.length === 0) return null;
+    return { pair: [this.picks[0]!, hitId] };
+  }
+
+  /**
    * The plan of the operation the tool would make under the pointer, drawn from the same pure op the confirming click submits
-   * (G06, P2-1: trim is the first; the other PICK tools join in P2-2). Null where the op would fail, so hover then offers nothing.
+   * (G06, P2-1 trim; P2-2 the rest of the PICK tools). Null where the op would fail or the corner is not complete, so hover
+   * then offers nothing instead of a preview the click could not submit.
    */
   private operationPlan(e: PointerInput): { doc: PartDoc; target: Id; shapes: PreviewShape[] } | null {
-    if (this.tool !== 'trim') return null;
+    if (this.tool === 'offset') {
+      // the offset needs no curve under the pointer: the cursor only says which side the copy goes to
+      if (this.picks.length === 0) return null; // the tool takes a pre-selection (setTool refuses without one)
+      const geometry = this.geometry();
+      const plan = offset(this.sketch(), geometry, this.allocator(), this.picks, this.options.offsetDistance, e.p);
+      if ('error' in plan) return null;
+      return { doc: this.host.doc(), target: this.hover?.id ?? '', shapes: editPreviewShapes(plan.edit, geometry) };
+    }
     const hit = this.hover;
     const geometry = this.geometry();
     const g = hit && geometryOf(geometry, hit.id);
-    if (!hit || !g || g.type === 'point') return null;
-    const plan = trim(this.sketch(), geometry, this.allocator(), hit.id, e.p);
+    if (!hit || !g) return null;
+    const sketch = this.sketch(), ids = this.allocator(), o = this.options;
+    let plan: OpResult;
+    switch (this.tool) {
+      case 'trim':
+      case 'extend':
+        if (g.type === 'point') return null;
+        plan = (this.tool === 'trim' ? trim : extend)(sketch, geometry, ids, hit.id, e.p);
+        break;
+      case 'sketchFillet':
+      case 'sketchChamfer': {
+        const corner = this.cornerPair(g, hit.id);
+        if (!corner || !('pair' in corner)) return null;
+        plan = this.tool === 'sketchFillet'
+          ? fillet(sketch, geometry, ids, corner.pair[0], corner.pair[1], o.filletRadius)
+          : chamfer(sketch, geometry, ids, corner.pair[0], corner.pair[1], o.chamferDistance1, o.chamferDistance2);
+        break;
+      }
+      case 'mirror':
+        if (this.picks.length === 0 || g.type === 'point') return null;
+        plan = mirror(sketch, geometry, ids, this.picks, hit.id);
+        break;
+      default:
+        return null;
+    }
     if ('error' in plan) return null;
     return { doc: this.host.doc(), target: hit.id, shapes: editPreviewShapes(plan.edit, geometry) };
   }
@@ -1960,25 +2006,18 @@ export class SketchController {
         const hit = hitTest(geometry, e.p, PICK_PX * e.px);
         const g = hit && geometry.get(hit.id);
         if (!hit || !g) return;
-        let pair: [Id, Id] | null = null;
-        if (g.type === 'point') {
-          const lines = [...geometry].filter(([, x]) => x.type === 'line' && (x.p1 === hit.id || x.p2 === hit.id)).map(([id]) => id);
-          if (lines.length !== 2) return this.host.notify(t('sketch.cornerPick'), 'info');
-          pair = [lines[0]!, lines[1]!];
-        } else if (g.type === 'line') {
-          if (this.picks.length === 0) {
-            this.picks = [hit.id];
-            return;
-          }
-          pair = [this.picks[0]!, hit.id];
-          this.picks = [];
+        const corner = this.cornerPair(g, hit.id);
+        if (corner && 'report' in corner) return this.host.notify(t('sketch.cornerPick'), 'info');
+        if (!corner || !('pair' in corner)) {
+          if (g.type === 'line') this.picks = [hit.id]; // the first line of the corner, waiting for the second
+          return;
         }
-        if (!pair) return;
+        this.picks = [];
         const o = this.options;
         this.run(
           this.tool === 'sketchFillet'
-            ? fillet(sketch, geometry, ids, pair[0], pair[1], o.filletRadius)
-            : chamfer(sketch, geometry, ids, pair[0], pair[1], o.chamferDistance1, o.chamferDistance2),
+            ? fillet(sketch, geometry, ids, corner.pair[0], corner.pair[1], o.filletRadius)
+            : chamfer(sketch, geometry, ids, corner.pair[0], corner.pair[1], o.chamferDistance1, o.chamferDistance2),
         );
         return;
       }

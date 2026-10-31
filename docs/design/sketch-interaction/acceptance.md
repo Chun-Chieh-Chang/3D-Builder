@@ -49,10 +49,22 @@ P0 核心功能與驗收項目已全數跑通（Windows 瀏覽器 `manual-sketch
 
 | 案例 | 狀態 | 證據／仍缺項 |
 |---|---|---|
-| G06 trim 預覽管道 | 部分通過（管道與 trim 完成，其餘工具 P2-2 鋪開） | 原生 `sketch-op-preview.test.ts` 3 項：①直線中段修剪 hover 顯示保留段的 `change` 形狀 ((−10,0)→(0,0)) 且文件不變；②游標離開圖元不再預覽、文件逐字不變；③圓修剪 hover 同時顯示 `remove` 的圓與 `add` 的保留弧（a0=π→a1=0），點擊提交後求解真值與計畫一致（±1e-6）、圓消失、無殘留預覽（文件的計畫即時失效）、一次 Undo 還原。其他五個工具仍點擊即提交，下一步 P2-2。 |
+| G06 trim 預覽管道 | 部分通過（管道與 trim 完成，其餘工具 P2-2 鋪開） | 原生 `sketch-op-preview.test.ts` 3 項：①直線中段修剪 hover 顯示保留段的 `change` 形狀 ((−10,0)→(0,0)) 且文件不變；②游標離開圖元不再預覽、文件逐字不變；③圓修剪 hover 同時顯示 `remove` 的圓與 `add` 的保留弧（a0=π→a1=0），點擊提交後求解真值與計畫一致（±1e-6）、圓消失、無殘留預覽（文件的計畫即時失效）、一次 Undo 還原。其他五個工具已於 P2-2 鋪開（見下節）。 |
 | 預覽=提交結果 | 通過 | 預覽與提交呼叫同一純 op；新增點以 op 計算的暫存座標渲染（`Parts.point` 自帶 x/y），提交後求解真值與計畫差 ≤1e-6 mm。 |
 
 回歸：`apps/web` 全量 30 檔 308 項通過（含新增 3 項）；typecheck、lint:rules／deps／repo／i18n 全 PASS；瀏覽器 `manual-sketch-entry` 煙霧 1/1（同時驗證新 `--sketch-op-*` 主題變數可解析）。
+
+## P2-2：操作計畫預覽鋪開至全部六個 PICK 工具（G06 完成）
+
+2026-10-31。`operationPlan()` 從 trim 擴為全部 PICK 工具；抽出 `cornerPair()` 供 hover 與點擊共用（角落行為逐項保持原樣）；偏移特例——確認點不需落在圖元上（游標只決定抄到哪一側），hover 無命中也出計畫；鏡射 hover 需在鏡射軸曲線上。
+
+| 案例 | 狀態 | 證據／仍缺項 |
+|---|---|---|
+| G06 六工具 preview=提交 | 通過 | `sketch-op-preview.test.ts` 8 項：延伸 stub hover 顯示 `change` (−10,0)→(10,0)、點擊後 l1 端點 x=10；圓角 hover 於角落點即顯示 `add` 弧 r=5＋兩腿 `change`、無需先揀第一條線；倒角 `add` 斜線；偏移（預選、hover 在線外）`add` 平行線 (0,5)-(20,5)、原線不動；鏡射（hover 於軸曲線）`add` 鏡射線 (0,0)-(-10,0)。各項含點擊提交同計畫、提交後無殘留預覽、一次 Undo 逐項還原。 |
+| 圓角／倒角落選次序相容 | 通過 | hover 在線上但 `picks` 空→無預覽（點擊才存第一條）；hover 於角落點→即時預覽；點擊通知 `sketch.cornerPick`、存 pick、成功清 picks 的行為與 P2 之前一致（既有 `sketcher.test.ts` 全過）。 |
+| 已知缺口 | 記錄待辦 | 鏡射以草圖軸（非曲線）參照時 hover 無預覽，點擊仍可提交（`pickedCurve(…, true)` 支援軸；hover `hitTest` 的軸開關不載 mirror）。偏移兩側／封口為 P2-3。 |
+
+回歸：`apps/web` 30 檔 **313 項**通過；typecheck／lint 全 PASS；完整 `verify:ui` **249/250**——唯一失敗 `manual-drawing-linked` 依乾淨 HEAD `--only` 對照（同簽名 `box.centred:false`，mid[1]=173.5 對 172.5）與 DEV_LOG 2026-10-29 先例判定為**既有／環境性失敗**，非本批造成，另案追蹤。
 
 
 ## 測試與失敗紀錄
