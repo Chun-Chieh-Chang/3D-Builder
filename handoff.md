@@ -113,6 +113,18 @@
 - **修法(方案 A,測試側,已選定)**:在**空圖紙**上先 `setSheet({projection:'first'})`,再按「標準三視圖」——空圖紙 `views.length===0` 時 `autoScaleWhenReady()` 會等待,加視圖後 fit 只用第一角跑一次,無競態;step 1 語意(「新圖已置中、自動排版無事可做」)原樣保留。驗證以 `npm run verify:ui -- --only manual-drawing-linked`,另開 `test:` 提交。**結果**:已提交 `f92164c`(CI 綠),單腳本驗證 `npm run verify:ui -- --only manual-drawing-linked` **1/1 通過**。
 - **方案 B(產品側,未採用)**:換投影時若圖仍是全新(無 `at`/`scale`、shift 未被動過)就重跑最適比例;與「使用者放過的視圖保留原位」相衝,需 ADR,暫擱置。
 
+## 3e. 2026-10-31 P2-5 已提交:延伸明示邊界(G08 部分)
+
+- **目標(C03/G08)**:延伸工具可先選一條曲線作為邊界,延伸跨過中間的曲線直達所選邊界;未預選時維持「取該方向首個有效交點」的預設;邊界在端點後方或不在延伸路徑上時明確拒絕(不縮短、不靜默改目標)。
+- **實作**:
+  - `packages/sketch/src/ops.ts`:`extend(..., boundary?: Id)` 在既有 ahead 命中中改取該邊界的命中;取不到回 `sketch.extendBoundaryMissed`;「邊界 = 本體」視同未指定;「重疊」仍由 `extensionOverlaps` 把關。
+  - `apps/web/src/sketcher/controller.ts`:`setTool('extend')` 以 `extendBoundaryTargets()` 把當前選取的第一條非點/非文字圖元種入 `picks`(與 offset/mirror 同模式,但未預選不阻止進入);`operationPlan()`/`operationClick` 傳 `picks[0]`,預覽與提交同一 pure op;`picks` 非空時提示改顯 `sketch.hint.extendBoundary`。
+  - i18n:`sketch.extendBoundaryMissed`、`sketch.hint.extendBoundary`;`help.toolExtend` 的 summary/body/keywords 補「預選即邊界」(zh/en,並遵循該檔的全形標點)。
+  - 測試:`ops.test.ts` +1、`sketch-op-preview.test.ts` +2(describe「extend to a chosen boundary (G08, P2-5)」);e2e `manual-extend-rectangle.js` 加「選遠線 → 跨過近線直達 x=40」。
+- **確效**:`apps/web`+`packages/sketch` 50 檔 **557 項**;`verify:ui -- --only manual-extend-rectangle` 1/1;完整 `verify:ui` **250/250**;typecheck、lint:rules/deps/repo/i18n 全 PASS;`help.test.ts` 40 項。提交 `2e5887f`,CI 綠。
+- **已知缺口**:獨立 Split 需定義 ID/尺寸/外部參照繼承(P5);以自由曲線為邊界留 P5。
+- **下一刀**:P2-6 相切弧接續(提交前徵詢)。
+
 ## 4. 下一階段核心計畫：草圖互動改善方案 (P1 即時尺寸輸入)
 
 參考規劃文檔：[草圖互動方案規劃 (docs/design/sketch-interaction/plan.md)](docs/design/sketch-interaction/plan.md) 與 [P0 驗收紀錄 (docs/design/sketch-interaction/acceptance.md)](docs/design/sketch-interaction/acceptance.md)。
