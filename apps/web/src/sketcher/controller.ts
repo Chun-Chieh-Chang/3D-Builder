@@ -378,6 +378,12 @@ export class SketchController {
   private ignoredSnap: Id[] | null = null;
   /** The operation plan the tool has under the pointer: hover shows it, the confirming click submits the same plan (G06, P2-1). Null again once the document it was built from changes. */
   private opPlan: { doc: PartDoc; target: Id; shapes: PreviewShape[] } | null = null;
+
+  /**
+   * Drag-sweep trim (G07, P2-4): the stroke with the trim tool holds the curves it has crossed, each once, with the point
+   * where it crossed them. Committed as one edit on release; a stroke that crosses nothing, or an Esc, changes nothing.
+   */
+  private trimSweep: { at: Map<Id, P2>; cancelled: boolean } | null = null;
   /** The last pointer position, which Enter in the boxes clicks at. */
   private pointer: PointerInput | null = null;
   /** Crossings of two lines picked by the dimension tool, by the id a pick stands for them with. They become a point and an `intersection` relation only with the dimension (ADR 0212). */
@@ -980,11 +986,13 @@ export class SketchController {
     this.tangentTo = null;
     this.sweep = { total: 0, last: 0 };
     this.opPlan = null;
+    this.trimSweep = null;
     this.clearEntry();
   }
 
   /** Esc: drops the values typed in, ends the current chain or pick, then returns to selection (SolidWorks behaviour). */
   escape(): void {
+    if (this.trimSweep) { this.trimSweep.cancelled = true; this.opPlan = null; this.changed(); return; }
     if (this.drag || this.box) { this.drag = null; this.box = null; this.press = null; this.host.dragPreview(null); }
     else if (this.cancelEntry()) return;
     else if (this.candidate) { this.candidate = null; this.hover = null; this.candidates = []; this.press = null; }
@@ -1198,6 +1206,7 @@ export class SketchController {
       this.updateSnap(e);
       if (this.tool === 'arc' && this.clicks.length === 2) this.trackSweep(e.p);
       if (pressed && this.press && dist(this.press.p, e.p) > DRAG_PX * e.px) this.press.moved = true;
+      if (this.tool === 'trim' && pressed && this.press?.moved) this.sweepTrim(e);
     }
     this.changed();
   }
@@ -1205,6 +1214,7 @@ export class SketchController {
   pointerDown(e: PointerInput): void {
     this.cursor = e.p;
     this.pointer = e;
+    if (this.tool === 'trim') this.trimSweep = { at: new Map(), cancelled: false };
     if (this.tool === 'select') {
       const hit = this.dimensionAt(e);
       if (hit) {
@@ -1234,6 +1244,20 @@ export class SketchController {
     }
     const press = this.press;
     this.press = null;
+    if (this.trimSweep) {
+      const sweep = this.trimSweep;
+      this.trimSweep = null;
+      // a drag or an Esc ends the stroke: the crossed curves are trimmed at once (one undo), a cancelled stroke changes nothing
+      if (sweep.cancelled || (press?.moved ?? false)) {
+        if (!sweep.cancelled) {
+          const merged = this.mergedTrims(sweep.at);
+          if (merged) this.run({ edit: merged });
+        }
+        this.opPlan = null;
+        this.changed();
+        return;
+      }
+    }
     if (this.tool === 'select') {
       this.selectUp(e, press);
     } else if (!press || !press.moved || this.clicks.length > 0 || this.chain || this.tool === 'point' || PICK_TOOLS.has(this.tool)) {
@@ -1267,6 +1291,7 @@ export class SketchController {
     this.hover = null;
     this.snapTarget = null;
     this.opPlan = null;
+    this.trimSweep = null;
     this.changed();
   }
 
@@ -1999,6 +2024,37 @@ export class SketchController {
     return { doc: this.host.doc(), target: hit.id, shapes: editPreviewShapes(plan.edit, geometry) };
   }
 
+  /**
+   * One step of a drag-sweep trim (G07, P2-4): the curve under the stroke — and the one it started on — joins the sweep,
+   * each curve only once, and the preview shows the whole stroke's result so far.
+   */
+  private sweepTrim(e: PointerInput): void {
+    const sweep = this.trimSweep;
+    if (!sweep) return;
+    const geometry = this.geometry();
+    const add = (p: P2) => {
+      const hit = hitTest(geometry, p, PICK_PX * e.px);
+      const g = hit && geometry.get(hit.id);
+      if (hit && g && g.type !== 'point' && !sweep.at.has(hit.id)) sweep.at.set(hit.id, p);
+    };
+    if (this.press) add(this.press.p);
+    add(e.p);
+    const merged = this.mergedTrims(sweep.at);
+    this.opPlan = merged ? { doc: this.host.doc(), target: '', shapes: editPreviewShapes(merged, geometry) } : null;
+  }
+
+  /** The trims of every curve a stroke crossed, each computed by the same pure op a single click uses, folded into one edit. */
+  private mergedTrims(at: Map<Id, P2>): SketchEdit | null {
+    if (at.size === 0) return null;
+    const geometry = this.geometry(), sketch = this.sketch(), ids = this.allocator();
+    const edits: SketchEdit[] = [];
+    for (const [id, p] of at) {
+      const r = trim(sketch, geometry, ids, id, p);
+      if (!('error' in r)) edits.push(r.edit); // a curve the op cannot trim (a spline, a point) is left out of the sweep
+    }
+    return edits.length > 0 ? mergeEdits(edits) : null;
+  }
+
   private operationClick(e: PointerInput): void {
     const geometry = this.geometry();
     const sketch = this.sketch();
@@ -2623,6 +2679,28 @@ function rectLines(corners: P2[]): PreviewShape[] {
  * solved geometry for what already exists, so the preview is what the confirming click will submit. Ellipses and splines as
  * polylines (they still preview through the same transform helper).
  */
+/** Folds several sketch edits into one command's edit: the parts concatenated, removals deduplicated (G07, P2-4 drag-sweep trim). */
+function mergeEdits(edits: SketchEdit[]): SketchEdit {
+  const entities: NonNullable<SketchEdit['entities']> = [];
+  const constraints: NonNullable<SketchEdit['constraints']> = [];
+  const remove = new Set<Id>();
+  const addEntities: SketchEntity[] = [];
+  const addConstraints: SketchConstraint[] = [];
+  for (const e of edits) {
+    entities.push(...(e.entities ?? []));
+    constraints.push(...(e.constraints ?? []));
+    for (const id of e.remove ?? []) remove.add(id);
+    addEntities.push(...(e.add?.entities ?? []));
+    addConstraints.push(...(e.add?.constraints ?? []));
+  }
+  const out: SketchEdit = {};
+  if (entities.length) out.entities = entities;
+  if (constraints.length) out.constraints = constraints;
+  if (remove.size) out.remove = [...remove];
+  if (addEntities.length || addConstraints.length) out.add = { entities: addEntities, constraints: addConstraints };
+  return out;
+}
+
 function editPreviewShapes(edit: SketchEdit, geometry: Geometry): PreviewShape[] {
   const shapes: PreviewShape[] = [];
   // the draft coordinates the op itself computed for the entities it adds

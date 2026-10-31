@@ -81,6 +81,18 @@ P0 核心功能與驗收項目已全數跑通（Windows 瀏覽器 `manual-sketch
 回歸:`apps/web` + `packages/sketch` 全量 **50 檔 550 項**通過(含新增 4 項);typecheck、lint:rules/deps/repo/i18n 全 PASS;完整 `verify:ui` **249/250**——唯一失敗 `manual-drawing-linked`(同簽名 `centred:false`)為既有/環境性失敗,另案追蹤。
 
 
+## P2-4:拖曳掃掠修剪(G07)
+
+2026-10-31。修剪工具支援「按下滑過多段」:一筆畫過的每條曲線各以同一個純 `trim()` 修剪一次,放開時折成單一 `editSketch`(一次 Undo)。
+
+| 案例 | 狀態 | 證據/仍缺項 |
+|---|---|---|
+| G07 掃掠修剪 | 通過 | `sketch-op-preview.test.ts` 4 項:1一筆畫過三條垂直線(y=0 穿越),hover 期間逐步顯示各段 `change`+`add` 預覽(2→3),放開一次提交、線數 8、各線上下兩段(spans 上端 −2、下端 2)、預覽清空、一次 Undo 回復原數原拘束;2同一筆反向重穿同三段 → 仍只修剪一次(線數 8,非 12);3空拖曳不加 Undo、文件版本不變、無殘留預覽;4掃掠中 `Esc` 立即清預覽、放開零文件變更。 |
+| 預覽=提交結果 | 通過 | 掃掠預覽與提交皆由 `mergedTrims()`(同一純 `trim()`)折出的同一 `SketchEdit`;`mergeEdits` entities/constraints 串接、remove 去重、add 合併。 |
+| 已知限制 | 記錄待辦 | 指針落在與曲線重疊的「點」(如原點)時 `hitTest` 回該點,該曲線不被修剪——與既有單擊 trim 同,非本刀新增;延伸選邊界 P2-5、相切弧接續 P2-6。 |
+
+回歸:`apps/web` + `packages/sketch` 全量 **50 檔 554 項**通過(含新增 4 項);typecheck、lint:rules/deps/repo/i18n 全 PASS;完整 `verify:ui` **249/250**(唯一失敗 `manual-drawing-linked` 為既有/環境性,已定案並將於下一提交單獨修;見 [handoff §3d](../../../handoff.md))。
+
 ## 測試與失敗紀錄
 
 - `apps/web/test/sketcher.test.ts` 75項、`packages/sketch/test/solve-options.test.ts` 16項（含150組隨機配置核對）、`apps/web/test/sketch-pointer-baseline.test.ts` 2項、`tests/phase8/view-normal.test.ts` 7項，合計100項測試全數通過。

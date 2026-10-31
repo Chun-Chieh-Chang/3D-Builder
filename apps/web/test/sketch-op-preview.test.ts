@@ -356,3 +356,119 @@ describe('operation preview of the shared plan (G06, P2-1: trim)', () => {
     c.setTool('select');
   });
 });
+
+describe('drag-sweep trim (G07, P2-4)', () => {
+  /** Three verticals each crossed by two horizontals, so a stroke along y=0 cuts out each vertical's middle. */
+  function scene(c: SketchController): void {
+    for (const x of [-8, -4, 4]) {
+      c.setTool('line');
+      click(c, x, -5);
+      click(c, x, 5);
+      c.escape();
+    }
+    for (const y of [-2, 2]) {
+      c.setTool('line');
+      click(c, -12, y);
+      click(c, 12, y);
+      c.escape();
+    }
+  }
+  const verticals = (h: Host, x: number): Extract<SolvedGeometry, { type: 'line' }>[] =>
+    [...h.last!.geometry.values()].filter(
+      (g): g is Extract<SolvedGeometry, { type: 'line' }> => g.type === 'line' && Math.abs(g.a[0] - x) < 1e-6 && Math.abs(g.b[0] - x) < 1e-6,
+    );
+  const lineCount = (h: Host) => h.sketch().entities.filter((e) => e.type === 'line' && !e.construction).length;
+
+  it('one stroke across three segments trims each once, as a single undo', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    scene(c);
+    const before = { entities: h.sketch().entities.length, constraints: h.sketch().constraints.length };
+    const rev = h.history.doc;
+
+    c.setTool('trim');
+    c.pointerMove(at(-11, 0), false);
+    c.pointerDown(at(-11, 0));
+    c.pointerMove(at(-8, 0), true);
+    c.pointerMove(at(-4, 0), true);
+    const seen = overview(c);
+    expect(seen.filter((s) => s.role === 'change')).toHaveLength(2); // the two verticals crossed so far
+    expect(seen.filter((s) => s.role === 'add')).toHaveLength(2);
+    c.pointerMove(at(4, 0), true);
+    expect(overview(c).filter((s) => s.role === 'change')).toHaveLength(3);
+    expect(h.sketch().entities).toHaveLength(before.entities); // the stroke commits nothing yet
+
+    c.pointerUp(at(11, 0));
+    await c.settled();
+    expect(h.history.doc).not.toBe(rev); // one command
+    expect(lineCount(h)).toBe(8); // each of the three verticals split in two, plus the two horizontals
+    expect(c.getView().preview).toEqual([]);
+    for (const x of [-8, -4, 4]) {
+      const spans = verticals(h, x)
+        .map((g) => [Math.min(g.a[1], g.b[1]), Math.max(g.a[1], g.b[1])] as [number, number])
+        .sort((p, q) => p[0] - q[0]);
+      expect(verticals(h, x)).toHaveLength(2);
+      expect(spans[0]![1]).toBeCloseTo(-2, 6);
+      expect(spans[1]![0]).toBeCloseTo(2, 6);
+    }
+
+    h.history.undo();
+    h.resolve();
+    expect(h.sketch().entities).toHaveLength(before.entities); // the one command is the whole stroke
+    expect(h.sketch().constraints).toHaveLength(before.constraints);
+    c.setTool('select');
+  });
+
+  it('crossing the same segment again within one stroke trims it only once', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    scene(c);
+
+    c.setTool('trim');
+    c.pointerMove(at(-11, 0), false);
+    c.pointerDown(at(-11, 0));
+    for (const x of [-8, -4, 4]) c.pointerMove(at(x, 0), true);
+    for (const x of [4, -4, -8]) c.pointerMove(at(x, 0), true); // back over the same three
+    c.pointerUp(at(-11, 0));
+    await c.settled();
+    expect(lineCount(h)).toBe(8); // not twelve: each segment was trimmed once
+    c.setTool('select');
+  });
+
+  it('a stroke that crosses nothing changes nothing and adds no undo step', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    scene(c);
+    const before = h.sketch().entities.length;
+    const rev = h.history.doc;
+
+    c.setTool('trim');
+    c.pointerMove(at(-11, 8), false);
+    c.pointerDown(at(-11, 8));
+    c.pointerMove(at(11, 12), true); // empty space, clear of everything
+    c.pointerUp(at(11, 12));
+    expect(h.sketch().entities).toHaveLength(before);
+    expect(h.history.doc).toBe(rev);
+    expect(c.getView().preview).toEqual([]);
+  });
+
+  it('Esc during a stroke stops previewing and the release changes nothing', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    scene(c);
+    const before = h.sketch().entities.length;
+    const rev = h.history.doc;
+
+    c.setTool('trim');
+    c.pointerMove(at(-11, 0), false);
+    c.pointerDown(at(-11, 0));
+    c.pointerMove(at(-8, 0), true);
+    expect(overview(c).length).toBeGreaterThan(0);
+    c.escape();
+    expect(c.getView().preview).toEqual([]);
+    c.pointerUp(at(4, 0));
+    expect(h.sketch().entities).toHaveLength(before);
+    expect(h.history.doc).toBe(rev);
+    c.setTool('select');
+  });
+});

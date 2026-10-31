@@ -2,6 +2,35 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-10-31:草圖互動 P2 第四刀:拖曳掃掠修剪(G07)
+
+修剪工具支援「按下滑過多段」:一筆畫過的每條曲線各以既有純 `trim()` 修剪一次(同一片段只處理一次),放開時折成**單一** `editSketch`(一次 Undo);空拖曳不加 Undo;`Esc` 取消零文件變更。G07 互動完成。
+
+### 1. 交付內容
+- `apps/web/src/sketcher/controller.ts`:
+  - 新欄位 `trimSweep: { at: Map<Id, P2>; cancelled: boolean } | null`。
+  - `pointerDown`(tool==='trim')初始化空 sweep;`pointerMove` 於 `press.moved` 後呼叫 `sweepTrim(e)`。
+  - `sweepTrim(e)`:對 press 起點與當前點各 `hitTest`,非 point 且未收錄者收錄;以 `mergedTrims(at)` 更新 `opPlan` 供預覽。
+  - `mergedTrims(at)`:對每個 (id, 點) 呼叫同一個純 `trim()`,跳過回 error 者,用新模組層 `mergeEdits(edits)` 折成一個 `SketchEdit`。
+  - `pointerUp`:sweep 存在且(moved 或 cancelled)→ cancelled 不改;否則以單一 `{ edit: merged }` 呼叫 `run()`;未移動則落回既有單擊路徑(單擊 trim 不變)。
+  - `escape()`:sweep 存在 → `cancelled = true`、清 `opPlan`、返回。`resetTool()`/`leave()` 清 `trimSweep`。
+  - 新模組層 `mergeEdits(edits)`:entities/constraints 串接、remove 以 `Set` 去重、add 合併。
+- `apps/web/test/sketch-op-preview.test.ts`:新增 describe「拖曳掃掠修剪 (G07, P2-4)」4 項(hover 累積預覽、單次 Undo、去重、空拖曳、Esc)。
+
+### 2. 紅隊四問(AGENTS.md §2)
+1. **輸入破壞**:無新數值入口;`trim()` 對非法/非曲線目標回 error,該片段被排除於 sweep(不靜默改半批)。
+2. **幾何相交破壞**:分岔/無交點/自交等仍由既有 `trim()` 的錯誤攔截;合併後整體一旦超出可行解,`submit()` 的試解會擋下(不提交、不殘留)。
+3. **依賴鏈完整性**:複用 P2-1/P2-2 的 `opPlan`→`previewShapes`→overlay 管道;`opPlan` 於文件版本變更/`resetTool`/`leave`/`escape` 皆清。
+4. **規格真實性與零 Mock**:測試以真實 PlaneGCS 求解斷言幾何——三垂直線各被兩水平線切開,掃掠後各成上下兩段(spans 上端 −2、下端 2)、線數 8、一次 Undo 回復原數。
+
+### 3. 失敗紀錄與 RCA / CAPA
+1. **測試場景與既有行為衝突**:初版把三條垂直線放在 x=−6/0/6,其中 x=0 與草圖原點重疊;`hitTest` 在該處回「原點」而非曲線,導致該段未被收錄(單擊 trim 亦有同樣的既有行為,非本刀新增)。CAPA:測試場景移離原點(x=−8/−4/4),並把此限制記入 handoff §3d 與本節;不改 `hitTest`(避免牽動既有語意)。
+
+### 4. 確效與指標
+- `apps/web` + `packages/sketch` 全量 **50 檔 554 項**通過(含新增 4 項);typecheck、lint:rules/deps/repo/i18n 全 PASS。
+- 完整 `verify:ui`:**249/250**——唯一失敗 `manual-drawing-linked`(既有/環境性:該腳本 step 1 先建第三角圖再換第一角,新圖的最適比例不屬於那一步;已定案,下一提交單獨修,見 [handoff §3d](handoff.md))。
+- 仍缺:延伸選邊界(P2-5)、相切弧接續(P2-6)。
+
 ## 2026-10-31：草圖互動 P2 第三刀：偏移兩側與封口（G09 部分）
 
 `offset()` 沿用 P2-1/P2-2 的預覽管道，本批加上「兩側同時偏移」與「開放鏈兩端封口」，並把選項接到 PropertyManager（結果預覽免費獲得——hover 與提交同一個純 op）。
