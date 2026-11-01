@@ -92,7 +92,7 @@
 | B1 | 鏡射以草圖軸參照時 hover 無預覽 | **已修** | mirror 模式下優先 `axisAt`（軸永遠參與），找不到才退回曲線；`sketcher` 80/80、`manual-sketch-axes` + `phase3-mirror` 2/2 綠 |
 | B2 | `manual-asm-*` / assembly-section-captures 逾時 | **修環境與腳本** | 加重試/等待，或拆出單獨 CI job |
 | B3 | E03 macOS 瀏覽器鍵盤/焦點驗證 | **記「未驗」不阻塞** | CI macOS 入口結果視需要再補 |
-| C1 | CI 只跑精選測試清單 | **兩段式（PR 精選 + 夜間全量）** | PR 跑精選、夜間跑全量 |
+| C1 | CI 只跑精選測試清單 | **已修** | `.github/workflows/repository-integrity.yml` 加 `schedule`（每日 02:00 UTC）+ `full-suite` job（`npm test` 全量），僅在 schedule/workflow_dispatch 跑；PR/push 仍跑精選清單 |
 | C2 | PlaneGCS ~900 拘束 OOM | **減少方程規模 + 預算攔截** | 先減少方程規模，再依新增參數預算攔截 |
 | D1 | G08 獨立 Split 與參照繼承 | **現在做探針** | 先證實精確幾何/參照/求解可行 |
 | D2 | G09 自由曲線 offset | **留候選** | P5 中優先級中 |

@@ -2,6 +2,10 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-11-01:CI 兩段式（PR 精選 + 夜間全量）(C1 裁決)
+
+使用者裁決 C1 為「兩段式」。`.github/workflows/repository-integrity.yml` 新增 `schedule`（每日 02:00 UTC）與 `full-suite` job，後者僅在 schedule/workflow_dispatch 時跑 `npm test` 全量；PR/push 仍跑原精選清單 + typecheck/lint/build。YAML 通過 `yaml.safe_load` 驗證。
+
 ## 2026-11-01:多邊形可吸附到現有線的角度(G16 第一刀，E1 裁決)
 
 使用者裁決 E1 為「排入下一切片」，本刀做第一刀：多邊形第二點可吸附到現有線的角度（Enter 鎖定並加 parallel 拘束），大小仍由游標決定。`apps/web/src/sketcher/controller.ts` 新增 `hoveredLineAngle()`，`entryLive` 與 `entryPreview` 在游標停在線上時以該線角度取代游標角；`finishShape` 在未打字且游標停在線上時，把第二點合成為沿該線角度的點並傳 `parallelTo`。`packages/sketch/src/ops.ts` 的 `polygon` 新增可選 `parallelTo` 參數，加上 `parallel` 拘束使多邊形隨該邊旋轉而聯動。`typecheck` 0 錯誤；`sketcher` 80/80；`phase3-sketch-tools` + `manual-sketch-entry` 2/2 綠。

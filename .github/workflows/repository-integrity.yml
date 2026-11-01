@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Nightly full unit suite (C1: PRs keep the fast selected list; the whole suite runs once a day).
+    - cron: '0 2 * * *'
 
 permissions:
   contents: read
@@ -34,3 +37,16 @@ jobs:
       - name: Pointer baseline, alone
         run: npm test -- --no-file-parallelism apps/web/test/sketch-pointer-baseline.test.ts
       - run: npm run build
+
+  full-suite:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+      - run: npm ci
+      - name: Full unit suite (nightly)
+        run: npm test
