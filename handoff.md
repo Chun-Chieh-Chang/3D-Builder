@@ -150,6 +150,16 @@
 - **確效**:`apps/web` + `packages/sketch` **51 檔 567 項**;typecheck PASS;完整 `verify:ui` **252/252**;新增 e2e `manual-contour-pick.js` 1/1(10 步)。**提交前徵詢**。
 - **下一刀**:P3 到此完成;進入 P4「診斷、關係與參照」,建議先 G12(關係標記跨 anchor 避讓與雙向高亮)、再 G13、G15,P4-4 依 P0 量測修 G04/14/18。
 
+## 3j. 2026-11-01 P4-3 已完成:參照來源、聯動/失效與重指定(G15)
+
+> **狀態:完成。單元 4078 過(1 既有失敗:kernel moveFace,乾淨 HEAD 已證非本刀)、e2e 8/8、完整 verify:ui 255/255、tsc 與四項 lint 全 PASS。待徵詢提交同意。**
+
+- **交付**:草圖面板「模型參照」清單(來源/跟隨語意/狀態+失效原因+候選);失效參照的「重新指定」= 試算(withReplacedRef + controller.trial 走 worker 真實 followReferences)→ 確認才提交(replaceRef 單命令)、取消零變更;store 的 referenceProblems 按特徵保留參照問題(進入編輯器時重建至該草圖為止、rolledBack 無 unresolved,故須保留);controller 公開 trial 透傳;i18n 16 鍵 ×2 語。
+- **確效**:單元 4078 過 / 1 既有失敗(kernel,非本刀);e2e `manual-reference-reassign` 8/8(D07 全流程:聯動→刪源失效定位→試算→取消零變更→確認→存讀);完整 `verify:ui` **255/255**;tsc 與四項 lint PASS。
+- **應用級缺陷(已修)**:ReferencesBox 的 useStore selector 每次造新陣列 → getSnapshot 不穩定 → React 無限重渲染、整個應用白屏(連已知良好的 contour-pick 都死)——selector 必須回穩定參照,空集合用模組級常數。
+- **詳情**:DEV_LOG 2026-11-01 P4-3 條目、acceptance §P4-3、report.md(P0~P5 追蹤表,新增)。
+- **下一刀**:P4-4(依 P0 量測修 G04/14/18,含「固定」關係對單點被拒絕過濾的行為檢查)。P4 完成後 P5 維持候選待立項。
+
 ## 3i. 2026-11-01 P4-2 已完成:DOF 方向提示與修復前後畫布呈現(G13)
 
 > **狀態:完成。單元 4072 過(1 既有失敗:kernel moveFace,乾淨 HEAD 已證非本刀)、e2e 6/6、完整 verify:ui 254/254、tsc 與四項 lint 全 PASS。待徵詢提交同意。**

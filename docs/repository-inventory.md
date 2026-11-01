@@ -8,7 +8,7 @@
 |---|---|
 | 零件／組合件／工程圖 Schema | 86／7／34 |
 | ADR 文件 | 219 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 207／203／254 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 208／204／255 |
 | 實機清單項目 | 92 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -494,6 +494,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [3D-Builder 選單與工具圖示重新規劃](<design/menu-redesign/plan.md>)
 - [草圖互動方案：執行驗收表](<design/sketch-interaction/acceptance.md>)
 - [草圖建構互動比較與改進計畫](<design/sketch-interaction/plan.md>)
+- [草圖互動改善方案 P0~P5 任務成果報告](<design/sketch-interaction/report.md>)
 
 ### 設計歷史
 

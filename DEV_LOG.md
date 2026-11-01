@@ -2,6 +2,31 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-11-01:草圖互動 P4 第三刀:參照來源、聯動/失效與重指定(G15)
+
+跟隨模型的草圖圖元現在有一份**「模型參照」清單**:每個參照一行——來源(kind+name)、跟隨語意(邊線投影/貫穿/頂點/基準/先前草圖/輪廓)、狀態(聯動中/失效+原因);失效行提供**重新指定**,流程是**先試算後提交**:選候選 → 以 `withReplacedRef`(mapRefs)改寫草圖 → `controller.trial` 走 worker 的真實 followReferences 管線求解 → 顯示「試算成功:{狀態};圖元將位於 (x,y)」或失敗原因 → **確認才提交**(單命令 `replaceRef`,可復原)、**取消零變更**。D07 全流程 e2e:轉換跟隨→改源尺寸聯動→刪源特徵→失效定位(特徵 unresolved 指名來源,不靜默變固定點)→試算→取消→確認→存讀保留。
+
+### 1. 交付內容
+- `apps/web/src/sketcher/sketch-references.ts`:`referenceRows(sketch, unresolved)`(清單列:實體/來源/語意鍵/狀態/原因/候選)與 `withReplacedRef(sketch, from, candidate)`(mapRefs 改寫,保留遺失參照的 kind、不靜默保留 silhouette 分支)。
+- `apps/web/src/components/PropertyManager.tsx`:`ReferencesBox`(「模型參照」區塊:列、失效原因、重新指定流程;hover 版本號防競態)。
+- `apps/web/src/state/store.ts`:**`referenceProblems`(每特徵最近一次的參照問題)**——重建結果進入時按特徵保留(成功才清、rolledBack 不覆蓋),因為**進入草圖編輯器時重建只跑到該草圖為止**,其結果項目為 rolledBack、不含 unresolved。
+- `apps/web/src/sketcher/controller.ts`:公開 `trial(sketch, doc)` 透傳(host 的試解,含 worker 的 followReferences 管線)。
+- i18n:語意/狀態/原因/試算/確認/取消共 16 鍵 ×2 語。
+- 測試:`apps/web/test/sketch-references.test.ts`(6 項)與 `tests/e2e/manual-reference-reassign.js`(8 步,納入 uiJobs 正式案例)。
+
+### 2. 紅隊四問(AGENTS.md §2)
+1. **輸入破壞**:無參照的草圖不顯示區塊;試解失敗(投影不可能/文件變更)→ 顯示試算失敗原因、不提交;確認與取消都在試算**成功**之後才可按。
+2. **幾何相交破壞**:不適用(重指定不改幾何,改的是「跟隨誰」;位置由試解決定)。
+3. **依賴鏈完整性**:重建的 ReferenceProblem.unresolved → store.referenceProblems(按特徵保留)→ 清單列 → 試算(withReplacedRef+trial)→ 確認(replaceRef 單命令)→ 存讀(Schema 的 Ref 序列化既有);鏈路每一段都有斷言。
+4. **規格真實性與零 Mock**:試算走 worker 的真實 followReferences(與正式重建同一管線,非近似);e2e 的聯動以真實幾何長度驗(boss 寬 6→8,跟隨線 6→8)、失效以特徵 unresolved 驗、重指定以 store 的 ref 名與重建結果驗、存讀以重開後的列與重建結果驗。
+
+### 3. 確效與指標
+- 單元:新增 6 項;全倉庫 **4078 過 / 26 跳過 / 1 失敗**(同前:kernel direct-edit moveFace 既有失敗,乾淨 HEAD 已重現,非本刀)。
+- e2e:單獨 `manual-reference-reassign` 8/8;完整 `verify:ui` **255/255**(0 失敗、0 known)。
+- `tsc` 0 錯誤;四項 lint PASS;inventory 271 文件 / 255 瀏覽器呼叫。
+- **過程中抓到並修掉的應用級缺陷**:ReferencesBox 的 `useStore` selector 每次呼叫 `?? []` 造新陣列 → `getSnapshot` 不穩定 → React「Maximum update depth exceeded」**整個應用白屏**(連已知良好的 contour-pick 都死)。教訓:**useStore 的 selector 必須回穩定參照**,空集合用模組級常數。另:進入編輯器時重建至該草圖為止(rolledBack、無 unresolved),參照問題須由 store 按特徵保留。
+- 仍缺:P4-4(依 P0 量測修 G04/14/18);「固定」關係對單點在面板被拒絕過濾的行為待查(移入 P4-4 一併)。
+
 ## 2026-11-01:草圖互動 P4 第二刀:DOF 方向提示與修復前後畫布呈現(G13)
 
 自由度分析的**求解器探測結果現在畫在畫布上**:選一個點執行「分析自由度/拘束」,每個可動軸一枚箭頭畫在點旁,方向是**求解器實際位移**(不是從顏色猜),面板同時說明「X/Y 探測不代表互相獨立的自由度數」;過多定義草圖的修復建議在**套用前先把會動的幾何用虛線畫出來**(沒有幾何變化的修復明說「此修復不改變幾何」,不畫幽靈),游標離開即收;**套用後的結果與預覽完全一致**,一次 Undo 完整還原衝突前快照。
