@@ -52,7 +52,12 @@ O.run = async () => {
 
   const png = await caught(() => H.action('檔案', '輸出影像'));
   const isPng = [0x89, 0x50, 0x4e, 0x47].every((b, i) => png.bytes[i] === b);
-  const stl = await caught(() => H.action('檔案', '輸出 STL'));
+  const stl = await caught(async () => {
+    // 「輸出 STL」 asks first (ADR 0221); its defaults (binary, mm, the document's quality) write the file it wrote before the dialog
+    await H.action('檔案', '輸出 STL');
+    const d = await H.waitFor(() => document.querySelector('[aria-label="輸出 STL"]'), 5000, 'the STL dialog');
+    d.querySelector('.modal-actions button').click();
+  });
   const triangles = new DataView(stl.bytes.buffer).getUint32(80, true);
   const step = await caught(async () => {
     await H.action('檔案', '輸出 STEP');

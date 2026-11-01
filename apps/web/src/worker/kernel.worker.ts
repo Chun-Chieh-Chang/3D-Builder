@@ -9,12 +9,12 @@ import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type
 import { encodeShade, flatViewLines, rasterizeShade, withoutHiddenEdges, type ShadeImage, type ViewLines } from '@3db/drawing';
 import { findEntrance, silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, placedViewFeatures, viewFeatures, viewEdges, findClearance, findInterference, flatDrawingGeometry, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
-import { binaryStl, exportAssemblyStep, exportPartIges, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
+import { exportAssemblyStep, placedParts, placeMesh, writeStl, type StlSource, exportPartIges, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SnapItem, SourcePart, SourceProvider } from '@3db/regen';
 import { mergeMeshes } from './mergeMesh';
 import { heapOf } from './heap';
 import { partFeatures } from './partOutline';
-import type { AssemblyStepRequest, DrawingElementsResult, DrawingFeaturesResult, DrawingViewRequest, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, PartIgesOptions, ConvertRequest, KernelApi, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData, StepOutput } from './protocol';
+import type { AssemblyStepRequest, DrawingElementsResult, DrawingFeaturesResult, DrawingViewRequest, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, PartIgesOptions, ConvertRequest, KernelApi, StlExportOptions, StlOutput, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData, StepOutput } from './protocol';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -144,6 +144,15 @@ function ownBodies(doc: PartDoc, r: RebuildResult) {
   const own = exportFaces(doc, r);
   if (own.shapes.length === 0) throw new Error(t('body.exportNone'));
   return own;
+}
+
+/** The STL files of these meshes, as the options say (ADR 0221). */
+function stlOutput(files: { name: string; meshes: StlSource[] }[], options: StlExportOptions): StlOutput {
+  const write = { format: options.format ?? 'binary', unit: options.unit ?? 'mm' } as const;
+  return {
+    files: files.map((f) => ({ name: f.name, data: writeStl(f.meshes, f.name, write) })),
+    triangles: files.reduce((n, f) => n + f.meshes.reduce((k, m) => k + m.indices.length / 3, 0), 0),
+  };
 }
 
 /** The motion that writes the part in the coordinate system chosen (C3.4), or nothing. */
@@ -282,13 +291,14 @@ const api: KernelApi = {
       systems: r.systems,
       sketchGeometry: new Map([...r.sketches].map(([id, s]) => [id, s.solved.geometry])),
       cosmeticThreads: r.cosmeticThreads,
+      meshes: r.meshes.map((m) => ({ featureId: m.featureId, positions: m.mesh.positions.slice(), indices: m.mesh.indices.slice() })),
       mass: massOf(r),
       totalMs: r.totalMs,
       heapBytes: heapOf(kernel.oc),
       heapBase,
     };
     const arrays = mesh ? [mesh.positions, mesh.normals, mesh.indices, mesh.faceRanges, mesh.edgePoints, mesh.edgeRanges] : [];
-    const buffers = [...arrays, payload.vertexPoints].map((a) => a.buffer as ArrayBuffer);
+    const buffers = [...arrays, payload.vertexPoints, ...payload.meshes.flatMap((m) => [m.positions, m.indices])].map((a) => a.buffer as ArrayBuffer);
     return Comlink.transfer(payload, buffers);
   },
 
@@ -382,22 +392,61 @@ const api: KernelApi = {
     return { text, warnings };
   },
 
-  async exportStl(doc: PartDoc, name: string, options: PartExportOptions = {}): Promise<Uint8Array> {
+  async exportStl(doc: PartDoc, name: string, options: StlExportOptions = {}): Promise<StlOutput> {
     await api.init();
     await solver.fresh();
     const r = regen.rebuild(doc);
     lastResult = r; // the regenerator lets go of what it made before (the shapes measuring reads)
-    const { shapes } = ownBodies(doc, r);
-    const joined = shapes.length === 1 ? shapes[0]! : kernel.join(shapes);
+    ownBodies(doc, r); // says why when there is nothing to write
+    const own = r.bodies.filter((b) => !b.reference);
     const place = placing(r, options).place;
-    const moved = place ? kernel.transformed(joined, place) : joined;
+    const quality = MESH_QUALITY[options.quality ?? settingsOf(doc).meshQuality];
+    // one file: the bodies meshed together, as before; one a body: each as fine as its own size asks (the chord error is relative to the shape's size)
+    const meshOf = (shape: ShapeId) => {
+      const moved = place ? kernel.transformed(shape, place) : shape;
+      try {
+        return kernel.mesh(moved, quality);
+      } finally {
+        if (moved !== shape) kernel.release(moved);
+      }
+    };
+    const split = options.split ?? false; // one file unless asked
+    if (split && own.length > 1) return stlOutput(own.map((b) => ({ name: b.name, meshes: [meshOf(b.shape)] })), options);
+    const joined = own.length === 1 ? own[0]!.shape : kernel.join(own.map((b) => b.shape));
     try {
-      const mesh = kernel.mesh(moved, MESH_QUALITY[settingsOf(doc).meshQuality]);
-      return binaryStl([mesh], name);
+      return stlOutput([{ name, meshes: [meshOf(joined)] }], options);
     } finally {
-      if (moved !== joined) kernel.release(moved);
-      if (joined !== shapes[0]) kernel.release(joined);
+      if (joined !== own[0]!.shape) kernel.release(joined);
     }
+  },
+
+  async exportAssemblyStl({ name, parts: used, subs, instances }: AssemblyStepRequest, options: StlExportOptions = {}): Promise<StlOutput> {
+    await api.init();
+    const quality = MESH_QUALITY[options.quality ?? 'normal'];
+    const meshes: StlSource[] = [];
+    for (const u of used) {
+      // a mirrored part (C15.13): the part's own shape mirrored in its x = 0 plane, as the screen and the STEP file show it
+      const mirrored = u.key.endsWith(mirrorKey(''));
+      const part = await parts.get(mirrored ? u.key.slice(0, -mirrorKey('').length) : u.key)?.catch(() => null);
+      const body = part?.result.body;
+      if (!part || !body) throw new Error(t('worker.noBodyForPart', { name: u.name }));
+      const own = part.result.bodies.filter((b) => !b.reference).map((b) => b.shape);
+      if (own.length === 0) throw new Error(t('worker.noBodyForPart', { name: u.name }));
+      const joined = own.length === 1 ? own[0]! : kernel.join(own);
+      const placed = mirrored ? kernel.transformed(joined, [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]) : joined;
+      try {
+        meshes.push(kernel.mesh(placed, quality));
+      } finally {
+        if (placed !== joined) kernel.release(placed);
+        if (joined !== own[0]) kernel.release(joined);
+      }
+    }
+    const placedAll = placedParts(instances, subs);
+    if (placedAll.length === 0) throw new Error(t('export.stlNoComponents'));
+    const files = options.split
+      ? placedAll.map((p) => ({ name: p.path.join('-'), meshes: [placeMesh(meshes[p.part]!, p.pose)] }))
+      : [{ name, meshes: placedAll.map((p) => placeMesh(meshes[p.part]!, p.pose)) }];
+    return stlOutput(files, options);
   },
 
   async buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void, sources?: SourceFileData[]): Promise<PartBuildPayload> {

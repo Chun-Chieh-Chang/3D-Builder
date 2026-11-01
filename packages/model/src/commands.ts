@@ -2,7 +2,7 @@ import { t } from '@3db/i18n';
 import { validThreadTolerance } from './threadTolerance';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
-import type { SpurGearFeature, RackFeature, SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, FilletVariablePoint, CombineFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature, HelixFeature, ProjectedCurveFeature, RuledSurfaceFeature, RadiatedSurfaceFeature, ReplaceFaceFeature, SketchAttach } from './schema';
+import type { SpurGearFeature, RackFeature, SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, FilletVariablePoint, CombineFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, ImportedMeshFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature, HelixFeature, ProjectedCurveFeature, RuledSurfaceFeature, RadiatedSurfaceFeature, ReplaceFaceFeature, SketchAttach } from './schema';
 import { isSketchAxis } from './schema';
 import { isDatumPlaneName } from './datums';
 import { canBeSeed } from './patterns';
@@ -167,6 +167,8 @@ ull). */
   | { type: 'setFaces'; featureId: Id; faces: Ref[]; hole?: boolean }
   /** How an imported body's surfaces are sewn (F2.2); without `sewTolerance` the default is used again. */
   | { type: 'setImportOptions'; featureId: Id; sewTolerance?: Expr }
+  /** The unit an imported STL's numbers are read in (F2.3): the file does not say, so it may be chosen again. */
+  | { type: 'setMeshUnit'; featureId: Id; unit: 'mm' | 'inch' }
   /** How a boss joins the bodies it touches (C7.1): merged with them (the default), or a body of its own. */
   | { type: 'setMerge'; featureId: Id; merge: boolean }
   /** The contours of its sketch a boss or cut uses (C1.34): each is the ids of the entities bounding one region; `null` is all of them. */
@@ -192,8 +194,8 @@ ull). */
   /** What a mirror reflects and across what (C6.3). */
   | { type: 'setMirror'; featureId: Id; value: Pick<MirrorFeature, 'target' | 'plane' | 'seeds' | 'bodies' | 'merge'> }
   | { type: 'setCoordSys'; featureId: Id; value: Pick<CoordSysFeature, 'origin' | 'x' | 'y' | 'flipX' | 'flipY'> }
-  /** Adds imported data and the feature that uses it, as one step (F2.1). */
-  | { type: 'importBody'; blob: BlobRef; feature: ImportedBodyFeature; index: number }
+  /** Adds imported data and the feature that uses it, as one step (F2.1): a STEP or IGES body, or an STL mesh (F2.3). */
+  | { type: 'importBody'; blob: BlobRef; feature: ImportedBodyFeature | ImportedMeshFeature; index: number }
   /** A picture laid in a sketch (ADR 0116): its image data comes with it (a blob of kind png or jpg, the same one for pictures with the same bytes). */
   | { type: 'addSketchPicture'; featureId: Id; blob: BlobRef; picture: SketchPicture }
   /** Changes the placement of a picture of a sketch. */
@@ -703,6 +705,10 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
     case 'importedBody':
       if (!doc.blobs.some((b) => b.id === f.blob)) throw new CommandError(t('cmd.importDataNotFound', { id: f.blob }));
       return;
+    case 'importedMesh':
+      if (!doc.blobs.some((b) => b.id === f.blob && b.kind === 'stl')) throw new CommandError(t('cmd.importDataNotFound', { id: f.blob }));
+      if (f.unit !== undefined && f.unit !== 'mm' && f.unit !== 'inch') throw new CommandError(t('cmd.importMeshUnit', { unit: String(f.unit) }));
+      return;
     case 'hole':
       if (!validThreadTolerance(f.toleranceClass, f.kind === 'tapped' ? f.size : undefined, 'internal')) throw new CommandError(t('cmd.badThreadTolerance'));
       checkDowel(f);
@@ -876,7 +882,9 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const { blob, feature } = cmd;
       if (!/^[0-9a-f]{64}$/.test(blob.sha256)) throw new CommandError(t('cmd.importHashInvalid'));
       if (feature.blob !== blob.id) throw new CommandError(t('cmd.importBodyMustUseData'));
-      if (blob.kind !== 'step' && blob.kind !== 'iges') throw new CommandError(t('cmd.importKind', { kind: String(blob.kind) }));
+      if (feature.type === 'importedMesh' ? blob.kind !== 'stl' : blob.kind !== 'step' && blob.kind !== 'iges') {
+        throw new CommandError(t(feature.type === 'importedMesh' ? 'cmd.importMeshKind' : 'cmd.importKind', { kind: String(blob.kind) }));
+      }
       assertFresh(draft as PartDoc, [blob.id]);
       draft.blobs.push(blob);
       countersFor([blob.id], draft.idCounters);
@@ -1509,6 +1517,14 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }
+    case 'setMeshUnit': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'importedMesh') throw new CommandError(t('cmd.onlyMeshHasUnit'));
+      if (cmd.unit !== 'mm' && cmd.unit !== 'inch') throw new CommandError(t('cmd.importMeshUnit', { unit: String(cmd.unit) }));
+      if (cmd.unit === 'mm') delete f.unit;
+      else f.unit = cmd.unit;
+      return;
+    }
     case 'setImportOptions': {
       const f = feature(draft, cmd.featureId);
       if (f.type !== 'importedBody') throw new CommandError(t('cmd.onlyImportHasOptions'));
@@ -1681,8 +1697,8 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       for (const body of Object.keys(draft.bodies)) if (ids.has(bodyFeature(body))) delete draft.bodies[body];
       for (const key of Object.keys(draft.visibility)) if (isBodyKey(key) && ids.has(bodyFeature(key.slice('body:'.length)))) delete draft.visibility[key];
       if (draft.rollbackIndex !== null && draft.rollbackIndex >= draft.features.length) draft.rollbackIndex = null;
-      // Imported data no feature uses any more is dropped too (its id stays issued).
-      const used = new Set(draft.features.flatMap((f) => (f.type === 'importedBody' ? [f.blob] : [])));
+      // Imported data no feature uses any more is dropped too (its id stays issued); the pictures of the sketches left keep theirs.
+      const used = new Set([...draft.features.flatMap((f) => (f.type === 'importedBody' || f.type === 'importedMesh' ? [f.blob] : [])), ...pictureBlobs(draft.features as never)]);
       draft.blobs = draft.blobs.filter((b) => used.has(b.id));
       return;
     }

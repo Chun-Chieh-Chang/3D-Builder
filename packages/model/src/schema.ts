@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 86;
+export const SCHEMA_VERSION = 87;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -716,6 +716,17 @@ export interface ImportedBodyFeature extends FeatureBase {
 }
 
 /**
+ * A triangle mesh read from an STL file (F2.3, v87, ADR 0221), shown as a reference: it is not a body. Solid and surface features, mass, the parts
+ * list and exports never see it; it is drawn, and what the file held (triangles, holes, volume) is reported. The file is the blob `blob`, and its
+ * numbers are in `unit` (an STL does not say), millimetres when absent.
+ */
+export interface ImportedMeshFeature extends FeatureBase {
+  type: 'importedMesh';
+  blob: Id;
+  unit?: 'mm' | 'inch';
+}
+
+/**
  * A body of another part file (C7.5, v26): the derived part of a fixture's master model. `source` is the master's file, relative to this file
  * ("/" separated, as in an assembly's file references), and `body` the id of the body in the master (ADR 0022: the id of the feature that made it).
  * Nothing of the body is stored here: its shape comes from rebuilding the master, its faces keep the master's persistent names, so mates on them
@@ -1211,6 +1222,7 @@ export type Feature =
   | RefPointFeature
   | CoordSysFeature
   | ImportedBodyFeature
+  | ImportedMeshFeature
   | DerivedBodyFeature
   | DeleteFaceFeature
   | MoveFaceFeature
@@ -1271,8 +1283,8 @@ export interface AppearanceOverride {
 export interface BlobRef {
   id: Id;
   sha256: string;
-  /** `step` or `iges` (v86) for an imported body, `png` or `jpg` for a sketch picture. */
-  kind: 'step' | 'iges' | 'png' | 'jpg';
+  /** `step` or `iges` (v86) for an imported body, `stl` (v87) for an imported mesh, `png` or `jpg` for a sketch picture. */
+  kind: 'step' | 'iges' | 'stl' | 'png' | 'jpg';
   /** Name of the file it was read from; shown only. */
   fileName?: string;
 }

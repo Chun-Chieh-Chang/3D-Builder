@@ -88,6 +88,7 @@ export const pmpanels = {
   'pm.import.heading': '輸入的資料',
   'pm.import.noName': '（未記錄檔名）',
   'pm.import.stored': '資料存放在零件檔中（內容雜湊 {hash}），不需要原始檔案。面依檔案中的順序命名。',
+  'pm.mesh.hint': '網格只是參考：不是本體，特徵、質量、零件表與輸出都不使用它。資料存放在零件檔中（內容雜湊 {hash}），不需要原始檔案。',
   'pm.editSketch': '編輯草圖',
   'pm.editSketchPlane': '草圖基準面',
   'pm.sketchPlaneHint': '選取基準面或平坦模型面以重新定義草圖所在的平面。',

@@ -55,6 +55,7 @@ import {
   type CoordSysFeature,
   type Feature,
   type ImportedBodyFeature,
+  type ImportedMeshFeature,
   type LoftFeature,
   type MoveFaceFeature,
   type OffsetSurfaceFeature,
@@ -4009,6 +4010,34 @@ function DeleteKeepBodyPanel({ f }: { f: DeleteKeepBodyFeature }) {
 }
 
 /** Imported body (F2.1): where the data came from, and what happened to it on the way in. */
+/** 輸入網格 (F2.3, ADR 0221): the file, what was found in it, and the unit its numbers are read in. */
+function ImportedMeshPanel({ f }: { f: ImportedMeshFeature }) {
+  const doc = useStore((s) => s.doc);
+  const result = useStore((s) => s.result);
+  const blob = doc.blobs.find((b) => b.id === f.blob);
+  const status = result?.features.find((r) => r.id === f.id);
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.import.heading')}</h4>
+      <p>{blob?.fileName ?? t('pm.import.noName')}</p>
+      {status?.status === 'error' ? <p className="error-text">{status.message}</p> : <p>{status?.info ?? '…'}</p>}
+      {(status?.warnings ?? []).map((w) => (
+        <p key={w} className="warning-text">
+          {w}
+        </p>
+      ))}
+      <label className="pm-row">
+        <span>{t('import.stlUnit')}</span>
+        <select value={f.unit ?? 'mm'} onChange={(e) => store.execute({ type: 'setMeshUnit', featureId: f.id, unit: e.target.value as 'mm' | 'inch' })}>
+          <option value="mm">mm</option>
+          <option value="inch">inch</option>
+        </select>
+      </label>
+      <p className="hint">{t('pm.mesh.hint', { hash: `${blob?.sha256.slice(0, 12)}…` })}</p>
+    </section>
+  );
+}
+
 function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
   const doc = useStore((s) => s.doc);
   const result = useStore((s) => s.result);
@@ -4556,6 +4585,7 @@ export function FeatureParams({ f }: { f: Feature }) {
       {f.type === 'pattern' && <PatternPanel f={f} />}
       {f.type === 'mirror' && <MirrorPanel f={f} />}
       {f.type === 'importedBody' && <ImportedBodyPanel f={f} />}
+      {f.type === 'importedMesh' && <ImportedMeshPanel f={f} />}
       {f.type === 'deleteFace' && <DeleteFacePanel f={f} />}
       {f.type === 'shell' && <ShellPanel f={f} />}
       {f.type === 'draft' && <DraftPanel f={f} />}
@@ -4614,7 +4644,7 @@ export function PropertyManager() {
   // Like the message box at the top of a SolidWorks PropertyManager: why the feature cannot be built yet.
   const status = sketching || isSketchPlane ? undefined : result?.features.find((r) => r.id === f.id);
   if (!sketching && !isSketchPlane && floating) {
-    const action = f.type === 'importedBody' ? 'import-step' : f.type.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()) + ('op' in f && f.op==='cut'?'-cut':'');
+    const action = f.type === 'importedBody' || f.type === 'importedMesh' ? 'import-step' : f.type.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()) + ('op' in f && f.op==='cut'?'-cut':'');
     return <FloatingFeatureEditor key={f.id} title={`${featureLabel(f)}: ${f.name}`} action={action} error={status?.status==='error'?status.message:undefined}><FeatureParams f={f}/></FloatingFeatureEditor>;
   }
   return (

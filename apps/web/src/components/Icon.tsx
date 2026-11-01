@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-export type IconName = 'part' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'knurl' | 'cosmeticThread' | 'gear' | 'rack' | 'helix' | 'projectedCurve' | 'ruledSurface' | 'radiatedSurface' | 'replaceFace' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'split' | 'moveCopyBody' | 'deleteKeepBody' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'sheetUnfold' | 'sheetRefold' | 'midBend' | 'jog' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff' | 'drawingDoc' | 'sheet' | 'titleBlock' | 'view' | 'projectedView' | 'sectionView' | 'detailView' | 'dimension' | 'note' | 'datum' | 'gdt' | 'centreMark' | 'table' | 'surfaceFinish' | 'exportFile' | 'palette' | 'tree' | 'properties' | 'chevron' | 'pin' | 'search';
+export type IconName = 'part' | 'importedMesh' | 'assembly' | 'mates' | 'origin' | 'plane' | 'refPlane' | 'refAxis' | 'refPoint' | 'coordSys' | 'sketch' | 'extrude' | 'revolve' | 'sweep' | 'thread' | 'knurl' | 'cosmeticThread' | 'gear' | 'rack' | 'helix' | 'projectedCurve' | 'ruledSurface' | 'radiatedSurface' | 'replaceFace' | 'loft' | 'rib' | 'pattern' | 'mirror' | 'fillet' | 'chamfer' | 'importedBody' | 'derivedBody' | 'deleteFace' | 'moveFace' | 'shell' | 'draft' | 'hole' | 'combine' | 'split' | 'moveCopyBody' | 'deleteKeepBody' | 'offsetSurface' | 'splitLine' | 'knit' | 'fillSurface' | 'flatSurface' | 'trimSurface' | 'mutualTrim' | 'extendSurface' | 'thicken' | 'cutWithSurface' | 'lipGroove' | 'screwBoss' | 'baseFlange' | 'sheetUnfold' | 'sheetRefold' | 'midBend' | 'jog' | 'edgeFlange' | 'breakCorner' | 'hem' | 'snapHook' | 'snapCatch' | 'vent' | 'body' | 'error' | 'warning' | 'ok' | 'cancel' | 'eye' | 'eyeOff' | 'drawingDoc' | 'sheet' | 'titleBlock' | 'view' | 'projectedView' | 'sectionView' | 'detailView' | 'dimension' | 'note' | 'datum' | 'gdt' | 'centreMark' | 'table' | 'surfaceFinish' | 'exportFile' | 'palette' | 'tree' | 'properties' | 'chevron' | 'pin' | 'search';
 
 /** Default planes and reference planes share one icon, as in SolidWorks. */
 const PLANE = <path d="M4 4h10l-2 8H2z" />;
@@ -32,6 +32,7 @@ const PATHS: Record<IconName, ReactElement> = {
   chamfer: <path d="M3 13V7l4-4h6 M3 13h10V3" />,
   derivedBody: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M8 5.5v5 M10.2 8.3L8 10.5 5.8 8.3" />,
   importedBody: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M8 5.5v5 M5.8 8.3L8 10.5l2.2-2.2" />,
+  importedMesh: <path d="M3 5l5-3 5 3v6l-5 3-5-3z M3 5l5 3 5-3 M8 8v6 M3 11l5-3 5 3" />,
   deleteFace: <path d="M2 11l6 3 6-3V5L8 2 2 5z M5 6.5l6 4 M11 6.5l-6 4" />,
   moveFace: <path d="M3 13V6l5-3h5v7l-5 3z M8 3v7 M5.5 7.5L8 5l2.5 2.5" />,
   draft: <path d="M4 14L2 3h12l-2 11z M2 8h12" />,

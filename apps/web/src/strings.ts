@@ -28,6 +28,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   refPoint: 'feature.refPoint',
   coordSys: 'feature.coordSys',
   importedBody: 'feature.importedBody',
+  importedMesh: 'feature.importedMesh',
   derivedBody: 'feature.derivedBody',
   deleteFace: 'feature.deleteFace',
   offsetSurface: 'feature.offsetSurface',

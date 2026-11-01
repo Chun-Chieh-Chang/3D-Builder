@@ -32,6 +32,7 @@ export * from './drawing';
 export * from './drawingAnnotations';
 export * from './tolerance';
 export * from './picture';
+export * from './stl';
 export * from './threadStandards';
 
 export * from './gears';

@@ -36,6 +36,10 @@
    - 1000 圖元 `tool: 'line'`：p95 由 0.637 ms 降至 **0.146 ms**（提速 4.4 倍）。
    - 18 檔 257 項 Smoke Tests 全數通過（耗時 11.3s）。
 
+## STL 輸出與輸入（分支 feat/stl-exchange）
+
+2026-11-01：STL 輸入為網格參考（`importedMesh`，Schema 87）、輸出對話框（二進位／ASCII、mm／inch、細緻度、座標系統）、多本體各存一檔、組合件 STL，[ADR 0221](docs/adr/0221-stl-exchange.md)。分支已推送、**尚未合併 main**；main 已有 Schema 87 或 ADR 0221 時合併要改號。待辦：使用者以 eDrawings 開 `D:\3DB實機確認\STL對照` 判定。worktree 在 `.claude/worktrees/stl-exchange`（不得建在專案資料夾外）。
+
 ## IGES 輸出與輸入（分支 claude/iges-exchange）
 
 最新交付（2026-10-30，分支 `claude/iges-exchange` 已合併 main `d66cabb`）：IGES 輸出（修剪曲面／B-rep，mm／inch）與輸入（「開啟舊檔」及「輸入 STEP／IGES」），Schema 86，[ADR0220](docs/adr/0220-iges-exchange.md)。原取 Schema 85／ADR 0219，與 main 的移動面（Schema 85）及 DXF 匯入（ADR 0219）撞號，合併時改號。壞檔會讓 OCCT 讀取器無窮迴圈，輸入先在拋棄式 worker 限時試讀。eDrawings：OCCT 直接寫出的 6 個檔與 `exportIges` 寫出的 6 個檔（含切半與顏色），使用者皆確認正確。沒有他牌 CAD 的 IGES 樣本。合併後的驗證見 DEV_LOG。

@@ -6,9 +6,9 @@
 
 | 項目 | 程式來源值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 86／7／34 |
-| ADR 文件 | 219 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 208／204／255 |
+| 零件／組合件／工程圖 Schema | 87／7／34 |
+| ADR 文件 | 220 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 209／205／256 |
 | 實機清單項目 | 92 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -449,6 +449,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0218：移動面至目標平面](<adr/0218-move-face-target-plane.md>)
 - [ADR 0219：匯入 DXF 到草圖（F2.6）](<adr/0219-dxf-import-into-sketch.md>)
 - [ADR 0220：IGES 輸出與輸入（F1.4、F2.2）](<adr/0220-iges-exchange.md>)
+- [ADR 0221：STL 輸出與輸入（F4.1 補完、F2.3）](<adr/0221-stl-exchange.md>)
 
 ### 歷史驗證
 

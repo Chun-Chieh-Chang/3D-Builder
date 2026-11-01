@@ -32,6 +32,10 @@ import {
   type FilletFeature,
   type Id,
   type ImportedBodyFeature,
+  type ImportedMeshFeature,
+  parseStl,
+  StlError,
+  type StlMesh,
   type DerivedBodyFeature,
   DOWEL_RANGE,
   type LoftFeature,
@@ -295,7 +299,15 @@ export interface RebuildResult {
   sheet: SheetInfo | null;
   /** Cosmetic threads (C4.9, ADR 0156). Lightweight annotations, 0.00 MiB WASM Heap overhead. */
   cosmeticThreads: CosmeticThreadInfo[];
+  /** The STL meshes imported as references (F2.3, ADR 0221), in the order of their features. Plain arrays, nothing of the kernel. */
+  meshes: ImportedMeshInfo[];
   totalMs: number;
+}
+
+/** A mesh read from an STL file (F2.3, ADR 0221): drawn as a reference, never a body. */
+export interface ImportedMeshInfo {
+  featureId: Id;
+  mesh: StlMesh;
 }
 
 export interface CosmeticThreadInfo {
@@ -483,6 +495,9 @@ function rotate(v: Vec3, k: Vec3, t: number): Vec3 {
   return [v[0] * c + kxv[0] * s + k[0] * kv * (1 - c), v[1] * c + kxv[1] * s + k[1] * kv * (1 - c), v[2] * c + kxv[2] * s + k[2] * kv * (1 - c)];
 }
 
+/** Where a read STL is kept: its bytes and the unit its numbers are read in (F2.3). */
+const stlKey = (sha256: string, unit: string | undefined): string => `${sha256}:${unit ?? 'mm'}`;
+
 /** Where an imported file is kept: its bytes and the tolerance its surfaces were sewn with decide what comes out. */
 const importKey = (sha256: string, sewTolerance: string | undefined): string => {
   let tolerance = '';
@@ -563,6 +578,9 @@ export class Regenerator {
   /** What a derived body takes from its master and the document does not say: its name and whether it is a reference body. */
   private inherited = new Map<Id, { name: string; reference: boolean }>();
   private cosmeticThreads: CosmeticThreadInfo[] = [];
+  /** STL files read (F2.3), by content and unit: a rebuild reads each once. A file no feature reads any more is dropped. */
+  private stls = new Map<string, StlMesh | { error: string }>();
+  private meshes: ImportedMeshInfo[] = [];
 
   constructor(
     private readonly kernel: Kernel,
@@ -610,6 +628,7 @@ export class Regenerator {
     this.inherited = new Map();
     this.mastersUsed = new Set();
     this.cosmeticThreads = [];
+    this.meshes = [];
     this.helixIds = new Set(doc.features.filter((f) => f.type === 'helix').map((f) => f.id));
 
     // Every expression becomes the number it stands for before anything is built: the solver and the kernel
@@ -627,6 +646,8 @@ export class Regenerator {
       this.imports.delete(key);
     }
     this.usedImports = new Set();
+    const wantedStls = new Set(resolved.features.flatMap((f) => (f.type === 'importedMesh' ? resolved.blobs.filter((b) => b.id === f.blob).map((b) => stlKey(b.sha256, f.unit)) : [])));
+    for (const key of this.stls.keys()) if (!wantedStls.has(key)) this.stls.delete(key);
     this.sheet = null;
     this.current = null;
     resolved.features.forEach((feature, index) => {
@@ -783,6 +804,10 @@ export class Regenerator {
             this.cosmeticThread(feature, set);
             return done({ status: 'ok' });
           }
+          case 'importedMesh': {
+            this.importedMesh(feature, doc);
+            return done({ status: 'ok' });
+          }
           case 'ruledSurface':
           case 'radiatedSurface':
           case 'replaceFace': {
@@ -912,7 +937,7 @@ export class Regenerator {
           };
         })
       : [];
-    return { features: results, body: view, bodies, sketches, frames, axes: this.axes, points: this.points, systems: this.systems, sheet: this.sheet, cosmeticThreads: this.cosmeticThreads, totalMs: performance.now() - t0 };
+    return { features: results, body: view, bodies, sketches, frames, axes: this.axes, points: this.points, systems: this.systems, sheet: this.sheet, cosmeticThreads: this.cosmeticThreads, meshes: this.meshes, totalMs: performance.now() - t0 };
   }
 
   /**
@@ -2921,6 +2946,39 @@ export class Regenerator {
       throw e;
     }
     return [...list];
+  }
+
+  /**
+   * An STL file as a reference mesh (F2.3, ADR 0221). It touches no body: what the file holds is said in the feature's info, what is wrong with it
+   * (holes, triangles turned the wrong way, triangles with no area left out) in its warnings; a file that cannot be read is the feature's error.
+   */
+  private importedMesh(f: ImportedMeshFeature, doc: PartDoc): void {
+    const blob = doc.blobs.find((b) => b.id === f.blob);
+    if (!blob) throw new FeatureError(t('regen.importMissing'));
+    if (blob.kind !== 'stl') throw new FeatureError(t('cmd.importMeshKind', { kind: blob.kind }));
+    const key = stlKey(blob.sha256, f.unit);
+    let read = this.stls.get(key);
+    if (!read) {
+      const data = this.blobs.get(blob.sha256);
+      if (!data) throw new FeatureError(t('regen.importNotInFile'));
+      try {
+        read = parseStl(data, f.unit ?? 'mm');
+      } catch (e) {
+        if (!(e instanceof StlError)) throw e;
+        read = { error: e.message };
+      }
+      this.stls.set(key, read);
+    }
+    if ('error' in read) throw new FeatureError(read.error);
+    const m = read;
+    const size = m.max.map((x, i) => x - m.min[i]!).map((x) => x.toFixed(3)).join(' × ');
+    this.info = t(m.closed ? 'mesh.infoClosed' : 'mesh.infoOpen', { format: t(m.format === 'binary' ? 'mesh.binary' : 'mesh.ascii'), triangles: m.indices.length / 3, vertices: m.positions.length / 3, size, area: m.area.toFixed(3), volume: Math.abs(m.volume).toFixed(3) });
+    if (m.degenerate > 0) this.warnings.push(t('mesh.degenerate', { n: m.degenerate, of: m.fileTriangles }));
+    if (m.openEdges > 0) this.warnings.push(t('mesh.open', { n: m.openEdges }));
+    if (m.nonManifoldEdges > 0) this.warnings.push(t('mesh.nonManifold', { n: m.nonManifoldEdges }));
+    if (m.flippedEdges > 0) this.warnings.push(t('mesh.flipped', { n: m.flippedEdges }));
+    if (m.closed && m.volume < 0) this.warnings.push(t('mesh.insideOut'));
+    this.meshes.push({ featureId: f.id, mesh: m });
   }
 
   /**

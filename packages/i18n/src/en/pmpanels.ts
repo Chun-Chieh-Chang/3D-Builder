@@ -90,6 +90,7 @@ export const pmpanels: Translation = {
   'pm.import.heading': 'Imported Data',
   'pm.import.noName': '(file name not recorded)',
   'pm.import.stored': 'The data is stored in the part file (content hash {hash}); the original file is not needed. Faces are named in the order of the file.',
+  'pm.mesh.hint': 'The mesh is only a reference: it is not a body, and features, mass, the parts list and exports do not use it. The data is stored in the part file (content hash {hash}); the original file is not needed.',
   'pm.editSketch': 'Edit Sketch',
   'pm.editSketchPlane': 'Sketch Plane',
   'pm.sketchPlaneHint': 'Select a reference plane or planar model face to redefine the plane of the sketch.',

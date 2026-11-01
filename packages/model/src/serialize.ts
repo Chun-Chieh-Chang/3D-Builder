@@ -246,6 +246,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   84: (doc) => doc,
   // v86: an imported body may read an IGES file (a blob of kind iges, F2.2). Nothing to convert; an older program refuses the file.
   85: (doc) => doc,
+  // v87: an STL file may be imported as a reference mesh (`importedMesh`, a blob of kind stl, F2.3). Nothing to convert; an older program refuses the file.
+  86: (doc) => doc,
 };
 
 export class FormatError extends Error {

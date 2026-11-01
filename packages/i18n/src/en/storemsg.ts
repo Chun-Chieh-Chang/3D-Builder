@@ -13,6 +13,7 @@ export const storemsg: Translation = {
   'sketch.pickInTree': 'Select a sketch in the tree first',
   'feature.axisNeeded': 'A revolve needs an axis: a centerline in the sketch, or a sketch drawn wholly on one side of its horizontal or vertical axis',
   'feature.importName': 'Import',
+  'feature.meshName': 'Mesh',
   'sketch.planeNotFound': 'The plane of the sketch was not found (fix the features before the sketch first)',
   'rebuild.failed': 'The rebuild failed: {why}',
   'file.oldFormat': 'Old format; saving writes a .3dbx',

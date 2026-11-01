@@ -131,7 +131,12 @@ M.run = async () => {
     return { point, delta, base: base.box, shifted: shifted.box, pass: !!point && shifted.count === base.count && [0, 1, 2].every((a) => Math.abs(Math.abs(delta[a]) - Math.abs(point[a])) < 1e-6) };
   });
   await step('6 輸出 STL: a binary STL of the block (12 triangles) whose triangles add up to the volume; 輸出影像: a picture that is not one colour', async () => {
-    const stl = await caught(() => H.action('檔案', '輸出 STL'));
+    const stl = await caught(async () => {
+    // 「輸出 STL」 asks first (ADR 0221); its defaults (binary, mm, the document's quality) write the file it wrote before the dialog
+    await H.action('檔案', '輸出 STL');
+    const d = await H.waitFor(() => document.querySelector('[aria-label="輸出 STL"]'), 5000, 'the STL dialog');
+    d.querySelector('.modal-actions button').click();
+  });
     const view = new DataView(stl.bytes.buffer, stl.bytes.byteOffset, stl.bytes.byteLength);
     const n = view.getUint32(80, true);
     let volume = 0;

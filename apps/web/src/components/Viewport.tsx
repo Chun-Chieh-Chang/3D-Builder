@@ -397,6 +397,13 @@ export function Viewport() {
     v.setCosmeticThreads(result?.cosmeticThreads ?? []);
   }, [result?.cosmeticThreads]);
 
+  // which imported meshes are shown is the document's choice (D4.6), so hiding or showing one needs no rebuild; the geometry is made again only when that changes
+  const shownMeshes = (result?.meshes ?? []).filter((m) => isShown(doc, m.featureId)).map((m) => m.featureId).join(' ');
+  useEffect(() => {
+    const shown = new Set(shownMeshes.split(' '));
+    store.viewer?.setReferenceMeshes((result?.meshes ?? []).filter((m) => shown.has(m.featureId)).map((m) => ({ key: m.featureId, positions: m.positions, indices: m.indices })));
+  }, [result?.meshes, shownMeshes]);
+
   // Shown sketches and the origin (D4.6). The sketch being edited is drawn by its own overlay.
   const zoomBand = store.viewer ? Math.round(Math.log2(store.viewer.pixelSize())) : 0;
   useEffect(() => {

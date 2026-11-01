@@ -109,7 +109,7 @@ I.run = async () => {
   // 「輸入 STEP／IGES」 into a part: one more body of the same volume
   await replacing('檔案', '新零件');
   nextFile('板子.igs', faces.text);
-  await H.action('特徵', '輸入 STEP／IGES');
+  await H.action('特徵', '輸入 STEP／IGES／STL');
   await H.waitFor(() => store.history.doc.features.some((f) => f.type === 'importedBody'), 60000, 'the imported IGES');
   await H.settle();
   const imported = { blob: store.history.doc.blobs[0]?.kind, status: store.getState().result?.features.at(-1)?.status, volume: await volume() };
@@ -125,7 +125,7 @@ I.run = async () => {
   const started = performance.now();
   try {
     nextFile('壞掉.igs', lines.join('\n'));
-    await H.action('特徵', '輸入 STEP／IGES');
+    await H.action('特徵', '輸入 STEP／IGES／STL');
     await H.waitFor(() => /秒內沒有讀完/.test(store.getState().notice?.text ?? ''), 30000, 'the stop');
   } finally {
     store.rebuildLimitMs = limit;

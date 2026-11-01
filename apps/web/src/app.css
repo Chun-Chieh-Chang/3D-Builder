@@ -85,6 +85,8 @@
   --view-hover: var(--warn);
   --view-selected: var(--accent);
   --view-cap: oklch(72% 0.11 75);
+  /* an STL mesh imported as a reference (F2.3): warmer than the body */
+  --view-reference-mesh: oklch(77% 0.06 80);
   --view-section: oklch(82% 0.06 250);
   --view-snap: var(--warn);
   --view-component-hover: oklch(83% 0.075 80);

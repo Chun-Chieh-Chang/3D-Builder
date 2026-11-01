@@ -21,6 +21,7 @@ const VIEW: Record<keyof Palette, string> = {
   edgeSelected: '--view-selected',
   background: '--view-bg',
   cap: '--view-cap',
+  referenceMesh: '--view-reference-mesh',
   section: '--view-section',
   snap: '--view-snap',
   componentHover: '--view-component-hover',

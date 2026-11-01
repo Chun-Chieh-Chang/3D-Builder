@@ -11,6 +11,7 @@ export const storemsg = {
   'sketch.pickInTree': '請先在設計樹中選擇一個草圖',
   'feature.axisNeeded': '旋轉需要旋轉軸：草圖中的一條中心線，或整張草圖都在水平軸或垂直軸的同一側',
   'feature.importName': '輸入',
+  'feature.meshName': '網格',
   'sketch.planeNotFound': '找不到草圖所在的平面（先修正草圖前面的特徵）',
   'rebuild.failed': '重新計算失敗：{why}',
   'file.oldFormat': '舊版格式，儲存時會另存為 .3dbx',

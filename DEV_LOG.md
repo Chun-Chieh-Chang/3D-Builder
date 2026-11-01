@@ -2,6 +2,29 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-11-01:STL 輸出與輸入(F4.1 補完、F2.3,ADR 0221,Schema 87)
+
+STL 輸入成為**網格參考**(特徵 `importedMesh`):純 TypeScript 讀檔、不經 OCCT、不在本體清單中,特徵/質量/零件表/輸出按構造看不到它。輸出加對話框(二進位/ASCII、mm/inch、細緻度、座標系統)、多本體各存一檔(ZIP)、組合件 STL。詳見 [ADR 0221](docs/adr/0221-stl-exchange.md)。
+
+### 1. 交付內容
+- `packages/model/src/stl.ts`:`parseStl`/`isStlData`(二進位依大小判定、ASCII 嚴格解析帶行號、頂點合併、開放/非流形/翻面邊計數、無面積三角形計數、上限 2,000,000)。
+- `packages/io/src/stl.ts`:`writeStl`/`asciiStl`/`binaryStl`(unit)、`placeMesh`、`placedParts`、`stlEntryNames`;修正中文名稱使二進位檔頭超過 80 位元組與 0 三角形時 `RangeError`。
+- Schema 87:`ImportedMeshFeature`、`BlobRef.kind` 加 `stl`、指令 `setMeshUnit`;regen `RebuildResult.meshes`;worker `exportStl(options)`、`exportAssemblyStl`;viewer `setReferenceMeshes`;對話框 `StlOptionsDialog`、`StlImportDialog`;網格面板;「輸入 STEP／IGES／STL」、「開啟舊檔」開 .stl。
+- **既有缺陷修正**:`deleteFeatures` 刪除任何特徵時會丟掉草圖圖片的影像資料。
+
+### 2. 紅隊四問(AGENTS.md §2)
+1. **輸入破壞**:截斷、非 STL、NaN/Infinity、超出 float32、空檔、全無面積、超過上限、非法單位/格式皆明確拋錯;200 個壞檔 fuzz:27 讀入、173 以 `StlError` 拒絕、0 其他錯誤。不修補、不翻法向量、不猜單位。
+2. **幾何相交破壞**:網格不做布林;開放/非流形/翻面邊照實列為警告,未封閉不報體積。
+3. **依賴鏈完整性**:schema → commands(驗證、刪除時清理資料)→ refs/params/visibility(窮舉 switch)→ dag → engine → worker → viewer/PropertyManager/tree;regen 不能依賴 io,故讀取器放 model。
+4. **零 Mock**:本程式寫的 STL 由 OCCT `RWStl` 讀回比對;OCCT `StlAPI_Writer` 寫的 STL 由本程式讀入比對;說明中的例子有測試。
+
+### 3. 確效與指標
+- 新增測試:`packages/io/test/stl.test.ts` 16、`tests/phase8/stl-exchange.test.ts` 17、`tests/phase8/stl-memory.test.ts` 1(1000 次輸入 +0.00 MiB、1000 次輸出 +0.00 MiB、對照 1000 次除料 +190.63 MiB)、e2e `phase8-stl.js`。
+- 全倉庫 4112 過 / 26 跳過 / 1 失敗(kernel direct-edit moveFace,main 既有,主資料夾重現)。完整 `verify:ui` 254/256;2 項為仍直接等 STL 下載的舊腳本,改按對話框後重跑通過。
+- 過程中 e2e 抓到:隱藏網格後仍畫著(worker 端過濾,隱藏不觸發重建)→ 改頁面端過濾。
+- 仍缺:eDrawings 開對照檔(`D:\3DB實機確認\STL對照`)由使用者判定;網格上點選量測、網格轉實體未做。
+- 工作位置:worktree 原建在 `G3\3D-Builder-stl`,依使用者要求移到 `.claude/worktrees/stl-exchange`(AGENTS.md 2026-11-01)。
+
 ## 2026-11-01:草圖互動 P4 第三刀:參照來源、聯動/失效與重指定(G15)
 
 跟隨模型的草圖圖元現在有一份**「模型參照」清單**:每個參照一行——來源(kind+name)、跟隨語意(邊線投影/貫穿/頂點/基準/先前草圖/輪廓)、狀態(聯動中/失效+原因);失效行提供**重新指定**,流程是**先試算後提交**:選候選 → 以 `withReplacedRef`(mapRefs)改寫草圖 → `controller.trial` 走 worker 的真實 followReferences 管線求解 → 顯示「試算成功:{狀態};圖元將位於 (x,y)」或失敗原因 → **確認才提交**(單命令 `replaceRef`,可復原)、**取消零變更**。D07 全流程 e2e:轉換跟隨→改源尺寸聯動→刪源特徵→失效定位(特徵 unresolved 指名來源,不靜默變固定點)→試算→取消→確認→存讀保留。
