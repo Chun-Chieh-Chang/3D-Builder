@@ -94,4 +94,8 @@ export const sketchtools: Translation = {
   'sketch.cannotDimension': 'This combination cannot be dimensioned',
   'dimension.prefixX': 'Horizontal ',
   'dimension.prefixY': 'Vertical ',
+  'dimension.sector': 'Quadrant {n}',
+  'dimension.inSector': ' ({sector})',
+  'dimension.pair': '{a}–{b}',
+  'dimension.fromCentre': '{id} ({what})',
 };

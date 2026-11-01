@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import type { Id } from '@3db/model';
+import { SKETCH_AXIS_H, SKETCH_AXIS_V, type Id } from '@3db/model';
 import {
+  angleRays,
   applicableRelations,
   circleThrough,
   hitTest,
   inferDirection,
   layoutDimension,
+  quadrantOf,
   smartDimension,
   snap,
   tangentArcCenter,
 } from '../src/interact';
-import type { SolvedGeometry } from '../src/types';
+import type { P2, SolvedGeometry } from '../src/types';
 
 /** Solved geometry of a 20×10 rectangle p1..p4 / l1..l4 plus a circle k1 (r = 3) at (10, 5). */
 function geometry(): Map<Id, SolvedGeometry> {
@@ -103,6 +105,72 @@ describe('smart dimension (C1.28)', () => {
   it('lays a length dimension outside the geometry', () => {
     const layout = layoutDimension({ id: 'd', type: 'distance', a: 'l1', value: '20' }, g, 0.05, [10, 5])!;
     expect(layout.text[1]).toBeLessThan(0); // below the bottom edge, away from the center
+  });
+});
+
+describe('what a dimension measures, said before the click (G14)', () => {
+  /** Two lines from the origin 60° apart (ox along +x, oy at 60°), a circle at (10, 5) of r = 3, points, and a spline nothing can be measured to yet. */
+  function scene(): Map<Id, SolvedGeometry> {
+    const pts: Record<string, P2> = { o: [0, 0], x: [10, 0], y: [5, 5 * Math.sqrt(3)], kc: [10, 5], p1: [30, 0], p2: [40, 10] };
+    const g = new Map<Id, SolvedGeometry>(Object.entries(pts).map(([id, p]) => [id, { type: 'point', p }]));
+    const line = (id: string, p1: string, p2: string) => g.set(id, { type: 'line', a: pts[p1]!, b: pts[p2]!, p1, p2, construction: false });
+    line('ox', 'o', 'x');
+    line('oy', 'o', 'y');
+    g.set('k1', { type: 'circle', c: pts['kc']!, r: 3, center: 'kc', construction: false });
+    g.set('s1', { type: 'spline', points: [pts['p1']!, pts['p2']!, [50, 0]], closed: false, pointIds: ['p1', 'p2'], construction: false });
+    return g;
+  }
+
+  it('numbers the quadrants seen from a point the way a graph does', () => {
+    const v: P2 = [3, -2];
+    expect(quadrantOf(v, [4, 0])).toBe(1);
+    expect(quadrantOf(v, [2, 0])).toBe(2);
+    expect(quadrantOf(v, [2, -3])).toBe(3);
+    expect(quadrantOf(v, [4, -3])).toBe(4);
+    expect(quadrantOf(v, [9, -2])).toBe(1); // level with the vertex: the right-hand side
+    expect(quadrantOf(v, [3, -5])).toBe(4); // straight down, which counts with the right-hand side
+  });
+
+  it('says which sector an angle is in, so the two that show the same value are told apart', () => {
+    const g = scene();
+    const at = (place: P2) => {
+      const r = smartDimension(g, ['ox', 'oy'], place)!;
+      const body = r.body;
+      if (body.type !== 'angle') throw new Error('expected an angle');
+      const [ga, gb] = [g.get(body.a)!, g.get(body.b)!] as Extract<SolvedGeometry, { type: 'line' }>[];
+      // the vertex the preview measures from is where the two lines meet, which here is the origin
+      const { vertex } = angleRays(ga!, gb!, body.flip);
+      return { body, value: Math.round(r.value * 1e9) / 1e9, quadrant: quadrantOf(vertex, place), vertex };
+    };
+    const sectors = [[6, 2], [-3, 3], [-6, -2], [6, -2]] as P2[];
+    const seen = sectors.map((place) => at(place));
+    for (const s of seen) {
+      expect(s.vertex[0]).toBeCloseTo(0, 9);
+      expect(s.vertex[1]).toBeCloseTo(0, 9);
+    }
+    // one after another round the vertex, counter-clockwise
+    expect(seen.map((s) => s.quadrant)).toEqual([1, 2, 3, 4]);
+    // vertical angles are equal: the values alone cannot tell sectors 1 and 3, or 2 and 4, apart
+    expect(seen.map((s) => s.value)).toEqual([60, 120, 60, 120]);
+    // the constraint each would make is not the same, and the four are all different
+    const flips = seen.map((s) => (`${s.body.type}:${'flip' in s.body ? s.body.flip : 'none'}`));
+    expect(new Set(flips).size).toBe(4);
+  });
+
+  it('measures a circle from its centre, which is what the preview says', () => {
+    const r = smartDimension(scene(), ['k1', 'ox'], [10, -4])!;
+    expect(r.body).toEqual({ type: 'distance', a: 'k1', b: 'ox' });
+    // the centre is 5 mm from the line; the nearest point of the circle would be 2 mm — the pair the person must be able to tell apart (圓心)
+    expect(r.value).toBeCloseTo(5, 9);
+  });
+
+  it('refuses what it cannot measure, rather than showing a made-up value', () => {
+    const g = scene();
+    expect(smartDimension(g, [SKETCH_AXIS_H], [0, 5])).toBeNull(); // an axis has no length
+    expect(smartDimension(g, [SKETCH_AXIS_H, SKETCH_AXIS_V], [5, 5])).toBeNull(); // their angle is always a right one
+    expect(smartDimension(g, ['p1', 'p1'], [5, 5])).toBeNull(); // the same thing twice
+    expect(smartDimension(g, ['s1', 'k1'], [5, 5])).toBeNull(); // no anchor to measure a spline from
+    expect(smartDimension(g, ['p1', 'p2', 'k1'], [5, 5])).toBeNull(); // three picks at once
   });
 });
 

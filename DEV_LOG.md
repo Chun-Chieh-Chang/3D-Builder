@@ -24,6 +24,51 @@ STL 輸入成為**網格參考**(特徵 `importedMesh`):純 TypeScript 讀檔、
 - 過程中 e2e 抓到:隱藏網格後仍畫著(worker 端過濾,隱藏不觸發重建)→ 改頁面端過濾。
 - 仍缺:eDrawings 開對照檔(`D:\3DB實機確認\STL對照`)由使用者判定;網格上點選量測、網格轉實體未做。
 - 工作位置:worktree 原建在 `G3\3D-Builder-stl`,依使用者要求移到 `.claude/worktrees/stl-exchange`(AGENTS.md 2026-11-01)。
+## 2026-11-01:PlaneGCS 預算守衛 (C2 裁決)
+
+使用者裁決 C2 為「減少方程規模 + 預算攔截」。`packages/sketch/src/planegcs.ts` 加 `ANALYZE_BUDGET=300`（超過時跳過 per-point probes，entityFreedom 不算，避免 N 次額外求解）與 `SOLVE_BUDGET=1000`（超過時 refused 並回 `sketch.tooLarge` 訊息，避免 WASM OOM）；i18n 新增 `sketch.tooLarge`（zh-TW/en）。`budget-guard.test.ts` 2/2 綠（350 拘束跳過 analyze、1001 拘束 refused），`typecheck` 0 錯誤。
+
+## 2026-11-01:CI 兩段式（PR 精選 + 夜間全量）(C1 裁決)
+
+使用者裁決 C1 為「兩段式」。`.github/workflows/repository-integrity.yml` 新增 `schedule`（每日 02:00 UTC）與 `full-suite` job，後者僅在 schedule/workflow_dispatch 時跑 `npm test` 全量；PR/push 仍跑原精選清單 + typecheck/lint/build。YAML 通過 `yaml.safe_load` 驗證。
+
+## 2026-11-01:多邊形可吸附到現有線的角度(G16 第一刀，E1 裁決)
+
+使用者裁決 E1 為「排入下一切片」，本刀做第一刀：多邊形第二點可吸附到現有線的角度（Enter 鎖定並加 parallel 拘束），大小仍由游標決定。`apps/web/src/sketcher/controller.ts` 新增 `hoveredLineAngle()`，`entryLive` 與 `entryPreview` 在游標停在線上時以該線角度取代游標角；`finishShape` 在未打字且游標停在線上時，把第二點合成為沿該線角度的點並傳 `parallelTo`。`packages/sketch/src/ops.ts` 的 `polygon` 新增可選 `parallelTo` 參數，加上 `parallel` 拘束使多邊形隨該邊旋轉而聯動。`typecheck` 0 錯誤；`sketcher` 80/80；`phase3-sketch-tools` + `manual-sketch-entry` 2/2 綠。
+
+## 2026-11-01:鏡射以草圖軸參照時補上 hover 預覽(B1 裁決)
+
+使用者裁決 B1 為「修」。`apps/web/src/sketcher/controller.ts` 的 `operationPlan` 與 `operationClick` 在 mirror 工具下，原先只用 `this.hover`（`hitTest(geometry, …, axes=true)`）找軸；但 `hitTest` 的軸只在「附近沒有草圖曲線」時才被考慮，所以選取了實體、游標停在軸旁而旁邊又有曲線時，軸完全找不到 → 無 hover 預覽、點擊也無反應。修正：mirror 模式下優先 `this.axisAt(e)`（空幾何、軸永遠參與），找不到才退回 `pickedCurve`/`this.hover`。`mirror` 本身早已接受軸（`geometryOf` 退回到 `axisGeometry`）。`sketcher.test.ts` 80/80、`manual-sketch-axes` 與 `phase3-mirror` 2/2 綠，`typecheck` 0 錯誤。
+
+## 2026-11-01:kernel moveFace 拒絕訊息對齊測試期望(A1 裁決)
+
+使用者裁決 A1 為「修訊息讓測試綠」。`packages/kernel/src/kernel.ts` 的 `moveFace` 在 `square && distance < 0` 且結果無效或體積近零時,原先丟 `edit.moveInvalid`（「移動面的結果不是有效的實體」）,測試期望 `edit.moveTooFar`（「超過了這個面後面的厚度」）。兩個失敗點（形狀無效、體積近零）改為在該條件下丟 `edit.moveTooFar`,使 `direct-edit.test.ts` 19/19 綠；kernel 套件 104/104 全過。`typecheck` 0 錯誤。
+
+## 2026-11-01:草圖互動 P4 第四刀:吸附保持、尺寸候選與精確最近點(G04/14/18,P4 最後一刀)
+
+**先量測,只修量到會壞的**(依 P0 建立的任務表,不在未量測前寫成已確認 bug):橢圓的 `closestOn` 在 200:1 的扁橢圓上偏差 **27–75 mm**、「游標點在線旁卻選到橢圓」**474/483** 次、樣條最大 **0.25 mm**;沒有保持時,游標在 **200 次移動**中於兩點(相距 0.15 mm)之間切換 **8** 次、兩平行線(相距 0.1 mm)**40** 次、同心圓 **7** 次。G18、G04 因此確認為缺陷並修掉;G14 量測後確認既有模式(拖動、修改框、重疊、角度象限、圓邊距離)都能用,缺的只是「看不到量的是什麼」,所以只補顯示,不改尺寸模型。
+
+### 1. 交付內容
+- **G18 精確最近點**(`packages/sketch/src/interact.ts`):`closestOn` 對橢圓與樣條改為**最小化真正的距離**——先粗掃參數(橢圓 256 點、樣條每段 32 步),再以黃金分割(`goldenMin`,不需要導數)細化到 1e-6 的參數區間;樣條改以**真實的 Catmull-Rom 曲線**求最近點(參數 `u = 段 + t`,跨段連續),與繪製用的 `sample()` 共用同一組控制點,因此**顯示的位元不變**(測試釘住折線取樣結果);文字維持折線。扁橢圓旁直線仍以 `hitTest`/`snap` 判別,誤選由 474/483 降為 **0/483**(三種縮放)。
+- **G04 吸附保持**(`apps/web/src/sketcher/snap-hold.ts`,新檔純函式):規則公開且可測——候選等級 point 3 > midpoint 2 > curve 1、其他(交點/四分點/模型參照)1.5;已顯示的候選在游標仍於容差內時**保持**,新候選要近 40%(`HOLD_HANDOVER = 0.6`)才換手;離開容差、Ctrl、Esc、換工具、文件變更、實體消失皆解除。`controller` 以 `held`/`snapHeld` 接線,`hint()` 追加「保持吸附」——**只在顯示的候選與游標下真正最近的不同時**才出現;同元素再次命中直接沿用 fresh(保留垂直/相切等附帶推論)。
+- **G14 尺寸候選**(`controller.dimensionPreview`):預覽標籤由「值」改為「**值 · 量測對象**」——`Ø6 · k1`、`5 · k1（圓心）–ox`、`60° · ox–oy（第 1 象限）`;圓/弧量到圓心時明說「圓心」,角度**以 `quadrantOf(vertex, cursor)` 依實際擺放位置標出象限**(兩個同值的對頂角扇區因此可分辨)。
+- i18n:`sketch.entry.snapHeld`;`dimension.sector`/`inSector`/`pair`/`fromCentre`(zh-TW、en 各 5 鍵)。
+- 測試:`packages/sketch/test/nearest-point.test.ts`(8 項)、`apps/web/test/snap-hold.test.ts`(9 項)、`apps/web/test/dimension-preview.test.ts`(5 項)、`packages/sketch/test/interact.test.ts` 新增 G14 段(4 項);e2e `tests/e2e/manual-sketch-snap-hold.js`(抖動/交接/Ctrl/Esc/換工具/離開容差)、`tests/e2e/manual-dimension-preview.js`(三扇區標籤=落字約束、圓心距離)。
+
+### 2. 紅隊四問(AGENTS.md §2)
+1. **輸入破壞**:`quadrantOf` 的點與頂點重合(0,0)仍回一個象限而非 NaN;`smartDimension` 對三選、同一圖元兩次、單軸、樣條錨點、無錨點組合一律回 `null`(不編一個假值);極扁橢圓(200:1)、近退化樣條(共線控制點)都在 fuzz 內;保持規則在 `fresh` 為 `null`(無候選)時直接沿用,不會無中生有。
+2. **幾何相交破壞**:不適用(2D 最近點與吸附,不進布林)。最近點真值來自 **200k 點暴力掃描、圓與扁橢圓端點的解析解、法線條件**,不以同一段近似互比。
+3. **依賴鏈完整性**:`interact.ts`(純函式)→ `controller`(`holdSnap`/`hint`/`dimensionPreview`)→ i18n;`snap-hold.ts` 為純函式。**未動 schema、命令、DAG、engine**(無 Schema 變更、無遷移);草圖疊加層與 e2e 讀取的欄位維持不變。
+4. **規格真實性與零 Mock**:G18 的真值如上(200k 點、解析解、fuzz 200 組橢圓 + 100 組樣條);G04 的抖動在**真實瀏覽器**以指標事件重播(斷言抖動真的越過平手 40 次、而顯示的候選 0 次改變);G14 的 e2e 把預覽文字與**實際落字的約束**(值、來源、`flip: 'both'` 的對頂角)比對。
+
+### 3. 確效與指標
+- 單元:新增 26 項(8+9+5+4);全倉庫 **4104 過 / 1 既有失敗(kernel `direct-edit` moveFace 的拒絕訊息與期望不符,乾淨 HEAD 重現,非本刀)/ 26 跳過**。
+- e2e:單獨 `manual-sketch-snap-hold`、`manual-dimension-preview` 2/2;完整 `verify:ui` **257/257**(0 失敗、0 known;含新增的兩個腳本,共 257 個可執行案例)。
+- G18 修後:位置差 ≤ 4.4e-7 mm、距離差 ≤ 7e-15 mm、誤選 0/483。G04 修後:40 次越過平手、顯示 0 次改變。
+- `tsc` 0 錯誤;四項 lint PASS;inventory **271 文件 / 257 瀏覽器呼叫**(瀏覽器檔案／可執行腳本／呼叫 = 210／206／257,較上一刀各 +2:兩個新 e2e 腳本入列)。
+- **E02 效能(本刀改動後重測,headless Chrome,`out/p4-4-ui.json`)**:1000 圖元 select p95 **0.3 ms**、line snap p95 **0.4 ms**(worker 往返 314.5 ms);100 圖元分別 **0.1／0.2 ms**——精確最近點沒有把吸附推過 8 ms 門檻,因此**不**加空間索引(計畫 G18:「超標才做」)。
+- 量測的教訓(重要):`snapHold` 的換手門檻只在**平手區**才有意義——兩條相距 0.15 mm 的線在 18 px/mm 下都落在 7 px 容差內,游標 ±0.01 mm 的抖動讓「最近」在兩者之間跳;要換手必須走近 40%(或離開容差、Ctrl、Esc、換工具)。第一版 e2e 把「走回平手區」當成換手,因此紅燈——**情境本身要能用實測數字證明它會壞**(AGENTS.md §2.1)。
+- G14 的 e2e 一度以 `17.32` 當 `10·√3`(標籤顯示 `59.9993°`);改為精確值並以數值解析比對(仍可分辨 5 與 2 mm、60° 與 120°),不放寬成「差不多就好」。
 
 ## 2026-11-01:草圖互動 P4 第三刀:參照來源、聯動/失效與重指定(G15)
 

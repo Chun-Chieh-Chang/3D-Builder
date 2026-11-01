@@ -21,6 +21,9 @@ type Prim = SketchPrimitive;
 
 class MappingError extends Error {}
 
+/** Budget guards (C2): the solver's equation matrix (and the per-point analysis probes) blow up past these. */
+const ANALYZE_BUDGET = 300; // constraints above this: skip the per-point probes (entityFreedom not computed)
+const SOLVE_BUDGET = 1000; // constraints above this: refuse to solve, to avoid a WASM out-of-memory crash
 /** End points of an open curve (none for points and circles). */
 function endpoints(e: SketchEntity): Id[] {
   return e.type === 'line' ? [e.p1, e.p2] : e.type === 'arc' ? [e.start, e.end] : e.type==='spline'&&e.bezier?[e.points[0]!,e.points[e.points.length-1]!]:[];
@@ -963,6 +966,11 @@ export class PlaneGcsSolver implements SketchSolver {
   }
 
   solve(sketch: SketchFeature, options: SolveOptions = {}): SolvedSketch {
+    // Budget guard (C2): a sketch with this many constraints blows up the solver's matrix (and the WASM heap). Refuse before
+    // that happens, with a message the UI can show, instead of crashing the worker.
+    if (sketch.constraints.length > SOLVE_BUDGET) {
+      return { geometry: new Map(), status: 'failed', dof: 0, conflicting: [], redundant: [], message: t('sketch.tooLarge', { n: sketch.constraints.length }) };
+    }
     const begin = startValues(options.initial);
     let prims: Prim[];
     try {
@@ -1052,7 +1060,7 @@ export class PlaneGcsSolver implements SketchSolver {
       ...(ok ? {} : { message: t('regen.sketchUnsolved') }),
     };
     for(const g of result.geometry.values())if(g.type==='spline'&&g.bezier&&(!(Math.hypot(g.points[1]![0]-g.points[0]![0],g.points[1]![1]-g.points[0]![1])>1e-8)||!(Math.hypot(g.points[g.points.length-1]![0]-g.points[g.points.length-2]![0],g.points[g.points.length-1]![1]-g.points[g.points.length-2]![1])>1e-8))){result.status='failed';result.message=t('sketch.bezierInvalid');}
-    if (options.analyze) Object.assign(result, this.analyze(sketch, result, ok));
+    if (options.analyze && sketch.constraints.length <= ANALYZE_BUDGET) Object.assign(result, this.analyze(sketch, result, ok));
     return result;
   }
 

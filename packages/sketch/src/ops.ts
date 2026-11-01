@@ -168,7 +168,7 @@ export function slot(ids: IdAllocator, a1: P2 | { id?: Id; p: P2 }, a2: P2 | { i
  * equal sides, which leaves four freedoms (center, size, turn). `q` fixes the size and the turn: a corner when `circumscribed`
  * is false, the middle of a side when true (the construction circle is then still the one through the corners).
  */
-export function polygon(ids: IdAllocator, center: { id?: Id; p: P2 }, q: P2, sides: number, circumscribed = false, entry: PolygonEntry = { sizeKind: 'radius' }): OpResult {
+export function polygon(ids: IdAllocator, center: { id?: Id; p: P2 }, q: P2, sides: number, circumscribed = false, entry: PolygonEntry = { sizeKind: 'radius' }, parallelTo?: Id): OpResult {
   if (!Number.isInteger(sides) || sides < 3 || sides > 100) return error('sketch.polygonSides');
   const pick = dist(center.p, q);
   if (pick < TINY) return error('sketch.polygonSize');
@@ -184,6 +184,8 @@ export function polygon(ids: IdAllocator, center: { id?: Id; p: P2 }, q: P2, sid
   const lines = corners.map((p, i) => b.line(p, corners[(i + 1) % sides]!));
   for (const p of corners) b.relation({ type: 'pointOnCurve', point: p, curve: ring });
   for (let i = 1; i < sides; i++) b.relation({ type: 'equal', a: lines[0]!, b: lines[i]! });
+  // G16: orient the polygon parallel to an existing edge, so it follows that edge (the first side is the reference)
+  if (parallelTo) b.relation({ type: 'parallel', a: lines[0]!, b: parallelTo });
   if (entry.size) {
     // the size as typed (G16): the circle through the corners' radius, or one side's length
     if (entry.sizeKind === 'radius') b.dimension({ type: 'radius', circle: ring }, entry.size);
