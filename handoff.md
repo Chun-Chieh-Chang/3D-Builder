@@ -150,6 +150,16 @@
 - **確效**:`apps/web` + `packages/sketch` **51 檔 567 項**;typecheck PASS;完整 `verify:ui` **252/252**;新增 e2e `manual-contour-pick.js` 1/1(10 步)。**提交前徵詢**。
 - **下一刀**:P3 到此完成;進入 P4「診斷、關係與參照」,建議先 G12(關係標記跨 anchor 避讓與雙向高亮)、再 G13、G15,P4-4 依 P0 量測修 G04/14/18。
 
+## 3i. 2026-11-01 P4-2 已完成:DOF 方向提示與修復前後畫布呈現(G13)
+
+> **狀態:完成。單元 4072 過(1 既有失敗:kernel moveFace,乾淨 HEAD 已證非本刀)、e2e 6/6、完整 verify:ui 254/254、tsc 與四項 lint 全 PASS。待徵詢提交同意。**
+
+- **視覺基準(修改前)**:分析按鈕可跑、面板有文字,畫布 0 個方向提示、0 個修復預覽(`Temp/opencode/g13-baseline/`)。
+- **實作**:`overlay.ts` 的 `arrowPoints`/`arrowTip` 純函式與 `dofMotion`/`fixPreview` 繪製;`controller.fixPreview`(與 diagnose 同一修復變換、trial 真解、逐圖元取樣比較、staleness 守護);store 的 `dofMotion`/`fixPreview` 上板狀態;PM 分析按鈕結果上板、診斷列 hover 預覽(版本號防競態);Viewport 接線;`.overlay-label.motion` 樣式;i18n 三鍵 ×2 語。
+- **e2e 情境的教訓(重要)**:此 app 對「製造衝突」的 UI 防護完整——過多定義尺寸**建立時自動降為從動**(C1.29)、從動翻回驅動**取量測值**、矛盾關係**拒絕**、間接矛盾求解回 **failed** 而非 over。矛盾實務上由**文件帶入**,e2e 以 `editSketch` 注入(與既有診斷測試同一做法)。另發現單一點的「固定」關係在面板被 refusedRelations 過濾,留 P4-3 檢視。
+- **確效**:單元 4072 過 / 26 跳過 / 1 既有失敗(kernel,非本刀);e2e 6/6;完整 `verify:ui` **254/254**;tsc 與四項 lint PASS;inventory 254 呼叫。
+- **下一刀**:P4-3(G15 參照來源/聯動/失效與重指定)、P4-4(依 P0 量測修 G04/14/18)。另案:kernel moveFace 訊息不一致;「固定」關係的面板過濾。
+
 ## 3h. 2026-11-01 P4-1 已完成:關係標記避讓與雙向高亮(G12)
 
 > **狀態:完成。單元 4068 過(1 既有失敗,乾淨 HEAD 重現,非本刀)、e2e 6/6、完整 verify:ui 253/253、tsc 與四項 lint 全 PASS。待徵詢提交同意。**

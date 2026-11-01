@@ -2,7 +2,36 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
-## 2026-11-01:草圖互動 P4 第一刀:關係標記避讓與雙向高亮(G12)
+## 2026-11-01:草圖互動 P4 第二刀:DOF 方向提示與修復前後畫布呈現(G13)
+
+自由度分析的**求解器探測結果現在畫在畫布上**:選一個點執行「分析自由度/拘束」,每個可動軸一枚箭頭畫在點旁,方向是**求解器實際位移**(不是從顏色猜),面板同時說明「X/Y 探測不代表互相獨立的自由度數」;過多定義草圖的修復建議在**套用前先把會動的幾何用虛線畫出來**(沒有幾何變化的修復明說「此修復不改變幾何」,不畫幽靈),游標離開即收;**套用後的結果與預覽完全一致**,一次 Undo 完整還原衝突前快照。
+
+### 1. 交付內容
+- `apps/web/src/sketcher/overlay.ts`:
+  - `MOTION_ARROW_PX` / `arrowPoints(from, dir, px)` / `arrowTip(...)`:純函式,軸幹 + 對稱箭頭,以像素定長(位移向量只取方向)。
+  - `OverlayOptions.dofMotion`(箭頭畫 `SKETCH_COLORS.under`,標籤 `可動 {axis} 方向(探針)`)與 `fixPreview`(試解後真的會動的圖元以 `opChange` 虛線畫出 + 標籤「修復預覽:虛線為套用後的幾何」/「此修復不改變幾何」)。
+- `apps/web/src/sketcher/controller.ts`:`fixPreview(fix)`——以 `host.trial` 解修復後的草圖(與 `diagnose` 同一變換:刪除/轉從動),**逐圖元取樣比較**,只回傳真的會動的圖元與標籤錨點;`entityAnchor`/`shapeDiffers` 輔助;文件變更即回 null(staleness)。
+- `apps/web/src/state/store.ts`:`dofMotion`(探針結果上板,選取變更/離開工作階段即清)與 `fixPreview`(hover 修復列時上板)狀態與動作。
+- `apps/web/src/components/PropertyManager.tsx`:分析按鈕跑完 `motionProbes` 後把結果上板(含點位);診斷列 hover = 選取其關係(G12 亮起)+ 試解預覽(版本號防競態),leave/套用/卸載即清。
+- `apps/web/src/components/Viewport.tsx`:兩個狀態進 `buildOverlay`。
+- `apps/web/src/app.css`:`.overlay-label.motion`(藍,呼應 under 語意)。
+- i18n:`overlay.motionProbe`、`sketch.diagnose.preview`、`sketch.diagnose.previewStatic`(zh-TW/en)。
+- 測試:`apps/web/test/dof-canvas.test.ts`(4 項:箭頭幾何、上板繪製、虛線/靜態標籤、**真實求解器**的 fixPreview——moved 修復的線到 40、static 修復零圖元)與 `tests/e2e/manual-dof-canvas.js`(6 步,已納入 uiJobs 正式案例)。
+
+### 2. 紅隊四問(AGENTS.md §2)
+1. **輸入破壞**:探針回空(不可動/步長內找不到)→ 畫布不畫、面板說「未找到可行的 X/Y 位移」;位移向量長度 0 → `arrowPoints` 回空不畫;試解失敗或文件中途變更 → `fixPreview` 回 null,不畫任何預覽;hover 競態以版本號守護。
+2. **幾何相交破壞**:不適用(無幾何修改;預覽是唯讀試解)。
+3. **依賴鏈完整性**:`motionProbes`(既有,真實求解)→ store → `buildOverlay` 箭頭;`fixPreview` 與 `diagnose` 用**同一個**修復變換(刪除/轉從動),預覽與套用同源;`data-key` 標記(G12)使預覽期間的關係亮起可驗證;leaveSession 一併清除兩個狀態。
+4. **規格真實性與零 Mock**:箭頭方向來自 `motionProbes` 的實際位移(單元測試斷言軸幹端點 = 點 + 26px×方向);預覽形狀來自 `host.trial` 的真實求解(單元測試用真實 PlaneGCS 斷言 moved 修復的線端點到 40、static 修復零圖元);e2e 以 WebGL 像素差驗箭頭與虛線、以 DOM 驗標籤與列、以 `geom()` 驗套用後端點座標;**套用結果與預覽一致**是 D05 的硬門檻。
+
+### 3. 確效與指標
+- 單元:新增 4 項 + 受影響 relation-labels 8 項;全倉庫 **4072 過 / 26 跳過 / 1 失敗**——同 P4-1 記錄的 kernel 既有失敗(direct-edit moveFace,乾淨 HEAD 已重現,非本刀)。
+- e2e:單獨 `manual-dof-canvas` 6/6;完整 `verify:ui` **254/254**(0 失敗、0 known)。
+- `tsc` 0 錯誤;四項 lint PASS;inventory 270 文件 / 254 瀏覽器呼叫。
+- **產品認知(過程中實證,記錄給 D05/G13 的後續)**:此 app 對「製造衝突」的 UI 防護完整——過多定義的尺寸**建立時自動降為從動**(C1.29,提示「已加為從動尺寸」)、從動翻回驅動時**取當前量測值**(setDriven,不會無聲造出矛盾)、矛盾的關係**建立時拒絕**(refusedRelations 從按鈕移除)、間接矛盾(經由圓的半徑)求解回 **failed** 而非 over。因此「過多定義」實務上由**文件帶入**(舊檔、外部同步),e2e 以 `editSketch` 注入(與既有診斷測試同一做法);同時發現**單一點的「固定」關係在面板被拒絕過濾**(candidateRelations 有提供、refusedRelations 試解後移除)——已記錄,是否為預期行為待 P4-3 一併檢視。
+- 仍缺:P4-3(G15 參照來源/聯動/失效與重指定)、P4-4(依 P0 量測修 G04/14/18);旋轉 DOF 的探針以兩枚軸向箭頭呈現(誠實於「逐軸探測」語意,面板已聲明不代表獨立自由度)。
+
+## 2026-10-31:草圖互動 P4 第一刀:關係標記避讓與雙向高亮(G12)
 
 密集草圖裡的關係符號不再互相壓住:符號由**純函式環狀避讓佈局**決定位置(與選取相關者優先佔 anchor 旁最佳位),**任何符號都不會落在另一個符號上**,每個都留在可點選的淨地上;選取與關係**雙向亮起**——選圖元亮出指名它的關係(含端點上的),選關係亮出它所指的圖元(遠端也亮);與選取無關的符號在有選取時收合淡出,**衝突/冗餘永不收合**;面板「現有限制條件」與畫布同一語意(擴及端點),清單列可點選加入/移出選取,完整清單不受影響。
 
