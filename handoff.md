@@ -150,6 +150,26 @@
 - **確效**:`apps/web` + `packages/sketch` **51 檔 567 項**;typecheck PASS;完整 `verify:ui` **252/252**;新增 e2e `manual-contour-pick.js` 1/1(10 步)。**提交前徵詢**。
 - **下一刀**:P3 到此完成;進入 P4「診斷、關係與參照」,建議先 G12(關係標記跨 anchor 避讓與雙向高亮)、再 G13、G15,P4-4 依 P0 量測修 G04/14/18。
 
+## 3h. 2026-11-01 P4-1 已完成:關係標記避讓與雙向高亮(G12)
+
+> **狀態:完成。單元 4068 過(1 既有失敗,乾淨 HEAD 重現,非本刀)、e2e 6/6、完整 verify:ui 253/253、tsc 與四項 lint 全 PASS。待徵詢提交同意。**
+
+- **視覺基準(已量測,`tests/e2e/manual-relation-labels.js` 對未修改碼跑出)**:三個 10×6 矩形(直線工具四段閉合,共 19 個關係、4 個尺寸,完全定義、0 衝突)——關係符號 **19 個中 28 對互相重疊、1 個被完全遮住無法點選**;選取邊時 **0 個標記亮起、0 個收合**。截圖在 `C:\Users\3kids\AppData\Local\Temp\opencode\g12-baseline\`。修正後同情境:0 對重疊、0 個被遮住(待 e2e 全綠確認)。
+- **實作**:
+  - `apps/web/src/sketcher/overlay.ts`:新增純函式 `relationLabelSize(text)`(符號在畫面上的估算外框,比 CSS 實際略大)與 `layoutRelationLabels(requests, px)`(以 anchor 為中心的環狀候選位,12px 起、每環 17px、至多 6 環 8 方向;rank 0=與選取相關者先放、佔 anchor 旁最佳位;決定性、穩定排序)。`buildOverlay` 先算雙向集合:`relationIds`(選取中的非尺寸拘束)、`about`(選取圖元 + 其端點)、`related`(引用 about 的關係 ∪ 選取的關係)、`lit`(about ∪ 選取關係所引圖元與其端點);幾何以 `lit` 亮琥珀色(`SKETCH_COLORS.hover`),軸與原點同理;關係標記類別 `selected > over > related`,其餘在有選取時加 `dim`(**衝突/冗餘永不收合**);標記位置全部改由 `layoutRelationLabels` 決定(不再同 anchor 橫排堆疊)。
+  - `packages/render/src/viewer.ts`:`setOverlay` 給每個標籤 DOM 加 `data-key`(e2e 可定位單一標記)。
+  - `apps/web/src/sketcher/relationsOffered.ts`:「現有限制條件」清單改以 entityIds **及其端點** 過濾(與畫布亮起同一語意);`offered` 維持只看圖元本身,不改加入關係的候選。
+  - `apps/web/src/components/PropertyManager.tsx`:關係清單列可點(加入/移出選取,additive 切換;刪除鈕 stopPropagation);選中的列加 `.picked`。`app.css`:`.overlay-label.relation.related`(琥珀)、`.relation.dim`(0.4 透明)、`.relation-list li`(cursor+picked 樣式)。i18n 新增 `pm.relationRowTip`(zh-TW/en)。
+- **測試**:`apps/web/test/relation-labels.test.ts`(8 項,全過:估算外框、18 個符號擠在 1.8mm 內互不重疊且 ≤114px、決定性、rank 優先、無選取無 dim/related、選邊亮 2 摺 7、選關係亮遠端圖元、衝突不摺、真實 overlay 不重疊);e2e `tests/e2e/manual-relation-labels.js`(6 步)。
+- **中途發現並已修**:畫布亮起(含端點語意)與面板清單(只列直接引用)不一致 → `relationsOffered` 的 `existing` 擴及端點。
+- **完成紀錄**:
+  - **視覺基準(修改前)**:三個 10×6 矩形 19 關係 4 尺寸(完全定義、0 衝突)→ 符號 28 對重疊、1 個被完全遮住、選邊 0 亮 0 摺;修正後同情境 0 重疊 0 遮住。
+  - **實作**:`overlay.ts` 純函式 `relationLabelSize` + `layoutRelationLabels`(環狀候選位,rank 0 相關者優先,決定性,位移 ≤114px);`buildOverlay` 雙向集合(about/related/lit,擴及端點),幾何以 lit 亮琥珀,標記類別 selected>over>related、其餘收合,**衝突永不收合**;`viewer.ts` 標籤 `data-key`;`relationsOffered` 的 existing 擴及端點(與畫布同語意,offered 不變);面板清單列可點;CSS `.related`/`.dim`/`.picked`;i18n `pm.relationRowTip` ×2。
+  - **測試**:單元 `apps/web/test/relation-labels.test.ts` 8 項;e2e `tests/e2e/manual-relation-labels.js` 6 步(真實 DOM 量測 + WebGL 像素抽樣,基準與修正同法量測)。
+  - **確效**:全倉庫單元 4068 過 / 26 跳過 / **1 既有失敗**(kernel direct-edit moveFace 訊息不符,stash 後乾淨 HEAD 重現相同 → 非本刀,另案);完整 `verify:ui` **253/253**;`tsc` 0 錯誤;四項 lint PASS;inventory 270 文件 / 253 呼叫。
+  - **詳情**:DEV_LOG 2026-11-01 條目、acceptance §P4-1。
+- **下一刀**:P4-2(G13 DOF 方向與修復前後畫布呈現)、P4-3(G15 參照來源/聯動/失效)、P4-4(依 P0 量測修 G04/14/18)。另案待辦:kernel moveFace 拒絕訊息與測試期望不一致(本次於乾淨 HEAD 重現)。
+
 ## 4. 下一階段核心計畫：草圖互動改善方案 (P1 即時尺寸輸入)
 
 參考規劃文檔：[草圖互動方案規劃 (docs/design/sketch-interaction/plan.md)](docs/design/sketch-interaction/plan.md) 與 [P0 驗收紀錄 (docs/design/sketch-interaction/acceptance.md)](docs/design/sketch-interaction/acceptance.md)。

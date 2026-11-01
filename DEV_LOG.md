@@ -2,6 +2,37 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-11-01:草圖互動 P4 第一刀:關係標記避讓與雙向高亮(G12)
+
+密集草圖裡的關係符號不再互相壓住:符號由**純函式環狀避讓佈局**決定位置(與選取相關者優先佔 anchor 旁最佳位),**任何符號都不會落在另一個符號上**,每個都留在可點選的淨地上;選取與關係**雙向亮起**——選圖元亮出指名它的關係(含端點上的),選關係亮出它所指的圖元(遠端也亮);與選取無關的符號在有選取時收合淡出,**衝突/冗餘永不收合**;面板「現有限制條件」與畫布同一語意(擴及端點),清單列可點選加入/移出選取,完整清單不受影響。
+
+### 1. 視覺基準(先量測,後修改)
+以新 e2e 對**未修改碼**量測:三個 10×6 矩形(直線四段閉合,繪製推論共 **19 個關係**、4 個尺寸,完全定義、0 衝突),符號擠在約 114×18 px 的帶狀區——**28 對互相重疊、1 個被完全遮住無法點選**;選取邊時 **0 個符號亮起、0 個收合**。截圖:`Temp/opencode/g12-baseline/`。
+
+### 2. 交付內容
+- `apps/web/src/sketcher/overlay.ts`:
+  - `relationLabelSize(text)`:符號在畫面上的估算外框(比 `.overlay-label.relation` 的 CSS 實際略大——11px 字、1px 內距/框線,寬 12+8×字元數、高 20px),保證佈局淨地必是實際淨地。
+  - `RelationLabelRequest` / `layoutRelationLabels(requests, px)`:以 anchor 為中心的環狀候選位——12px 起、每環 17px、至多 6 環 × 8 方向(位移上限 114px);rank 0(與選取相關)先放、穩定排序保持文件順序;候選與已放置外框做分離測試(標籤以 `translate(-50%,-50%)` 置中),全滿時取重疊數最少的候選。純函式、決定性:同輸入同佈局。
+  - `buildOverlay`:先算雙向集合再畫幾何——`about`(選取圖元+origin+軸,擴及端點 `entityPoints`)、`related`(引用 about 的關係 ∪ 選取的關係)、`lit`(about ∪ 選取關係所引圖元及其端點);幾何以 `lit` 亮琥珀色(`SKETCH_COLORS.hover`),軸與原點同理;標記類別優序 `selected > over > related`,其餘在有選取時加 `dim`;**衝突/冗餘(`over`)永不收合**;標記位置全由 `layoutRelationLabels` 決定,不再同 anchor 橫排堆疊。
+- `packages/render/src/viewer.ts`:`setOverlay` 給每個標籤 DOM 加 `data-key`,單一標記可被測試與工具定位。
+- `apps/web/src/sketcher/relationsOffered.ts`:「現有限制條件」的 `existing` 改以 entityIds **及其端點** 過濾(與畫布亮起同一語意;中途發現並修正的不一致);`offered` 維持只看圖元本身,加入關係的候選不變。
+- `apps/web/src/components/PropertyManager.tsx`:關係清單列可點(additive 加入/移出選取,畫布隨之亮圖元;刪除鈕 stopPropagation);選中的列加 `.picked`。
+- `apps/web/src/app.css`:`.overlay-label.relation.related`(琥珀)、`.relation.dim`(opacity .4)、`.relation-list li`(cursor+picked)。
+- i18n:`pm.relationRowTip`(zh-TW/en 各 1 條)。
+- 測試:`apps/web/test/relation-labels.test.ts`(8 項)、`tests/e2e/manual-relation-labels.js`(6 步,已納入 uiJobs 正式案例)。
+
+### 3. 紅隊四問(AGENTS.md §2)
+1. **輸入破壞**:無 anchor 的關係(引用已刪圖元)照舊跳過不畫;外框估算恆 ≥ 實際尺寸(單元斷言 `∥`=20px、`a:b`=36px,CSS 實測更小),收合僅影響透明度、不改變點擊;`dim` 不會套在 `selected`/`over`/`related` 上(互斥分支)。
+2. **幾何相交破壞**:不適用(無幾何求解變更);佈局的分離測試在單元(18 個符號擠 1.8mm)與真實 overlay(19 個)都斷言 0 重疊。
+3. **依賴鏈完整性**:overlay 純函式只讀 `view.selection`/`sketch.constraints`/幾何;`related`/`lit` 與面板 `existing`(relationsOffered)用同一個「圖元+端點」集合語意;viewer 只加 `data-key` 不改行為;鏈路 `buildOverlay → layoutRelationLabels → labels[] → setOverlay(dataset.key)` 完整。
+4. **規格真實性與零 Mock**:e2e 以真實 DOM 量測(`getBoundingClientRect` 交集/包含判定)、真實像素抽樣(`viewer.snapshot()` 讀 WebGL 畫布,琥珀判定 `r > b+60`,黑/藍/青全不誤判)、真實點擊(`data-key` 定位 → `selection` 斷言);基準與修正同情境同方法量測,無 hardcode。
+
+### 4. 確效與指標
+- 單元:新增 8 項全過;受影響 6 檔(relation-subsumed/batch-relations/constraint-diagnostics/overlay-fit/sketcher/constraint-wiring)104 項全過;全倉庫 **4068 過 / 26 跳過 / 1 失敗**——失敗為 `packages/kernel/test/direct-edit.test.ts` move face(C10.1) 的既有失敗(期望訊息「超過了這個面後面的厚度」,實得「移動的結果不是有效實體」),**在 stash 掉本刀變更的乾淨 HEAD 上重現相同**,非本刀造成,另案處理。
+- e2e:單獨 `manual-relation-labels` 6/6;完整 `verify:ui` **253/253**(0 失敗、0 known)。
+- `tsc` 0 錯誤;lint:rules/deps/i18n/repo 全 PASS;`docs:sync` 後 inventory 270 文件 / 253 瀏覽器呼叫。
+- 仍缺:P4-2(G13 DOF 方向與修復前後畫布呈現)、P4-3(G15 參照)、P4-4(依 P0 量測修 G04/14/18);避讓佈局以平面座標近似螢幕距離,斜視角下為近似(與既有 `*px` 位移同一假設)。
+
 ## 2026-10-31:草圖互動 P3 第一刀:畫布選區與清單同步(G10)
 
 封閉輪廓現在可以在畫布上直接選:伸長/旋轉/掃出特徵的草圖會把**合法閉合輪廓淡填色**畫在平面上,游標移到哪一個,清單中對應那一列同時亮起;單擊只留那一個,Ctrl 加入或移除(至少留一個),選滿即等於「不指定」。沿用既有 `contours` 資料與 IDs,**Schema 未變更**;孔洞是真的挖掉的洞,點在洞裡不算選到。取消(Esc 先停選取、再一次關閉 PropertyManager)、體積與存讀都逐項驗過。
