@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCommand, createEmptyPart, resolveSketch, SKETCH_ORIGIN } from '@3db/model';
+import { applyCommand, createEmptyPart, resolveSketch } from '@3db/model';
 import { PlaneGcsSolver } from '../src/planegcs';
 
 describe('budget guards (C2)', () => {
