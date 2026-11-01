@@ -35,6 +35,7 @@ export const sketch = {
   'sketch.entry.angleRange': '「{value}」不可用：角度須介於 0° 與 180° 之間（不含）；方向由游標在起點上方或下方決定。',
   'sketch.entry.dirRange': '「{value}」不可用：方向角須介於 0° 與 180° 之間（不含 180°）。',
   'sketch.entry.snapIgnored': '已鎖定輸入值，不吸附至 {ids}（Esc 取消輸入）',
+  'sketch.entry.snapHeld': '保持吸附（移到更近的候選才會換）',
   'tool.ellipse': '橢圓',
   'tool.bezier': '三次 Bézier 曲線',
   'hint.ellipse1': '選取橢圓中心。',

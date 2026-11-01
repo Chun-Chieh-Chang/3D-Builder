@@ -37,6 +37,7 @@ export const sketch: Translation = {
   'sketch.entry.angleRange': '"{value}" cannot be used: the angle must lie between 0° and 180° (exclusive); the cursor above or below the start picks the direction.',
   'sketch.entry.dirRange': '"{value}" cannot be used: the direction angle must be between 0° and 180° (exclusive of 180°).',
   'sketch.entry.snapIgnored': 'Typed value locked, not snapping to {ids} (Esc cancels the input)',
+  'sketch.entry.snapHeld': 'Snap held (it changes only for a nearer candidate)',
   'tool.ellipse': 'Ellipse',
   'tool.bezier': 'Cubic Bezier',
   'hint.ellipse1': 'Pick the ellipse center.',

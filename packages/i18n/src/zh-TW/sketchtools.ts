@@ -92,4 +92,8 @@ export const sketchtools = {
   'sketch.cannotDimension': '無法標註這個組合',
   'dimension.prefixX': '水平 ',
   'dimension.prefixY': '垂直 ',
+  'dimension.sector': '第 {n} 象限',
+  'dimension.inSector': '（{sector}）',
+  'dimension.pair': '{a}–{b}',
+  'dimension.fromCentre': '{id}（{what}）',
 } as const;

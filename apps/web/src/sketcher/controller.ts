@@ -23,7 +23,9 @@ import {
   add,
   bezierPoint,
   alignments,
+  angleRays,
   circleThrough,
+  closestOn,
   closestOnSegment,
   layoutDimension,
   dist,
@@ -38,6 +40,8 @@ import {
   inferLine,
   measure,
   perp,
+  pointOf,
+  quadrantOf,
   scale,
   sample,
   mid,
@@ -49,6 +53,7 @@ import {
   unit,
   cross,
   dot,
+  type DimensionBody,
   type Geometry,
   type Hit,
   type RelationBody,
@@ -56,6 +61,7 @@ import {
 } from '@3db/sketch/interact';
 import type { P2, SolvedGeometry } from '@3db/sketch';
 import { angleStep, DEFAULT_SNAPS, extensionSnap, gridPoint, intersectionSnap, lengthStep, perpendicularSnap, quadrantSnap, quickSettings, tangentSnap, visibleGridSpacing, type SnapItem, type SnapSettings } from '@3db/sketch/snaps';
+import { snapHold, type HoldCandidate, type HoldKind } from './snap-hold';
 import { checkSketch, repairSketch, type SketchIssue } from '@3db/sketch/check';
 import {
   anchorModel,
@@ -381,6 +387,10 @@ export class SketchController {
   private entryCache: { doc: PartDoc; key: string; values: Partial<Record<EntryField, number>>; errors: Partial<Record<EntryField, string>> } | null = null;
   /** What a typed value kept the cursor from snapping to, said in the hint. */
   private ignoredSnap: Id[] | null = null;
+  /** The snap being held (G04, P4; the rules are in `snap-hold.ts`), with the document it was found in: a new document releases it. */
+  private held: ({ doc: PartDoc } & HoldCandidate) | null = null;
+  /** Whether the snap shown is the held one: the hint says so, so a cursor that stays put is not mistaken for a frozen one. */
+  private snapHeld = false;
   /** The operation plan the tool has under the pointer: hover shows it, the confirming click submits the same plan (G06, P2-1). Null again once the document it was built from changes. */
   private opPlan: { doc: PartDoc; target: Id; shapes: PreviewShape[] } | null = null;
 
@@ -544,6 +554,7 @@ export class SketchController {
   private hint(step: number): string {
     let base = this.baseHint(step);
     if (this.ignoredSnap) base = `${base} · ${t('sketch.entry.snapIgnored', { ids: this.ignoredSnap.join(', ') })}`;
+    if (this.snapHeld) base = `${base} · ${t('sketch.entry.snapHeld')}`;
     if (!this.inference) return base;
     const infer = t(`infer.${this.inference}`);
     const sources = this.snapSources();
@@ -1001,6 +1012,8 @@ export class SketchController {
     this.picks = [];
     this.crossings.clear();
     this.snapTarget = null;
+    this.held = null;
+    this.snapHeld = false;
     this.inference = null;
     this.tangentTo = null;
     this.sweep = { total: 0, last: 0 };
@@ -1011,6 +1024,8 @@ export class SketchController {
 
   /** Esc: drops the values typed in, ends the current chain or pick, then returns to selection (SolidWorks behaviour). */
   escape(): void {
+    this.held = null;
+    this.snapHeld = false;
     if (this.trimSweep) { this.trimSweep.cancelled = true; this.opPlan = null; this.changed(); return; }
     if (this.drag || this.box) { this.drag = null; this.box = null; this.press = null; this.host.dragPreview(null); }
     else if (this.cancelEntry()) return;
@@ -1507,9 +1522,71 @@ export class SketchController {
     return out;
   }
 
+  /**
+   * Candidate holding (G04, P4): `fresh` is what the snaps found under the cursor; the answer is that, or the candidate already shown (the rules
+   * are in `snap-hold.ts`). A held curve keeps moving with the cursor; a held point or midpoint stays where it is. Everything the later steps would have
+   * added (a tangent, a horizontal, a square foot) is dropped with it: the click goes to the held place, not to the one it passed over.
+   */
+  private holdSnap(fresh: Snap, geometry: Geometry, p: P2, tol: number, allow: Record<HoldKind, boolean>): Snap {
+    const doc = this.host.doc();
+    const held = this.held && this.held.doc === doc ? this.held : null;
+    this.held = null;
+    const candidate = (s: Snap): HoldCandidate | null =>
+      s.kind === 'point'
+        ? { kind: 'point', id: s.id, d: dist(p, s.p) }
+        : s.kind === 'midpoint'
+          ? { kind: 'midpoint', id: s.line, d: dist(p, s.p) }
+          : s.kind === 'curve'
+            ? { kind: 'curve', id: s.id, d: dist(p, s.p) }
+            : null;
+    /** Where the held candidate is now, and how far: a point or a midpoint is where it was, a curve's nearest point moves with the cursor. */
+    const now = (): { c: HoldCandidate; p: P2 } | null => {
+      if (!held) return null;
+      if (held.kind === 'point') {
+        const q = pointOf(geometry, held.id);
+        return q ? { c: { kind: 'point', id: held.id, d: dist(p, q) }, p: q } : null;
+      }
+      const g = geometry.get(held.id);
+      if (held.kind === 'midpoint') {
+        if (g?.type !== 'line') return null;
+        const q = mid(g.a, g.b);
+        return { c: { kind: 'midpoint', id: held.id, d: dist(p, q) }, p: q };
+      }
+      const q = g ? closestOn(g, p) : null;
+      return g && q ? { c: { kind: 'curve', id: held.id, d: dist(p, q) }, p: q } : null;
+    };
+    const current = now();
+    const freshC = candidate(fresh);
+    this.snapHeld = false;
+    // the same element again is nothing to hold: the answer is what the snaps found (a square foot, a tangent, a crossing on it) and is kept as it is
+    if (current && freshC && freshC.kind === current.c.kind && freshC.id === current.c.id) {
+      this.held = { ...current.c, doc };
+      return fresh;
+    }
+    // a crossing, a quarter point or a place on the model is a place of its own: it is never held, and it beats a held stretch of curve
+    const beside = fresh.kind === 'intersection' || fresh.kind === 'quadrant' || fresh.kind === 'model';
+    const decision = snapHold(current && allow[current.c.kind] ? current.c : null, freshC ?? (beside ? { kind: 'other' } : null), tol);
+    if (decision === 'hold' && current) {
+      const { kind, id } = current.c;
+      const s: Snap = kind === 'point' ? { kind: 'point', id, p: current.p } : kind === 'midpoint' ? { kind: 'midpoint', line: id, p: current.p } : { kind: 'curve', id, p: current.p };
+      this.held = { ...current.c, doc };
+      this.inference = kind === 'point' ? 'coincident' : kind === 'midpoint' ? 'midpoint' : 'onCurve';
+      this.lineTo = null;
+      this.tangentTo = null;
+      // said only when the snap that stayed is not what is under the cursor: a cursor resting on its own point is not "held"
+      this.snapHeld = !freshC || freshC.kind !== kind || freshC.id !== id;
+      return s;
+    }
+    this.snapHeld = false;
+    if (freshC) this.held = { ...freshC, doc };
+    return fresh;
+  }
+
   private updateSnap(e: PointerInput): void {
     const geometry = this.geometry();
     if (PICK_TOOLS.has(this.tool)) {
+      this.held = null;
+      this.snapHeld = false;
       this.snapTarget = null;
       this.inference = null;
       if (this.tool === 'dimension') {
@@ -1533,7 +1610,9 @@ export class SketchController {
     this.ignoredSnap = null;
     if (!cfg.enabled || e.ctrl) {
       // nothing snaps, and nothing is added by itself; Ctrl does it for as long as it is held (SolidWorks: hold Ctrl while sketching to keep
-      // automatic relations from being added)
+      // automatic relations from being added). A held candidate ends with it too (G04).
+      this.held = null;
+      this.snapHeld = false;
       this.snapTarget = this.lockSnap({ kind: 'free', p: e.p }, e.p);
       this.hover = null;
       return;
@@ -1658,6 +1737,7 @@ export class SketchController {
       else if (drawingLine && from && cfg.angle) s = { kind: 'free', p: angleStep(from, s.p, cfg.angleStep) };
       else if (cfg.grid && makes) s = { kind: 'free', p: gridPoint(s.p, visibleGridSpacing(cfg.gridSpacing, e.px)) }; // the grid that is drawn
     }
+    s = this.holdSnap(s, geometry, e.p, tol, { point: cfg.point, midpoint: cfg.midpoint, curve: cfg.curve });
     s = this.lockSnap(s, e.p);
     this.snapTarget = s;
     this.hover = this.lineTo
@@ -2661,7 +2741,34 @@ export class SketchController {
     const proposal = smartDimension(geometry, hover, this.cursor) ?? smartDimension(geometry, this.picks, this.cursor);
     if (!proposal) return null;
     const kind = { distance: '', distanceX: t('dimension.prefixX'), distanceY: t('dimension.prefixY'), radius: 'R', diameter: 'Ø', arcLength: '⌒', angle: '' }[proposal.body.type];
-    return { text: `${kind}${fmt(proposal.value)}${proposal.unit === 'deg' ? '°' : ''}`, at: this.cursor };
+    const measured = this.measuredLabel(geometry, proposal.body);
+    return { text: `${kind}${fmt(proposal.value)}${proposal.unit === 'deg' ? '°' : ''}${measured ? ` · ${measured}` : ''}`, at: this.cursor };
+  }
+
+  /**
+   * What a dimension measures, said in the preview next to the cursor (G14): the two entities, 「圓心」 where a circle or arc is measured from its
+   * centre rather than from the nearest point of it, and which sector of an angle it is in. The sector is worth saying because two of the four
+   * show the same value (vertical angles) yet make different constraints, so the number is the only way to tell them apart before clicking.
+   */
+  private measuredLabel(geometry: Geometry, body: DimensionBody): string {
+    const fromCentre = (id: Id): string => {
+      const kind = geometryOf(geometry, id)?.type;
+      return kind === 'circle' || kind === 'arc' ? t('dimension.fromCentre', { id, what: t('sketch.condition.center') }) : id;
+    };
+    switch (body.type) {
+      case 'diameter':
+      case 'radius':
+      case 'arcLength':
+        return body.circle;
+      case 'angle': {
+        const [ga, gb] = [geometryOf(geometry, body.a), geometryOf(geometry, body.b)];
+        const vertex = ga?.type === 'line' && gb?.type === 'line' ? angleRays(ga, gb, body.flip).vertex : null;
+        const sector = vertex && this.cursor ? t('dimension.inSector', { sector: t('dimension.sector', { n: quadrantOf(vertex, this.cursor) }) }) : '';
+        return `${t('dimension.pair', { a: body.a, b: body.b })}${sector}`;
+      }
+      default:
+        return body.b ? t('dimension.pair', { a: fromCentre(body.a), b: fromCentre(body.b) }) : body.a;
+    }
   }
 
   // ------------------------------------------------------------------ previews
