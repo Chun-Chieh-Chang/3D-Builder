@@ -719,7 +719,11 @@ export class SketchController {
         const R = v.radius ?? (v.edge === undefined ? undefined : v.edge / (2 * Math.sin(Math.PI / n)));
         // what the angle box locks (G16, B06): the first corner's direction in a polygon picked by its corner, the first side's direction
         // in one picked by the middle of a side — always the direction the cursor shows, mirrored when the cursor is past its break
-        const shownAz = circ ? Math.atan2(p[1] - c[1], p[0] - c[0]) + Math.PI / 2 : Math.atan2(p[1] - c[1], p[0] - c[0]);
+        // G16: when the cursor is over an existing line, the polygon can be oriented to it (Enter then locks that angle)
+        const lineAz = this.hoveredLineAngle();
+        const shownAz = lineAz !== null
+          ? (circ ? lineAz + Math.PI / 2 : lineAz)
+          : (circ ? Math.atan2(p[1] - c[1], p[0] - c[0]) + Math.PI / 2 : Math.atan2(p[1] - c[1], p[0] - c[0]));
         const shown = Math.atan2(Math.sin(shownAz), Math.cos(shownAz));
         const dir = v.angle === undefined ? shown : shown < 0 ? -v.angle : v.angle;
         // the corner's own direction out of the box's: the polygon op rebuilds both from where this second click lands
@@ -781,8 +785,13 @@ export class SketchController {
           radius: fmt(circ ? d * Math.cos(Math.PI / n) : d),
           edge: fmt(2 * d * (circ ? Math.tan(Math.PI / n) : Math.sin(Math.PI / n))),
         };
-        // the direction box's value: the first corner's, or the first side's, as the picked way says (G16, B06)
-        const shownAz = circ ? Math.atan2(p[1] - c[1], p[0] - c[0]) + Math.PI / 2 : Math.atan2(p[1] - c[1], p[0] - c[0]);
+        // the direction box's value: the first corner's, or the first side's, as the picked way says (G16, B06).
+        // when the cursor is over an existing line, the polygon can be oriented to it (G16): the line's angle is shown
+        // and Enter locks it, so the polygon comes out parallel to that edge instead of chasing the cursor
+        const lineAz = this.hoveredLineAngle();
+        const shownAz = lineAz !== null
+          ? (circ ? lineAz + Math.PI / 2 : lineAz)
+          : (circ ? Math.atan2(p[1] - c[1], p[0] - c[0]) + Math.PI / 2 : Math.atan2(p[1] - c[1], p[0] - c[0]));
         out.angle = fmt((Math.abs(Math.atan2(Math.sin(shownAz), Math.cos(shownAz))) * 180) / Math.PI);
         return out;
       }
@@ -1852,8 +1861,19 @@ export class SketchController {
           return;
         }
         const typed = this.entryTexts();
+        // G16: when no angle was typed but the cursor is over an existing line, orient the polygon to that line
+        // (synthesise the second point along the line's angle, keeping the cursor's distance as the size) and
+        // constrain the first side to be parallel to it, so the polygon follows that edge
+        const hoveredLine = this.hoveredLineAngle() !== null ? this.hover?.id : undefined;
+        if (typed.angle === undefined && hoveredLine) {
+          const la = this.hoveredLineAngle()!;
+          const c1p = this.clicks[0]!.p;
+          const d = dist(c1p, s.p);
+          const q: P2 = [c1p[0] + Math.cos(la) * (d > 1e-9 ? d : 1), c1p[1] + Math.sin(la) * (d > 1e-9 ? d : 1)];
+          this.clicks[1] = { ...s, p: q };
+        }
         this.clicks.push(s);
-        this.finishShape(typed);
+        this.finishShape(typed, hoveredLine && typed.angle === undefined ? hoveredLine : undefined);
         this.clicks = [];
         return;
       }
@@ -2070,7 +2090,7 @@ export class SketchController {
 
   // ------------------------------------------------------------------ slot, polygon, trim, round, offset, mirror (C1.8–C1.19)
 
-  private finishShape(lastTyped?: Partial<Record<EntryField, string>>): void {
+  private finishShape(lastTyped?: Partial<Record<EntryField, string>>, parallelTo?: Id): void {
     const [c1, c2, c3] = this.clicks as [Snap, Snap, Snap | undefined];
     const place = (s: Snap) => ({ p: s.p, ...(s.kind === 'point' && s.id !== SKETCH_ORIGIN ? { id: s.id } : {}) });
     // the evaluated boxes of the phase the shape finishes in; a slot keeps the ones its second center was placed with
@@ -2082,7 +2102,7 @@ export class SketchController {
       const width = c3 ? Math.abs(cross(unit(axis), sub(c3.p, c1.p))) : 0;
       this.run(slot(this.allocator(), place(c1), place(c2), width, slotTyped));
     } else {
-      this.run(polygon(this.allocator(), place(c1), c2.p, this.options.polygonSides, this.options.circumscribed, polygonTyped));
+      this.run(polygon(this.allocator(), place(c1), c2.p, this.options.polygonSides, this.options.circumscribed, polygonTyped, parallelTo));
     }
     this.slotEntry = null;
     this.clearEntry();
@@ -2091,6 +2111,15 @@ export class SketchController {
   /** One of the sketch's axes under the cursor (ADR 0170), and nothing else: the last thing the select tool looks for. */
   private axisAt(e: PointerInput): Hit | null {
     return hitTest(new Map(), e.p, PICK_PX * e.px, new Set([SKETCH_ORIGIN]), true);
+  }
+
+  /** The direction of the line the cursor is over (G16): null when it is not over a line, so a polygon can be oriented to an existing edge without typing an angle. */
+  private hoveredLineAngle(): number | null {
+    const h = this.hover;
+    if (!h) return null;
+    const g = geometryOf(this.geometry(), h.id);
+    if (g?.type !== 'line') return null;
+    return Math.atan2(g.b[1] - g.a[1], g.b[0] - g.a[0]);
   }
 
   /** The line a click picks, or null; one of the sketch's axes only when `axes` (ADR 0170: a mirror line, never something to trim). */

@@ -2,6 +2,10 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-11-01:多邊形可吸附到現有線的角度(G16 第一刀，E1 裁決)
+
+使用者裁決 E1 為「排入下一切片」，本刀做第一刀：多邊形第二點可吸附到現有線的角度（Enter 鎖定並加 parallel 拘束），大小仍由游標決定。`apps/web/src/sketcher/controller.ts` 新增 `hoveredLineAngle()`，`entryLive` 與 `entryPreview` 在游標停在線上時以該線角度取代游標角；`finishShape` 在未打字且游標停在線上時，把第二點合成為沿該線角度的點並傳 `parallelTo`。`packages/sketch/src/ops.ts` 的 `polygon` 新增可選 `parallelTo` 參數，加上 `parallel` 拘束使多邊形隨該邊旋轉而聯動。`typecheck` 0 錯誤；`sketcher` 80/80；`phase3-sketch-tools` + `manual-sketch-entry` 2/2 綠。
+
 ## 2026-11-01:鏡射以草圖軸參照時補上 hover 預覽(B1 裁決)
 
 使用者裁決 B1 為「修」。`apps/web/src/sketcher/controller.ts` 的 `operationPlan` 與 `operationClick` 在 mirror 工具下，原先只用 `this.hover`（`hitTest(geometry, …, axes=true)`）找軸；但 `hitTest` 的軸只在「附近沒有草圖曲線」時才被考慮，所以選取了實體、游標停在軸旁而旁邊又有曲線時，軸完全找不到 → 無 hover 預覽、點擊也無反應。修正：mirror 模式下優先 `this.axisAt(e)`（空幾何、軸永遠參與），找不到才退回 `pickedCurve`/`this.hover`。`mirror` 本身早已接受軸（`geometryOf` 退回到 `axisGeometry`）。`sketcher.test.ts` 80/80、`manual-sketch-axes` 與 `phase3-mirror` 2/2 綠，`typecheck` 0 錯誤。
