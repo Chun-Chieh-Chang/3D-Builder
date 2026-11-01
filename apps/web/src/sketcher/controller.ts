@@ -39,6 +39,8 @@ import {
   measure,
   perp,
   scale,
+  sample,
+  mid,
   smartDimension,
   snap,
   snapModel,
@@ -2381,6 +2383,49 @@ export class SketchController {
     if(this.verifiedFixes.get(fix)!==this.host.doc()){this.host.notify(t('sketch.relationStale'),'info');return;}
     this.host.execute({type:'applySketchFix',featureId:this.host.featureId,changes:[{id:fix.id,kind:fix.kind},...(fix.related??[])]});
     this.changed();
+  }
+
+  /**
+   * What a fix would make of the geometry, before it is applied (G13): the fix's sketch solved by trial, and only the entities that
+   * actually move (a redundant relation's fix moves nothing, and the preview says so instead of drawing a ghost of the same shape).
+   * Null when the document moved under it or the solve failed.
+   */
+  async fixPreview(fix:SketchFix):Promise<{shapes:SolvedGeometry[];at:P2;moved:boolean}|null> {
+    const solved=this.host.solved(),base=this.host.doc(),sketch=this.sketch();
+    if(!solved||solved.status!=='over')return null;
+    const changes=[{id:fix.id,kind:fix.kind},...(fix.related??[])];
+    const chosen=new Map(changes.map(c=>[c.id,c.kind]));
+    const constraints=sketch.constraints.flatMap(c=>!chosen.has(c.id)?[c]:chosen.get(c.id)==='driven'?[{...c,driving:false} as SketchConstraint]:[]);
+    const r=await this.host.trial({...sketch,constraints},base);
+    if(this.host.doc()!==base||(r.status!=='under'&&r.status!=='fully'))return null;
+    const tol=0.01,moved:{id:Id;g:SolvedGeometry}[]=[];
+    for(const [id,g] of r.geometry){
+      const before=solved.geometry.get(id);
+      if(!before||this.shapeDiffers(g,before,tol))moved.push({id,g});
+    }
+    const at=(moved.length>0?this.entityAnchor(r.geometry,moved[0]!.id):this.entityAnchor(solved.geometry,changes[0]!.id))??([0,0] as P2);
+    return {shapes:moved.map((m)=>m.g),at,moved:moved.length>0};
+  }
+
+  /** Two solved shapes draw differently: any sampled point a step apart. */
+  private shapeDiffers(a:SolvedGeometry,b:SolvedGeometry,tol:number):boolean {
+    const sa=sample(a,0.1),sb=sample(b,0.1);
+    if(sa.length!==sb.length)return true;
+    return sa.some((p,i)=>dist(p,sb[i]!)>tol);
+  }
+
+  /** A point of the entity, for the fix-preview label to sit by. */
+  private entityAnchor(geometry:ReadonlyMap<Id,SolvedGeometry>,id:Id):P2|null {
+    if(id===SKETCH_ORIGIN)return [0,0];
+    const g=geometryOf(geometry,id);
+    if(!g)return null;
+    switch(g.type){
+      case 'point':return g.p;
+      case 'line':return mid(g.a,g.b);
+      case 'circle':case 'arc':case 'ellipse':return g.c;
+      case 'spline':return g.points[0]??null;
+      case 'text':return g.at;
+    }
   }
 
   /** Read-only, finite feasible displacements. These are solver probes, not a claim that X/Y form independent DOFs. */

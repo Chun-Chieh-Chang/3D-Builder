@@ -96,6 +96,8 @@ export const sketch: Translation = {
   'sketch.diagnose.intro': 'Each proposed repair has been solved successfully. Checks up to 12 reported constraints, singles first, then pairs.',
   'sketch.diagnose.delete': 'Delete',
   'sketch.diagnose.driven': 'Make driven',
+  'sketch.diagnose.preview': 'fix preview: dashed is the geometry after applying',
+  'sketch.diagnose.previewStatic': 'this fix moves no geometry',
   'sketch.diagnose.none': 'No one- or two-constraint repair was found within the bounded search.',
   'sketch.diagnose.busy': 'Diagnosing…',
   'sketch.check.title': 'Check Sketch for Feature Usage',

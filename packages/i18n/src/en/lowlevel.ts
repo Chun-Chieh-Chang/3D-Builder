@@ -77,6 +77,7 @@ export const lowlevel: Translation = {
   'worker.noBodyForPart': 'The part "{name}" has no body to export',
   'overlay.relationTip': '{name} (click to select, Delete to delete)',
   'overlay.editDimension': 'Double-click to change the dimension',
+  'overlay.motionProbe': 'movable along {axis} (probe)',
   'move.fixed': 'Fixed; it cannot be dragged',
   'move.defined': 'Fully defined by mates; it cannot be dragged',
   'move.drag': 'Drag with the left button to {verb}; drag with the right button to rotate',

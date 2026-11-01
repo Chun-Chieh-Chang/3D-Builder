@@ -287,6 +287,8 @@ export function Viewport() {
           ? thicknessColors(thicknessReport)
           : null;
   const pick = picking(feature, !!editing, modelTool, measure !== null, editing?.kind === 'sketchPlane');
+  const dofMotion = useStore((s) => s.dofMotion);
+  const fixPreview = useStore((s) => s.fixPreview);
 
   // the flat pattern shown in the place of the folded part (ADR 0115): nothing of the model's names fits its faces, so nothing is picked and no colors are painted
   const flatMesh = useStore((s) => (s.flat?.show3d ? s.flat.mesh : null));
@@ -527,11 +529,11 @@ export function Viewport() {
     const corners = box ? [v.planePoint(box.left, box.top, frame), v.planePoint(box.right, box.top, frame), v.planePoint(box.left, box.bottom, frame), v.planePoint(box.right, box.bottom, frame)] : [];
     const onPlane = corners.filter((c): c is [number, number] => c !== null);
     const visible = onPlane.length === 4 ? { min: [Math.min(...onPlane.map((c) => c[0])), Math.min(...onPlane.map((c) => c[1]))] as [number, number], max: [Math.max(...onPlane.map((c) => c[0])), Math.max(...onPlane.map((c) => c[1]))] as [number, number] } : undefined;
-    overlay.current = buildOverlay(frame, sketch, sketchSolve, { ...view, grid: gridVisible ? gridSpacing : null }, v.pixelSize(), { showRelations: true, values, dimensionPreview: sketcher.dimensionPreview(), precision: settingsOf(doc).dimensionPrecision, visible });
+    overlay.current = buildOverlay(frame, sketch, sketchSolve, { ...view, grid: gridVisible ? gridSpacing : null }, v.pixelSize(), { showRelations: true, values, dimensionPreview: sketcher.dimensionPreview(), precision: settingsOf(doc).dimensionPrecision, visible, dofMotion: dofMotion && dofMotion.point ? { at: dofMotion.at, probes: dofMotion.probes } : null, fixPreview });
     v.setOverlay(overlay.current);
     // a dimension that brings a point of its own (a crossing, ADR 0212) has no label until the solver has answered with that point: the box is shown then
     setEditorOverlay(store.getState().dimensionEdit ? overlay.current : null);
-  }, [sketching, doc, sketchSolve, view, viewTick, gridVisible, gridSpacing]);
+  }, [sketching, doc, sketchSolve, view, viewTick, gridVisible, gridSpacing, dofMotion, fixPreview]);
 
   const shown = displayed.current;
   const hoverName =

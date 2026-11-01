@@ -82,10 +82,41 @@ export interface OverlayOptions {
   precision?: number;
   /** The part of the sketch plane on the screen, for the grid (drawn only there). */
   visible?: { min: P2; max: P2 };
+  /** The feasible motions the solver probed for the selected point, drawn as arrows by the point (G13). */
+  dofMotion?: { at: P2; probes: { axis: 'x' | 'y'; delta: P2 }[] } | null;
+  /** What a hovered fix of an over-defined sketch would make of the geometry, dashed, before it is applied (G13). */
+  fixPreview?: { shapes: SolvedGeometry[]; at: P2; moved: boolean } | null;
 }
 
 /** More lines than this across the screen and the grid is not drawn (it would be a gray wash; the stepping keeps it far below this). */
 const GRID_MAX_LINES = 600;
+
+/** How long (pixels) a motion arrow of the DOF analysis is drawn (G13). */
+export const MOTION_ARROW_PX = 26;
+
+/**
+ * The strokes of one motion arrow: a shaft from `from` along `dir` and a head at its tip, all sized in pixels (G13).
+ * A direction with no length draws nothing.
+ */
+export function arrowPoints(from: P2, dir: P2, px: number): P2[][] {
+  const n = Math.hypot(dir[0], dir[1]);
+  if (!(n > 1e-12)) return [];
+  const [ux, uy] = [dir[0] / n, dir[1] / n];
+  const len = MOTION_ARROW_PX * px;
+  const head = 8 * px;
+  const tip: P2 = [from[0] + ux * len, from[1] + uy * len];
+  const wing = (s: number): P2 => [tip[0] - ux * head - uy * s * head * 0.7, tip[1] - uy * head + ux * s * head * 0.7];
+  return [
+    [from, tip],
+    [wing(-1), tip, wing(1)],
+  ];
+}
+
+/** Where an arrow's tip lands (the label of the axis sits beside it). */
+export function arrowTip(from: P2, dir: P2, px: number): P2 {
+  const n = Math.hypot(dir[0], dir[1]) || 1;
+  return [from[0] + (dir[0] / n) * MOTION_ARROW_PX * px, from[1] + (dir[1] / n) * MOTION_ARROW_PX * px];
+}
 
 /**
  * The sketch grid over `visible` (SolidWorks and FreeCAD draw it under the sketch): lines at the spacing the grid snap uses at this zoom, every fifth
@@ -350,6 +381,19 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   }
   if (options.dimensionPreview) {
     labels.push({ key: 'dimension-preview', p: add(options.dimensionPreview.at, [16 * px, 16 * px]), text: options.dimensionPreview.text, className: 'dimension preview' });
+  }
+  // what the solver probed as still movable for the selected point (G13): one arrow per probed axis, along the displacement the solver
+  // actually made — a probe result, not a guess from a colour; the panel's hint says the probed axes are not independent degrees of freedom
+  if (options.dofMotion) {
+    for (const probe of options.dofMotion.probes) {
+      for (const poly of arrowPoints(options.dofMotion.at, probe.delta, px)) curves.push({ points: poly, color: SKETCH_COLORS.under });
+      labels.push({ key: `motion:${probe.axis}`, p: add(arrowTip(options.dofMotion.at, probe.delta, px), [10 * px, 10 * px]), text: t('overlay.motionProbe', { axis: probe.axis.toUpperCase() }), className: 'motion' });
+    }
+  }
+  // what a hovered fix of an over-defined sketch would make of the geometry (G13): the entities that move, dashed, before anything is applied
+  if (options.fixPreview) {
+    for (const shape of options.fixPreview.shapes) curves.push({ points: sample(shape, px), color: SKETCH_COLORS.opChange, dashed: true });
+    labels.push({ key: 'fix-preview', p: add(options.fixPreview.at, [14 * px, -14 * px]), text: t(options.fixPreview.moved ? 'sketch.diagnose.preview' : 'sketch.diagnose.previewStatic'), className: 'hint' });
   }
 
   // dimensions (D6.2) laid out outside the geometry

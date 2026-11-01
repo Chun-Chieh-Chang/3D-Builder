@@ -371,6 +371,7 @@ function FreedomList({ f, freedom, sketcher }: { f: SketchFeature; freedom: Map<
 /** Over-defined sketch (A2.5, D7.2): the relations and dimensions that conflict, and what the solver confirms cures it, one click each. */
 function DiagnosisBox({ f, solve, sketcher }: { f: SketchFeature; solve: SketchSolvePayload; sketcher: SketchController }) {
   const [fixes, setFixes] = useState<SketchFix[] | null>(null);
+  const previewVersion = useRef(0);
   const key = `${solve.status}|${solve.conflicting.join(',')}|${solve.redundant.join(',')}`;
   useEffect(() => {
     let live = true;
@@ -378,21 +379,38 @@ function DiagnosisBox({ f, solve, sketcher }: { f: SketchFeature; solve: SketchS
     if (solve.status === 'over') void sketcher.diagnose().then((r) => live && setFixes(r)).catch((error:unknown)=>{if(live){setFixes([]);store.notify(error instanceof Error?error.message:String(error));}});
     return () => {
       live = false;
+      previewVersion.current++;
+      store.setFixPreview(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, sketcher, f]);
+  // a hovered fix selects its relations (the canvas lights them, G12) and dashes what they would move (G13); leaving takes the preview back
+  const enter = (x: SketchFix) => {
+    sketcher.select([x.id, ...(x.related ?? []).map((c) => c.id)]);
+    const current = ++previewVersion.current;
+    void sketcher
+      .fixPreview(x)
+      .then((r) => {
+        if (current === previewVersion.current) store.setFixPreview(r);
+      })
+      .catch(() => {});
+  };
+  const leave = () => {
+    previewVersion.current++;
+    store.setFixPreview(null);
+  };
   if (solve.status !== 'over') return null;
   return (
-    <section className="pm-group">
+    <section className="pm-group" onMouseLeave={leave}>
       <h4>{t('sketch.diagnose.title')}</h4>
       {fixes === null && <p className="muted">{t('sketch.diagnose.busy')}</p>}
       {fixes !== null && fixes.length === 0 && <p className="hint">{t('sketch.diagnose.none')}</p>}
       {fixes !== null && fixes.length > 0 && <p className="hint">{t('sketch.diagnose.intro')}</p>}
       <ul className="relation-list">
         {(fixes ?? []).map((x) => (
-          <li key={[x.id,...(x.related??[]).map(c=>c.id)].join(',')} onMouseEnter={() => sketcher.select([x.id,...(x.related??[]).map(c=>c.id)])}>
+          <li key={[x.id,...(x.related??[]).map(c=>c.id)].join(',')} onMouseEnter={() => enter(x)}>
             <span>{[x,...(x.related??[])].map(c=>`${describe(f,c.id)} (${c.kind==='driven'?t('sketch.diagnose.driven'):t('sketch.diagnose.delete')})`).join(' + ')}</span>
-            <button type="button" onClick={() => sketcher.applyFix(x)}>
+            <button type="button" onClick={() => { leave(); sketcher.applyFix(x); }}>
               {t('sketch.diagnose.apply')}
             </button>
           </li>
@@ -406,12 +424,12 @@ function DiagnosisBox({ f, solve, sketcher }: { f: SketchFeature; solve: SketchS
 function ConstraintAnalysisBox({f,selection,sketcher,solve}:{f:SketchFeature;selection:Id[];sketcher:SketchController;solve:SketchSolvePayload|null}) {
   const [busy,setBusy]=useState(false),[motion,setMotion]=useState<Awaited<ReturnType<SketchController['motionProbes']>>|null>(null),[contributions,setContributions]=useState<Awaited<ReturnType<SketchController['constraintContributions']>>|null>(null);
   const version=useRef(0),key=selection.join(',');
-  useEffect(()=>{version.current++;setMotion(null);setContributions(null);setBusy(false);return ()=>{version.current++;};},[f,key]);
+  useEffect(()=>{version.current++;setMotion(null);setContributions(null);setBusy(false);store.setDofMotion(null);return ()=>{version.current++;store.setDofMotion(null);};},[f,key]);
   if(!solve||!['fully','under'].includes(solve.status))return null;
   const point=selection.length===1&&f.entities.some(e=>e.id===selection[0]&&e.type==='point')?selection[0]:undefined;
   const affected=new Set(selection);for(const e of f.entities){if(selection.includes(e.id))for(const p of entityPoints(e))affected.add(p);if(entityPoints(e).some(p=>selection.includes(p)))affected.add(e.id);}
   const relations=constraintsOf(f.constraints,affected);
-  const run=async()=>{const current=version.current;setBusy(true);try{const m=point?await sketcher.motionProbes(point):null,c=await sketcher.constraintContributions(relations.map(c=>c.id));if(current===version.current){setMotion(m);setContributions(c);}}catch(error){if(current===version.current)store.notify(error instanceof Error?error.message:String(error));}finally{if(current===version.current)setBusy(false);}};
+  const run=async()=>{const current=version.current;setBusy(true);try{const m=point?await sketcher.motionProbes(point):null,c=await sketcher.constraintContributions(relations.map(c=>c.id));if(current===version.current){setMotion(m);setContributions(c);const g=point?solve.geometry.get(point):null;store.setDofMotion(point&&m&&g?.type==='point'?{point,at:[g.p[0],g.p[1]],probes:m.map(x=>({axis:x.axis,delta:[x.delta[0],x.delta[1]] as [number,number]}))}:null);}}catch(error){if(current===version.current)store.notify(error instanceof Error?error.message:String(error));}finally{if(current===version.current)setBusy(false);}};
   if(!point&&relations.length===0)return null;
   return <div className="constraint-analysis"><button disabled={busy} onClick={()=>void run()}>{busy?t('sketch.diagnose.busy'):t('sketch.analysis.run')}</button>
     {motion!==null&&<><p className="hint">{t('sketch.analysis.motionHint')}</p>{motion.length===0?<p>{t('sketch.analysis.noMotion')}</p>:<ul>{motion.map(m=><li key={m.axis}>{t('sketch.analysis.motion',{axis:m.axis.toUpperCase(),dx:m.delta[0].toFixed(4),dy:m.delta[1].toFixed(4),dof:m.remainingDof})}</li>)}</ul>}</>}

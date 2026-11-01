@@ -75,6 +75,7 @@ export const lowlevel = {
   'worker.noBodyForPart': '零件「{name}」沒有可輸出的本體',
   'overlay.relationTip': '{name}（按一下選取，Delete 刪除）',
   'overlay.editDimension': '按兩下修改尺寸',
+  'overlay.motionProbe': '可動 {axis} 方向（探針）',
   'move.fixed': '已固定，不能拖曳',
   'move.defined': '已被結合完全定義，不能拖曳',
   'move.drag': '左鍵拖曳{verb}，右鍵拖曳旋轉',

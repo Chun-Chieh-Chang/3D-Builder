@@ -337,6 +337,7 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .overlay-label.relation { font-size: 11px; padding: 1px 3px; background: var(--ok-soft); border: 1px solid var(--ok-line); border-radius: 2px; color: var(--ok); }
 .overlay-label.relation.related { background: var(--warn-soft); border-color: var(--warn); color: var(--warn-ink); }
 .overlay-label.relation.dim { opacity: 0.4; }
+.overlay-label.motion { font-size: 11px; padding: 1px 3px; background: var(--card); border: 1px solid var(--under); border-radius: 2px; color: var(--under); }
 .overlay-label.selected { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
 .overlay-label.over { color: var(--error); border-color: var(--error-line); background: var(--error-soft); }
 .overlay-label.hint { font-size: 11px; padding: 1px 4px; background: var(--warn-soft); border: 1px solid var(--warn-line); border-radius: 2px; color: var(--warn-ink); }

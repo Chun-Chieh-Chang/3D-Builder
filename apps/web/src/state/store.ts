@@ -72,6 +72,7 @@ import type { FlatReport, SheetCheck } from '@3db/regen';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
 import { contourChoices, findProfiles, outlineContains, pickContourSelection, regionOutline, type ContourChoice, type RegionOutline } from '@3db/sketch/profiles';
 import type { ModelItem } from '@3db/sketch/ops';
+import type { SolvedGeometry } from '@3db/sketch';
 import type { PickFilter, Snap, Viewer } from '@3db/render';
 import { captureVertexAnchor, resolveVertexAnchor } from './measureAnchors';
 import type { KernelApi, PartExportOptions, PartIgesOptions, ProbeApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
@@ -329,6 +330,10 @@ export interface UiState {
   contourPick: { featureId: Id; sketchId: Id; choices: ContourChoice[]; outlines: RegionOutline[] } | null;
   /** The region the cursor is over while picking (an index into `contourPick.outlines`), or null. */
   contourHover: number | null;
+  /** The feasible motions the solver probed for the selected point (G13, P4), drawn as arrows by the point until the selection changes. */
+  dofMotion: { point: Id; at: [number, number]; probes: { axis: 'x' | 'y'; delta: [number, number] }[] } | null;
+  /** What a hovered fix of an over-defined sketch would make of the geometry (G13, P4): the entities that move, dashed, before it is applied. */
+  fixPreview: { shapes: SolvedGeometry[]; at: [number, number]; moved: boolean } | null;
   /** 「匯入 DXF」 (F2.6): the file read and what it holds, while its dialog is open. */
   dxfImport: { name: string; text: string; survey: DxfSurvey } | null;
   /** Feature whose 「確認刪除」 dialog is open (B2.8). */
@@ -596,6 +601,8 @@ class AppStore {
       pictureScale: null,
       contourPick: null,
       contourHover: null,
+      dofMotion: null,
+      fixPreview: null,
       dxfImport: null,
       confirmDelete: null,
       whatsWrong: false,
@@ -2628,7 +2635,7 @@ class AppStore {
   private leaveSession(): void {
     this.sketcher = null;
     this.modelSnap = [];
-    this.set({ editing: null, sketchSolve: null, dimensionEdit: null, contourPick: null, contourHover: null, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
+    this.set({ editing: null, sketchSolve: null, dimensionEdit: null, contourPick: null, contourHover: null, dofMotion: null, fixPreview: null, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
     this.requestRebuild();
   }
 
@@ -3102,6 +3109,16 @@ class AppStore {
 
   setContourHover(i: number | null): void {
     if (this.state.contourHover !== i) this.set({ contourHover: i });
+  }
+
+  /** The feasible motions the analysis probed for a point (G13); drawn on the canvas until the selection or session changes. */
+  setDofMotion(motion: { point: Id; at: [number, number]; probes: { axis: 'x' | 'y'; delta: [number, number] }[] } | null): void {
+    this.set({ dofMotion: motion });
+  }
+
+  /** The geometry a hovered fix would produce (G13); dashed on the canvas while the row is under the cursor. */
+  setFixPreview(preview: { shapes: SolvedGeometry[]; at: [number, number]; moved: boolean } | null): void {
+    this.set({ fixPreview: preview });
   }
 
   /** A click on the sketch plane while picking: that region alone, or with Ctrl added to (or taken from) the choice. */

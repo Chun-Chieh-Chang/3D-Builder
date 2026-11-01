@@ -94,6 +94,8 @@ export const sketch = {
   'sketch.diagnose.intro': '每個修復方案皆已通過求解。最多檢查回報的 12 項拘束，先單項、再雙項。',
   'sketch.diagnose.delete': '刪除',
   'sketch.diagnose.driven': '改為從動',
+  'sketch.diagnose.preview': '修復預覽：虛線為套用後的幾何',
+  'sketch.diagnose.previewStatic': '此修復不改變幾何',
   'sketch.diagnose.none': '限定搜尋範圍內未找到單項或雙項修復方案。',
   'sketch.diagnose.busy': '診斷中…',
   'sketch.check.title': '檢查草圖用於特徵',
