@@ -93,7 +93,7 @@
 | B2 | `manual-asm-*` / assembly-section-captures 逾時 | **已修（第一刀）** | `scripts/verify-ui.mjs` 的 `freshPage` 導覽加上重試（失敗後等 2 s 再試一次），避免 renderer 偶發卡死整輪作廢；3 個 asm 腳本單獨重跑 3/3 綠 |
 | B3 | E03 macOS 瀏覽器鍵盤/焦點驗證 | **記「未驗」不阻塞** | CI macOS 入口結果視需要再補 |
 | C1 | CI 只跑精選測試清單 | **已修** | `.github/workflows/repository-integrity.yml` 加 `schedule`（每日 02:00 UTC）+ `full-suite` job（`npm test` 全量），僅在 schedule/workflow_dispatch 跑；PR/push 仍跑精選清單 |
-| C2 | PlaneGCS ~900 拘束 OOM | **減少方程規模 + 預算攔截** | 先減少方程規模，再依新增參數預算攔截 |
+| C2 | PlaneGCS ~900 拘束 OOM | **已修（第一刀）** | `planegcs.ts` 加 `ANALYZE_BUDGET=300`（超過跳過 per-point probes，entityFreedom 不算）與 `SOLVE_BUDGET=1000`（超過直接 refused 並回 `sketch.tooLarge`），避免 WASM OOM；`budget-guard.test.ts` 2/2 綠 |
 | D1 | G08 獨立 Split 與參照繼承 | **現在做探針** | 先證實精確幾何/參照/求解可行 |
 | D2 | G09 自由曲線 offset | **留候選** | P5 中優先級中 |
 | D3 | G11 交叉/分岔子區域 | **留候選** | G10 之後再做（高風險） |

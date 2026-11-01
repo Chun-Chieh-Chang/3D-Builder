@@ -2,6 +2,10 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-11-01:PlaneGCS 預算守衛 (C2 裁決)
+
+使用者裁決 C2 為「減少方程規模 + 預算攔截」。`packages/sketch/src/planegcs.ts` 加 `ANALYZE_BUDGET=300`（超過時跳過 per-point probes，entityFreedom 不算，避免 N 次額外求解）與 `SOLVE_BUDGET=1000`（超過時 refused 並回 `sketch.tooLarge` 訊息，避免 WASM OOM）；i18n 新增 `sketch.tooLarge`（zh-TW/en）。`budget-guard.test.ts` 2/2 綠（350 拘束跳過 analyze、1001 拘束 refused），`typecheck` 0 錯誤。
+
 ## 2026-11-01:CI 兩段式（PR 精選 + 夜間全量）(C1 裁決)
 
 使用者裁決 C1 為「兩段式」。`.github/workflows/repository-integrity.yml` 新增 `schedule`（每日 02:00 UTC）與 `full-suite` job，後者僅在 schedule/workflow_dispatch 時跑 `npm test` 全量；PR/push 仍跑原精選清單 + typecheck/lint/build。YAML 通過 `yaml.safe_load` 驗證。

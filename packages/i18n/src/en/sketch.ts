@@ -38,6 +38,7 @@ export const sketch: Translation = {
   'sketch.entry.dirRange': '"{value}" cannot be used: the direction angle must be between 0° and 180° (exclusive of 180°).',
   'sketch.entry.snapIgnored': 'Typed value locked, not snapping to {ids} (Esc cancels the input)',
   'sketch.entry.snapHeld': 'Snap held (it changes only for a nearer candidate)',
+  'sketch.tooLarge': 'Too many constraints ({n}); split the sketch or reduce constraints to avoid running out of memory',
   'tool.ellipse': 'Ellipse',
   'tool.bezier': 'Cubic Bezier',
   'hint.ellipse1': 'Pick the ellipse center.',
