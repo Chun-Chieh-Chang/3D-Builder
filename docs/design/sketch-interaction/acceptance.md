@@ -206,9 +206,9 @@ P0 核心功能與驗收項目已全數跑通（Windows 瀏覽器 `manual-sketch
 | D06／G14 既有模式盤點 | 通過(記錄) | 圓/弧量到**圓心**(5 mm)而非最近點(2 mm)是既有語意,標籤現在明說「圓心」;圓邊距離的「最近/最遠」條件(ADR 0183)、弧長、水平/垂直/對齊都在既有模型內,未新增模式。 |
 | E02／G04、18 效能門檻 | 通過 | 1000 圖元固定軌跡(headless Chrome,`out/p4-4-ui.json`):select p95 **0.3 ms**、line snap p95 **0.4 ms**(p50 各 0.1;worker 往返 314.5 ms);100 圖元為 **0.1／0.2 ms**——皆遠低於 8 ms,`hitTest` 仍逐一遍歷幾何(**未**加空間索引)——量測未超標即不做(計畫 G18 的「超標才做」)。 |
 | 已知缺口 | 記錄待辦 | 最近點的細化容差為參數上 1e-6(`goldenMin` 的 tol 為粗掃步長的一百萬分之一),未對「螢幕像素」再最佳化;樣條最近點沿 Catmull-Rom 參數而非弧長,極不等距控制點下參數與弧長不成比例(顯示與命中同一個表示,無內部不一致)。`hitTest` 未建空間索引。 |
-| 既有失敗(非本刀) | 記錄 | 同前:kernel `direct-edit` moveFace(C10.1),乾淨 HEAD 重現,另案。 |
+| 既有失敗(非本刀) | 已修(A1) | kernel `direct-edit` moveFace(C10.1) 訊息已改為 `edit.moveTooFar`，19/19 綠；原為乾淨 HEAD 重現的既有失敗。 |
 
-回歸:新增單元 26 項(nearest-point 8、snap-hold 9、dimension-preview 5、interact G14 段 4);全倉庫單元 **4104 過 / 1 既有失敗(kernel `direct-edit` moveFace 拒絕訊息,乾淨 HEAD 重現,非本刀)/ 26 跳過**;`tsc` 0 錯誤;四項 lint PASS;完整 `verify:ui` **257 / 257**(0 失敗、0 known)。
+回歸:新增單元 26 項(nearest-point 8、snap-hold 9、dimension-preview 5、interact G14 段 4);全倉庫單元 **4104 過 / 1 既有失敗(kernel `direct-edit` moveFace 拒絕訊息,乾淨 HEAD 重現,非本刀)/ 26 跳過**;`tsc` 0 錯誤;四項 lint PASS;完整 `verify:ui` **257 / 257**(0 失敗、0 known)。`tsc` 0 錯誤;四項 lint PASS;完整 `verify:ui` **257 / 257**(0 失敗、0 known)。
 
 ## 測試與失敗紀錄
 
