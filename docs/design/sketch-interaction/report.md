@@ -90,7 +90,7 @@
 | A1 | kernel `direct-edit` moveFace 拒絕訊息不符 | **修訊息讓測試綠** | 先查訊息來源，改字串使測試綠；若訊息對使用者更友善，改測試期望 |
 | A2 | 單點「固定」關係被 `refusedRelations` 過濾 | **調查完成：維持過濾（正確行為）** | `fix` 只對單一非原點點提供；refusedRelations 試算後，點已完全定義時 `fix` 會 over/failed → 按鈕隱藏。這是正確行為（避免無效按鈕），不是 bug。可選：顯示禁用按鈕 + 說明「此點已完全定義」提升可發現性 |
 | B1 | 鏡射以草圖軸參照時 hover 無預覽 | **已修** | mirror 模式下優先 `axisAt`（軸永遠參與），找不到才退回曲線；`sketcher` 80/80、`manual-sketch-axes` + `phase3-mirror` 2/2 綠 |
-| B2 | `manual-asm-*` / assembly-section-captures 逾時 | **修環境與腳本** | 加重試/等待，或拆出單獨 CI job |
+| B2 | `manual-asm-*` / assembly-section-captures 逾時 | **已修（第一刀）** | `scripts/verify-ui.mjs` 的 `freshPage` 導覽加上重試（失敗後等 2 s 再試一次），避免 renderer 偶發卡死整輪作廢；3 個 asm 腳本單獨重跑 3/3 綠 |
 | B3 | E03 macOS 瀏覽器鍵盤/焦點驗證 | **記「未驗」不阻塞** | CI macOS 入口結果視需要再補 |
 | C1 | CI 只跑精選測試清單 | **已修** | `.github/workflows/repository-integrity.yml` 加 `schedule`（每日 02:00 UTC）+ `full-suite` job（`npm test` 全量），僅在 schedule/workflow_dispatch 跑；PR/push 仍跑精選清單 |
 | C2 | PlaneGCS ~900 拘束 OOM | **減少方程規模 + 預算攔截** | 先減少方程規模，再依新增參數預算攔截 |

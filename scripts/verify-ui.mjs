@@ -221,12 +221,18 @@ window.__setDpr = async (dpr) => { const n = ++window.__shotN; window.__capture(
       return r.result?.exceptionDetails ? { error: r.result.exceptionDetails.exception?.description ?? r.result.exceptionDetails.text } : { value: r.result?.result?.value };
     };
     /** A fresh load of the page; the browser storage is emptied only when `clear` (a script that runs in two loads, like the recovery one, needs what the first left). */
+    const navigateWithRetry = async (url, tries = 2) => {
+      for (let i = 0; i < tries; i++) {
+        try { await send('Page.navigate', { url }); return; }
+        catch (e) { if (i === tries - 1) throw e; await sleep(2000); }
+      }
+    };
     const freshPage = async (clear = true) => {
       await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });
-      await send('Page.navigate', { url: 'about:blank' });
+      await navigateWithRetry('about:blank');
       await sleep(300);
       if (clear) await send('Storage.clearDataForOrigin', { origin: ORIGIN, storageTypes: 'all' });
-      await send('Page.navigate', { url: `${ORIGIN}/` });
+      await navigateWithRetry(`${ORIGIN}/`);
       await sleep(1500);
       for (let i = 0; i < 100 && !((await evaluate('document.querySelectorAll("canvas").length')).value >= 1); i++) await sleep(200);
       await sleep(2500);
