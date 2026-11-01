@@ -1608,6 +1608,7 @@ export class Viewer {
       entry.world.copy(toWorld(overlay!.frame, l.p));
       if (!entry.held) entry.offset = undefined; // the place is now the one stored
       entry.el.className = `overlay-label ${l.className ?? ''} ${l.interactive ? 'interactive' : ''}`;
+      entry.el.dataset.key = l.key; // which overlay label this is (tests and tools address one by it)
       if (entry.el.textContent !== l.text) entry.el.textContent = l.text;
       entry.el.title = l.title ?? '';
     }

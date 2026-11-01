@@ -42,6 +42,7 @@ export const pmpanels = {
   'pm.escTool': 'Esc 結束工具。',
   'pm.selectedItems': '選取的項目',
   'pm.existingRelations': '現有限制條件',
+  'pm.relationRowTip': '按一下把這個關係加進選取，畫布會亮出它所指的圖元；再按一次取消。',
   'pm.delete': '刪除',
   'pm.addRelations': '加入限制條件',
   'pm.asConstruction': '作為幾何建構線',

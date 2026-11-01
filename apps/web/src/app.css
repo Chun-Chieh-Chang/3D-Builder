@@ -273,8 +273,9 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .selection-box li.missing { color: var(--error); }
 .pm-group h4.sub { margin: 10px 0 4px; color: var(--muted); }
 .relation-list { list-style: none; margin: 0; padding: 0; }
-.relation-list li { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; border-radius: 3px; }
+.relation-list li { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; border-radius: 3px; cursor: pointer; }
 .relation-list li:hover { background: var(--surface); }
+.relation-list li.picked { background: var(--accent-soft); }
 .relation-list li.over { color: var(--error); }
 .relation-list button { border: 0; background: none; color: var(--muted); padding: 2px; display: grid; place-items: center; }
 .relation-list button:hover { color: var(--error); }
@@ -334,6 +335,8 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .overlay-label.dimension.preview { color: var(--accent); border: 1px dashed var(--accent); }
 .overlay-label.dimension.driven { color: var(--muted); font-style: italic; }
 .overlay-label.relation { font-size: 11px; padding: 1px 3px; background: var(--ok-soft); border: 1px solid var(--ok-line); border-radius: 2px; color: var(--ok); }
+.overlay-label.relation.related { background: var(--warn-soft); border-color: var(--warn); color: var(--warn-ink); }
+.overlay-label.relation.dim { opacity: 0.4; }
 .overlay-label.selected { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
 .overlay-label.over { color: var(--error); border-color: var(--error-line); background: var(--error-soft); }
 .overlay-label.hint { font-size: 11px; padding: 1px 4px; background: var(--warn-soft); border: 1px solid var(--warn-line); border-radius: 2px; color: var(--warn-ink); }

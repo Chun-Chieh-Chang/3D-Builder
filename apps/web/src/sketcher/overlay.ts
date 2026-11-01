@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { constraintRefs, isDimension, isPlain, modelRefOf, SKETCH_AXIS_H, SKETCH_AXIS_V, SKETCH_ORIGIN, type DimensionConstraint, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
+import { constraintRefs, entityPoints, isDimension, isPlain, modelRefOf, SKETCH_AXIS_H, SKETCH_AXIS_V, SKETCH_ORIGIN, type DimensionConstraint, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
 import { add, arcMidpoint, dimensionText, geometryOf, layoutDimension, measuredText, mid, polar, sample, type Geometry } from '@3db/sketch/interact';
 import { visibleGridSpacing } from '@3db/sketch/snaps';
 import { textContours } from '@3db/sketch/font';
@@ -152,6 +152,76 @@ function anchorOf(geometry: Geometry, id: Id): P2 | null {
   }
 }
 
+// ---------------------------------------------------------------- relation symbols on clear ground (G12, P4)
+
+/**
+ * A relation symbol's box on the screen, in pixels — a shade larger than the stylesheet draws `.overlay-label.relation`
+ * (11 px text, 1 px padding, 1 px border), so a layout kept clear of these boxes is clear of the real ones too.
+ * The width grows with the symbol's characters (`∥` is one, `a:b` three).
+ */
+export function relationLabelSize(text: string): { w: number; h: number } {
+  return { w: 12 + 8 * [...text].length, h: 20 };
+}
+
+/** One relation symbol to place: its label key, its text, the anchor it belongs to, and whether the selection is about it. */
+export interface RelationLabelRequest {
+  key: string;
+  text: string;
+  anchor: P2;
+  /** 0 for a relation the selection is about — it takes the spot beside its anchor; 1 for one that has nothing to do with it. */
+  rank: number;
+}
+
+/** How far (pixels) a symbol is put from its anchor to begin with, and the step between the rings of places it can move to. */
+const RELATION_OFFSET_PX = 12;
+const RELATION_RING_PX = 17;
+/** Six rings of eight directions: a symbol never wanders further than 12 + 6·17 = 114 px from its anchor. */
+const RELATION_MAX_RING = 6;
+/** The directions round an anchor, the spot up and to the right first (the plane's +y is up on the screen). */
+const RELATION_DIRECTIONS: P2[] = [
+  [1, 1],
+  [0, 1],
+  [1, 0],
+  [1, -1],
+  [0, -1],
+  [-1, 0],
+  [-1, 1],
+  [-1, -1],
+];
+
+/** Two boxes centred on `a` and `b` share no ground (labels are centred on their point, `translate(-50%, -50%)`). */
+const clearOf = (a: { w: number; h: number }, pa: P2, px: number, b: { w: number; h: number }, pb: P2): boolean =>
+  Math.abs(pa[0] - pb[0]) >= (((a.w + b.w) / 2 + 1) * px) || Math.abs(pa[1] - pb[1]) >= (((a.h + b.h) / 2 + 1) * px);
+
+/**
+ * Where each relation symbol goes (G12): the ones the selection is about (rank 0) take the spots beside their anchors; one that would
+ * lie on a symbol already placed moves out to the next free place on a ring round its anchor, so no symbol is ever on another and every
+ * one stays clickable. Pure and deterministic: the same requests always lay out the same way, in plane units (one pixel is `px`).
+ */
+export function layoutRelationLabels(requests: readonly RelationLabelRequest[], px: number): Map<string, P2> {
+  const placed: { box: { w: number; h: number }; p: P2 }[] = [];
+  const out = new Map<string, P2>();
+  // stable sort: rank first, the sketch's own order within a rank
+  const ordered = [...requests].sort((a, b) => a.rank - b.rank);
+  for (const r of ordered) {
+    const box = relationLabelSize(r.text);
+    let best: { p: P2; hits: number } | null = null;
+    for (let ring = 0; ring <= RELATION_MAX_RING && (!best || best.hits > 0); ring++) {
+      const step = RELATION_OFFSET_PX + ring * RELATION_RING_PX;
+      for (const [dx, dy] of RELATION_DIRECTIONS) {
+        const p: P2 = [r.anchor[0] + dx * step * px, r.anchor[1] + dy * step * px];
+        const hits = placed.reduce((n, q) => n + (clearOf(box, p, px, q.box, q.p) ? 0 : 1), 0);
+        if (!best || hits < best.hits) best = { p, hits };
+        if (hits === 0) break;
+      }
+    }
+    const p = best!.p;
+    placed.push({ box, p });
+    out.set(r.key, p);
+  }
+  return out;
+}
+
 function previewCurves(shapes: PreviewShape[], px: number): OverlayCurve[] {
   return shapes.map((s): OverlayCurve => {
     switch (s.kind) {
@@ -176,11 +246,28 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   const selected = new Set(view.selection);
   const highlighted = new Set([...(view.hover ? [view.hover] : []), ...view.picks]);
   const over = new Set([...(solve?.conflicting ?? []), ...(solve?.redundant ?? [])]);
+  // What the selection is about, at both ends (G12): the relations naming a picked entity or one of its points, and the geometry a picked
+  // relation names (with its points). Dimensions keep the selection display they already have; the axes and the origin can be picked and named too.
+  const relationIds = new Set<Id>(view.selection.filter((id) => sketch.constraints.some((c) => c.id === id && !isDimension(c))));
+  const about = new Set<Id>(view.selection.filter((id) => geometry.has(id) || id === SKETCH_ORIGIN || id === SKETCH_AXIS_H || id === SKETCH_AXIS_V));
+  for (const e of sketch.entities) if (about.has(e.id)) for (const p of entityPoints(e)) about.add(p);
+  const related = new Set<Id>(relationIds);
+  for (const c of sketch.constraints) if (!related.has(c.id) && constraintRefs(c).some((r) => about.has(r))) related.add(c.id);
+  const lit = new Set<Id>(about);
+  for (const id of relationIds) {
+    const c = sketch.constraints.find((x) => x.id === id);
+    if (!c) continue;
+    for (const r of constraintRefs(c)) {
+      lit.add(r);
+      const e = sketch.entities.find((x) => x.id === r);
+      if (e) for (const p of entityPoints(e)) lit.add(p);
+    }
+  }
   const fallback: EntityStatus | undefined = solve?.status === 'fully' ? 'fully' : undefined;
   // what follows the model (C1.18) is drawn in its own colour: it is the model's, not the sketch's, to change
   const followed = new Set(sketch.entities.filter((e) => modelRefOf(e)).map((e) => e.id));
   const colorOf = (id: Id) =>
-    selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) ? SKETCH_COLORS.hover : followed.has(id) ? SKETCH_COLORS.reference : statusColor(solve?.entityStatus?.get(id) ?? fallback);
+    selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) || lit.has(id) ? SKETCH_COLORS.hover : followed.has(id) ? SKETCH_COLORS.reference : statusColor(solve?.entityStatus?.get(id) ?? fallback);
 
   const curves: OverlayCurve[] = [];
   const points: OverlayPoint[] = [];
@@ -192,12 +279,12 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   curves.push({ points: [[0, 0], [14 * px, 0]], color: SKETCH_COLORS.origin }, { points: [[0, 0], [0, 14 * px]], color: SKETCH_COLORS.origin });
   // the sketch's axes (ADR 0170, FreeCAD's H_Axis and V_Axis): across what is on the screen, dashed, lit like anything else under the cursor or selected
   const span = options.visible ?? { min: [-2000 * px, -2000 * px] as P2, max: [2000 * px, 2000 * px] as P2 };
-  const axisColor = (id: Id) => (selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) ? SKETCH_COLORS.hover : SKETCH_COLORS.origin);
+  const axisColor = (id: Id) => (selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) || lit.has(id) ? SKETCH_COLORS.hover : SKETCH_COLORS.origin);
   curves.push(
     { points: [[span.min[0], 0], [span.max[0], 0]], color: axisColor(SKETCH_AXIS_H), dashed: true, fit: false },
     { points: [[0, span.min[1]], [0, span.max[1]]], color: axisColor(SKETCH_AXIS_V), dashed: true, fit: false },
   );
-  points.push({ p: [0, 0], color: highlighted.has(SKETCH_ORIGIN) ? SKETCH_COLORS.hover : SKETCH_COLORS.origin, size: 6 });
+  points.push({ p: [0, 0], color: highlighted.has(SKETCH_ORIGIN) || lit.has(SKETCH_ORIGIN) ? SKETCH_COLORS.hover : SKETCH_COLORS.origin, size: 6 });
 
   for (const [id, g] of geometry) {
     if (g.type === 'point') points.push({ p: g.p, color: colorOf(id), size: selected.has(id) || highlighted.has(id) ? 8 : 5 });
@@ -280,23 +367,27 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
     labels.push({ key: `dim:${c.id}`, p: text, text: dimensionLabel(c, options.values?.get(c.id), measuredText(c, geometry), options.precision), className: `dimension ${state}${c.driving === false ? ' driven' : ''}`, interactive: true, title: c.label ?? t('overlay.editDimension') });
   }
 
-  // relation symbols (C1.27), stacked when several sit at the same place
+  // relation symbols (C1.27, G12): the ones the selection is about are lit at both ends and take the spots beside their anchors; the ones
+  // that have nothing to do with it fold back while something is picked (a conflicting one never folds); and no symbol is placed on another,
+  // so every one stays on clear ground and clickable. The panel's list keeps every relation regardless.
   if (options.showRelations) {
-    const stack = new Map<string, number>();
+    const symbols: { request: RelationLabelRequest; c: SketchConstraint }[] = [];
     for (const c of sketch.constraints) {
       if (isDimension(c)) continue;
       const first = constraintRefs(c)[0];
       const anchor = first === undefined ? null : anchorOf(geometry, first);
       if (!anchor) continue;
-      const key = `${anchor[0].toFixed(3)},${anchor[1].toFixed(3)}`;
-      const n = stack.get(key) ?? 0;
-      stack.set(key, n + 1);
-      const state = selected.has(c.id) ? 'selected' : over.has(c.id) ? 'over' : '';
+      symbols.push({ request: { key: `rel:${c.id}`, text: RELATION_SYMBOL[c.type], anchor, rank: related.has(c.id) ? 0 : 1 }, c });
+    }
+    const where = layoutRelationLabels(symbols.map((s) => s.request), px);
+    for (const { request: r, c } of symbols) {
+      const state = selected.has(c.id) ? 'selected' : over.has(c.id) ? 'over' : related.has(c.id) ? 'related' : '';
+      const fold = view.selection.length > 0 && state === '' && !over.has(c.id);
       labels.push({
-        key: `rel:${c.id}`,
-        p: add(anchor, [(12 + 15 * n) * px, 12 * px]),
-        text: RELATION_SYMBOL[c.type],
-        className: `relation ${state}`,
+        key: r.key,
+        p: where.get(r.key) ?? r.anchor,
+        text: r.text,
+        className: `relation ${state}${fold ? ' dim' : ''}`,
         interactive: true,
         title: t('overlay.relationTip', { name: RELATION_LABEL[c.type] }),
       });

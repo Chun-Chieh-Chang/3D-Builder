@@ -773,11 +773,11 @@ function SketchPanel({ f }: { f: SketchFeature }) {
               <h4 className="sub">{t('pm.existingRelations')}</h4>
               <ul className="relation-list">
                 {existing.map((c) => (
-                  <li key={c.id} className={solve?.conflicting.includes(c.id) ? 'over' : ''}>
+                  <li key={c.id} className={`${solve?.conflicting.includes(c.id) ? 'over ' : ''}${selection.includes(c.id) ? 'picked' : ''}`.trim()} title={t('pm.relationRowTip')} onClick={() => sketcher.select([c.id], true)}>
                     <span>{relationText(f, c, solve?.geometry)}</span>
                     {c.type==='ellipseAxes'&&<span><label>{t('sketch.ellipseMajor')}<ValueInput value={c.majorRadius} toCommand={majorRadius=>({type:'setEllipseAxes',featureId:f.id,constraintId:c.id,majorRadius,minorRadius:c.minorRadius})}/></label><label>{t('sketch.ellipseMinor')}<ValueInput value={c.minorRadius} toCommand={minorRadius=>({type:'setEllipseAxes',featureId:f.id,constraintId:c.id,majorRadius:c.majorRadius,minorRadius})}/></label></span>}
                     {c.type==='lengthRatio'&&<ValueInput value={c.ratio} suffix="" toCommand={ratio=>({type:'setLengthRatio',featureId:f.id,constraintId:c.id,ratio})}/>}
-                    <button title={t('pm.delete')} onClick={() => store.execute({ type: 'removeSketchItems', featureId: f.id, ids: [c.id] })}>
+                    <button title={t('pm.delete')} onClick={(e) => { e.stopPropagation(); store.execute({ type: 'removeSketchItems', featureId: f.id, ids: [c.id] }); }}>
                       <Icon name="cancel" />
                     </button>
                   </li>

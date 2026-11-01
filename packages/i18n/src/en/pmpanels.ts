@@ -44,6 +44,7 @@ export const pmpanels: Translation = {
   'pm.escTool': 'Press Esc to end the tool.',
   'pm.selectedItems': 'Selected Items',
   'pm.existingRelations': 'Existing Relations',
+  'pm.relationRowTip': 'Click to add this relation to the selection — the canvas lights the geometry it names; click again to drop it.',
   'pm.delete': 'Delete',
   'pm.addRelations': 'Add Relations',
   'pm.asConstruction': 'For construction',
