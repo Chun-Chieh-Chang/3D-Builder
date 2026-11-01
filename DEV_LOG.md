@@ -32,7 +32,7 @@ STL 輸入成為**網格參考**(特徵 `importedMesh`):純 TypeScript 讀檔、
 
 使用者裁決 C1 為「兩段式」。`.github/workflows/repository-integrity.yml` 新增 `schedule`（每日 02:00 UTC）與 `full-suite` job，後者僅在 schedule/workflow_dispatch 時跑 `npm test` 全量；PR/push 仍跑原精選清單 + typecheck/lint/build。YAML 通過 `yaml.safe_load` 驗證。
 
-## 2026-11-01:多邊形可吸附到現有線的角度(G16 第一刀，E1 裁決)
+## 2026-11-02:多邊形頂點朝向現有點(G16 第三刀，E1 裁決)\n\nE1 第三刀：多邊形第一頂點可朝向現有點（hover/點選 point 時角度框顯示該點角度，Enter 鎖定，不加 parallel 拘束）。`controller.ts` 新增 `hoveredPoint()`，`entryLive`/`entryPreview` 與 click handler 對 point 目標走第三刀分支。`typecheck` 0 錯誤；`sketcher` 80/80；`phase3-sketch-tools` + `manual-sketch-entry` 2/2 綠。\n\n## 2026-11-01:多邊形可吸附到現有線的角度(G16 第一刀，E1 裁決)
 
 使用者裁決 E1 為「排入下一切片」，本刀做第一刀：多邊形第二點可吸附到現有線的角度（Enter 鎖定並加 parallel 拘束），大小仍由游標決定。`apps/web/src/sketcher/controller.ts` 新增 `hoveredLineAngle()`，`entryLive` 與 `entryPreview` 在游標停在線上時以該線角度取代游標角；`finishShape` 在未打字且游標停在線上時，把第二點合成為沿該線角度的點並傳 `parallelTo`。`packages/sketch/src/ops.ts` 的 `polygon` 新增可選 `parallelTo` 參數，加上 `parallel` 拘束使多邊形隨該邊旋轉而聯動。`typecheck` 0 錯誤；`sketcher` 80/80；`phase3-sketch-tools` + `manual-sketch-entry` 2/2 綠。
 

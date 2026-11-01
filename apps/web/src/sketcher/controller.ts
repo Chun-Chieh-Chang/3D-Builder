@@ -721,9 +721,12 @@ export class SketchController {
         // in one picked by the middle of a side — always the direction the cursor shows, mirrored when the cursor is past its break
         // G16: when the cursor is over an existing line, the polygon can be oriented to it (Enter then locks that angle)
         const lineAz = this.hoveredLineAngle();
+        const pointP = lineAz === null ? this.hoveredPoint() : null;
         const shownAz = lineAz !== null
           ? (circ ? lineAz + Math.PI / 2 : lineAz)
-          : (circ ? Math.atan2(p[1] - c[1], p[0] - c[0]) + Math.PI / 2 : Math.atan2(p[1] - c[1], p[0] - c[0]));
+          : pointP !== null
+            ? (circ ? Math.atan2(pointP[1] - c[1], pointP[0] - c[0]) + Math.PI / 2 : Math.atan2(pointP[1] - c[1], pointP[0] - c[0]))
+            : (circ ? Math.atan2(p[1] - c[1], p[0] - c[0]) + Math.PI / 2 : Math.atan2(p[1] - c[1], p[0] - c[0]));
         const shown = Math.atan2(Math.sin(shownAz), Math.cos(shownAz));
         const dir = v.angle === undefined ? shown : shown < 0 ? -v.angle : v.angle;
         // the corner's own direction out of the box's: the polygon op rebuilds both from where this second click lands
@@ -789,9 +792,12 @@ export class SketchController {
         // when the cursor is over an existing line, the polygon can be oriented to it (G16): the line's angle is shown
         // and Enter locks it, so the polygon comes out parallel to that edge instead of chasing the cursor
         const lineAz = this.hoveredLineAngle();
+        const pointP = lineAz === null ? this.hoveredPoint() : null;
         const shownAz = lineAz !== null
           ? (circ ? lineAz + Math.PI / 2 : lineAz)
-          : (circ ? Math.atan2(p[1] - c[1], p[0] - c[0]) + Math.PI / 2 : Math.atan2(p[1] - c[1], p[0] - c[0]));
+          : pointP !== null
+            ? (circ ? Math.atan2(pointP[1] - c[1], pointP[0] - c[0]) + Math.PI / 2 : Math.atan2(pointP[1] - c[1], pointP[0] - c[0]))
+            : (circ ? Math.atan2(p[1] - c[1], p[0] - c[0]) + Math.PI / 2 : Math.atan2(p[1] - c[1], p[0] - c[0]));
         out.angle = fmt((Math.abs(Math.atan2(Math.sin(shownAz), Math.cos(shownAz))) * 180) / Math.PI);
         return out;
       }
@@ -1865,6 +1871,15 @@ export class SketchController {
         // (synthesise the second point along the line's angle, keeping the cursor's distance as the size) and
         // constrain the first side to be parallel to it, so the polygon follows that edge
         const hoveredLine = this.hoveredLineAngle() !== null ? this.hover?.id : undefined;
+        // G16 third knife: vertex toward an existing point (no parallel relation; the angle is locked to that point)
+        const snapIsPoint = s.kind === 'point';
+        if (typed.angle === undefined && !hoveredLine && snapIsPoint) {
+          const c1p = this.clicks[0]!.p;
+          const ang = Math.atan2(s.p[1] - c1p[1], s.p[0] - c1p[0]);
+          const d = dist(c1p, s.p);
+          const q: P2 = [c1p[0] + Math.cos(ang) * (d > 1e-9 ? d : 1), c1p[1] + Math.sin(ang) * (d > 1e-9 ? d : 1)];
+          this.clicks[1] = { ...s, p: q };
+        }
         if (typed.angle === undefined && hoveredLine) {
           const la = this.hoveredLineAngle()!;
           const c1p = this.clicks[0]!.p;
@@ -2122,6 +2137,14 @@ export class SketchController {
     return Math.atan2(g.b[1] - g.a[1], g.b[0] - g.a[0]);
   }
 
+  /** The point the cursor is over (G16, third knife): null when it is not over a point, so a polygon's first vertex can be aimed at an existing point without typing an angle. */
+  private hoveredPoint(): P2 | null {
+    const h = this.hover;
+    if (!h) return null;
+    const g = geometryOf(this.geometry(), h.id);
+    if (g?.type !== 'point') return null;
+    return g.p;
+  }
   /** The line a click picks, or null; one of the sketch's axes only when `axes` (ADR 0170: a mirror line, never something to trim). */
   private pickedCurve(e: PointerInput, axes = false): { id: Id; g: SolvedGeometry } | null {
     const hit = hitTest(this.geometry(), e.p, PICK_PX * e.px, undefined, axes);

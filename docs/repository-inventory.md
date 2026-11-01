@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 87／7／34 |
-| ADR 文件 | 220 |
+| ADR 文件 | 222 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 211／207／258 |
 | 實機清單項目 | 92 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -450,6 +450,8 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0219：匯入 DXF 到草圖（F2.6）](<adr/0219-dxf-import-into-sketch.md>)
 - [ADR 0220：IGES 輸出與輸入（F1.4、F2.2）](<adr/0220-iges-exchange.md>)
 - [ADR 0221：STL 輸出與輸入（F4.1 補完、F2.3）](<adr/0221-stl-exchange.md>)
+- [ADR 0222: 草圖獨立 Split 工具探針 (G08, D1)](<adr/0222-sketch-split-probe.md>)
+- [ADR 0223: 草圖自動尺寸配置探針 (G19, D5)](<adr/0223-sketch-auto-dimension-probe.md>)
 
 ### 歷史驗證
 

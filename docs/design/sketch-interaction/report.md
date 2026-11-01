@@ -75,11 +75,11 @@
 
 | 項目 | 內容 | 狀態 |
 |---|---|---|
-| G08 | 獨立 Split 與參照繼承(尺寸/外部參照如何轉移) | 未探針 |
+| G08 | 獨立 Split 與參照繼承(尺寸/外部參照如何轉移) | 探針完成 (ADR 0222) | 直線/圓弧/圓可行；樣條/Bézier 延後；外部參照阻擋不自動繼承 |
 | G09 | 自由曲線(B 樣條)offset | 未探針 |
 | G11 | 交叉/分岔子區域(平面區域分割 + 持久子邊參照) | 未探針 |
 | G17 | 樣條 G2/節點權重編輯(先核實 PlaneGCS 與 OCCT 對同一曲線的表示) | 未探針 |
-| G19 | 自動尺寸配置(使用者指定基準與偏好並預覽,不以 Fix 全圖冒充) | 未探針 |
+| G19 | 自動尺寸配置(使用者指定基準與偏好並預覽,不以 Fix 全圖冒充) | 探針完成 (ADR 0223) | MVP 可行(基準+偏好+預覽+確認);3D/樣條延後 |
 
 **承諾狀態**:P5 維持候選——探針證實可行後才核定範圍;3D 草圖不在本輪承諾。
 
@@ -94,12 +94,12 @@
 | B3 | E03 macOS 瀏覽器鍵盤/焦點驗證 | **記「未驗」不阻塞** | CI macOS 入口結果視需要再補 |
 | C1 | CI 只跑精選測試清單 | **已修** | `.github/workflows/repository-integrity.yml` 加 `schedule`（每日 02:00 UTC）+ `full-suite` job（`npm test` 全量），僅在 schedule/workflow_dispatch 跑；PR/push 仍跑精選清單 |
 | C2 | PlaneGCS ~900 拘束 OOM | **已修（第一刀）** | `planegcs.ts` 加 `ANALYZE_BUDGET=300`（超過跳過 per-point probes，entityFreedom 不算）與 `SOLVE_BUDGET=1000`（超過直接 refused 並回 `sketch.tooLarge`），避免 WASM OOM；`budget-guard.test.ts` 2/2 綠 |
-| D1 | G08 獨立 Split 與參照繼承 | **現在做探針** | 先證實精確幾何/參照/求解可行 |
+| D1 | G08 獨立 Split 與參照繼承 | **探針完成 (ADR 0222)** | 直線/圓弧/圓可行；樣條/Bézier 延後；外部參照阻擋；估計 3–5 日進入實作 |
 | D2 | G09 自由曲線 offset | **留候選** | P5 中優先級中 |
 | D3 | G11 交叉/分岔子區域 | **留候選** | G10 之後再做（高風險） |
 | D4 | G17 樣條 G2/節點權重編輯 | **留候選** | P5 中後段 |
-| D5 | G19 自動尺寸配置 | **現在做探針** | 使用者指定基準與偏好並預覽 |
-| E1 | G16 選邊平行/頂點朝向入口 | **第一刀完成** | 多邊形第二點可吸附到現有線的角度（Enter 鎖定並加 parallel 拘束），大小仍由游標決定；`phase3-sketch-tools` + `manual-sketch-entry` 2/2 綠 |
+| D5 | G19 自動尺寸配置 | **探針完成 (ADR 0223)** | MVP 可行,估計 5–8 日;3D/樣條延後 |
+| E1 | G16 選邊平行/頂點朝向入口 | **第二刀完成** | 第一刀：吸附到現有線的角度（Enter 鎖定 + parallel 拘束）；第二刀：頂點可朝向現有點（hover/點選 point，angle 鎖定，無 parallel）；`phase3-sketch-tools` + `manual-sketch-entry` 2/2 綠 |
 
 **P5 探針順序（依裁決）**：D1（G08）→ D5（G19）→ D2（G09）→ D3（G11）→ D4（G17），每項先 2–4 日技術探針，證實可行才核定範圍。
 
