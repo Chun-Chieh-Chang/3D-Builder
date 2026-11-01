@@ -73,6 +73,7 @@ import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/rege
 import { contourChoices, findProfiles, outlineContains, pickContourSelection, regionOutline, type ContourChoice, type RegionOutline } from '@3db/sketch/profiles';
 import type { ModelItem } from '@3db/sketch/ops';
 import type { SolvedGeometry } from '@3db/sketch';
+import type { UnresolvedRef } from '../sketcher/sketch-references';
 import type { PickFilter, Snap, Viewer } from '@3db/render';
 import { captureVertexAnchor, resolveVertexAnchor } from './measureAnchors';
 import type { KernelApi, PartExportOptions, PartIgesOptions, ProbeApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
@@ -334,6 +335,8 @@ export interface UiState {
   dofMotion: { point: Id; at: [number, number]; probes: { axis: 'x' | 'y'; delta: [number, number] }[] } | null;
   /** What a hovered fix of an over-defined sketch would make of the geometry (G13, P4): the entities that move, dashed, before it is applied. */
   fixPreview: { shapes: SolvedGeometry[]; at: [number, number]; moved: boolean } | null;
+  /** The reference problems of the last rebuild, by feature (G15, P4): kept while a sketch is edited (its own rebuild-to-limit reports none) and cleared when the feature rebuilds cleanly. */
+  referenceProblems: { [id: Id]: UnresolvedRef[] };
   /** 「匯入 DXF」 (F2.6): the file read and what it holds, while its dialog is open. */
   dxfImport: { name: string; text: string; survey: DxfSurvey } | null;
   /** Feature whose 「確認刪除」 dialog is open (B2.8). */
@@ -603,6 +606,7 @@ class AppStore {
       contourHover: null,
       dofMotion: null,
       fixPreview: null,
+      referenceProblems: {},
       dxfImport: null,
       confirmDelete: null,
       whatsWrong: false,
@@ -2635,7 +2639,7 @@ class AppStore {
   private leaveSession(): void {
     this.sketcher = null;
     this.modelSnap = [];
-    this.set({ editing: null, sketchSolve: null, dimensionEdit: null, contourPick: null, contourHover: null, dofMotion: null, fixPreview: null, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
+    this.set({ editing: null, sketchSolve: null, dimensionEdit: null, contourPick: null, contourHover: null, dofMotion: null, fixPreview: null, referenceProblems: {}, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
     this.requestRebuild();
   }
 
@@ -3269,6 +3273,16 @@ class AppStore {
     });
   }
 
+  /** Keeps each feature's reference problems until the feature rebuilds cleanly (G15): a sketch being edited is rebuilt only up to itself, and that entry says nothing about its references. */
+  private referenceProblemsOf(result: RebuildPayload): { referenceProblems: { [id: Id]: UnresolvedRef[] } } {
+    const problems = { ...this.state.referenceProblems };
+    for (const f of result.features) {
+      if (f.unresolved && f.unresolved.length > 0) problems[f.id] = f.unresolved;
+      else if (f.status === 'ok') delete problems[f.id];
+    }
+    return { referenceProblems: problems };
+  }
+
   private async run(): Promise<void> {
     const worker = this.workerGeneration;
     this.inFlight = true;
@@ -3283,7 +3297,7 @@ class AppStore {
       if (worker !== this.workerGeneration) return; // the worker was replaced meanwhile: this is not an answer to use
       // A queued request supersedes this result: showing it would briefly contradict the current document.
       if (result.seq === this.seq && !this.pending) {
-        this.set({ result });
+        this.set({ result, ...this.referenceProblemsOf(result) });
         this.takePendingSketch();
         this.takePendingFeatureEdit();
         void this.refreshModelSnap();

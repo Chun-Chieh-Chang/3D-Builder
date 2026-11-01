@@ -109,8 +109,11 @@ import {
   type SketchFeature,
 } from '@3db/model';
 import type { RebuildPayload, SketchSolvePayload } from '../worker/protocol';
-import { constraintsOf, conditionEnds, dimensionText, measuredText } from '@3db/sketch/interact';
+import type { SolvedGeometry } from '@3db/sketch';
+import { constraintsOf, conditionEnds, dimensionText, measuredText, mid } from '@3db/sketch/interact';
 import { relationsOffered } from '../sketcher/relationsOffered';
+import { referenceRows, withReplacedRef, type ReferenceRow, type UnresolvedRef } from '../sketcher/sketch-references';
+import type { Candidate } from '@3db/naming';
 import { nearestElement } from '../state/candidates';
 import { store, useSketcherView, useStore, type FilletGroup } from '../state/store';
 import { accepts, attachFlip, axisDefinitionFor, fill, filled, planeDefinitionFor, pointDefinitionFor, slotsOf } from '../state/datumSlots';
@@ -437,6 +440,127 @@ function ConstraintAnalysisBox({f,selection,sketcher,solve}:{f:SketchFeature;sel
   </div>;
 }
 
+/** Where an entity of a trial solve would lie, as one point of it (the place the panel can quote). */
+function placeOf(g: SolvedGeometry): [number, number] | null {
+  switch (g.type) {
+    case 'point':
+      return g.p;
+    case 'line':
+      return mid(g.a, g.b);
+    case 'circle':
+    case 'arc':
+    case 'ellipse':
+      return g.c;
+    case 'spline':
+      return g.points[0] ?? null;
+    case 'text':
+      return g.at;
+  }
+}
+
+/**
+ * The sketch's model references as a list (G15, P4): what each follows, what following it means, and — when the rebuild could not
+ * resolve one — why, with the candidates found near where it used to be. Re-specifying runs a trial solve first: nothing is committed
+ * until the user confirms, and cancelling leaves the document exactly as it was.
+ */
+const NO_UNRESOLVED: UnresolvedRef[] = []; // a stable empty: a fresh array per getSnapshot would re-render the store forever
+
+function ReferencesBox({ f, sketcher }: { f: SketchFeature; sketcher: SketchController }) {
+  const unresolved = useStore((s) => s.referenceProblems[f.id] ?? NO_UNRESOLVED);
+  const [reassigning, setReassigning] = useState<ReferenceRow | null>(null);
+  const [trial, setTrial] = useState<{ candidate: Candidate; status: 'running' | 'ok' | 'fail'; state?: string; at?: [number, number]; message?: string } | null>(null);
+  const version = useRef(0);
+  useEffect(
+    () => () => {
+      version.current++;
+    },
+    [],
+  );
+  if (!f.entities.some((e) => modelRefOf(e))) return null;
+  const rows = referenceRows(f, unresolved);
+  const runTrial = (row: ReferenceRow, candidate: Candidate) => {
+    const current = ++version.current;
+    setTrial({ candidate, status: 'running' });
+    void sketcher
+      .trial(withReplacedRef(f, row.ref, candidate))
+      .then((payload) => {
+        if (current !== version.current) return;
+        if (payload.status === 'under' || payload.status === 'fully') {
+          const g = payload.geometry.get(row.entityId);
+          const at = g ? placeOf(g) : null;
+          setTrial({ candidate, status: 'ok', state: SKETCH_STATUS_LABEL[payload.status], ...(at ? { at } : {}) });
+        } else {
+          setTrial({ candidate, status: 'fail', message: payload.message ?? '' });
+        }
+      })
+      .catch((error: unknown) => {
+        if (current === version.current) setTrial({ candidate, status: 'fail', message: error instanceof Error ? error.message : String(error) });
+      });
+  };
+  const confirm = (row: ReferenceRow, candidate: Candidate) => {
+    store.replaceRef(f.id, row.ref, candidate);
+    version.current++;
+    setReassigning(null);
+    setTrial(null);
+  };
+  return (
+    <section className="pm-group" data-sketch-references>
+      <h4>{t('pm.modelReferences')}</h4>
+      <ul className="relation-list">
+        {rows.map((row) => (
+          <li key={`${row.entityId}:${row.ref.name}`} className={row.state === 'failed' ? 'over' : ''}>
+            <span>
+              <button type="button" className="link" onClick={() => sketcher.select([row.entityId])}>
+                {describe(f, row.entityId)}
+              </button>{' '}
+              <code>{row.ref.name}</code>{' '}
+              <span className="muted">{t(row.semantic)}</span>{' '}
+              {row.state === 'ok' ? (
+                <span className="ok-text">{t('reference.ok')}</span>
+              ) : (
+                <span className="error-text">
+                  {t('reference.failed')} ({t(row.reason === 'ambiguous' ? 'reference.reasonAmbiguous' : 'reference.reasonMissing')})
+                </span>
+              )}
+            </span>
+            {row.state === 'failed' && (
+              <button type="button" onClick={() => { setReassigning(reassigning?.entityId === row.entityId ? null : row); setTrial(null); }}>
+                {t('reference.reassign')}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {reassigning &&
+        (reassigning.candidates ?? []).map((candidate, i) => {
+          const mine = trial !== null && trial.candidate === candidate;
+          return (
+            <div key={candidate.name} className="reassign-trial">
+              <p className="hint">
+                {i === 0 ? t('pm.nearest.use') : t('wrong.useThis')} <code>{candidate.name}</code>
+                {mine && trial!.status === 'ok' && trial!.at && (
+                  <span className="ok-text"> {t('reference.trialOk', { state: trial!.state ?? '', x: trial!.at[0].toFixed(2), y: trial!.at[1].toFixed(2) })}</span>
+                )}
+                {mine && trial!.status === 'fail' && <span className="error-text"> {t('reference.trialFail', { message: trial!.message ?? '' })}</span>}
+              </p>
+              {!mine && (
+                <div className="relation-buttons">
+                  <button type="button" onClick={() => runTrial(reassigning, candidate)}>{t('reference.reassign')}</button>
+                </div>
+              )}
+              {mine && trial!.status === 'ok' && (
+                <div className="relation-buttons">
+                  <button type="button" onClick={() => confirm(reassigning, candidate)}>{t('reference.confirm', { name: candidate.name })}</button>
+                  <button type="button" onClick={() => { version.current++; setReassigning(null); setTrial(null); }}>{t('reference.cancel')}</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+    </section>
+  );
+}
+
 /** 「檢查草圖用於特徵」 (C1.35): what keeps the sketch from making a profile; click one to see where, and 「修復草圖」 for what needs no decision. */
 function CheckBox({ f, view, sketcher }: { f: SketchFeature; view: ControllerView | null; sketcher: SketchController }) {
   const issues = sketcher.issues();
@@ -748,6 +872,8 @@ function SketchPanel({ f }: { f: SketchFeature }) {
         {conflicting.length > 0 && <p className="error-text">{t('pm.conflict', { ids: conflicting.join(t('cmd.listSeparator')) })}</p>}
         {sketcher && solve?.status === 'under' && solve.entityFreedom && <FreedomList f={f} freedom={solve.entityFreedom} sketcher={sketcher} />}
       </section>
+
+      {sketcher && <ReferencesBox f={f} sketcher={sketcher} />}
 
       {view?.tool === 'select' && sketcher && (view.candidates?.length ?? 0) > 1 && (
         <section className="pm-group" data-sketch-candidates>

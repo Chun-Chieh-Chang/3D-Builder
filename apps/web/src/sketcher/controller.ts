@@ -1038,6 +1038,11 @@ export class SketchController {
     this.changed();
   }
 
+  /** Solves a what-if sketch without changing anything (G15): the reference pipeline runs in the worker, exactly as a rebuild would. */
+  trial(sketch: SketchFeature, doc?: PartDoc): Promise<SketchSolvePayload> {
+    return this.host.trial(sketch, doc);
+  }
+
   /**
    * A right click in the sketch (ADR 0176): what is under the pointer — an entity, else one of the sketch's axes — becomes the selection, unless it is
    * already part of it (then the selection is kept, and the menu's commands work on all of it). Nothing under the pointer: the selection is kept as it is.
