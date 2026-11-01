@@ -2,6 +2,10 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-11-01:鏡射以草圖軸參照時補上 hover 預覽(B1 裁決)
+
+使用者裁決 B1 為「修」。`apps/web/src/sketcher/controller.ts` 的 `operationPlan` 與 `operationClick` 在 mirror 工具下，原先只用 `this.hover`（`hitTest(geometry, …, axes=true)`）找軸；但 `hitTest` 的軸只在「附近沒有草圖曲線」時才被考慮，所以選取了實體、游標停在軸旁而旁邊又有曲線時，軸完全找不到 → 無 hover 預覽、點擊也無反應。修正：mirror 模式下優先 `this.axisAt(e)`（空幾何、軸永遠參與），找不到才退回 `pickedCurve`/`this.hover`。`mirror` 本身早已接受軸（`geometryOf` 退回到 `axisGeometry`）。`sketcher.test.ts` 80/80、`manual-sketch-axes` 與 `phase3-mirror` 2/2 綠，`typecheck` 0 錯誤。
+
 ## 2026-11-01:kernel moveFace 拒絕訊息對齊測試期望(A1 裁決)
 
 使用者裁決 A1 為「修訊息讓測試綠」。`packages/kernel/src/kernel.ts` 的 `moveFace` 在 `square && distance < 0` 且結果無效或體積近零時,原先丟 `edit.moveInvalid`（「移動面的結果不是有效的實體」）,測試期望 `edit.moveTooFar`（「超過了這個面後面的厚度」）。兩個失敗點（形狀無效、體積近零）改為在該條件下丟 `edit.moveTooFar`,使 `direct-edit.test.ts` 19/19 綠；kernel 套件 104/104 全過。`typecheck` 0 錯誤。

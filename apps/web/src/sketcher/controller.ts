@@ -2121,6 +2121,20 @@ export class SketchController {
    * then offers nothing instead of a preview the click could not submit.
    */
   private operationPlan(e: PointerInput): { doc: PartDoc; target: Id; shapes: PreviewShape[] } | null {
+    if (this.tool === 'mirror' && this.picks.length > 0) {
+      // a sketch axis (ADR 0170) is not in the sketch's geometry, so it is only found by axisAt (empty geometry, axes always on);
+      // the generic hover below skips axes whenever a curve is nearby, which is why mirroring across an axis showed no preview
+      const geometry = this.geometry();
+      const sketch = this.sketch(), ids = this.allocator();
+      const axisHit = this.axisAt(e);
+      const hoverHit = this.hover;
+      const h = axisHit ?? hoverHit;
+      const g = h && geometryOf(geometry, h.id);
+      if (!h || !g || g.type === 'point') return null;
+      const plan = mirror(sketch, geometry, ids, this.picks, h.id);
+      if ('error' in plan) return null;
+      return { doc: this.host.doc(), target: h.id, shapes: editPreviewShapes(plan.edit, geometry) };
+    }
     if (this.tool === 'offset') {
       // the offset needs no curve under the pointer: the cursor only says which side the copy goes to
       if (this.picks.length === 0) return null; // the tool takes a pre-selection (setTool refuses without one)
@@ -2227,8 +2241,12 @@ export class SketchController {
         this.run(offset(sketch, geometry, ids, this.picks, this.options.offsetDistance, e.p, { both: this.options.offsetBoth, caps: this.options.offsetCaps }), () => this.setTool('select'));
         return;
       case 'mirror': {
-        const hit = this.pickedCurve(e, true);
-        if (hit) this.run(mirror(sketch, geometry, ids, this.picks, hit.id), () => this.setTool('select'));
+        // a sketch axis is not in the geometry, so pickedCurve (which reads geometryOf) misses it whenever a curve is nearby;
+        // axisAt always considers the axes, so prefer it and fall back to a drawn line
+        const axisHit = this.axisAt(e);
+        const curveHit = this.pickedCurve(e, true);
+        const id = axisHit?.id ?? curveHit?.id;
+        if (id) this.run(mirror(sketch, geometry, ids, this.picks, id), () => this.setTool('select'));
         return;
       }
     }
