@@ -2,7 +2,6 @@
   "_about": "Which help topics (docs/help-plan.md) each item of docs/manual-verification.html is about. When an item is marked 有問題 and fixed, correct these topics in packages/i18n/src/zh-TW/help.ts too. tests/phase8/help.test.ts checks that the items and the topics exist.",
   "_untied": {
     "concept.overview": "general, not one item",
-    "return-assembly": "no item of the manual opens a part from an assembly and goes back yet",
     "rebuild": "no item of the manual forces a rebuild yet",
     "sketch-dxf": "DXF import into a sketch (F2.6, ADR 0219): no item of the manual imports a DXF yet",
     "thread": "real 3D thread feature (ADR 0123, thread-plan.md)",
@@ -27,19 +26,7 @@
     "tool-bezier": "Sketch constraint expansion; dedicated e2e, no manual item yet",
     "sheet-unfold": "Editable sheet manufacturing, ADR 0199",
     "sheet-unfold-selected": "Partial sheet unfolding, ADR 0200",
-    "sheet-refold": "Editable sheet manufacturing, ADR 0199",
-    "export-iges": "IGES export (F1.4); no manual item yet",
-    "open-drawing-part": "opening the part a drawing shows, and going back to the drawing: no item of the manual yet",
-    "drw-open-part": "the drawing's own 開啟零件 button: no item of the manual yet",
-    "delete-feature": "deleting a feature from the tree (and the features that use it): no item of the manual yet",
-    "delete-component": "deleting a component from an assembly: no item of the manual yet",
-    "relink-component": "relinking a component to another part file (a lost part): no item of the manual yet",
-    "open-component": "opening a component's part file from the tree: no item of the manual yet",
-    "sketch-delete": "deleting sketch entities, dimensions or relations: no item of the manual yet",
-    "sketch-select-chain": "selecting a whole chain of touching entities: no item of the manual yet",
-    "drw-datum": "datum symbol (GD&T): no item of the manual yet; K2 only asks about the title block and the tolerance table",
-    "drw-fcf": "geometric tolerance frame (ISO 1101): no item of the manual yet",
-    "drw-surface": "surface roughness symbol: no item of the manual yet"
+    "sheet-refold": "Editable sheet manufacturing, ADR 0199"
   },
   "C1": [
     "equations",
@@ -412,5 +399,36 @@
     "tool-scaleEntities",
     "tool-linearPattern",
     "tool-circularPattern"
+  ],
+  "C28": [
+    "delete-feature"
+  ],
+  "C29": [
+    "sketch-delete",
+    "sketch-select-chain"
+  ],
+  "C30": [
+    "export-iges"
+  ],
+  "D11": [
+    "open-component",
+    "return-assembly"
+  ],
+  "D12": [
+    "delete-component"
+  ],
+  "D13": [
+    "relink-component"
+  ],
+  "F8": [
+    "open-drawing-part",
+    "drw-open-part"
+  ],
+  "F9": [
+    "drw-datum",
+    "drw-fcf"
+  ],
+  "F10": [
+    "drw-surface"
   ]
 }

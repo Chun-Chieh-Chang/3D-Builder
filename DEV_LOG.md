@@ -5091,3 +5091,21 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 - 隔離 worktree 完整 `verify:ui` 253／253 通過，與主工作目錄逐一比對本批 29 個實作與測試檔內容一致。測試期間主線另有 ADR 0203 的伸長命令修正提交，因此全輪結果對應的是基準 `472dd23` 加本批變更；目前主線的 typecheck、lint:rules／deps／i18n／repo 全數通過。真實零件與相關測試共 68 項通過。
 - 2026-11-02 接續：以共同基準 `472dd23` 將本批變更三方合併到遠端 `a496d55`，保留新版 STL 匯入移轉及其說明；遠端已有等效的連動工程圖置中測試修正，沿用遠端版本。ADR 避開遠端已使用的 0221–0223，改為 0224–0226。合併後型別與四項 lint 守門、真實零件在內 68 項測試、6 項工程圖瀏覽器案例及完整 `verify:ui` 261／261 均通過。
 - 推送前納入遠端求解器修正 `da7c8e6`，重新產生盤點；型別檢查、lint:rules／deps／i18n／repo 與 70 項工程圖及求解器相關測試通過，包含使用者 TM0002138 實際零件。隔離 worktree 的完整 `verify:ui` 263／263 通過，含新增的大型草圖求解與拒絕案例。
+
+### 2026-11-02 手冊新增九個實機驗證項目（C28–C30、D11–D13、F8–F10）
+
+- 背景：手冊待辦盤點後，`docs/help-links.json` 還有 13 個說明主題沒有對應的手冊項目（列在 `_untied`）：刪除特徵、草圖刪圖元與選擇鏈、輸出 IGES、從組合件開啟零件與返回、刪除零組件、重新指定零件檔、從工程圖開啟零件與返回、基準符號、幾何公差框、表面粗糙度。使用者要求補上手冊項目。
+- 新增九項：C28「從設計樹刪除特徵（連子特徵與被吸收的草圖）」、C29「草圖：刪除圖元與選擇鏈」、C30「輸出 IGES（給讀修剪曲面的軟體）」、D11「從組合件開啟零件，改完再回到組合件」、D12「從組合件刪除零組件（連同它的結合）」、D13「重新指定零件檔（檔案改名或搬走之後）」、F8「從工程圖開啟零件，改完再回到工程圖」、F9「工程圖：基準符號與幾何公差框」、F10「工程圖：表面粗糙度符號」。
+- 每項的步驟都對照真實程式碼寫成，不是憑印象：刪除計畫在 `packages/regen/src/dag.ts` 的 `deletion()`（子特徵遞迴、被吸收的草圖一併回報）、草圖圖元的連帶移除在 `packages/model/src/sketch-rules.ts` 的 `removalSet`、零組件刪除連結合在 `packages/model/src/assembly.ts` 的 `deleteComponents`、重新指定在 `relinkFile`、公差種類表在 `packages/model/src/drawingAnnotations.ts` 的 `CHARACTERISTIC_RULES`、粗糙度範圍在 `packages/model/src/drawing.ts` 的 `RA_MIN`／`RA_MAX`、對話框與面板的字串在 `apps/web/src/components/Dialogs.tsx` 與 `AnnotationPanel.tsx`。
+- 每一項最上面的框寫清楚「已自動驗過哪一段」與「還沒有人用眼睛看過的」，並附上真的那一段（單元測試或瀏覽器重播腳本的檔名）：`tests/phase1/tree.test.ts`、`tests/phase8/context-menus.test.ts`、`manual-context-menus.js`（第 12／16／17 步）、`phase8-iges.js`、`phase2-assembly.js`（第 1105–1140 行）、`manual-drawing-open-part.js`（第 1–8 步）、`tests/phase5/drawing-gdt.test.ts`、`tests/phase5/drawing-surface-finish.test.ts`。九項一律 `data-auto="part"`，因此在「需人工」篩選下看得見，也會出現在「複製結果」的「還沒做」清單裡。
+- 說明對照：`docs/help-links.json` 新增九個項目鍵、移除 13 個已不再需要的 `_untied`（守門禁止已涵蓋的主題仍留在 `_untied`）；`tests/phase8/help-manual.test.ts` 的 `RUNTIME_LABELS` 補上 `open-component`（它的按鈕文字隨該零組件是不是次組合件而變，程式裡抓標籤的 regex 抓不到，只能由人名表指定）。
+- 手冊內頁腳本的 `META` 原本是手寫的項目清單，停在 92 項，而且 C23–C27 與 D10 早已漏掉——那幾項在「複製結果」與「還沒做」清單裡根本不會出現。改成從 DOM 的每一個 `.item` 讀出（id／章節／標籤／標題），漏一項就不可能再發生；I5 的標題也順帶跟 DOM 一致（原清單寫的是舊標題）。
+- 手冊開頭的「現在還剩（2026-11-02）」清單補上 ⑩–⑬ 九個新項目；`docs/repository-inventory.md` 由 `npm run docs:sync` 產生，實機清單項目 92 → 101。
+
+紅隊四問（AGENTS.md §2.1）：
+1. 輸入破壞：本批不改任何命令層或參數解析，只改文件與守門測試；手冊裡出現的數值（Ra 0.008–400 µm、公差種類可用欄位、刪除計畫）全部從實作讀出，沒有在測試裡 hardcode 假資料。
+2. 幾何自相交：不涉及幾何運算。
+3. 依賴鏈完整性：每個新項目都對應真實存在的說明主題；`help.test.ts` 的四條守門（項目在手冊裡、主題存在、`_untied` 不與已涵蓋的主題重疊、每個有內文的主題都要被某一項或 `_untied` 涵蓋）與 `help-manual.test.ts` 的兩條（每個主題都以程式真的會顯示的名字命名、手冊與對照檔一致）全數通過。
+4. 規格真實性：「應該看到」寫的是程式真的會顯示的字串（對照 `packages/i18n/src/zh-TW/` 的 `del.*`、`delAsm.*`、`relink.*`、`drawingUi.*`、`drawing.*`、`export.*`），不是憑印象。
+
+驗證：`npm run typecheck`、`lint:rules`、`lint:deps`、`lint:i18n`、`lint:repo` 全數通過；手冊頁面在瀏覽器實測（101 個項目、META 101、九個新項目都在「還沒做」清單、進度 70/101）；簡體字基線差測：本次改動沒有引入任何 HEAD 基線集合以外的新漢字。

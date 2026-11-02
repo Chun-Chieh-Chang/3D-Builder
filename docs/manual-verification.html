@@ -85,7 +85,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <nav><ol><li><a href="#prep">0. 開始之前（只做一次）<span class="cnt" data-sec="prep"></span></a></li><li><a href="#desktop">A. 桌面版安裝<span class="cnt" data-sec="desktop"></span></a></li><li><a href="#basic">B. 基礎功能殘留<span class="cnt" data-sec="basic"></span></a></li><li><a href="#p3a">C. 零件建模（Phase 3a）<span class="cnt" data-sec="p3a"></span></a></li><li><a href="#p3b">D. 組合件（Phase 3b）<span class="cnt" data-sec="p3b"></span></a></li><li><a href="#p4a">E. 夾治具（Phase 4a）<span class="cnt" data-sec="p4a"></span></a></li><li><a href="#p5">F. 工程圖（Phase 5）<span class="cnt" data-sec="p5"></span></a></li><li><a href="#p4b">G. 檢具型面塊（Phase 4b）<span class="cnt" data-sec="p4b"></span></a></li><li><a href="#p6">H. 塑膠件（Phase 6）<span class="cnt" data-sec="p6"></span></a></li><li><a href="#p7">I. 鈑金（Phase 7）<span class="cnt" data-sec="p7"></span></a></li><li><a href="#samples">J. 需要真實樣本的驗證<span class="cnt" data-sec="samples"></span></a></li><li><a href="#standards">K. 對照你的標準<span class="cnt" data-sec="standards"></span></a></li><li><a href="#cleanup">L. 清理與收尾<span class="cnt" data-sec="cleanup"></span></a></li></ol></nav>
 <main>
 <div class="lead">
-<p><b>這份清單是什麼：</b><code>npm run check</code> 通過 364 個測試檔、4339 個測試（另有 4 檔／26 項略過）。截至 2026-11-02，無頭 Chromium 的 <code>npm run verify:ui</code> 有 <b>264/264 個 UI 重播通過</b>，並在指定資料夾保留逐步截圖；自動腳本使用合成指標事件，因此不等同實體滑鼠或其他裝置驗證。部分截圖已檢視，逐項覆蓋見 <code>docs/verification-coverage.md</code>。另外 <b>14 項是你自己確認過的</b>（P1–P3、A1、B1、C1–C5、C17、D3、D8、H9，寫在各項最上面的藍框），也預設隱藏、算已處理，換電腦或換瀏覽器不會再顯示成「未做」。留下來的是<b>尚需實體操作、外部軟體、真實參考數據或你決定</b>的項目：每一項最上面的綠／黃框說明已驗與待驗範圍。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。<b>現在還剩（2026-11-02）：</b>① <b>C27</b> 用滑鼠看草圖移動／複製／旋轉／縮放與陣列的預覽；② <b>D9、D10</b> 用實體滑鼠試量測標籤、抓點與組合件的座標軸把手；③ <b>F7</b> 用實體滑鼠試標註、剖面線與把尺寸線拖進視圖；④ <b>F6</b> 用 Chrome 開 PDF；⑤ <b>F4</b> 孔標註用語合不合公司習慣；⑥ <b>G5、I9</b> 在外部 CAD／雷射軟體驗證（I9 已在 eDrawings 開過，沒有其他 CAD 可選「略過」）；⑦ <b>I10</b> 真人走一遍鈑金支架；⑧ <b>J 章</b>公開 CAD 樣本已取得並通過匯入測試，仍待用外部 CAD 及 SolidWorks 對照；⑨ <b>K 章</b>要你決定。另 D9 的 375／390／768 viewport 尚未驗（本機頁面的瀏覽器權限設定阻擋直接開啟）；L 章尚有需許可的資料夾清理與選做收尾。</p>
+<p><b>這份清單是什麼：</b><code>npm run check</code> 通過 364 個測試檔、4339 個測試（另有 4 檔／26 項略過）。截至 2026-11-02，無頭 Chromium 的 <code>npm run verify:ui</code> 有 <b>264/264 個 UI 重播通過</b>，並在指定資料夾保留逐步截圖；自動腳本使用合成指標事件，因此不等同實體滑鼠或其他裝置驗證。部分截圖已檢視，逐項覆蓋見 <code>docs/verification-coverage.md</code>。另外 <b>14 項是你自己確認過的</b>（P1–P3、A1、B1、C1–C5、C17、D3、D8、H9，寫在各項最上面的藍框），也預設隱藏、算已處理，換電腦或換瀏覽器不會再顯示成「未做」。留下來的是<b>尚需實體操作、外部軟體、真實參考數據或你決定</b>的項目：每一項最上面的綠／黃框說明已驗與待驗範圍。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。<b>現在還剩（2026-11-02）：</b>① <b>C27</b> 用滑鼠看草圖移動／複製／旋轉／縮放與陣列的預覽；② <b>D9、D10</b> 用實體滑鼠試量測標籤、抓點與組合件的座標軸把手；③ <b>F7</b> 用實體滑鼠試標註、剖面線與把尺寸線拖進視圖；④ <b>F6</b> 用 Chrome 開 PDF；⑤ <b>F4</b> 孔標註用語合不合公司習慣；⑥ <b>G5、I9</b> 在外部 CAD／雷射軟體驗證（I9 已在 eDrawings 開過，沒有其他 CAD 可選「略過」）；⑦ <b>I10</b> 真人走一遍鈑金支架；⑧ <b>J 章</b>公開 CAD 樣本已取得並通過匯入測試，仍待用外部 CAD 及 SolidWorks 對照；⑨ <b>K 章</b>要你決定；⑩ <b>C28、C29</b> 用滑鼠看從設計樹刪除特徵（含子特徵與被吸收的草圖）、草圖的刪除圖元與選擇鏈；⑪ <b>D11、D12、D13</b> 用滑鼠看從組合件開啟零件再回來、刪除零組件、重新指定零件檔；⑫ <b>F8、F9、F10</b> 用滑鼠看從工程圖開啟零件再回來、基準符號與幾何公差框、表面粗糙度符號；⑬ <b>C30</b> 用別的軟體讀輸出的 IGES。另 D9 的 375／390／768 viewport 尚未驗（本機頁面的瀏覽器權限設定阻擋直接開啟）；L 章尚有需許可的資料夾清理與選做收尾。</p>
 <p><b>怎麼用：</b>點項目標題展開；做完在右邊的下拉選單選「通過」「有問題」「略過」，並在備註寫下觀察。進度會自動存在這個瀏覽器裡。全部做完（或做到一個段落）按上方的「複製結果」把整份貼給我。</p>
 <p><b>建議順序：</b>先做 0（準備）→ C（零件，每項十分鐘內）→ D、E（組合件與夾具）→ F（工程圖）→ H、I（塑膠與鈑金），標「必做」的優先；標「需樣本」「需你決定」的是等你提供資料或下決定，不用現在做。</p>
 <p class="stat">產生日期 2026-10-04，2026-10-06、2026-10-08、2026-10-09、2026-11-02 更新（本次 UI 264/264、測試 4339 通過／26 略過、正式建置通過）；對應的程式版本：提交 187e325 之後，零件格式 Schema 87、組合件格式 Schema 7、工程圖格式 Schema 38（工程圖的視圖可以用滑鼠拖曳改位置、拖右下角的方塊改比例，「最適比例」連標註一起算；線性尺寸的尺寸線可以畫在視圖上，見 F7）。下文的「驗證資料夾」指 P2 用 KIT_OUT 做出來的那個資料夾（本文的例子寫 D:\3DB實機確認，你的在哪裡就用哪裡）。</p>
@@ -616,7 +616,86 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>每個工具的結果與上面說的一致；「保持關係」開與關的差別如步驟 1、2；打錯的數字都有說明且草圖不變。</li></ul>
 <p class="report"><b>有問題時請回報：</b>哪個工具、哪一步、畫面訊息原文、和預期的差別。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details></section><section id="p3b" class="sec"><h2>D. 組合件（Phase 3b）</h2><p class="intro">前置：先做一個小組合件。「檔案」→「新組合件」→ 開始組合件，選驗證資料夾（D:\3DB實機確認），點 locating-plate 按 ✓ 放在原點（固定），再用「組合件」→「插入零組件」插入 diamond-pin 兩次。用「結合」把銷插進板的孔（同軸心加重合）。存檔成 小夾具.3dba。</p><details class="item" id="item-D1" data-id="D1" data-auto="full" data-sec="p3b" data-tag="core">
+</div></details><details class="item" id="item-C28" data-id="C28" data-auto="part" data-sec="p3a" data-tag="core">
+<summary><span class="iid">C28</span><span class="ttl">從設計樹刪除特徵（連子特徵與被吸收的草圖）</span><span class="tag t-core">必做</span>
+<select class="st" aria-label="C28 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="auto part"><b>已自動驗過一部分（2026-11-02）。</b>要刪哪些東西（哪些算子特徵、哪些算被吸收的草圖）由 <code>packages/regen/src/dag.ts</code> 的 <code>deletion()</code> 決定，<code>tests/phase1/tree.test.ts</code> 有測；設計樹的右鍵選單確實有「刪除…」這條，<code>tests/phase8/context-menus.test.ts</code> 會檢查。<b>還沒有人用眼睛看過的：</b>確認對話框勾選後的畫面、刪完之後設計樹與 3D 畫面的樣子、Ctrl+Z 復原。請照下面做。</p>
+<p class="why"><b>為什麼要做：</b>刪除是模型裡最容易出事的一步：刪掉別的特徵還在用的東西，會留下一堆紅色錯誤。這一項看確認對話框怎麼說話、勾選框怎麼影響結果、復原是否可靠。</p>
+<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>刪除…。這一項驗出問題、修好時，這些說明也要一起改。</p>
+<p class="why"><b>用這個檔案：</b>你自己做的一個零件，有草圖、伸長與圓角三層（做過 C6、C8、C23 就有）。</p>
+<h4>先準備</h4><p>新零件，在「前基準面」畫一個草圖（一個長方形），草圖按確定後伸長 10 mm，再在伸長出來的長邊上加一個圓角。左邊設計樹應該看得到「草圖1」「伸長1」「圓角1」三列。</p>
+<h4>怎麼做</h4><ol>
+<li>在左邊設計樹的「伸長1」那一列按右鍵。<span class="see">選單出現，裡面有「刪除…」。</span></li>
+<li>按「刪除…」。<span class="see">跳出標題為「確認刪除」的對話框，下面寫「將刪除以下特徵：」，再下面列出要刪的特徵；對話框裡還有勾選框「同時刪除子特徵（圓角1）」和「同時刪除被吸收的特徵（草圖1）」，兩個都沒有勾。（括號裡的名字依你的模型而定。）</span></li>
+<li>勾「同時刪除子特徵（圓角1）」，看對話框下半部有什麼變化，再取消勾。<span class="see">勾起來時，下面那行灰色說明不見了；取消勾時又出現：「子特徵會保留，但會因為遺失參考而顯示錯誤，之後可以重新選擇參考或刪除它們。」</span></li>
+<li>兩個勾選框都不勾，直接按「刪除」。<span class="see">伸長1 從設計樹消失；圓角1 還在，但變成紅色（它的錯誤是「圓角之前沒有本體」，按左邊的「錯誤為何？」看得到）；草圖1 也留著。</span></li>
+<li>按 Ctrl+Z。<span class="see">伸長1 回來，圓角1 也不再是紅色。</span></li>
+<li>再刪一次「伸長1」，這次把兩個勾選框都勾起來，按「刪除」。<span class="see">「草圖1」「伸長1」「圓角1」三列都不見了，沒有留下紅色的特徵。</span></li>
+<li>按 Ctrl+Z 復原，然後改刪草圖：在設計樹的「草圖1」按右鍵 →「刪除…」。<span class="see">對話框裡只有「同時刪除子特徵（伸長1、圓角1）」一個勾選框，沒有「被吸收的特徵」那一個。</span></li>
+<li>在 3D 畫面裡的模型本體上按右鍵。<span class="see">選單裡沒有「刪除…」：刪除特徵這條路只在設計樹裡。</span></li>
+</ol>
+<h4>應該看到</h4><ul>
+<li>要刪的東西一定先列在對話框裡，看得清楚才會被刪。</li>
+<li>不勾子特徵時，留下來的那個會變紅色並說明原因，不會假裝沒事。</li>
+<li>Ctrl+Z 一定能回來。</li>
+</ul>
+<p class="report"><b>有問題時請回報：</b>刪的是哪一個特徵、對話框上寫了什麼、刪完設計樹與畫面的樣子、和預期的差別。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details>
+<details class="item" id="item-C29" data-id="C29" data-auto="part" data-sec="p3a" data-tag="core">
+<summary><span class="iid">C29</span><span class="ttl">草圖：刪除圖元與選擇鏈</span><span class="tag t-core">必做</span>
+<select class="st" aria-label="C29 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="auto part"><b>已自動重播一部分（2026-11-02）。</b>腳本 <code>manual-context-menus.js</code> 用真實滑鼠事件重播了：圖元上的右鍵選單有「選擇鏈」「刪除」兩條、對矩形的一條邊按「選擇鏈」會選到四條邊、對一條線按「刪除」會刪掉那條線。<b>還沒有人用眼睛看過的：</b>刪圖元時連帶刪掉尺寸與限制條件、選擇鏈在三岔路口停下、圓形不延伸、Delete 鍵。請照下面做。</p>
+<p class="why"><b>為什麼要做：</b>草圖裡刪錯一個圖元，尺寸與限制條件會跟著沒了，圖形也會變形；「選擇鏈」則是整條邊一次選起來的省力做法。這一項看這兩件事的行為對不對。</p>
+<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>刪除、選擇鏈。這一項驗出問題、修好時，這些說明也要一起改。</p>
+<p class="why"><b>用這個檔案：</b>新零件，在「前基準面」進入草圖。</p>
+<h4>先準備</h4><p>按「邊角矩形」畫一個約 20×10 的矩形，在矩形左下角那條邊上按「智慧型尺寸」，標出那條邊的長度 20。再從矩形右上角往右上方畫一條斜線，與矩形共用那個角（斜線的另一端是自由的）。</p>
+<h4>怎麼做</h4><ol>
+<li>按 Esc 結束目前的工具（回到選取工具），點矩形左下角那條邊把它選起來，按 <kbd>Delete</kbd>。<span class="see">那條邊消失，連帶量它的尺寸 20 也一起不見了（尺寸靠著被刪的邊，沒有別的東西可以量）；左邊的「草圖狀態」變成「定義不足」。</span></li>
+<li>按 Ctrl+Z。<span class="see">邊與尺寸都回來，草圖狀態也回到原來。</span></li>
+<li>在矩形左下角那條邊上按右鍵 →「選擇鏈」。<span class="see">矩形的四條邊全部被選起來（不是只有右鍵點的那一條）。</span></li>
+<li>在斜線上按右鍵 →「選擇鏈」。<span class="see">只有斜線被選起來：那個角有三條線交會（矩形的兩條邊加斜線），是三岔路口，鏈走到這裡就停。</span></li>
+<li>畫一條獨立的直線（兩端都不碰到別的圖元），在它上面按右鍵 →「選擇鏈」。<span class="see">只有它自己被選起來，沒有別的線跟著被選。</span></li>
+<li>畫一個圓，在圓上按右鍵 →「選擇鏈」。<span class="see">只有圓被選起來；圓沒有兩端，所以不會往外延伸。</span></li>
+<li>在矩形的一條邊上按右鍵 →「刪除」。<span class="see">那條邊不見；靠著它的尺寸也一起不見。</span></li>
+<li>在草圖的空白處按右鍵。<span class="see">選單裡是最近用過的畫圖工具加上「正視於」「離開草圖」，沒有「刪除」也沒有「選擇鏈」（沒有點到圖元時不會出現這兩條）。</span></li>
+</ol>
+<h4>應該看到</h4><ul>
+<li>刪掉一條邊，靠著它的尺寸與限制條件一起消失，不會留下指向不存在圖元的殘骸。</li>
+<li>「選擇鏈」會取代原本的選取：選了整條鏈之後，再選另一條線，選取就換成那條線的鏈。</li>
+<li>三岔路口是鏈的終點，圓形不會延伸。</li>
+</ul>
+<p class="report"><b>有問題時請回報：</b>哪個圖元、刪掉之後還剩什麼（截圖最好）、選取範圍和預期差在哪裡。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details>
+<details class="item" id="item-C30" data-id="C30" data-auto="part" data-sec="p3a" data-tag="ext">
+<summary><span class="iid">C30</span><span class="ttl">輸出 IGES（給讀修剪曲面的軟體）</span><span class="tag t-ext">需別的軟體</span>
+<select class="st" aria-label="C30 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="auto part"><b>已自動重播大部分（2026-11-02）。</b>腳本 <code>phase8-iges.js</code> 在真實瀏覽器裡走過「檔案」→「輸出 IGES」的對話框，用修剪曲面（mm）與實體 (B-rep)（inch）各輸出一次，檔名是 .igs，再把它讀回來驗體積與資料格式。<b>只剩：</b>用別的軟體（eDrawings、SolidWorks、Inventor、FreeCAD…）實際打開看看，這一步自動做不了。</p>
+<p class="why"><b>為什麼要做：</b>IGES 是「修剪曲面」交換的格式，很多只讀不寫的 CAD 讀得懂。輸出時要選「修剪曲面」還是「實體 (B-rep)」，兩者被別的軟體接受的範圍不同；單位與座標系統也會影響匯入後的位置。</p>
+<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>輸出 IGES。這一項驗出問題、修好時，這些說明也要一起改。</p>
+<p class="why"><b>用這個檔案：</b>一個有本體的零件（只有草圖不行，要已經長出實體）。</p>
+<h4>先準備</h4><p>新零件，畫一個草圖伸長成方塊（順便上個顏色，測試「帶著顏色」）。</p>
+<h4>怎麼做</h4><ol>
+<li>按上方功能列的「檔案」→「輸出 IGES」。<span class="see">跳出標題為「輸出 IGES」的對話框，上面有一行說明：修剪曲面幾乎每個軟體都讀得到，讀的一方會縫成實體；實體 (B-rep) 讀回來直接是實體，但有些軟體不支援。組合件請用「輸出 STEP」。</span></li>
+<li>看對話框裡的選項：「寫法」有「修剪曲面」與「實體 (B-rep)」；「單位」有 mm 與 inch；「帶著顏色」預設是勾的；「座標系統」預設是「零件原點」。<span class="see">座標系統的下拉清單還會列出這個零件裡的座標系統（有的話）。</span></li>
+<li>維持「修剪曲面」「mm」「帶著顏色」勾著、「座標系統」是「零件原點」，按「輸出」。<span class="see">瀏覽器下載一個檔案，檔名是「零件名.igs」（零件名是這個零件的名稱：存過檔的就是檔名，沒存過的就是零件名稱或「零件1」）；畫面出現訊息「已輸出 零件名.igs」。</span></li>
+<li>把這個 .igs 用另一個軟體打開（eDrawings 或任何讀 IGES 的軟體）。<span class="see">形狀與零件一樣，位置與大小也對；顏色有沒有跟著過來不一定，各軟體不同。</span></li>
+<li>回到程式，再輸出一次，這次「寫法」改選「實體 (B-rep)」、「單位」改選 inch，按「輸出」。<span class="see">檔名相同（會多出一個 .igs，或覆蓋前一個，依瀏覽器而定）；用會讀 IGES 的軟體打開，單位變成英吋。</span></li>
+<li>把零件存成中文檔名（例如「測試零件.3dbx」），再輸出一次 IGES。<span class="see">IGES 的內容只能寫 ASCII，所以檔案內部的名稱每一個非 ASCII 的字都換成一條底線，訊息變成「已輸出 測試零件.igs IGES 只能寫 ASCII 字元：名稱「測試零件」寫成「____」」（四個字就是四條底線）。下載的檔名還是「測試零件.igs」（檔名不吃這條限制）。</span></li>
+</ol>
+<h4>應該看到</h4><ul>
+<li>兩種寫法都能輸出，檔案確實下載下來。</li>
+<li>用別的軟體打開，形狀與位置正確。</li>
+<li>中文名稱的警告有說清楚是什麼被換掉了。</li>
+</ul>
+<p class="report"><b>有問題時請回報：</b>用的是哪個軟體、哪一種寫法、打開之後看到的樣子（截圖最好）、和預期的差別。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details>
+</section><section id="p3b" class="sec"><h2>D. 組合件（Phase 3b）</h2><p class="intro">前置：先做一個小組合件。「檔案」→「新組合件」→ 開始組合件，選驗證資料夾（D:\3DB實機確認），點 locating-plate 按 ✓ 放在原點（固定），再用「組合件」→「插入零組件」插入 diamond-pin 兩次。用「結合」把銷插進板的孔（同軸心加重合）。存檔成 小夾具.3dba。</p><details class="item" id="item-D1" data-id="D1" data-auto="full" data-sec="p3b" data-tag="core">
 <summary><span class="iid">D1</span><span class="ttl">剛性次組合件（3b-1）</span><span class="tag t-core">必做</span>
 <select class="st" aria-label="D1 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
 <div class="inner">
@@ -759,6 +838,84 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 </ol>
 <h4>應該看到</h4><ul><li>每種把手只做一種動作；結合鎖住的方向不動；步進貼齊；右鍵的旋轉與座標輸入正確；每次拖曳一個復原步驟。</li></ul>
 <p class="report"><b>有問題時請回報：</b>哪個零組件、哪個把手、畫面訊息原文、和預期的差別。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details>
+<details class="item" id="item-D11" data-id="D11" data-auto="part" data-sec="p3b" data-tag="core">
+<summary><span class="iid">D11</span><span class="ttl">從組合件開啟零件，改完再回到組合件</span><span class="tag t-core">必做</span>
+<select class="st" aria-label="D11 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="auto part"><b>已自動驗過一部分（2026-11-02）。</b>零組件右鍵選單裡確實有「開啟零件」「開啟次組合件」「重新指定零件檔…」「刪除…」這幾條，<code>manual-context-menus.js</code> 會檢查。<b>還沒有人用眼睛看過的：</b>開啟之後的畫面、「返回組合件」按鈕、存檔後回來零組件有沒有變。請照下面做。</p>
+<p class="why"><b>為什麼要做：</b>「開啟零件」是從組合件跳進零件修改、再跳回來的路徑；一次只能開一份文件，所以中間有「要不要先存檔」「回到哪裡」這兩個問題。做錯了會存錯檔或存到零件上。</p>
+<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>開啟零件／開啟次組合件、返回組合件。這一項驗出問題、修好時，這些說明也要一起改。</p>
+<p class="why"><b>用這個檔案：</b>D 章那個小夾具（定位板 + 兩支削邊銷）。</p>
+<h4>先準備</h4><p>打開 D 章做的 小夾具.3dba，先不要存任何改動。</p>
+<h4>怎麼做</h4><ol>
+<li>在 3D 畫面裡的定位板上按右鍵。<span class="see">選單出現，第一條是「開啟零件」（如果右鍵的是一個次組合件，第一條會變成「開啟次組合件」）；再往下有「重新指定零件檔…」，最後面有「刪除…」。</span></li>
+<li>在左邊的設計樹上對定位板那一列按右鍵，選單跟 3D 畫面裡的一樣。<span class="see">同一組選單；在哪裡點都找得到同一條路。</span></li>
+<li>按「開啟零件」。<span class="see">如果組合件有沒存的改動，先跳出「要儲存變更嗎？」：「「{組合件名}」有尚未儲存的變更。開啟零件之前要先儲存嗎？」，下面還有一行小字「一次開一份文件：不儲存的話，「返回組合件」會回到上次儲存的組合件。」，三個按鈕是「儲存」「不儲存」「取消」。沒有改動就直接開。</span></li>
+<li>按「不儲存」。<span class="see">零件開了：左邊的樹變成零件的設計樹，最上面有一條「返回組合件「{組合件名}」」；畫面最下方的狀態列出現「已開啟 {零件名}.3dbx：改好存檔後，按「返回組合件」回到組合件」。</span></li>
+<li>在零件裡改一點東西（例如加一個圓角或改一個尺寸），按 Ctrl+S 存檔。<span class="see">存的是零件檔，不是組合件檔。</span></li>
+<li>按左邊最上面那條「返回組合件「{組合件名}」」。<span class="see">組合件重新開了，定位板變成剛才改過的樣子。</span></li>
+<li>再從組合件開一次零件，這次按「取消」離開「要儲存變更嗎？」。<span class="see">停留在組合件，什麼都沒變；這是取消，不是「不儲存」。</span></li>
+</ol>
+<h4>應該看到</h4><ul>
+<li>從 3D 畫面和從設計樹，右鍵出來的是同一組選單。</li>
+<li>有未存的改動時一定會先問；按「取消」就停在原地。</li>
+<li>開的是零件、回到的是組合件，中間不會把零件的存檔寫進組合件檔。</li>
+</ul>
+<p class="report"><b>有問題時請回報：</b>按了哪一條、畫面訊息原文、存檔之後檔案內容的差別。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details>
+<details class="item" id="item-D12" data-id="D12" data-auto="part" data-sec="p3b" data-tag="core">
+<summary><span class="iid">D12</span><span class="ttl">從組合件刪除零組件（連同它的結合）</span><span class="tag t-core">必做</span>
+<select class="st" aria-label="D12 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="auto part"><b>已自動驗過一部分（2026-11-02）。</b>零組件右鍵選單裡有「刪除…」這條，<code>manual-context-menus.js</code> 會檢查；刪除時連同結合一起走的規則在 <code>packages/model/src/assembly.ts</code> 的 <code>deleteComponents</code>。<b>還沒有人用眼睛看過的：</b>確認對話框的樣子、刪完之後設計樹與 3D 畫面、Ctrl+Z 復原。請照下面做。</p>
+<p class="why"><b>為什麼要做：</b>刪零組件時，「零件檔本身不會刪除」這件事很容易搞混：組合件裡的這個實例不見了，磁碟上的零件檔還在。另外結合會跟著走，也要確認。</p>
+<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>刪除…。這一項驗出問題、修好時，這些說明也要一起改。</p>
+<p class="why"><b>用這個檔案：</b>D 章那個小夾具（定位板 + 兩支削邊銷，銷和孔之間有結合）。</p>
+<h4>先準備</h4><p>打開 小夾具.3dba，記得它的存檔位置（專案資料夾裡）。</p>
+<h4>怎麼做</h4><ol>
+<li>在 3D 畫面裡的其中一支削邊銷上按右鍵 →「刪除…」。<span class="see">跳出標題為「確認刪除」的對話框，下面寫「將從組合件刪除以下項目（零件檔本身不會刪除）：」，清單裡有那支銷，還有會跟著一起被刪的結合（例如「同軸心」）。</span></li>
+<li>按「刪除」。<span class="see">銷和它的結合都不見了；3D 畫面裡少了那支銷；左邊設計樹也少了一列。組合件變成「有尚未儲存的變更」。</span></li>
+<li>用檔案管理器（或「檔案」→「開啟舊檔」）去看專案資料夾裡的 削邊銷.3dbx。<span class="see">檔案還在，沒有被刪掉。組合件裡的這個實例不見了，不代表零件檔不見了。</span></li>
+<li>按 Ctrl+Z。<span class="see">銷和結合都回來了。</span></li>
+<li>改用鍵盤：在 3D 畫面裡點選那支銷，然後按 <kbd>Delete</kbd>。<span class="see">一樣跳出「確認刪除」；這次刪的是被選到的零組件（有多個被選到就一起刪）。</span></li>
+<li>如果你的組合件裡有次組合件，把那個次組合件也刪掉，再存檔。<span class="see">次組合件也沒了；磁碟上那個 .3dba 檔案一樣還在。</span></li>
+</ol>
+<h4>應該看到</h4><ul>
+<li>對話框說清楚要刪的是哪些零組件、哪些結合。</li>
+<li>結合跟著被刪的零組件一起走，不會留下指向不存在的零件的結合。</li>
+<li>磁碟上的零件檔與次組合件檔都沒有被刪。</li>
+<li>Ctrl+Z 打得回來。</li>
+</ul>
+<p class="report"><b>有問題時請回報：</b>刪的是哪個零組件、對話框列了什麼、磁碟上檔案的狀態、和預期的差別。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details>
+<details class="item" id="item-D13" data-id="D13" data-auto="part" data-sec="p3b" data-tag="core">
+<summary><span class="iid">D13</span><span class="ttl">重新指定零件檔（檔案改名或搬走之後）</span><span class="tag t-core">必做</span>
+<select class="st" aria-label="D13 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="auto part"><b>已自動重播一部分（2026-11-02）。</b>腳本 <code>phase2-assembly.js</code> 在真實瀏覽器裡重播了「找不到參考的檔案」對話框：零件被改名時按「瀏覽…」指到新名、被搬到別的資料夾時按「使用 {路徑}」。<b>還沒有人用眼睛看過的：</b>零組件右鍵的「重新指定零件檔…」這條路、選到專案資料夾外的檔案時的說明。請照下面做。</p>
+<p class="why"><b>為什麼要做：</b>組合件記的是零件檔在專案資料夾裡的路徑。零件檔改名或搬走之後，組合件就打不開了；重新指定就是把路徑指回去。這一項看兩種情況：開檔時問你，和零組件右鍵讓你直接指定。</p>
+<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>重新指定零件檔…。這一項驗出問題、修好時，這些說明也要一起改。</p>
+<p class="why"><b>用這個檔案：</b>D 章那個小夾具（定位板 + 兩支削邊銷）。</p>
+<h4>先準備</h4><p>把專案資料夾打開在旁邊（檔案管理器）。</p>
+<h4>怎麼做</h4><ol>
+<li>先做「開檔時問你」的情況：把專案資料夾裡的 削邊銷.3dbx 改名成 削邊銷-改名.3dbx，然後「檔案」→「開啟舊檔」打開 小夾具.3dba。<span class="see">跳出標題為「找不到參考的檔案」的對話框，說明「「小夾具」使用的下列檔案不在原來的位置（可能已改名、搬移或刪除）。請重新指定檔案；略過的話，這些零組件會標示錯誤，存檔時保留原來的路徑。」，清單裡列出找不到的路徑和用到它的零組件（「削邊銷&lt;1&gt;、削邊銷&lt;2&gt;」）；專案資料夾裡沒有同名檔案時，那一列寫「專案資料夾中沒有同名的檔案。」，可以按「瀏覽…」自己選。</span></li>
+<li>按「瀏覽…」，選剛才改名的 削邊銷-改名.3dbx。<span class="see">對話框關掉，組合件開起來，兩個銷都在、結合也還在；左邊設計樹裡的銷換成新的名字。組合件變成「有尚未儲存的變更」。</span></li>
+<li>再試一次「自己找得到」的情況：把 削邊銷-改名.3dbx 搬到專案資料夾裡的另一個子資料夾（名稱不變），再重新開 小夾具.3dba。<span class="see">這次對話框直接給你一個按鈕「使用 {新路徑}」，按下去就接好了。</span></li>
+<li>再做「零組件右鍵」的情況：先按 Ctrl+Z 復原（或重新開檔），接著在 3D 畫面裡的其中一支銷上按右鍵 →「重新指定零件檔…」。<span class="see">跳出作業系統的檔案選擇視窗，只看得到資料夾、看不到檔案是正常的（請選資料夾裡的檔案）。</span></li>
+<li>選到 削邊銷-改名.3dbx。<span class="see">兩支用同一個零件檔的銷都跟著換成新路徑了（不只右鍵點的那一支）；組合件變成「有尚未儲存的變更」。</span></li>
+<li>試試挑到專案資料夾外面的檔案（例如桌面上的某個 .3dbx）。<span class="see">畫面出現錯誤訊息「零件檔必須在專案資料夾「{專案資料夾名}」之內」，原來的組合件沒有被改動。</span></li>
+<li>存檔，再用檔案管理器看專案資料夾。<span class="see">組合件檔 .3dba 存成新的內容；零件檔本身沒有被搬走或刪掉。</span></li>
+</ol>
+<h4>應該看到</h4><ul>
+<li>檔案改名或搬走之後，開組合件會明確問要怎麼辦，而不是默默壞掉。</li>
+<li>重新指定之後，所有用到同一個零件檔的零組件都一起換路徑。</li>
+<li>挑到專案資料夾外的檔案會被擋下來，說明為什麼不行。</li>
+</ul>
+<p class="report"><b>有問題時請回報：</b>改名的是哪個檔、對話框寫了什麼、換完之後設計樹的樣子、和預期的差別。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details>
 </section><section id="p4a" class="sec"><h2>E. 夾治具（Phase 4a）</h2><p class="intro">前置：新零件，用多本體做一個主模型：基板（一個方塊）、兩個定位銷孔位置、一個壓板，各是獨立的本體。存成 夾具主模型.3dbx 在驗證資料夾（D:\3DB實機確認）。</p><details class="item" id="item-E1" data-id="E1" data-auto="full" data-sec="p4a" data-tag="core">
@@ -939,6 +1096,95 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 </ol>
 <h4>應該看到</h4><ul><li>點得到你要的線（不會點到旁邊的）；放置前就看得到尺寸長什麼樣；搬動不卡；文字蓋住線時線不會劃過文字（文字有白色邊）。</li><li>尺寸線拖進視圖裡時，箭頭尖接觸輪廓、沒有延伸線，數值不變；拖出視圖就回到視圖外。</li><li>不順的地方請逐項寫在備註：點不到的線、選到錯的元素、預覽跳來跳去、提示看不懂。</li></ul>
 <p class="report"><b>有問題時請回報：</b>哪個視圖、點在哪裡、預期與實際的差別（截圖最好）。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details>
+<details class="item" id="item-F8" data-id="F8" data-auto="part" data-sec="p5" data-tag="core">
+<summary><span class="iid">F8</span><span class="ttl">從工程圖開啟零件，改完再回到工程圖</span><span class="tag t-core">必做</span>
+<select class="st" aria-label="F8 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="auto part"><b>已自動重播大部分（2026-11-02）。</b>腳本 <code>manual-drawing-open-part.js</code> 用真實滑鼠事件走過：視圖右鍵選單裡的「開啟零件（{零件名}）」、工程圖樹那一列的選單、視圖有改動時先問「要儲存變更嗎？」、「開啟零件」之後零件的樹上出現「返回工程圖「{圖名}」」、零件改寬存檔後「返回工程圖」時視圖顯示存檔後的樣子。<b>還沒有人用眼睛看過的：</b>功能列兩個分頁的按鈕、工程圖樹上那一列「開啟零件：{name}」、以及「開啟組合件」「開啟這個零件」兩種。請照下面做。</p>
+<p class="why"><b>為什麼要做：</b>工程圖上的視圖是零件的「快照」，零件改了圖不會自己變。這一項看四個入口是不是都通得過去、改完零件回來之後視圖有沒有跟著更新。</p>
+<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>開啟零件。這一項驗出問題、修好時，這些說明也要一起改。</p>
+<p class="why"><b>用這個檔案：</b>F1 做好的那份工程圖（要已經存檔）。</p>
+<h4>先準備</h4><p>打開工程圖，確認至少有一個視圖。</p>
+<h4>怎麼做</h4><ol>
+<li>看功能列的「視圖配置」分頁。<span class="see">裡面有「開啟零件」按鈕（灰色的話，表示這張圖還沒有視圖）。</span></li>
+<li>看功能列的「檔案」分頁。<span class="see">那裡也有「開啟零件」，是同一件事的另一個位置。</span></li>
+<li>看左邊工程圖的樹，最上面視圖清單之前有一列「開啟零件：{零件名}」。<span class="see">這一列一直看得到；把游標停在上面會有說明「開啟這張工程圖所畫的零件或組合件（{name}）；在零件中按「返回工程圖」可以回來」。</span></li>
+<li>在圖紙上的一個視圖上按右鍵。<span class="see">選單裡有「開啟零件（{零件名}）」；如果這張圖畫的是組合件，是「開啟組合件（{name}）」；點到某個零件自己的視圖時是「開啟這個零件（{name}）」；視圖沒有來源檔時那一條是「這個視圖沒有來源檔」，而且是灰的（按了也沒用）。</span></li>
+<li>按「開啟零件（{零件名}）」。<span class="see">零件開了：左邊的樹變成零件的設計樹，最上面一條「返回工程圖「{圖名}」」；畫面最下方的狀態列出現「已開啟 {零件名}.3dbx：改好存檔後，按「返回工程圖」回到工程圖，視圖會顯示存檔後的樣子」。</span></li>
+<li>在零件裡把寬度改大（例如 120 改成 150），按 Ctrl+S 存檔。<span class="see">存的是零件檔。</span></li>
+<li>按左邊最上面那條「返回工程圖「{圖名}」」。<span class="see">工程圖重新開了，前視圖的寬度變成 150（跟著零件存檔後的樣子）。</span></li>
+<li>另外測一次「工程圖沒存過」的情況：另開一張沒有存過的新工程圖，做一個視圖，從裡面「開啟零件」。<span class="see">訊息變成「已開啟 {零件名}.3dbx：改好存檔後，按「返回工程圖」回到工程圖，視圖會顯示存檔後的樣子（工程圖沒有存檔，所以沒有「返回工程圖」）」；零件的樹上也不會有那一條返回的按鈕。</span></li>
+</ol>
+<h4>應該看到</h4><ul>
+<li>四個入口（兩個分頁、樹上那一列、視圖右鍵）都能開到同一個零件。</li>
+<li>工程圖沒存過時，訊息會明說沒有「返回工程圖」。</li>
+<li>零件改過存檔再回來，視圖跟著更新。</li>
+</ul>
+<p class="report"><b>有問題時請回報：</b>從哪個入口開的、畫面訊息原文、回到工程圖之後視圖的樣子、和預期的差別。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details>
+<details class="item" id="item-F9" data-id="F9" data-auto="part" data-sec="p5" data-tag="core">
+<summary><span class="iid">F9</span><span class="ttl">工程圖：基準符號與幾何公差框</span><span class="tag t-core">必做</span>
+<select class="st" aria-label="F9 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="auto part"><b>已自動驗過一部分（2026-11-02）。</b>每一種公差能用哪些欄位（Ø、Ⓜ／Ⓛ、基準）在 <code>packages/model/src/drawingAnnotations.ts</code> 的 <code>CHARACTERISTIC_RULES</code>（依 ISO 1101、ISO 2692），<code>tests/phase5/drawing-gdt.test.ts</code> 有測；基準字母的規則（<code>DATUM_LABEL</code>）也在同一個檔案。<b>還沒有人用眼睛看過的：</b>點下去放框的畫面、面板欄位隨公差種類換掉、錯誤訊息長什麼樣。請照下面做。</p>
+<p class="why"><b>為什麼要做：</b>基準符號與幾何公差框是工程圖的靈魂，也是最容易寫錯的地方：公差種類、Ø、Ⓜ／Ⓛ、基準引用有一套 ISO 規則，寫錯了別人讀不出你的要求。</p>
+<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>基準、幾何公差。這一項驗出問題、修好時，這些說明也要一起改。</p>
+<p class="why"><b>用這個檔案：</b>一張有視圖的工程圖。</p>
+<h4>先準備</h4><p>打開工程圖，確認至少有一個視圖。</p>
+<h4>怎麼做</h4><ol>
+<li>按功能列的「註記」分頁（或看左邊的「註記」面板）。<span class="see">面板的「註記」區有五個按鈕：註解、基準、幾何公差、中心線、中心符號線；功能列的「註記」分頁也有同樣的按鈕。</span></li>
+<li>按「基準」。畫面上出現一行提示：「點一下特徵（放三角形的位置），再點一下放基準框。Esc 取消」。<span class="see">在視圖的一條線上按一下（三角形的位置），移到別處再按一下（框的位置），基準框就出現了。</span></li>
+<li>在左邊的「註記」面板選剛剛放的那個基準符號。<span class="see">面板上可以改「基準字母」、「符號方向（度）」和「引線長度」；清單裡那一列的名字是「基準 A」。</span></li>
+<li>把「基準字母」改成 <code>I</code>。<span class="see">畫面出現錯誤：「基準字母「I」不合用：要一或兩個大寫字母，而且不用 I、O、Q（ISO 5459，避免和 1、0 混淆）」，字母沒有被改過去。</span></li>
+<li>改成 <code>A</code>，然後再放一個基準符號，字母也設成 <code>A</code>。<span class="see">錯誤：「基準「A」已經有了，一張圖上的基準字母不能重複」。把第二個改成 <code>B</code> 就成了。</span></li>
+<li>按「幾何公差」。提示變成：「點一下要管制的特徵（引線箭頭的位置），再點一下放公差框；兩下點在同一處就不加引線。Esc 取消」。<span class="see">先點要管制的線（引線箭頭的位置），再點一次放公差框，公差框出現了，預設是「位置度」、公差值 0.05。</span></li>
+<li>在公差框上把「公差種類」從「位置度」改成「平面度」。<span class="see">面板跟著換：Ø（圓柱形公差帶）的勾選框不見了，「實體條件」不見了，底下寫「這種公差不使用基準」（平面度是形狀公差，本來就沒有基準，也沒有圓柱形公差帶）。</span></li>
+<li>把「公差值」改成 <code>0</code>。<span class="see">畫面說「公差值必須是大於 0 的數」，框上的數字不變。</span></li>
+<li>把「公差種類」改回「位置度」，再把「第 1 基準」設成 <code>A</code>。<span class="see">Ø 的勾選框和「實體條件」又回來了；「第 1 基準」的下拉清單裡是這張圖上有的基準 A、B。</span></li>
+<li>把「公差種類」改成「平行度」。<span class="see">平行度一定要有基準：面板上「第 1 基準」自動填上圖上的第一個基準（A）；如果這張圖還沒有任何基準，這裡會有一行提示「這種公差至少要一個基準；圖上還沒有基準時，先用「基準」工具加一個」。</span></li>
+<li>回到那個基準 A，把「基準字母」改成 <code>C</code>。<span class="see">公差框裡的基準跟著變成 C（改了基準字母，引用它的公差框一起改，不會變成指向不存在的基準）。</span></li>
+<li>在左邊「註記」面板的清單裡，按那個還被公差框用著的基準右邊的 ✕（標題是「刪除註記」）。<span class="see">不會被刪掉，畫面說「基準「C」還有 1 個公差框在用，不能刪除；先刪除或修改那些公差框」。</span></li>
+<li>存檔、重開工程圖。<span class="see">基準符號與公差框都還在，字母與公差值也一樣。</span></li>
+</ol>
+<h4>應該看到</h4><ul>
+<li>每一種公差只給它 ISO 允許的欄位，切換公差種類時面板會跟著換。</li>
+<li>基準字母不重複、不用 I／O／Q；改字母時公差框跟著改；有公差框在用的基準不會被刪掉。</li>
+<li>存檔重開之後，符號與公差框都還在。</li>
+</ul>
+<p class="report"><b>有問題時請回報：</b>哪一種公差、哪個欄位、畫面訊息原文、和預期的差別。</p>
+<label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
+</div></details>
+<details class="item" id="item-F10" data-id="F10" data-auto="part" data-sec="p5" data-tag="core">
+<summary><span class="iid">F10</span><span class="ttl">工程圖：表面粗糙度符號</span><span class="tag t-core">必做</span>
+<select class="st" aria-label="F10 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<div class="inner">
+<p class="auto part"><b>已自動驗過一部分（2026-11-02）。</b>符號的資料與範圍（Ra 0.008 到 400 µm、引線長度不能是負的、文字不超過 40 字）在 <code>packages/model/src/drawing.ts</code> 的 <code>checkSurfaceFinish</code>，<code>tests/phase5/drawing-surface-finish.test.ts</code> 有測。<b>還沒有人用眼睛看過的：</b>符號畫出來的樣子、拖曳移動、面板的欄位、錯誤訊息。請照下面做。</p>
+<p class="why"><b>為什麼要做：</b>表面粗糙度是加工端要看的資訊：符號要對準要加工的面，Ra 與加工方法要寫對，方向與引線要調得順眼。</p>
+<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>加入表面粗糙度。這一項驗出問題、修好時，這些說明也要一起改。</p>
+<p class="why"><b>用這個檔案：</b>一張有視圖的工程圖。</p>
+<h4>先準備</h4><p>打開工程圖，確認至少有一個視圖。</p>
+<h4>怎麼做</h4><ol>
+<li>在左邊的「表面粗糙度」區按「加入表面粗糙度」（功能列的「註記」分頁也有同一個按鈕）。畫面上出現提示：「表面粗糙度：在要標的表面上點一下放置符號；之後可拖曳移動。Esc 結束」。<span class="see">符號出現在游標的位置。</span></li>
+<li>在視圖外面（圖紙的空白處）按一下。<span class="see">不會放上去，畫面又說一次那行提示：符號只能放在視圖裡面。</span></li>
+<li>在一個視圖裡的一條線上按一下。<span class="see">符號放下來了，左邊面板出現它的欄位。</span></li>
+<li>在面板把「Ra（µm，0.008 到 400）」填成 <code>1.6</code>。<span class="see">符號上多出 Ra 的數字。</span></li>
+<li>把 Ra 改成 <code>0</code>，然後改成 <code>500</code>。<span class="see">兩次都說「表面粗糙度 Ra 要在 0.008 到 400 µm 之間」，符號上的 Ra 維持原值。</span></li>
+<li>把「加工方式」改成「不得去除材料」，「加工方法」填「磨削」。<span class="see">符號換成對應的樣子（加工方法寫在橫線上）。</span></li>
+<li>把「加工方法」填成超過 40 個字。<span class="see">說「加工方法與附註要是不超過 40 字的文字」，內容沒有被改過去。</span></li>
+<li>把「符號方向（度）」改成 <code>45</code>，把「引線長度」改成 <code>-1</code>。<span class="see">符號轉成 45 度；引線長度不能是負的，負的會被拒絕（說「表面粗糙度符號的引線長度不能是負的」）。</span></li>
+<li>用滑鼠拖曳那個符號。<span class="see">符號跟著移動，位置變了但 Ra 與加工方式不變。</span></li>
+<li>按面板的「刪除表面粗糙度」。<span class="see">符號不見了。</span></li>
+<li>再放一個符號，存檔，重開工程圖。<span class="see">符號、Ra、加工方式、方向都還在。</span></li>
+</ol>
+<h4>應該看到</h4><ul>
+<li>符號只能放在視圖裡面，放錯地方有明確的提示。</li>
+<li>Ra 超範圍、引線長度負數、文字太長都被擋下來並說明原因。</li>
+<li>符號可以拖曳移動，資料不變；存檔重開後還在。</li>
+</ul>
+<p class="report"><b>有問題時請回報：</b>哪一個欄位、畫面訊息原文、符號的樣子（截圖最好）、和預期的差別。</p>
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details>
 </section><section id="p4b" class="sec"><h2>G. 檢具型面塊（Phase 4b）</h2><p class="intro">目標是「工件型面退一個間隙、再加厚成塊」。曲面功能目前只用金樣（方塊、放樣、圓角）驗過，真實的曲面件在 J 節。這一節先用示範件把操作流程走一遍。畫布上真的點選曲面與雙面顯示，我沒有用眼睛確認過，請特別留意。</p><details class="item" id="item-G1" data-id="G1" data-auto="full" data-sec="p4b" data-tag="core">
@@ -1363,13 +1609,14 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 </main>
 </div>
 <script>
-const META = [{"id": "P1", "sec": "prep", "tag": "準備", "title": "啟動程式、選對瀏覽器"}, {"id": "P2", "sec": "prep", "tag": "準備", "title": "建立測試用的專案資料夾與樣本檔"}, {"id": "P3", "sec": "prep", "tag": "準備", "title": "怎麼回報問題"}, {"id": "A1", "sec": "desktop", "tag": "需另一個帳號或電腦", "title": "在沒有裝過開發工具的 Windows 上安裝、斷網使用、解除安裝"}, {"id": "B1", "sec": "basic", "tag": "看畫面", "title": "設計樹的「眼睛」與遺失參考的修復"}, {"id": "C1", "sec": "p3a", "tag": "必做", "title": "方程式、全域變數與檔案屬性（3a-1）"}, {"id": "C2", "sec": "p3a", "tag": "必做", "title": "刪除面與移動面（3a-2）"}, {"id": "C3", "sec": "p3a", "tag": "看畫面", "title": "輸入 STEP 為本體與診斷報告（3a-2）"}, {"id": "C4", "sec": "p3a", "tag": "必做", "title": "多本體（3a-3）"}, {"id": "C5", "sec": "p3a", "tag": "必做", "title": "草圖工具：狹槽、多邊形、圓角／導角、修剪、延伸、偏移、鏡射（3a-4a）"}, {"id": "C6", "sec": "p3a", "tag": "看畫面", "title": "草圖限制條件、從動尺寸、診斷與輪廓選取（3a-4b、4c）"}, {"id": "C7", "sec": "p3a", "tag": "看畫面", "title": "轉換實體引用與貫穿（3a-4d）"}, {"id": "C8", "sec": "p3a", "tag": "必做", "title": "伸長與旋轉的進階選項（3a-5a）"}, {"id": "C9", "sec": "p3a", "tag": "必做", "title": "薄殼與拔模特徵（3a-5b、5c）"}, {"id": "C10", "sec": "p3a", "tag": "必做", "title": "異型孔精靈（3a-6a）"}, {"id": "C11", "sec": "p3a", "tag": "必做", "title": "掃出（3a-6b）"}, {"id": "C12", "sec": "p3a", "tag": "必做", "title": "疊層拉伸（3a-6c）"}, {"id": "C13", "sec": "p3a", "tag": "必做", "title": "肋材（3a-6d）"}, {"id": "C14", "sec": "p3a", "tag": "看畫面", "title": "基準面、基準軸、參考點、座標系統（3a-7a）"}, {"id": "C15", "sec": "p3a", "tag": "必做", "title": "線性與環狀複製排列（3a-7b）"}, {"id": "C16", "sec": "p3a", "tag": "看畫面", "title": "鏡射（3a-7c）"}, {"id": "C17", "sec": "p3a", "tag": "需 eDrawings", "title": "材質、外觀、輸出 STEP／STL／影像（3a-8）"}, {"id": "C18", "sec": "p3a", "tag": "看畫面", "title": "自動存檔復原與文字化檔案（3a-9a）"}, {"id": "C19", "sec": "p3a", "tag": "看畫面", "title": "設計樹拖放、資料夾、範本、快速鍵（3a-9b）"}, {"id": "C20", "sec": "p3a", "tag": "看畫面", "title": "顯示類型、剖面、視角方塊（3a-9c-1）"}, {"id": "C21", "sec": "p3a", "tag": "看畫面", "title": "選取濾器、選取相切與迴圈、選取其他（3a-9c-2）"}, {"id": "C22", "sec": "p3a", "tag": "看畫面", "title": "系統選項與英文（3a-9c-3）"}, {"id": "D1", "sec": "p3b", "tag": "必做", "title": "剛性次組合件（3b-1）"}, {"id": "D2", "sec": "p3b", "tag": "必做", "title": "零組件複製排列與鏡射（3b-2）"}, {"id": "D3", "sec": "p3b", "tag": "需 eDrawings／別家軟體", "title": "輸入 STEP 組合件（3b-3）"}, {"id": "D4", "sec": "p3b", "tag": "必做", "title": "零件表（3b-4）"}, {"id": "D5", "sec": "p3b", "tag": "看畫面", "title": "爆炸視圖（3b-4）"}, {"id": "D6", "sec": "p3b", "tag": "必做", "title": "測量、物質特性、檢查幾何（3b-5）"}, {"id": "D7", "sec": "p3b", "tag": "必做", "title": "干涉檢查（3b-5）"}, {"id": "D8", "sec": "p3b", "tag": "需 eDrawings", "title": "輸出 STEP 組合件，用別的軟體看（2E、3b-7）"}, {"id": "D9", "sec": "p3b", "tag": "必做", "title": "測量像 eDrawings：圖上畫出距離與 dX／dY／dZ、英制、弧圓量法"}, {"id": "E1", "sec": "p4a", "tag": "必做", "title": "從本體產生組合件（衍生零件）"}, {"id": "E2", "sec": "p4a", "tag": "必做", "title": "定位銷孔"}, {"id": "E3", "sec": "p4a", "tag": "必做", "title": "標準件圖庫（螺絲、定位銷、墊圈）"}, {"id": "E4", "sec": "p4a", "tag": "看畫面", "title": "進階結合：寬度、相互對稱、限制"}, {"id": "E5", "sec": "p4a", "tag": "必做", "title": "餘隙確認與取放空間"}, {"id": "E6", "sec": "p4a", "tag": "看畫面", "title": "拖曳時碰撞偵測"}, {"id": "F1", "sec": "p5", "tag": "必做", "title": "新工程圖：三視圖、圖頁與標題圖塊"}, {"id": "F2", "sec": "p5", "tag": "必做", "title": "投影視圖、剖面視圖、細部放大圖"}, {"id": "F3", "sec": "p5", "tag": "必做", "title": "尺寸：自動、手動、公差"}, {"id": "F4", "sec": "p5", "tag": "必做", "title": "中心記號、中心線、孔標註與孔表"}, {"id": "F5", "sec": "p5", "tag": "必做", "title": "組合圖：零件表與號球"}, {"id": "F6", "sec": "p5", "tag": "需外部程式", "title": "輸出 PDF、DXF、SVG，用真正的程式開"}, {"id": "F7", "sec": "p5", "tag": "必做", "title": "在圖上點選標註與畫剖面線（像 SolidWorks 那樣）"}, {"id": "G1", "sec": "p4b", "tag": "必做", "title": "分割線"}, {"id": "G2", "sec": "p4b", "tag": "必做", "title": "偏移曲面與量測間隙"}, {"id": "G3", "sec": "p4b", "tag": "看畫面", "title": "延伸、修剪、縫織、填補、平坦曲面"}, {"id": "G4", "sec": "p4b", "tag": "必做", "title": "厚面與以曲面除料"}, {"id": "G5", "sec": "p4b", "tag": "需別的 CAD", "title": "輸出 STEP，用別的 CAD 開"}, {"id": "H1", "sec": "p6", "tag": "必做", "title": "拔模分析"}, {"id": "H2", "sec": "p6", "tag": "必做", "title": "底切分析"}, {"id": "H3", "sec": "p6", "tag": "必做", "title": "厚度分析"}, {"id": "H4", "sec": "p6", "tag": "看畫面", "title": "不等殼厚"}, {"id": "H5", "sec": "p6", "tag": "看畫面", "title": "唇與溝槽"}, {"id": "H6", "sec": "p6", "tag": "必做", "title": "螺柱（含孔拔模）"}, {"id": "H7", "sec": "p6", "tag": "看畫面", "title": "卡榫與卡榫的窗"}, {"id": "H8", "sec": "p6", "tag": "看畫面", "title": "排氣口"}, {"id": "H9", "sec": "p6", "tag": "必做", "title": "外殼加蓋子：實際走一遍"}, {"id": "I1", "sec": "p7", "tag": "必做", "title": "基材凸緣：平板與折過的板"}, {"id": "I2", "sec": "p7", "tag": "必做", "title": "邊線凸緣"}, {"id": "I3", "sec": "p7", "tag": "看畫面", "title": "摺邊"}, {"id": "I4", "sec": "p7", "tag": "看畫面", "title": "縮短與離隙"}, {"id": "I5", "sec": "p7", "tag": "必做", "title": "閉合角落（H-6 剛做完）"}, {"id": "I6", "sec": "p7", "tag": "必做", "title": "平板型式視窗"}, {"id": "I7", "sec": "p7", "tag": "看畫面", "title": "量規表"}, {"id": "I8", "sec": "p7", "tag": "必做", "title": "可製造性檢查"}, {"id": "I9", "sec": "p7", "tag": "需 CAD／雷射軟體", "title": "輸出平板型式 DXF"}, {"id": "I10", "sec": "p7", "tag": "必做", "title": "真人走一遍：做一個含兩個凸緣加一個摺邊的支架"}, {"id": "J1", "sec": "samples", "tag": "需樣本", "title": "3 個真實的 SW 零件（3a-10 驗收）"}, {"id": "J2", "sec": "samples", "tag": "需樣本", "title": "保留結構的組合件 STEP（3b）"}, {"id": "J3", "sec": "samples", "tag": "需樣本", "title": "真實夾具案例（4a）"}, {"id": "J4", "sec": "samples", "tag": "需樣本", "title": "真實沖壓件或塑膠件 STEP（4b）"}, {"id": "J5", "sec": "samples", "tag": "需樣本", "title": "真實塑膠件與 SW 的分析對照（6）"}, {"id": "J6", "sec": "samples", "tag": "需樣本", "title": "真實鈑金支架與 SW 的平板型式對照（7）"}, {"id": "K1", "sec": "standards", "tag": "需你決定", "title": "圖庫尺寸表"}, {"id": "K2", "sec": "standards", "tag": "需你決定", "title": "工程圖的公差表、孔標註用語、標題圖塊"}, {"id": "K3", "sec": "standards", "tag": "需你決定", "title": "鈑金檢查的預設比例與量規表"}, {"id": "K4", "sec": "standards", "tag": "需你決定", "title": "尚未做的功能：要不要做、做哪個"}, {"id": "L1", "sec": "cleanup", "tag": "需你許可", "title": "刪除桌面版殘留的資料夾"}, {"id": "L2", "sec": "cleanup", "tag": "可選", "title": "瀏覽器裡殘留的「找到沒有儲存的零件」"}, {"id": "L3", "sec": "cleanup", "tag": "可選", "title": "其他整理"}];
 const KEY = '3db-manual-verify-v1';
 const LABEL = {ok:'通過', bad:'有問題', skip:'略過', '':'未做'};
 let state = {};
 try { state = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { state = {}; }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const items = [...document.querySelectorAll('.item')];
+/** What each item is called in the copied result: read from the item itself, so a new item is never left out. */
+const META = items.map(el => ({ id: el.dataset.id, sec: el.dataset.sec, tag: el.querySelector('.tag').textContent, title: el.querySelector('.ttl').textContent }));
 function paint(el) {
   const id = el.dataset.id, s = state[id] || {};
   el.dataset.state = s.st || '';

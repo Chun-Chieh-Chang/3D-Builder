@@ -22,6 +22,7 @@ const RUNTIME_LABELS: Record<string, [string, string]> = {
   'hide-component': ['subassembly.hide', 'subassembly.show'],
   'transparent-component': ['subassembly.transparent', 'subassembly.opaque'],
   'suppress-component': ['tree.suppress', 'tree.unsuppress'],
+  'open-component': ['ctx.openPart', 'subassembly.open'],
 };
 
 /** The name the program shows for a topic: the label of the action (or the sketch tool), or the title of the concept. */
