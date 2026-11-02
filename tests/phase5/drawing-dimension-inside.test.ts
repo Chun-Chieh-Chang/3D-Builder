@@ -1,7 +1,7 @@
 /**
  * A linear dimension whose line is drawn on the view (ADR 0227) instead of outside it: the place on the view is kept in the view's own millimetres, so it stays
- * on the part when the view is scaled; the arrows touch the contour and no extension line is drawn; and the number is the one the dimension outside the view
- * gives.
+ * on the part when the view is scaled; the arrows touch the contour and no extension line is drawn, except where the contour stops short of the line or the
+ * feature is a point, which an extension line then joins to the line; and the number is the one the dimension outside the view gives.
  *
  * The part is a turned pin seen from the side, as in the drawing the question was asked about: its axis runs across the view at y = 30, the Ø10.54 section from
  * x = 60 to x = 90 (its two end faces), and the Ø was written outside the view on the right. The view is 100 x 60 at the sheet point (200, 150), scale 1, its
@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { applyDrawingCommand, CommandError, createEmptyDrawing, DRAWING_SCHEMA_VERSION, page, parseDrawing, serializeDrawing, viewVectors, type Dimension, type DrawingView, type ElementFacts, type ViewAxes } from '@3db/model';
-import { dragDimension, evaluateDimension, insideAt, toSheet, type PlacedView, type SceneItem } from '@3db/drawing';
+import { DIM_TEXT, dimensionTextItems, dragDimension, evaluateDimension, GAP, insideAt, OVERSHOOT, toSheet, type PlacedView, type SceneItem, type ViewLines } from '@3db/drawing';
 
 const placed: PlacedView = { id: 'v', at: [200, 150], scale: 1, w: 100, h: 60, centre: [50, 30] };
 const axes: ViewAxes = viewVectors('front');
@@ -81,6 +81,102 @@ describe('the line of a linear dimension drawn on the view', () => {
     const points = line(diameter({ offset: 20 }));
     expect(points[0]).toBeCloseTo(270, 9); // the box's right edge (250) and 20 beyond it
     expect(points[2]).toBeCloseTo(270, 9);
+  });
+});
+
+describe('an extension line on the view, where the contour does not reach the line', () => {
+  // The section's outline as the view draws it: its top and bottom silhouettes from its end face at x = 60 to the one at x = 90.
+  const lines: ViewLines = { visible: [[60, AXIS_Y + R, 90, AXIS_Y + R], [60, AXIS_Y - R, 90, AXIS_Y - R]], hidden: [], box: { min: [0, 0], max: [100, 60] } };
+  const openOf = (d: Dimension, viewLines: ViewLines | null = lines) => {
+    const o = evaluateDimension(d, { elements: [cylinder, cylinder] }, axes, placed, 'mm', undefined, viewLines);
+    if (!('items' in o)) throw new Error(o.error);
+    return (o.items.filter((i) => i.kind === 'polyline' && !i.closed) as { kind: 'polyline'; points: number[] }[]).map((p) => p.points);
+  };
+  const horizontals = (d: Dimension, viewLines?: ViewLines | null) => openOf(d, viewLines).filter((p) => p.length === 4 && p[1] === p[3]);
+
+  it('is not drawn where the contour crosses the line: the arrows touch it', () => {
+    expect(openOf(diameter({ insideAt: 75 }))).toHaveLength(1);
+    // either end of the outline is still on it
+    expect(openOf(diameter({ insideAt: 60 }))).toHaveLength(1);
+    expect(openOf(diameter({ insideAt: 90 }))).toHaveLength(1);
+  });
+
+  it('runs from the end of the contour nearest the line, a gap off it, to a little past the line', () => {
+    // the line at x = 40 is left of the section's end face at x = 60: the arrows would touch nothing there
+    const ext = horizontals(diameter({ insideAt: 40 }));
+    expect(ext).toHaveLength(2);
+    const lineX = toSheet(placed, 40, 0)[0];
+    for (const [y, p] of [[AXIS_Y + R, ext.find((q) => q[1]! > 150)!], [AXIS_Y - R, ext.find((q) => q[1]! < 150)!]] as const) {
+      expect(p[1]).toBeCloseTo(toSheet(placed, 0, y)[1], 9);
+      expect(p[0]).toBeCloseTo(toSheet(placed, 60, 0)[0] - GAP, 9);
+      expect(p[2]).toBeCloseTo(lineX - OVERSHOOT, 9);
+    }
+    // the dimension line's ends (the arrow tips) lie on the extension lines
+    const dim = line(diameter({ insideAt: 40 }));
+    expect(dim[0]).toBeCloseTo(lineX, 9);
+    expect(Math.max(dim[1]!, dim[3]!)).toBeCloseTo(toSheet(placed, 0, AXIS_Y + R)[1], 9);
+  });
+
+  it('runs the other way past the far end of the contour', () => {
+    const ext = horizontals(diameter({ insideAt: 98 }));
+    expect(ext).toHaveLength(2);
+    for (const p of ext) {
+      expect(p[0]).toBeCloseTo(toSheet(placed, 90, 0)[0] + GAP, 9);
+      expect(p[2]).toBeCloseTo(toSheet(placed, 98, 0)[0] + OVERSHOOT, 9);
+    }
+  });
+
+  it('is not guessed for an outline whose extent the view lines do not show', () => {
+    expect(openOf(diameter({ insideAt: 40 }), null)).toHaveLength(1);
+  });
+
+  it('runs from a point feature, which has no contour, to the line', () => {
+    // two vertices 30 apart across the view at y = 10 and y = 20; the line on the view at y = 45
+    const v1: ElementFacts = { kind: 'vertex', type: 'point', point: [20, 10, 0] }, v2: ElementFacts = { kind: 'vertex', type: 'point', point: [50, 20, 0] };
+    const d = { id: 'p', view: 'v', kind: 'linear', a: { kind: 'vertex', name: 'v1' }, b: { kind: 'vertex', name: 'v2' }, orientation: 'horizontal', offset: 20, insideAt: 45 } as Dimension;
+    const o = evaluateDimension(d, { elements: [v1, v2] }, axes, placed, 'mm', undefined, { visible: [], hidden: [], box: null });
+    if (!('items' in o)) throw new Error(o.error);
+    expect(o.value).toBeCloseTo(30, 9);
+    const verticals = (o.items.filter((i) => i.kind === 'polyline' && !i.closed) as { points: number[] }[]).map((p) => p.points).filter((p) => p.length === 4 && p[0] === p[2]);
+    expect(verticals).toHaveLength(2);
+    const lineY = toSheet(placed, 0, 45)[1];
+    for (const [x, y] of [[20, 10], [50, 20]] as const) {
+      const p = verticals.find((q) => Math.abs(q[0]! - toSheet(placed, x, 0)[0]) < 1e-9)!;
+      expect(p[1]).toBeCloseTo(toSheet(placed, 0, y)[1] + GAP, 9);
+      expect(p[3]).toBeCloseTo(lineY + OVERSHOOT, 9);
+    }
+  });
+});
+
+describe('a text slid out beyond an arrow', () => {
+  // The Ø10.54 on the view between the end faces, its number slid up off the section (the line runs from the top of the outline down, so up is a negative slide).
+  const width = dimensionTextItems(['Ø10.54'], [0, 0], DIM_TEXT, 'center').width;
+  const top = toSheet(placed, 0, AXIS_Y + R)[1], bottom = toSheet(placed, 0, AXIS_Y - R)[1];
+  const span = (p: number[]) => [Math.min(p[1]!, p[3]!), Math.max(p[1]!, p[3]!)];
+
+  it('has the dimension line drawn on under it, to its far end, on the view and outside it', () => {
+    for (const where of [{ insideAt: 75 }, {}]) {
+      const [lo, hi] = span(line(diameter({ ...where, slide: -20 })));
+      // the text's middle is 20 above the line's middle (10.54 / 2 below the top arrow), and it reaches half its width further
+      expect(hi).toBeCloseTo(top + (20 - R) + width / 2, 9);
+      expect(lo).toBeCloseTo(bottom, 9);
+    }
+  });
+
+  it('leaves the line between the arrows when the text only overhangs them, its middle between them', () => {
+    // Ø10.54 is wider than the 10.54 it gives, so centred it overhangs both arrows; the line is not drawn on for that
+    expect(width).toBeGreaterThan(2 * R);
+    for (const slide of [0, -3, 3]) {
+      const [lo, hi] = span(line(diameter({ insideAt: 75, slide })));
+      expect(hi).toBeCloseTo(top, 9);
+      expect(lo).toBeCloseTo(bottom, 9);
+    }
+  });
+
+  it('has the line drawn on the other way when it is slid past the other arrow', () => {
+    const [lo, hi] = span(line(diameter({ insideAt: 75, slide: 20 })));
+    expect(lo).toBeCloseTo(bottom - (20 - R) - width / 2, 9);
+    expect(hi).toBeCloseTo(top, 9);
   });
 });
 

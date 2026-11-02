@@ -327,24 +327,32 @@ function pen(st: Style) {
         return [];
     }
   };
-  /** A dimension line between `a` and `b` (on the line itself) with an arrow at each end, outside when they are too close for the arrows and the text between them. */
-  const dimensionLine = (a: P, b: P): SceneItem[] => {
+  /**
+   * A dimension line between `a` and `b` (on the line itself) with an arrow at each end, outside when they are too close for the arrows and the text between them.
+   * `text` is how far along the line, from `a` toward `b`, the text reaches: a text slid out beyond an arrow (its middle past it) has the line drawn on under it
+   * (ISO 129-1), so it is not left standing apart from the dimension it gives. A text that only overhangs the arrows, its middle between them, leaves the line as it is.
+   */
+  const dimensionLine = (a: P, b: P, text?: [number, number]): SceneItem[] => {
     const d = sub(b, a);
     const l = len(d);
     const u: P = l > 0 ? [d[0] / l, d[1] / l] : [1, 0];
-    if (l >= 2 * st.arrow + 1) return [line(a, b), ...arrowhead(a, [-u[0], -u[1]]), ...arrowhead(b, u)];
+    const roomy = l >= 2 * st.arrow + 1;
     // too close: the arrows are outside, pointing in, on stubs of the line
-    const stub = st.arrow + 2;
-    return [line(add(a, u, -stub), add(b, u, stub)), ...arrowhead(a, u), ...arrowhead(b, [-u[0], -u[1]])];
+    const stub = roomy ? 0 : st.arrow + 2;
+    const textMid = text ? (text[0] + text[1]) / 2 : l / 2;
+    const from = textMid < 0 ? Math.min(-stub, text![0]) : -stub, to = textMid > l ? Math.max(l + stub, text![1]) : l + stub;
+    const arrows = roomy ? [...arrowhead(a, [-u[0], -u[1]]), ...arrowhead(b, u)] : [...arrowhead(a, u), ...arrowhead(b, [-u[0], -u[1]])];
+    return [line(add(a, u, from), add(a, u, to)), ...arrows];
   };
-  /** Text of a dimension on a line with direction angle `a` (degrees), kept readable (never upside down), above the line at `mid`. */
-  const textOn = (mid: P, angle: number, parts: readonly DimensionTextPart[]): { at: P; items: SceneText[] } => {
+  /** Text of a dimension on a line with direction angle `a` (degrees), kept readable (never upside down), above the line at `mid`; `width` is how far it reaches along the line. */
+  const textOn = (mid: P, angle: number, parts: readonly DimensionTextPart[]): { at: P; items: SceneText[]; width: number } => {
     let a = angle;
     while (a > 90 + 1e-9) a -= 180;
     while (a <= -90 + 1e-9) a += 180;
     const r = (a * Math.PI) / 180;
     const at = add(mid, [-Math.sin(r), Math.cos(r)], 1);
-    return { at, items: dimensionTextItems(parts, at, st.text, 'center', a).items };
+    const { items, width } = dimensionTextItems(parts, at, st.text, 'center', a);
+    return { at, items, width };
   };
   return { line, arrowhead, dimensionLine, textOn };
 }
@@ -630,17 +638,15 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
   const { text, parts } = dimensionWords(d, value, undefined, unit);
   // The line of a linear dimension is either on the view (ADR 0227: a place of the view, in the view's own millimetres) or outside it (`offset` from its box).
   const inside = d.insideAt !== undefined && d.orientation !== 'aligned';
-  // Extend from the referenced contour, never the overall view rectangle. Native
-  // face centres select the relevant interval when separate parts are coplanar.
-  const attach = (p: P, e: ElementFacts): P => {
-    if (!isBound(e) || d.orientation === 'aligned') return p;
-    const k = d.orientation === 'horizontal' ? 0 : 1, t = k === 0 ? 1 : 0;
-    const centre = e.center ? inView({ ...e, point: e.center }, axes) : p;
+  // the view's coordinate the feature is placed by (`across`: x for a horizontal dimension) and the one its extension line runs along (`along`)
+  const across = d.orientation === 'horizontal' ? 0 : 1, along = across === 0 ? 1 : 0;
+  /** The visible contour through `p` along the extension line's direction, as the merged intervals of the view's `along` it covers. */
+  const contour = (p: P): [number, number][] => {
     const intervals: [number, number][] = [];
     for (const poly of viewLines?.visible ?? []) for (let i = 0; i + 3 < poly.length; i += 2) {
       const a: P = [poly[i]!, poly[i + 1]!], b: P = [poly[i + 2]!, poly[i + 3]!];
-      if (Math.abs(a[k] - p[k]) > 1e-6 || Math.abs(b[k] - p[k]) > 1e-6) continue;
-      intervals.push([Math.min(a[t], b[t]), Math.max(a[t], b[t])]);
+      if (Math.abs(a[across] - p[across]) > 1e-6 || Math.abs(b[across] - p[across]) > 1e-6) continue;
+      intervals.push([Math.min(a[along], b[along]), Math.max(a[along], b[along])]);
     }
     intervals.sort((a, b) => a[0] - b[0]);
     const merged: [number, number][] = [];
@@ -649,17 +655,40 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
       if (last && interval[0] <= last[1] + 1e-6) last[1] = Math.max(last[1], interval[1]);
       else merged.push([...interval]);
     }
-    const distance = (range: P) => Math.max(range[0] - centre[t], centre[t] - range[1], 0);
+    return merged;
+  };
+  // Extend from the referenced contour, never the overall view rectangle. Native
+  // face centres select the relevant interval when separate parts are coplanar.
+  const attach = (p: P, e: ElementFacts): P => {
+    if (!isBound(e) || d.orientation === 'aligned') return p;
+    const centre = e.center ? inView({ ...e, point: e.center }, axes) : p;
+    const merged = contour(p);
+    const distance = (range: P) => Math.max(range[0] - centre[along], centre[along] - range[1], 0);
     merged.sort((a, b) => distance(a) - distance(b));
     const q: P = [...p];
     if (merged.length) {
       const interval = merged[0]!;
       // the end of the contour on the side the dimension line is: the extension line starts there
-      q[t] = interval[d.offset > 0 ? 1 : 0];
-    } else q[t] = centre[t];
+      q[along] = interval[d.offset > 0 ? 1 : 0];
+    } else q[along] = centre[along];
     return q;
   };
-  // On the view the line is drawn (ADR 0227), so the arrows touch the feature itself and no extension line is drawn: it would lie on the outline.
+  /**
+   * On the view (ADR 0227) the arrow touches the feature where its contour crosses the line, and no extension line is drawn: it would lie on the outline. Where the
+   * contour stops short of the line (a rounded corner, a shorter step), or the feature is a point (a vertex, a hole's middle), an extension line runs to the line
+   * from the contour's end nearest it, or from the point. Returns that end in the view's `along`, or null when no extension line is drawn — the contour crosses the
+   * line, or it is a face, an edge or an outline whose extent the view's lines do not show (not yet come), so where it ends is not known.
+   */
+  const onViewExtensionFrom = (p: P, e: ElementFacts, side: 1 | -1 | undefined): number | null => {
+    const at = d.insideAt!;
+    const merged = contour(p);
+    if (merged.length) {
+      if (merged.some(([lo, hi]) => at >= lo - 1e-6 && at <= hi + 1e-6)) return null;
+      const ends = merged.flat();
+      return ends.reduce((best, x) => (Math.abs(x - at) < Math.abs(best - at) ? x : best), ends[0]!);
+    }
+    return isBound(e) || side !== undefined ? null : p[along];
+  };
   const attachedA = inside ? A : attach(A, ea), attachedB = inside ? B : attach(B, eb);
   const sA = toSheet(placed, attachedA[0], attachedA[1]);
   const sB = toSheet(placed, attachedB[0], attachedB[1]);
@@ -712,12 +741,26 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
       const to = add(onLine(s), n, OVERSHOOT);
       if (nd(to) > nd(from)) items.push(line(from, to));
     }
+  } else {
+    for (const [p, e, side] of [[A, ea, d.aSide], [B, eb, d.bSide]] as const) {
+      const from = onViewExtensionFrom(p, e, side);
+      if (from === null) continue;
+      // from the feature (a gap off it) to a little past the line, on whichever side of the feature the line is
+      const s = across === 0 ? toSheet(placed, p[0], from) : toSheet(placed, from, p[1]);
+      const end = onLine(s);
+      const l = len(sub(end, s));
+      if (l <= GAP) continue;
+      const v: P = [(end[0] - s[0]) / l, (end[1] - s[1]) / l];
+      items.push(line(add(s, v, GAP), add(end, v, OVERSHOOT)));
+    }
   }
   const a = onLine(sA);
   const b = onLine(sB);
-  items.push(...dimensionLine(a, b));
   const mid: P = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   const label = textOn(add(mid, u, d.slide ?? 0), (Math.atan2(u[1], u[0]) * 180) / Math.PI, parts);
+  // where the text's middle is along the line from `a` (u runs from a toward b), and so how far it reaches either way
+  const textMid = len(sub(b, a)) / 2 + (d.slide ?? 0);
+  items.push(...dimensionLine(a, b, [textMid - label.width / 2, textMid + label.width / 2]));
   items.push(...label.items);
   const textAt: P = add(label.at, n, DIM_TEXT / 2);
   const handle: DimensionHandle = { kind: 'linear', orientation: d.orientation, mid, u, box, a: sA, b: sB, placed };

@@ -1,5 +1,6 @@
 // await __dimensionOnView.drawing();
-// A dimension line dragged onto the view is drawn on it (ADR 0227): the arrows touch the contour, no extension line is drawn, the number is the same one, and
+// A dimension line dragged onto the view is drawn on it (ADR 0227): the arrows touch the contour, no extension line is drawn (except where the contour stops
+// short of the line, a rounded corner, which an extension line then joins to it), the number is the same one, and
 // dragging the line off the view takes it back outside where it was.
 const here=import.meta.url.slice(0,import.meta.url.lastIndexOf('/')+1);
 await import(here+'phase1-demo-parts.js?'+Date.now());
@@ -37,6 +38,20 @@ window.__dimensionOnView={drawing:async()=>{
  check(near(lines[0].points[1],inside.a[1],0.2)||near(lines[0].points[1],inside.b[1],0.2),'an arrow touches the contour');
  // The text of the dimension is still there, with the same number.
  const text=outcome().items.find(i=>i.kind==='text');check(!!text&&text.text===first.items.find(i=>i.kind==='text').text,'the same number is written');
+ // At a place the contour does not reach (the plate's corners are rounded), the arrows would touch nothing: an extension line joins each to the contour.
+ const corners=page().dimensions.find(x=>x.id===id).insideAt;
+ const sheet=(x,y)=>[placed.at[0]+(x-placed.centre[0])*placed.scale,placed.at[1]+(y-placed.centre[1])*placed.scale];
+ const yEdge=Math.min(...[...state().lines.get(view.id).visible].flatMap(p=>p.filter((_,i)=>i%2===1)));
+ d.setDimension(id,{insideAt:yEdge+2});await H.wait(200);
+ const segs=[];for(const p of state().lines.get(view.id).visible)for(let i=0;i+3<p.length;i+=2)segs.push([sheet(p[i],p[i+1]),sheet(p[i+2],p[i+3])]);
+ const toSeg=(q,[a,b])=>{const dx=b[0]-a[0],dy=b[1]-a[1],L=dx*dx+dy*dy||1;const k=Math.max(0,Math.min(1,((q[0]-a[0])*dx+(q[1]-a[1])*dy)/L));return Math.hypot(a[0]+k*dx-q[0],a[1]+k*dy-q[1]);};
+ const corner=outcome().items,tips=corner.filter(i=>i.filled).map(i=>[i.points[0],i.points[1]]);
+ const exts=corner.filter(i=>i.kind==='polyline'&&!i.closed&&Math.abs(i.points[0]-i.points[2])<0.01);
+ check(tips.length===2&&tips.every(t=>Math.min(...segs.map(s=>toSeg(t,s)))>1),'at the rounded corner the arrows are off the contour (the case being checked)');
+ check(exts.length===2,'an extension line for each arrow at the rounded corner');
+ for(const tp of tips){const e=exts.find(x=>Math.abs(x.points[0]-tp[0])<0.01);check(!!e,'an extension line through the arrow tip');const lo=Math.min(e.points[1],e.points[3]),hi=Math.max(e.points[1],e.points[3]);check(tp[1]>lo&&tp[1]<hi,'the arrow tip lies on its extension line');const start=[e.points[0],Math.max(e.points[1],e.points[3])];check(Math.min(...segs.map(s=>toSeg(start,s)))<1.01,'the extension line starts a gap off the contour');}
+ d.setDimension(id,{insideAt:corners});await H.wait(200);
+ check(outcome().items.filter(i=>i.kind==='polyline'&&!i.closed).length===1,'where the contour crosses the line again, no extension line');
  // Drag it off the view again: it goes back outside, at the distance the pointer is at.
  await drag(onLine2,[onLine2[0],box.bottom-12]);
  const back=dimension();check(back.insideAt===undefined,'the line is off the view again');check(back.offset!==initial.offset,'the line is outside the view, at the distance the pointer is at');
