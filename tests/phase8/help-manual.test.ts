@@ -16,9 +16,19 @@ const links = JSON.parse(readFileSync(new URL('docs/help-links.json', root), 'ut
 const actions = readFileSync(new URL('apps/web/src/actions.ts', root), 'utf8');
 const catalog = zhTW as Record<string, string>;
 
+/** The actions whose label the program picks at the moment (the right button says hide or show), so it shows one of these two names. */
+const RUNTIME_LABELS: Record<string, [string, string]> = {
+  'toggle-visibility': ['tree.hide', 'tree.show'],
+  'hide-component': ['subassembly.hide', 'subassembly.show'],
+  'transparent-component': ['subassembly.transparent', 'subassembly.opaque'],
+  'suppress-component': ['tree.suppress', 'tree.unsuppress'],
+};
+
 /** The name the program shows for a topic: the label of the action (or the sketch tool), or the title of the concept. */
 function nameOf(id: string): string {
   if ((CONCEPTS as readonly string[]).includes(id)) return catalog[helpKey(id, 'title')] ?? id;
+  const runtime = RUNTIME_LABELS[id];
+  if (runtime) return runtime.map((k) => catalog[k] ?? id).join('／');
   const own = new RegExp(String.raw`id: '${id}',\s*get label\(\)\s*\{\s*return t\('([\w.]+)'\)`).exec(actions);
   if (own) return catalog[own[1]!] ?? id;
   if (id.startsWith('tool-')) return catalog[`tool.${id.slice(5)}`] ?? id;
@@ -26,7 +36,7 @@ function nameOf(id: string): string {
 }
 
 const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
-const lineOf = (ids: string[]) => `<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>${ids.map((id) => escape(nameOf(id))).join('、')}。這一項驗出問題、修好時，這些說明也要一起改。</p>`;
+const lineOf = (ids: string[]) => `<p class="why helpref"><b>程式內的說明（按 F1，或功能列最右的「說明」搜尋）：</b>${[...new Set(ids.map((id) => escape(nameOf(id))))].join('、')}。這一項驗出問題、修好時，這些說明也要一起改。</p>`;
 
 function synced(manual: string): string {
   let out = manual.replace(/<p class="why helpref">.*?<\/p>\n?/g, '');
@@ -48,6 +58,8 @@ describe('the manual of verification shows the help topics of its items', () => 
   it('names every linked topic by something the program shows (not by its id)', () => {
     const ids = Object.entries(links).filter(([k]) => !k.startsWith('_')).flatMap(([, v]) => v as string[]);
     expect(ids.filter((id) => nameOf(id) === id)).toEqual([]);
+    expect(Object.keys(RUNTIME_LABELS).filter((id) => !actions.includes(`id: '${id}'`))).toEqual([]); // the ones whose label is picked at the moment are still actions
+    expect(Object.values(RUNTIME_LABELS).flat().filter((k) => catalog[k] === undefined)).toEqual([]);
   });
 
   it('says what the links say', () => {

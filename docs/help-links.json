@@ -13,8 +13,7 @@
     "delete-keep-body": "delete/keep body feature (ADR 0165): no item of the manual yet",
     "jog": "jog feature (ADR 0159): no item of the manual yet",
     "tool-intersect": "intersection curves sketch tool (ADR 0162): no item of the manual yet",
-    "select-underdefined": "E6, ADR 0188; no manual item yet",
-    "automatic-relations": "E6, ADR 0188; no manual item yet",
+    "select-underdefined": "E6, ADR 0188: no item of the manual selects the entities that still have freedom",
     "tool-silhouette": "D3, ADR 0189; no manual item yet",
     "ruled-surface": "D5, ADR 0190; no manual item yet",
     "radiated-surface": "D5, ADR 0190; no manual item yet",
@@ -29,7 +28,18 @@
     "sheet-unfold": "Editable sheet manufacturing, ADR 0199",
     "sheet-unfold-selected": "Partial sheet unfolding, ADR 0200",
     "sheet-refold": "Editable sheet manufacturing, ADR 0199",
-    "export-iges": "IGES export (F1.4); no manual item yet"
+    "export-iges": "IGES export (F1.4); no manual item yet",
+    "open-drawing-part": "opening the part a drawing shows, and going back to the drawing: no item of the manual yet",
+    "drw-open-part": "the drawing's own 開啟零件 button: no item of the manual yet",
+    "delete-feature": "deleting a feature from the tree (and the features that use it): no item of the manual yet",
+    "delete-component": "deleting a component from an assembly: no item of the manual yet",
+    "relink-component": "relinking a component to another part file (a lost part): no item of the manual yet",
+    "open-component": "opening a component's part file from the tree: no item of the manual yet",
+    "sketch-delete": "deleting sketch entities, dimensions or relations: no item of the manual yet",
+    "sketch-select-chain": "selecting a whole chain of touching entities: no item of the manual yet",
+    "drw-datum": "datum symbol (GD&T): no item of the manual yet; K2 only asks about the title block and the tolerance table",
+    "drw-fcf": "geometric tolerance frame (ISO 1101): no item of the manual yet",
+    "drw-surface": "surface roughness symbol: no item of the manual yet"
   },
   "C1": [
     "equations",
@@ -67,17 +77,20 @@
     "tool-mirror",
     "construction",
     "tool-centerline",
-    "tool-text"
+    "tool-text",
+    "sketch-end-tool"
   ],
   "C6": [
     "tool-dimension",
     "sketch",
-    "exit-sketch"
+    "exit-sketch",
+    "edit-feature-sketch"
   ],
   "C7": [
     "tool-convert",
     "tool-pierce",
-    "concept.sketch-snaps"
+    "concept.sketch-snaps",
+    "suppress-feature"
   ],
   "C8": [
     "extrude",
@@ -170,7 +183,10 @@
     "rotate-component",
     "undo",
     "redo",
-    "form-sub-assembly"
+    "form-sub-assembly",
+    "hide-component",
+    "transparent-component",
+    "suppress-component"
   ],
   "D10": [
     "move-with-triad"
@@ -203,14 +219,70 @@
   "D8": [
     "export-step"
   ],
+  "D9": [
+    "measure-part",
+    "measure-assembly"
+  ],
   "E1": [
     "generate-assembly"
+  ],
+  "E2": [
+    "hole"
+  ],
+  "E3": [
+    "insert-component"
+  ],
+  "E4": [
+    "mate"
   ],
   "E5": [
     "clearance"
   ],
+  "E6": [
+    "move-component"
+  ],
   "F1": [
-    "new-drawing"
+    "new-drawing",
+    "drw-standard",
+    "drw-autoscale"
+  ],
+  "F2": [
+    "drw-projected",
+    "drw-section",
+    "drw-detail"
+  ],
+  "F3": [
+    "concept.drawing-dimensions",
+    "drw-dimension",
+    "drw-dim-horizontal",
+    "drw-dim-vertical",
+    "drw-dim-aligned",
+    "drw-dim-angle",
+    "drw-dim-radius",
+    "drw-dim-diameter",
+    "drw-dim-chamfer",
+    "drw-baseline",
+    "drw-ordinate",
+    "drw-arrange"
+  ],
+  "F4": [
+    "concept.drawing-dimensions",
+    "drw-centre-mark",
+    "drw-centre-line",
+    "drw-hole-table"
+  ],
+  "F5": [
+    "drw-bom",
+    "drw-note"
+  ],
+  "F6": [
+    "drw-pdf",
+    "drw-dxf",
+    "drw-svg"
+  ],
+  "F7": [
+    "concept.drawing-dimensions",
+    "drw-dimension"
   ],
   "G1": [
     "split-line"
@@ -229,6 +301,9 @@
   "G4": [
     "thicken",
     "cut-with-surface"
+  ],
+  "G5": [
+    "export-step"
   ],
   "H1": [
     "draft-analysis"
@@ -255,6 +330,9 @@
   "H8": [
     "vent"
   ],
+  "H9": [
+    "shell"
+  ],
   "I1": [
     "base-flange",
     "mid-bend"
@@ -265,18 +343,48 @@
   "I3": [
     "hem"
   ],
+  "I4": [
+    "edge-flange"
+  ],
   "I5": [
     "break-corner"
   ],
   "I6": [
     "flat-pattern"
   ],
+  "I7": [
+    "base-flange"
+  ],
+  "I8": [
+    "base-flange",
+    "edge-flange"
+  ],
+  "I9": [
+    "flat-pattern",
+    "drw-dxf"
+  ],
+  "I10": [
+    "base-flange",
+    "edge-flange",
+    "hem"
+  ],
+  "K1": [
+    "insert-component"
+  ],
+  "K2": [
+    "concept.drawing-dimensions",
+    "new-drawing"
+  ],
+  "K3": [
+    "base-flange"
+  ],
   "K4": [
     "concept.sketch-snaps"
   ],
   "B1": [
     "fillet",
-    "concept.feature-tree"
+    "concept.feature-tree",
+    "toggle-visibility"
   ],
   "C23": [
     "fillet",
@@ -294,7 +402,8 @@
     "sketch-picture",
     "tool-line",
     "tool-point",
-    "tool-circle"
+    "tool-circle",
+    "automatic-relations"
   ],
   "C27": [
     "tool-moveEntities",
@@ -303,20 +412,5 @@
     "tool-scaleEntities",
     "tool-linearPattern",
     "tool-circularPattern"
-  ],
-  "F3": [
-    "concept.drawing-dimensions",
-    "drw-dimension",
-    "drw-dim-horizontal",
-    "drw-dim-vertical",
-    "drw-dim-aligned",
-    "drw-dim-angle",
-    "drw-dim-radius",
-    "drw-dim-diameter",
-    "drw-dim-chamfer",
-    "drw-baseline"
-  ],
-  "F4": [
-    "concept.drawing-dimensions"
   ]
 }
