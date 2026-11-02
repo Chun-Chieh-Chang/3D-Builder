@@ -8,10 +8,10 @@
 ## 1. 接續入口與當前代碼基準 (Current Baseline)
 
 - **目前分支**：`main`
-- **最新 Commit**：`ee0b710` (`test(fuzz): cut family gains bottom/midPlane/reversed variants plus a per-variant success gate, and pin the direction semantics (H-5/ADR 0094)`)
-- **遠端狀態**：本地 `main` 已與 `origin/main`（`ee0b710`）同步。
-- **CI 狀態**：GitHub Actions integrity 三平台（`ubuntu-latest`, `windows-latest`, `macos-latest`）**全數綠燈**（Run `41386824614`，`full-suite` 為夜間排程另計）；`a8e30b8` 起每次推送另跑 large-sketch solver 測試，皆通過。
-- **工作區狀態**：乾淨。注意：worktree 一律放在專案資料夾內（`.claude/worktrees/` 慣例），`wt-gizmo` 已用畢移除。
+- **最新 Commit**：`510f55c` (`fix(test): two verify:ui races (assembly solve in H.loaded, section-captions edges)` 的 PR #8 合併提交，見 §3o)
+- **遠端狀態**：本地 `main` 已與 `origin/main`（`510f55c`）同步。
+- **CI 狀態**：GitHub Actions integrity 三平台（`ubuntu-latest`, `windows-latest`, `macos-latest`）**全數綠燈**（`510f55c`：Run `41391653913`／`41391657225`／`41392269791`；`full-suite` 為夜間排程另計；`a8e30b8` 起每次推送另跑 large-sketch solver 測試，皆通過）。
+- **工作區狀態**：**有他人在途檔——工程圖工作階段的 9 改＋3 新檔**（`docs/adr/0227-dimension-line-on-view.md` 等，見 §3o 末條），**不得代提交或覆蓋**。注意：worktree 一律放在專案資料夾內（`.claude/worktrees/` 慣例），`wt-gizmo` 已用畢移除。
 
 ---
 
@@ -193,6 +193,16 @@
 - **②除料 fuzz 補 `reverse` 維度**：`fuzz-solids` 除料家族四變體 `top/bottom/midPlane/reversed`（reversed 掛 front 基準面＋`reverse:true`），SEEDS 72→240，新增「每變體至少成功且過體積檢查一次」門檻（`stats.tags`）；`extrude-p1` 恆定釘住四向體積（1960/1960/1980/1960）與掛端面 `reverse` 的兩個如實失敗。**先探針後寫碼**：除料預設永遠朝材料內（掛端面 reverse 必切空氣）。詳見 [ADR 0094 補充](docs/adr/0094-random-tests.md)。
 - **驗證**：完整 `verify:ui` **258/258**（前兩輪各 256/258 的兩案失敗為 worktree 手配 node_modules 缺 `three` 的環境缺陷，`npm ci` 修復後整輪重跑收案；教訓已錄 AGENTS §4）。typecheck、`lint:repo` 全 PASS；CI 三平台綠。
 - **worktree 收尾**：`wt-gizmo` 已提交、rebase 到 `02dc7fb`、推送並移除（截圖備份 `out/gizmo-retreat/`）；主樹以 update-ref＋逐檔判定 checkout 收尾，他人未提交的在途檔未動。
+
+
+## 3o. 2026-11-02 旁支合併回 main（PR #8 已 merged，旁支已刪；基準 `510f55c`）
+
+> **狀態：`claude/busy-bhaskara-16e42c`（PR #8）已合併進 main 並刪除；`feat/stl-exchange` 驗證 0 超前後逕行刪除。GitHub 僅剩 default `main`。**
+
+- **PR #8 內容**（他方交付，非本工作階段）：兩個 `verify:ui` 競態修復——`H.loaded` 等 assembly solve 後才算載入完成（`apps/web/src/state/assembly.ts` 公開 `solvePending`）、section-captions step 6 等 top view 的投影邊入圖再斷言（`tests/e2e/manual-assembly-section-captions.js`），＋`tests/e2e/phase2-assembly.js`。＋37/−3；聲明完整 `verify:ui` **260/260**、以實延遲重現驗證必要性、**不鬆門檻**（AGENTS §3.3）。
+- **合併方式**：分支已含 main 歷史（ahead 3、behind 0），本機 `git merge --ff-only origin/claude/busy-bhaskara-16e42c` 快進 `d661b7f..510f55c` 後推送；GitHub 自動判定 PR #8 **merged**（merged_at `2026-11-02T05:08:25Z`，merge_commit_sha `510f55c`）。
+- **分支清理**：遠端 `claude/busy-bhaskara-16e42c`、`feat/stl-exchange` 均已刪除；合併後本地 typecheck **0 錯**、CI 三平台全綠。
+- **主樹在途（勿動）**：工程圖工作階段仍有 9 改＋3 新檔未提交（`apps/web/src/components/{DimensionPanel,DrawingViewport}.tsx`、`packages/drawing/src/{arrange,dimension,pick}.ts`、`packages/i18n/src/{en,zh-TW}/drawing.ts`、`packages/model/src/{drawing,serialize}.ts`；新檔 `docs/adr/0227-dimension-line-on-view.md`、`tests/e2e/manual-drawing-dimension-on-view.js`、`tests/phase5/drawing-dimension-inside.test.ts`），由該工作階段自行收尾。
 
 
 ## 3l. 2026-11-01 P4 完成後待裁項目裁決與後續執行進度
