@@ -8,10 +8,10 @@
 ## 1. 接續入口與當前代碼基準 (Current Baseline)
 
 - **目前分支**：`main`
-- **最新 Commit**：`ea0b510`（本檔的交接提交）；其上是 `e577a18`，再上是 `4b867f0`（`docs(manual): map every core item to its help topics, reclassify C27/D10 and refresh the counts`，手冊待辦盤點，見 §3q）。
-- **遠端狀態**：本地 `main` 已與 `origin/main`（`ea0b510`）同步（快進推送 `dba3303..ea0b510`，含 `4b867f0`、`e577a18`、`ea0b510`）。
-- **CI 狀態**：GitHub Actions integrity 三平台（`ubuntu-latest`, `windows-latest`, `macos-latest`）**全數綠燈**（`e171790`：Run `41407308974`，三平台 job 皆 `success`；`d37c4a7`：Run `41392524538`；`510f55c`：Run `41391653913`／`41391657225`／`41392269791`；`full-suite` 為夜間排程另計，`e171790` 一輪為 `skipped`；`a8e30b8` 起每次推送另跑 large-sketch solver 測試，皆通過）。**本次推送的 Repository integrity 全數綠燈（Run `104`：`ea0b510`，即手冊盤點三個提交；Run `105`：`c23f22e`，三平台 job 皆 `success`）。**
-- **工作區狀態**：**乾淨，無在途檔**（手冊盤點的 6 個檔已於 `4b867f0` 提交，交接更新是 `e577a18`、`ea0b510`，見 §3q）。注意：worktree 一律放在專案資料夾內（`.claude/worktrees/` 慣例），`wt-gizmo` 已用畢移除。
+- **最新 Commit**：`40eeec8`（`docs(manual): add nine verification items (C28-C30, D11-D13, F8-F10)`，手冊新增九項，見 §3r）；其上是 `7aebded`、`c23f22e`、`ea0b510`（交接提交）、`e577a18`、`4b867f0`（手冊待辦盤點，見 §3q）。
+- **遠端狀態**：本地 `main` 比 `origin/main`（`7aebded`）多出「手冊新增九項」與本檔的交接提交（`40eeec8` 起），**尚未推送（未取得授權）**。
+- **CI 狀態**：GitHub Actions integrity 三平台（`ubuntu-latest`, `windows-latest`, `macos-latest`）**全數綠燈**（`e171790`：Run `41407308974`，三平台 job 皆 `success`；`d37c4a7`：Run `41392524538`；`510f55c`：Run `41391653913`／`41391657225`／`41392269791`；`full-suite` 為夜間排程另計，`e171790` 一輪為 `skipped`；`a8e30b8` 起每次推送另跑 large-sketch solver 測試，皆通過）。**本次推送的 Repository integrity 全數綠燈（Run `104`：`ea0b510`，即手冊盤點三個提交；Run `105`：`c23f22e`，三平台 job 皆 `success`）。`40eeec8` 與本檔的交接提交尚未推送，因此還沒有它們的 CI 結果。**
+- **工作區狀態**：**乾淨，無在途檔**（手冊新增九項已於 `40eeec8` 提交、本檔交接於同一批提交，見 §3r；手冊盤點的 6 個檔已於 `4b867f0` 提交，交接更新是 `e577a18`、`ea0b510`，見 §3q）。注意：worktree 一律放在專案資料夾內（`.claude/worktrees/` 慣例），`wt-gizmo` 已用畢移除。
 
 ---
 
@@ -224,7 +224,35 @@
 - **修正**：① 19 個手冊項目沒有對應的說明主題（D9、E2～E4、E6、F2、F5～F7、G5、H9、I4、I7～I10、K1～K3），補進 `docs/help-links.json`，**47 個必做項目全部至少有一個主題**（`docs/help-plan.md` 的 H-C 判準）；② 11 個有內文的主題沒有手冊項目，在 `_untied` 補上理由；③ `automatic-relations` 原本誤列在 `_untied`，但 C26 涵蓋它，移過去；④ **C27、D10 被誤標為「你已確認」**（`data-auto="user"`，預設隱藏且計入已處理），但項目自己的文字說只剩「看起來順不順手」，改為 `part`（部分驗過、預設仍開著）；⑤ 手冊開頭的數字（183 檔／2481 測試／UI 125）與「現在還剩（2026-10-09）」清單過期，改為 364 檔／4339 通過／26 略過／UI 264/264、程式版本對到 `187e325` 與 Schema 87・7・38，剩餘清單改為真正的 22 項（C27、D9、D10、F4、F6、F7、G5、I9、I10、J 章、K 章、L 章）；⑥ ADR 0227 的能力（尺寸線畫在視圖上）原先沒寫進說明，補進中英 `help.conceptDrawingDimensions.body`。
 - **守門修正**：同步手冊說明行的守門要求每個主題都查得到「程式顯示的名稱」，但 `toggle-visibility`／`hide-component`／`transparent-component`／`suppress-component` 的名稱是程式按當下狀態選的（隱藏／顯示…），守門因此紅。改為在守門裡放一張明確對照表，並斷言這四個仍是動作、對照表裡的名稱都查得到——新增沒登記的動作仍然會紅。另對同名主題去重（手冊上原本出現「測量、測量」）。
 - **驗證**：`tests/phase8/help.test.ts` 40 項、`help-manual.test.ts` 2 項、`help-examples.test.ts` 5 項，共 47/47 通過；全量 `npx vitest run` 364 檔／4339 通過／26 略過／0 失敗；`tsc` 0 錯；`lint:i18n`／`lint:repo` 全過；`npm run docs:sync` 無變更。中文以與 HEAD 基線差測掃描，新增的 573 個字元中簡體字命中 0。
-- **尚未處理（交由使用者決定）**：有一類功能「有說明主題、有瀏覽器腳本，但手冊完全沒有項目」（例如從工程圖開啟零件、工程圖自己的「開啟零件」按鈕）。本次只在 `_untied` 寫明理由，沒有自行新增手冊項目——新增哪些項目屬於手冊內容的決定權。
+- **尚未處理（交由使用者決定）**：有一類功能「有說明主題、有瀏覽器腳本，但手冊完全沒有項目」（例如從工程圖開啟零件、工程圖自己的「開啟零件」按鈕）。本次只在 `_untied` 寫明理由，沒有自行新增手冊項目——新增哪些項目屬於手冊內容的決定權。**（其後使用者指示「新增那些手冊項目」，已於 §3r 補齊。）**
+
+
+## 3r. 2026-11-02 手冊新增九個實機驗證項目（C28–C30、D11–D13、F8–F10，已提交 `40eeec8`）
+
+> **狀態：九個項目已寫入手冊並提交 `40eeec8`；說明守門 47/47 通過、全量單元 364 檔／4339 通過／26 略過／0 失敗、瀏覽器實查手冊頁 101 項。尚未推送（未取得當次明文授權）。**
+
+- **起因**：§3q 留下的待決事項——「有說明主題、有瀏覽器腳本，但手冊完全沒有項目」的那一類功能。使用者指示「新增那些手冊項目」，於是十二項待辦收斂成九個手冊項目（F8 併「從工程圖開啟零件」與「工程圖自己的開啟零件按鈕」，D11 併「開啟零件檔」，C29 併「刪除草圖圖元」與「選取相連圖元」）。
+- **九個項目與涵蓋的說明主題**：
+
+  | 項目 | 涵蓋的說明主題 | 自動驗證到哪裡 | 剩下要人做的 |
+  |---|---|---|---|
+  | C28 從設計樹刪除特徵 | `delete-feature` | `packages/regen/src/dag.ts` 的 `deletion()`（哪些算子特徵、哪些算被吸收的草圖）有單元測試；設計樹右鍵有「刪除…」由 `tests/phase8/context-menus.test.ts` 檢查 | 確認對話框、刪完的畫面、Ctrl+Z 復原 |
+  | C29 草圖：刪除圖元與選擇鏈 | `sketch-delete`、`sketch-select-chain` | `manual-context-menus.js` 第 12／16／17 步：圖元右鍵有這兩條、矩形一條邊按「選擇鏈」選到四條邊、對一條線按「刪除」刪掉那條線 | 尺寸與限制條件連帶刪除、三岔路口停下、圓形不延伸、Delete 鍵 |
+  | C30 輸出 IGES | `export-iges` | `phase8-iges.js` 走過輸出對話框，修剪曲面（mm）與實體 (B-rep)（inch）各一次，再讀回驗體積 | 用別的軟體實際開檔 |
+  | D11 從組合件開啟零件再回來 | `open-component`、`return-assembly` | `manual-context-menus.js` 檢查零組件右鍵有「開啟零件」「開啟次組合件」「重新指定零件檔…」「刪除…」 | 開啟後的畫面、「返回組合件」按鈕、存檔後回來有沒有變 |
+  | D12 從組合件刪除零組件 | `delete-component` | 同上（選單有「刪除…」）；連同結合一起走的規則在 `packages/model/src/assembly.ts` 的 `deleteComponents` | 確認對話框、刪完的畫面、復原 |
+  | D13 重新指定零件檔 | `relink-component` | `phase2-assembly.js` 重播「找不到參考的檔案」對話框：改名按「瀏覽…」指到新名、搬到別的資料夾按「使用 {路徑}」 | 零組件右鍵「重新指定零件檔…」那條路、選到專案資料夾外的檔案 |
+  | F8 從工程圖開啟零件再回來 | `open-drawing-part`、`drw-open-part` | `manual-drawing-open-part.js`：視圖右鍵「開啟零件（{零件名}）」、工程圖樹那一列的選單、有改動先問「要儲存變更嗎？」、回來時顯示存檔後的樣子 | 功能列兩個分頁的按鈕、工程圖樹上那一列、兩種開法 |
+  | F9 基準符號與幾何公差框 | `drw-datum`、`drw-fcf` | `packages/model/src/drawingAnnotations.ts` 的 `CHARACTERISTIC_RULES`（ISO 1101、ISO 2692）與 `DATUM_LABEL`，有 `tests/phase5/drawing-gdt.test.ts` | 放框的畫面、面板欄位隨公差種類換掉、錯誤訊息 |
+  | F10 表面粗糙度符號 | `drw-surface` | `packages/model/src/drawing.ts` 的 `checkSurfaceFinish`（Ra 0.008～400 µm、引線長度非負、文字不超過 40 字），有 `tests/phase5/drawing-surface-finish.test.ts` | 符號的樣子、拖曳、面板欄位、錯誤訊息 |
+
+- **誠實標示**：九項一律 `data-auto="part"`，每項開頭都有「已自動驗過哪一段」（寫出具體檔名或規則表）與「還沒有人用眼睛看過的」兩段。因此在「需人工」篩選下預設可見，並且會出現在「複製結果」的「還沒做」清單裡——不會被誤當成已完成。
+- **同步**：① `docs/help-links.json` 新增九個項目鍵（81 → 90 個頂層鍵，其中項目鍵 88 個），`_untied` 由 39 條減到 26 條，移出的 13 條主題（`delete-feature`、`delete-component`、`relink-component`、`open-component`、`return-assembly`、`sketch-delete`、`sketch-select-chain`、`export-iges`、`open-drawing-part`、`drw-open-part`、`drw-datum`、`drw-fcf`、`drw-surface`）全部有了對應項目；② `tests/phase8/help-manual.test.ts` 的 `RUNTIME_LABELS` 新增 `open-component`（程式依情境顯示「開啟零件」或「開啟」，守門要查得到的名稱不只一個）；③ 手冊開頭「現在還剩」清單加 ⑩～⑬ 四條。
+- **順帶修掉既有缺陷**：手冊腳本裡的 `META` 是手寫的 86 筆清單，但當下實際有 92 個項目——漏了 C23～C27 與 D10，於是那六項從未出現在「複製結果」與「還沒做」清單裡（既有問題，非本次造成，§3q 也沒發現）。改為從 DOM 逐項推導（`items.map(el => ({ id: el.dataset.id, sec: el.dataset.sec, tag: …, title: … }))`），新增項目不可能再被漏掉。
+- **事實核對（對照真實程式碼，不看說明就信）**：① IGES 檔內名稱不是整個換成一條底線，而是**每個非 ASCII 字元各換一條底線**（`packages/kernel/src/kernel.ts` 的 `productName.replace(/[^\x20-\x7e]/g, '_')`），故「測試零件」寫成「____」；② 開啟零件的訊息出現在**畫面最下方的狀態列**（`.status-bar .notice`），不是畫面的右下方；③ 零件視窗右鍵選單（`apps/web/src/contextMenus.ts` 的 `partMenu`）確實沒有「刪除…」，刪除只在設計樹，故 C28 寫的是設計樹。
+- **驗證**：說明守門 `help.test.ts` 40 + `help-manual.test.ts` 2 + `help-examples.test.ts` 5 = 47/47 通過；全量 `npx vitest run` 364 檔／4339 通過／26 略過／0 失敗；`tsc` 0 錯；`lint:rules`／`lint:deps`／`lint:i18n`／`lint:repo` 全過；`npm run docs:sync` 把實機清單項目數由 92 改為 101；瀏覽器實查手冊頁：101 項、META 101、進度 70/101（56 full + 14 user + 31 待做）、導覽計數 C 26/30、D 8/13、F 4/10；中文以與 HEAD 基線差測掃描，新增字元中簡體字命中 0。
+- **未跑完整 `verify:ui`**：本批只改 `docs/` 下的獨立 HTML 與說明對照檔，未觸及應用程式的檢視／繪圖／點選層，故未跑整輪瀏覽器驗證。
+- **尚未推送**：`40eeec8` 與本檔的交接提交都在本地 `main`（比 `origin/main` 的 `7aebded` 多出這兩個），未取得當次明文授權前不推送。
 
 
 ## 3l. 2026-11-01 P4 完成後待裁項目裁決與後續執行進度
