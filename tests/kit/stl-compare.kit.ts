@@ -51,7 +51,7 @@ describe('STL comparison files (ADR 0221)', () => {
     const pin = await golden('diamond-pin.3dbx');
     const vblock = await golden('v-block.3dbx');
     const fine = { relative: 1e-4, angular: 0.1 };
-    keep('A_定位板_二進位_mm.stl', writeStl([kernel.mesh(plate, fine)], '定位板'), 'mm', '形狀完整、沒有破洞或缺面；用「測量」量外框');
+    keep('A_定位板_二進位_mm.stl', writeStl([kernel.mesh(plate, fine)], '定位板'), 'mm', '形狀完整、沒有破洞或缺面。不必量外框：STL 只有三角形，沒有面與邊，eDrawings 點選會選到整個模型；外框數字已由本程式與 OCCT 的讀取器核對');
     keep('B_定位板_ASCII_mm.stl', writeStl([kernel.mesh(plate, fine)], '定位板', { format: 'ascii' }), 'mm', '和 A 完全一樣（ASCII 文字檔）');
     keep('C_定位板_二進位_inch.stl', writeStl([kernel.mesh(plate, fine)], '定位板', { unit: 'inch' }), 'inch', 'eDrawings 若當成 mm 開，會小 25.4 倍；這是 STL 沒有單位的正常現象，請只確認形狀與比例');
     keep('D_削邊銷_二進位_細.stl', writeStl([kernel.mesh(pin, fine)], '削邊銷'), 'mm', '圓柱與倒角是否平順、沒有裂縫');
