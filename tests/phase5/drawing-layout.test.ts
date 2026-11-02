@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { getLocale, type Locale } from '@3db/i18n';
 import { applyDrawingCommand, createEmptyDrawing, type DrawingDoc, type DrawingPage, type DrawingView, type ModelDrawingView } from '@3db/model';
-import { buildScene, layoutViews, sheetMetrics, STANDARD_SCALES, titleCells, toSvg, VIEW_GAP, type SceneText, type ViewLines } from '@3db/drawing';
+import { buildScene, layoutViews, readDxf, readPdf, sheetMetrics, STANDARD_SCALES, titleCells, toDxf, toPdf, toSvg, VIEW_GAP, type SceneText, type ViewLines } from '@3db/drawing';
 
 const view = (id: string, direction: ModelDrawingView['direction'], extra: Partial<ModelDrawingView> = {}): DrawingView => ({ id, name: id, source: 'x.3dbx', direction, ...extra });
 const doc = (views: DrawingView[], sheet: Partial<DrawingPage['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet: { projection: 'first', ...sheet } }), { type: 'insertViews', views });
@@ -27,7 +27,7 @@ describe('the sheet (ISO 5457, ISO 7200)', () => {
 
   it('the title block cells tile the block: four rows, no overlaps, every cell inside it', () => {
     const cells = titleCells();
-    expect(cells).toHaveLength(11); // 1 + 3 + 4 + 3
+    expect(cells).toHaveLength(12); // 1 + 3 + 4 + 4
     expect(cells.reduce((a, c) => a + c.w * c.h, 0)).toBeCloseTo(180 * 48, 9);
     for (const c of cells) {
       expect(c.x).toBeGreaterThanOrEqual(0);
@@ -35,6 +35,22 @@ describe('the sheet (ISO 5457, ISO 7200)', () => {
       expect(c.y).toBeGreaterThanOrEqual(0);
       expect(c.y + c.h).toBeLessThanOrEqual(48 + 1e-9);
     }
+  });
+  it.each([{ unit: 'mm', language: 'zh-TW', label: '單位' }, { unit: 'in', language: 'en', label: 'Unit' }] as const)('shows the actual sheet unit $unit in the title block', ({ unit, language, label }) => {
+    const drawing = applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet: { size: 'A4', orientation: 'landscape', unit, language } });
+    const cell = titleCells().find(c => c.field === 'unit')!;
+    const block = sheetMetrics({ size: 'A4', orientation: 'landscape' }).titleBlock;
+    const scene = buildScene(drawing, new Map()).scene;
+    const text = scene.items.filter((x): x is SceneText => x.kind === 'text');
+    expect(text.some(x => x.text === label && x.at[0] === block.x + cell.x + 1)).toBe(true);
+    expect(text.some(x => x.text === unit && x.at[0] === block.x + cell.x + 2)).toBe(true);
+    const svg = toSvg(scene);
+    expect(svg).toContain(`>${unit}</text>`);
+    const dxf = readDxf(toDxf(scene));
+    expect(dxf.entities.some(e => e.type === 'TEXT' && 'text' in e && e.text === unit)).toBe(true);
+    const pdf = readPdf(toPdf(scene).bytes);
+    expect(pdf.problems).toEqual([]);
+    expect(pdf.pages[0]!.texts.some(t => t.text === unit)).toBe(true);
   });
 });
 

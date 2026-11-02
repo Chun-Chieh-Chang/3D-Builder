@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { formatNumber, overlappingDimensions } from '@3db/drawing';
-import { MM_PER_INCH, page, resolveDimStyle } from '@3db/model';
-import type { DimStyle, Dimension, DimensionOrientation, DimensionTolerance, ViewFeature } from '@3db/model';
+import { MM_PER_INCH, axesOf, normalizedViewAxes, rightOf, sheetUp, page, resolveDimStyle } from '@3db/model';
+import type { DimStyle, Dimension, DimensionOrientation, DimensionTolerance, DrawingSketchCircle, ViewFeature } from '@3db/model';
 import { DimStyleFields } from './DimStyleFields';
 import { useEffect, useState } from 'react';
 import { store, useStore } from '../state/store';
@@ -112,6 +112,7 @@ export function DimensionPanel() {
   const [orientation, setOrientation] = useState<DimensionOrientation>('horizontal');
   const [round, setRound] = useState(0);
   const [threadIndex, setThreadIndex] = useState(0);
+  const [sketchCircleIndex, setSketchCircleIndex] = useState(0);
   // the dimension chosen is the document's state: it is chosen on the sheet as well
   const selected = drw.dimension;
   const setSelected = (id: string | null) => d.selectDimension(id);
@@ -138,6 +139,19 @@ export function DimensionPanel() {
   const nonEqualCone = current?.kind === 'chamfer' && current.coneSide !== undefined && measuredChamfer && Math.abs(measuredChamfer.angle - 45) > 1e-6;
   // the numbers of a tolerance are typed and shown in the unit of the sheet; the document holds millimetres
   const perUnit = curPage.sheet.unit === 'in' ? MM_PER_INCH : 1;
+  const rawAxes = view ? axesOf(curPage.views, curPage.sheet.projection, view) : null;
+  const axes = rawAxes ? normalizedViewAxes(rawAxes) : null;
+  const dot3 = (a: readonly number[], b: readonly number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
+  const sketchChoices = view && axes ? (drw.sketchCircles.get(view.id) ?? []).flatMap<{ circle: DrawingSketchCircle; orientation: DimensionOrientation | 'round' }>(circle => {
+    const normal = circle.facts.dir;
+    if (!normal) return [];
+    const facing = Math.abs(dot3(normal, axes.dir));
+    if (facing >= 1 - 1e-6) return [{ circle, orientation: 'round' as const }];
+    if (facing > 1e-6) return [];
+    const x = dot3(normal, rightOf(axes)), y = dot3(normal, sheetUp(axes));
+    const orientation: DimensionOrientation = Math.abs(y) < 1e-6 ? 'vertical' : Math.abs(x) < 1e-6 ? 'horizontal' : 'aligned';
+    return [{ circle, orientation }];
+  }) : [];
   const shownTol = (mm: number) => Math.round((mm / perUnit) * 1e6) / 1e6;
   const textOf = (x: Dimension) => {
     const o = outcomes.get(x.id);
@@ -288,6 +302,23 @@ export function DimensionPanel() {
             </div>
           )}
           </details>
+          {sketchChoices.length > 0 && (
+            <details className="pm-details" data-group="sketchDiameter">
+              <summary>{t('drawingUi.sketchDiameter')}</summary>
+              <p className="muted">{t('drawingUi.sketchDiameterHelp')}</p>
+              <div className="pm-row">
+                <select data-field="sketchDiameter" value={Math.min(sketchCircleIndex, sketchChoices.length - 1)} onChange={e => setSketchCircleIndex(Number(e.target.value))}>
+                  {sketchChoices.map(({ circle }, i) => <option key={circle.ref.name} value={i}>{circle.sketchName} · {circle.ref.name.split(':')[1]} · Ø{formatNumber(2 * circle.facts.radius! / perUnit, 4)}</option>)}
+                </select>
+                <button className="pm-button" data-action="addSketchDiameter" onClick={() => {
+                  const { circle, orientation } = sketchChoices[Math.min(sketchCircleIndex, sketchChoices.length - 1)]!;
+                  const ref = circle.ref;
+                  if (orientation === 'round') d.addDimension(view.id, { kind: 'diameter', ref, angle: 45 });
+                  else d.addDimension(view.id, { kind: 'linear', a: { ...ref, point: 'sketchNegative' }, b: { ...ref, point: 'sketchPositive' }, orientation, offset: orientation === 'horizontal' ? -10 : 10, prefix: 'Ø' });
+                }}>{t('drawingUi.dimDiameter')}</button>
+              </div>
+            </details>
+          )}
           <ul className="selection-box drawing-views" data-field="dimensions">
             {mine.map((x) => (
               <li key={x.id} className={chosenIds.includes(x.id) ? 'selected' : ''} onClick={(e) => (e.ctrlKey || e.metaKey ? d.pick([{ kind: 'dimension', id: x.id }], 'toggle') : setSelected(x.id))} data-dimension={x.id}>

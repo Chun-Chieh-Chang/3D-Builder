@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 34;
+export const DRAWING_SCHEMA_VERSION = 37;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -388,7 +388,7 @@ export type TitleField = (typeof TITLE_FIELDS)[number];
  * An element a dimension points at. In a view of a part it is the part's (`Ref`); in a view of an assembly (v14, D-I2, ADR 0138) `in` says which part of it,
  * by the leaf's id ("comp2", "comp2/pa": the components gone through from the assembly down), and the element is that part's, put where the assembly has it.
  */
-export const DRAWING_POINTS = ['midpoint', 'quadrant0', 'quadrant1', 'quadrant2', 'quadrant3', 'outlineStartPositive', 'outlineEndPositive', 'outlineMidPositive', 'outlineStartNegative', 'outlineEndNegative', 'outlineMidNegative'] as const;
+export const DRAWING_POINTS = ['midpoint', 'quadrant0', 'quadrant1', 'quadrant2', 'quadrant3', 'outlineStartPositive', 'outlineEndPositive', 'outlineMidPositive', 'outlineStartNegative', 'outlineEndNegative', 'outlineMidNegative', 'sketchPositive', 'sketchNegative'] as const;
 export type DrawingPoint = (typeof DRAWING_POINTS)[number];
 /** A generated view contour, distinct from an original B-rep edge. Identity is matched against regenerated HLR geometry, never used as measurement coordinates. */
 export type ProjectionRef = { kind: 'projection'; name: string; at?: number; in?: never; point?: never; fingerprint?: never };
@@ -398,7 +398,9 @@ export const drawingRefKey = (r: DrawingRef): string => JSON.stringify([r.kind, 
 export const sameDrawingRef = (a: DrawingRef, b: DrawingRef): boolean => drawingRefKey(a) === drawingRefKey(b);
 export function validDrawingPointRef(r: DrawingRef): boolean {
   if (r.kind === 'projection') return validProjectionRef(r);
+  if (r.kind === 'sketch') return /^[^:]+:[^:]+$/.test(r.name) && (r.point === undefined || r.point === 'sketchPositive' || r.point === 'sketchNegative') && r.fingerprint === undefined && r.silhouette === undefined;
   if (r.point === undefined) return true;
+  if (r.point === 'sketchPositive' || r.point === 'sketchNegative') return false;
   if (!DRAWING_POINTS.includes(r.point) || r.kind === 'vertex') return false;
   return r.point === 'midpoint' ? r.kind === 'edge' : r.point.startsWith('outline') ? r.kind === 'face' : true;
 }
@@ -545,6 +547,8 @@ export interface ElementFacts {
   /** Native circular end centres of a whole cylindrical or conical face. */
   ends?: [[number, number, number], [number, number, number]];
   endRadii?: [number, number];
+  /** Distance on the planar end to the theoretical intersection with the adjacent tapered wall. */
+  chamferSetback?: number;
   /** A plane's normal, an axis, a line's direction. */
   dir?: [number, number, number];
   radius?: number;
@@ -559,6 +563,13 @@ export interface ElementFacts {
   thread?: ThreadCallout;
   /** A face's middle (the centroid of its area): where on the plane the face is, which a plane's own `point` does not say. */
   center?: [number, number, number];
+}
+
+/** A solved circle in a part's sketch, offered explicitly as theoretical geometry. */
+export interface DrawingSketchCircle {
+  ref: Ref;
+  sketchName: string;
+  facts: ElementFacts;
 }
 
 export type CalloutStyle = 'text' | 'symbols';
@@ -627,7 +638,7 @@ export type ViewFeature =
    */
   | { type: 'torus'; ref: Ref; centre: [number, number]; at: [number, number]; radius: number; major: number; axis: [number, number]; convex: boolean; outward: number }
   /** A plane seen edge-on that is neither square to the view's x nor to its y (a slanted face): the middle of the face and the direction of the line it is seen as (a unit vector), in the view's coordinates. */
-  | { type: 'slant'; ref: Ref; at: [number, number]; dir: [number, number]; area: number; cone?: { side: 1 | -1; from: [number, number]; to: [number, number]; axial: number; radial: number } };
+  | { type: 'slant'; ref: Ref; at: [number, number]; dir: [number, number]; area: number; cone?: { side: 1 | -1; from: [number, number]; to: [number, number]; axial: number; radial: number; setback?: number } };
 
 /** Transient native section boundaries, kept separate by assembly instance; never saved as drawing geometry. */
 export interface SectionHatchRegion { component: string; order: number; cut: number[][] }
@@ -1103,7 +1114,7 @@ const isRefValue = (r: unknown): r is DrawingRef =>
   r !== null &&
   typeof (r as Ref).name === 'string' &&
   (r as Ref).name !== '' &&
-  ['face', 'edge', 'vertex', 'projection'].includes((r as DrawingRef).kind) &&
+  ['face', 'edge', 'vertex', 'projection', 'sketch'].includes((r as DrawingRef).kind) &&
   // the part of an assembly it is in: a leaf's id, never empty
   ((r as DrawingRef).in === undefined || (typeof (r as DrawingRef).in === 'string' && (r as DrawingRef).in !== '')) && validDrawingPointRef(r as DrawingRef);
 
@@ -1123,6 +1134,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
   if (!viewById(views, d.view)) throw new CommandError(t('drawing.dimNoView', { id: String(d.view) }));
   if (d.kind === 'linear') {
     if (!isRefValue(d.a) || !isRefValue(d.b)) throw new CommandError(t('drawing.dimBadRef'));
+    if ([d.a, d.b].some(r => r.kind === 'sketch' && !r.point)) throw new CommandError(t('drawing.dimBadRef'));
     if (!ORIENTATIONS.includes(d.orientation)) throw new CommandError(t('drawing.dimBadOrientation', { orientation: String(d.orientation) }));
     if (!Number.isFinite(d.offset) || d.offset === 0) throw new CommandError(t('drawing.dimBadOffset'));
     for (const [side, r] of [[d.aSide, d.a], [d.bSide, d.b]] as const) {
@@ -1134,7 +1146,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     // one face measured to itself is a distance only between its two outlines
     if (sameDrawingRef(d.a, d.b) && !(d.aSide !== undefined && d.bSide !== undefined && d.aSide !== d.bSide)) throw new CommandError(t('drawing.dimSameElement'));
   } else if (d.kind === 'angle') {
-    if (!isRefValue(d.a) || !isRefValue(d.b) || d.a.kind === 'vertex' || d.b.kind === 'vertex' || d.a.point || d.b.point) throw new CommandError(t('drawing.dimBadRef'));
+    if (!isRefValue(d.a) || !isRefValue(d.b) || d.a.kind === 'vertex' || d.b.kind === 'vertex' || d.a.kind === 'sketch' || d.b.kind === 'sketch' || d.a.point || d.b.point) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.arc) || !(d.arc > 0)) throw new CommandError(t('drawing.dimBadArc'));
     // an angle has no size for an ISO 286 fit to come from, so it takes limits or a one-sided limit, never a fit
     if (d.tolerance && d.tolerance.type === 'fit') throw new CommandError(t('drawing.dimAngleFit'));
@@ -1145,7 +1157,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     if (d.kind === 'radius' && (d as { callout?: boolean }).callout) throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: d.kind }));
   } else if (d.kind === 'ordinate') {
     if (d.axis !== 'x' && d.axis !== 'y') throw new CommandError(t('drawing.dimBadOrientation', { orientation: String(d.axis) }));
-    if (!isRefValue(d.origin) || !Array.isArray(d.refs) || d.refs.length === 0 || !d.refs.every(isRefValue)) throw new CommandError(t('drawing.dimBadRef'));
+    if (!isRefValue(d.origin) || d.origin.kind === 'sketch' || !Array.isArray(d.refs) || d.refs.length === 0 || !d.refs.every(isRefValue) || d.refs.some(r => r.kind === 'sketch')) throw new CommandError(t('drawing.dimBadRef'));
     if (d.refs.length > ORDINATE_MAX) throw new CommandError(t('drawing.ordinateTooMany', { max: String(ORDINATE_MAX) }));
     if (!Number.isFinite(d.offset) || d.offset === 0) throw new CommandError(t('drawing.dimBadOffset'));
     // the same element twice, or the origin measured from itself, says nothing
@@ -1154,7 +1166,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     if (new Set(all).size !== all.length) throw new CommandError(t('drawing.ordinateTwice'));
     if (d.tolerance?.type === 'fit') throw new CommandError(t('drawing.ordinateFit'));
   } else if (d.kind === 'chamfer') {
-    if (!isRefValue(d.ref) || d.ref.kind === 'vertex' || d.ref.kind === 'projection' || d.ref.point) throw new CommandError(t('drawing.dimBadRef'));
+    if (!isRefValue(d.ref) || d.ref.kind === 'vertex' || d.ref.kind === 'projection' || d.ref.kind === 'sketch' || d.ref.point) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
     if (d.coneSide !== undefined && (d.ref.kind !== 'face' || (d.coneSide !== 1 && d.coneSide !== -1))) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.size) || d.size <= 0) throw new CommandError(t('drawing.dimBadOffset'));

@@ -1324,7 +1324,7 @@ export const help: Translation = {
   'help.drwOrdinate.keywords': 'ordinate baseline hole positions origin',
   'help.drwArrange.summary': 'Stacks all the linear dimensions outward by length; no value changes.',
   'help.drwArrange.keywords': 'arrange align overlap dimensions',
-  'help.drwNote.summary': 'Puts text on the drawing, with a leader that can be fastened to the model.',
+  'help.drwNote.summary': 'Adds drawing text with an optional model-attached leader. Select the note to choose a circle or rounded rectangle that fits its text.',
   'help.drwNote.keywords': 'note text leader',
   'help.drwDatum.summary': 'Puts a datum feature symbol on an edge or a vertex.',
   'help.drwDatum.keywords': 'datum GD&T',

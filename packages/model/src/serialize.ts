@@ -433,6 +433,15 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   32: (doc) => doc,
   // v34: generated projection contour references.
   33: (doc) => doc,
+  // v35: optional fitted circle or ellipse around a note.
+  34: (doc) => doc,
+  // v36 replaces the former ellipse option with a rounded rectangle.
+  35: (doc) => ({ ...doc, pages: Array.isArray(doc.pages) ? doc.pages.map(p => {
+    if (!p || typeof p !== 'object' || !('annotations' in p) || !Array.isArray(p.annotations)) return p;
+    return { ...p, annotations: p.annotations.map((a: Json) => a && typeof a === 'object' && 'kind' in a && a.kind === 'note' && 'enclosure' in a && a.enclosure === 'ellipse' ? { ...a, enclosure: 'rounded' } : a) };
+  }) : doc.pages }),
+  // v37: drawing dimensions may refer to solved sketch circles.
+  36: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {
@@ -452,6 +461,7 @@ export function parseDrawing(text: string): DrawingDoc {
     for (const v of p.views as Json[]) if (v.caption !== undefined) checkViewCaption(v.caption);
     for (const d of p.dimensions as unknown as Dimension[]) if (d.kind === 'chamfer' && d.coneSide !== undefined && (d.ref.kind !== 'face' || (d.coneSide !== 1 && d.coneSide !== -1))) throw new FormatError(t('drawing.dimBadRef'));
     for (const d of p.dimensions as unknown as Dimension[]) for (const ref of dimensionRefs(d)) if (ref?.kind === 'projection' && !validProjectionRef(ref)) throw new FormatError(t('drawing.dimBadRef'));
+    for (const d of p.dimensions as unknown as Dimension[]) for (const ref of dimensionRefs(d)) if (ref?.kind === 'sketch' && !validDrawingPointRef(ref)) throw new FormatError(t('drawing.dimBadRef'));
     for (const d of p.dimensions as unknown as Dimension[]) for (const ref of dimensionRefs(d)) if (ref?.point !== undefined && !validDrawingPointRef(ref)) throw new FormatError(t('drawing.dimBadRef'));
   }
   // As for parts: counters cover every id in the file, even one edited by hand or by a script.

@@ -1,5 +1,5 @@
 import type { Locale } from '@3db/i18n';
-import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, SectionCut, ViewAxes, ViewEdgeSet, ViewFeature, DrawingRef } from '@3db/model';
+import type { InterferenceComponent, MeasureReport, MeasureTarget, PartMass, ElementFacts, SectionCut, ViewAxes, ViewEdgeSet, ViewFeature, DrawingRef, DrawingSketchCircle } from '@3db/model';
 import type { AssemblyDoc, Axis3, CoordSystem, Feature, Fingerprint, Id, PartDoc, PlaneFrame, Pose, Ref, SketchFeature, SourceTree, Vec3 } from '@3db/model';
 import type { DraftReport, ThicknessReport, UndercutReport, GeometryReport, MassProps, MeshData } from '@3db/kernel';
 import type { AssemblyResult, AssemblySolveOptions, ClearanceRow, Converted, FeatureResult, FlatReport, SheetCheck, SheetCheckLimits, SnapItem, SweepResult, CosmeticThreadInfo } from '@3db/regen';
@@ -280,7 +280,7 @@ export type DrawingViewResult = { lines: import('@3db/regen').DrawingProjection 
 
 /** What a view of a drawing can be dimensioned from, or why not (C16.4). */
 /** What a view can be dimensioned from: its features, and (D-I2) the edges and vertices of the part by name, projected, for the drawing to see which are drawn. */
-export type DrawingFeaturesResult = { features: ViewFeature[]; edges?: ViewEdgeSet } | { error: string };
+export type DrawingFeaturesResult = { features: ViewFeature[]; edges?: ViewEdgeSet; sketchCircles?: DrawingSketchCircle[] } | { error: string };
 
 /** What the elements a drawing's dimensions point at are, one for each reference asked, or why one could not be told (it is gone, or not something to dimension). */
 export type DrawingElementsResult = { elements: (ElementFacts | { error: string })[] } | { error: string };

@@ -1,8 +1,8 @@
 import { t } from '@3db/i18n';
 import { edgeFingerprint, faceFingerprint, resolveRef, vertexFingerprint, type ElementNames } from '@3db/naming';
 import type { Kernel, ShapeId, Topology } from '@3db/kernel';
-import type { CosmeticThreadInfo, SourceProvider } from './engine';
-import { lookupThread, normalizedViewAxes, rightOf, sheetUp, type DrawingRef, type ElementFacts, type HoleInfo, type ThreadCallout, type PartDoc, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
+import type { CosmeticThreadInfo, SourceProvider, RebuildResult } from './engine';
+import { lookupThread, normalizedViewAxes, rightOf, sheetUp, type DrawingRef, type DrawingSketchCircle, type ElementFacts, type HoleInfo, type ThreadCallout, type PartDoc, type Ref, type ViewAxes, type ViewFeature } from '@3db/model';
 
 /**
  * What a drawing's dimensions need to know of the part a view shows (C16.4): the elements a dimension points at, by persistent name, as numbers; and the
@@ -13,6 +13,35 @@ type V3 = [number, number, number];
 const dot = (a: readonly number[], b: readonly number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
 const PARALLEL = 1 - 1e-6;
 const parallel = (a: readonly number[], b: readonly number[]) => Math.abs(dot(a, b)) >= PARALLEL;
+
+/** The solved circle in its original sketch plane, including circles removed by later features.
+ * This describes theoretical sketch geometry, not an edge of the finished solid. */
+export function sketchCircleFacts(sketches: RebuildResult['sketches'], sketchId: string, entityId: string): ElementFacts | null {
+  const sketch = sketches.get(sketchId);
+  const circle = sketch?.solved.geometry.get(entityId);
+  if (!sketch || sketch.solved.status === 'failed' || circle?.type !== 'circle' || !Number.isFinite(circle.r) || circle.r <= 0) return null;
+  const { origin, xDir, yDir, normal } = sketch.frame;
+  const point: V3 = [0, 1, 2].map(i => origin[i]! + circle.c[0] * xDir[i]! + circle.c[1] * yDir[i]!) as V3;
+  if (!point.every(Number.isFinite) || !normal.every(Number.isFinite)) return null;
+  return { kind: 'edge', type: 'circle', point, dir: normal, radius: circle.r };
+}
+
+/** The circles a user can explicitly choose, including those removed by later operations. */
+export function drawingSketchCircles(sketches: RebuildResult['sketches']): DrawingSketchCircle[] {
+  const out: DrawingSketchCircle[] = [];
+  for (const [id, value] of sketches) for (const entity of value.sketch.entities) {
+    if (entity.type !== 'circle') continue;
+    const facts = sketchCircleFacts(sketches, id, entity.id);
+    if (facts) out.push({ ref: { kind: 'sketch', name: `${id}:${entity.id}` }, sketchName: value.sketch.name, facts });
+  }
+  return out;
+}
+
+/** Resolve a persisted sketch reference against the latest solved model, never cached coordinates. */
+export function drawingSketchFacts(sketches: RebuildResult['sketches'], ref: Ref): ElementFacts | { error: string } {
+  const match = ref.kind === 'sketch' ? /^([^:]+):([^:]+)$/.exec(ref.name) : null;
+  return (match && sketchCircleFacts(sketches, match[1]!, match[2]!)) || { error: t('drawing.refMissing', { name: ref.name }) };
+}
 
 /** The two circular edges where a cylinder face ends, whole circles of its radius about its axis, the nearer to the axis' origin first; fewer than two when it does not end that way. */
 function cylinderEnds(topology: Topology, face: number) {
@@ -65,9 +94,34 @@ function coneEnds(topology: Topology, face: number) {
     const rel = c.center.map((v, i) => v - g.apex[i]!);
     const t = dot(rel, g.axis);
     if (Math.hypot(...rel.map((v, i) => v - t * g.axis[i]!)) > 1e-6 * Math.max(1, c.radius)) return [];
-    return [{ center: c.center, radius: c.radius, t }];
+    return [{ center: c.center, radius: c.radius, t, edge: e }];
   });
   return ends.filter((e, i) => ends.findIndex(o => Math.abs(o.t - e.t) < 1e-7) === i).sort((a, b) => a.t - b.t);
+}
+
+/** Setback on the end plane, measured from its intersection with the adjoining cone.
+ * Only use an unambiguous full circular planar end and coaxial cone; otherwise
+ * the actual axial/radial span remains the dimension's existing ground truth. */
+function taperedChamferSetback(topology: Topology, face: number): number | undefined {
+  const g = topology.faces[face]?.geometry;
+  if (g?.type !== 'cone') return undefined;
+  const ends = coneEnds(topology, face);
+  if (ends.length !== 2) return undefined;
+  for (const [planar, wall] of [[ends[0]!, ends[1]!], [ends[1]!, ends[0]!]] as const) {
+    const p = planar.edge.faces.filter(i => i !== face).map(i => topology.faces[i]?.geometry);
+    const w = wall.edge.faces.filter(i => i !== face).map(i => topology.faces[i]?.geometry);
+    if (p.length !== 1 || p[0]?.type !== 'plane' || !parallel(p[0].normal, g.axis) || w.length !== 1 || w[0]?.type !== 'cone' || !parallel(w[0].axis, g.axis)) continue;
+    const cone = w[0];
+    const relative = wall.center.map((v, i) => v - cone.apex[i]!);
+    const z = dot(relative, g.axis);
+    const off = Math.hypot(...relative.map((v, i) => v - z * g.axis[i]!));
+    if (off > 1e-6 * Math.max(1, wall.radius) || Math.abs(z) < 1e-9) continue;
+    const slope = Math.sign(z) * Math.abs(Math.tan(cone.halfAngle));
+    const intersection = wall.radius + slope * (planar.t - wall.t);
+    const setback = Math.abs(intersection - planar.radius);
+    if (intersection > 0 && Number.isFinite(setback) && setback > 1e-9) return setback;
+  }
+  return undefined;
 }
 
 /** The countersink at a cylinder's end, when the face beyond it is a cone whose other circular edge is bigger and about the same axis: its diameter and included angle (degrees). */
@@ -210,7 +264,10 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Drawi
     }
     if (g?.type === 'cone') {
       const ends = coneEnds(topology, r.index);
-      if (ends.length === 2) return { kind: 'face', type: 'cone', point: f.center, dir: g.axis, ends: [ends[0]!.center, ends[1]!.center], endRadii: [ends[0]!.radius, ends[1]!.radius] };
+      if (ends.length === 2) {
+        const chamferSetback = taperedChamferSetback(topology, r.index);
+        return { kind: 'face', type: 'cone', point: f.center, dir: g.axis, ends: [ends[0]!.center, ends[1]!.center], endRadii: [ends[0]!.radius, ends[1]!.radius], ...(chamferSetback !== undefined ? { chamferSetback } : {}) };
+      }
     }
     if (g?.type === 'sphere') return { kind: 'face', type: 'sphere', point: g.center, radius: g.radius };
     // a fillet or a round: its radius is the tube's, and its axis and the circle the tube's middle runs on are what say where the arc is
@@ -282,7 +339,8 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
         if (axial > 1e-9 && radial > 1e-9) for (const side of [1, -1] as const) {
           const at = (e: (typeof ends)[number]): [number, number] => [dot(e.center, right) - side * e.radius * dy / len, dot(e.center, up) + side * e.radius * dx / len];
           const from = at(ends[0]!), to = at(ends[1]!), l = Math.hypot(to[0] - from[0], to[1] - from[1]);
-          out.push({ type: 'slant', ref: ref(), at: [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2], dir: [(to[0] - from[0]) / l, (to[1] - from[1]) / l], area: f.area, cone: { side, from, to, axial, radial } });
+          const setback = taperedChamferSetback(topology, i);
+          out.push({ type: 'slant', ref: ref(), at: [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2], dir: [(to[0] - from[0]) / l, (to[1] - from[1]) / l], area: f.area, cone: { side, from, to, axial, radial, ...(setback !== undefined ? { setback } : {}) } });
         }
       }
     } else if (g.type === 'torus' && Math.abs(dot(g.axis, axes.dir)) < 1e-6 && g.major > 1e-9) {

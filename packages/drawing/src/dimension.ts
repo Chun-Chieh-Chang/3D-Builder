@@ -386,6 +386,14 @@ export function evaluateDimension(d: Dimension, resolved: ElementsResult | undef
     const point = refs[i]?.point;
     if (!point || (e.kind === 'vertex' && e.type === 'point')) { els.push(e); continue; }
     let at: [number, number, number] | undefined;
+    if ((point === 'sketchPositive' || point === 'sketchNegative') && ref.kind === 'sketch' && e.type === 'circle' && e.dir && e.radius !== undefined && Math.abs(dot(e.dir, axes.dir)) <= PERPENDICULAR) {
+      const right = rightOf(axes), up = sheetUp(axes);
+      const x = dot(e.dir, right), y = dot(e.dir, up), length = Math.hypot(x, y);
+      if (length > 1e-9) {
+        const sign = point === 'sketchPositive' ? 1 : -1;
+        at = e.point.map((v, j) => v + sign * e.radius! * (-y * right[j]! + x * up[j]!) / length) as [number, number, number];
+      }
+    }
     if (point === 'midpoint' && e.kind === 'edge' && e.type === 'line') at = e.point;
     if (point.startsWith('quadrant') && (e.type === 'circle' || e.type === 'cylinder') && e.dir && e.radius !== undefined && Math.abs(dot(e.dir, axes.dir)) >= PARALLEL) {
       const q = Number(point.slice(-1));
@@ -790,7 +798,7 @@ function chamfer(d: Extract<Dimension, { kind: 'chamfer' }>, e: ElementFacts, ax
     const a = to(e.ends[0]), b = to(e.ends[1]);
     const radius = (e.endRadii[0] + e.endRadii[1]) / 2;
     ptView = [(a[0] + b[0]) / 2 - d.coneSide * radius * dy / length, (a[1] + b[1]) / 2 + d.coneSide * radius * dx / length];
-    size = axial;
+    size = e.chamferSetback ?? axial;
     measuredAngle = Math.atan2(radial, axial) * 180 / Math.PI;
   }
 

@@ -126,6 +126,7 @@ export function sheetItems(doc: DrawingDoc): SceneItem[] {
     ...pg.title,
     scale: scaleText(pg.sheet.scale),
     sheet: pg.sheet.size,
+    unit: pg.sheet.unit ?? 'mm',
     projection: t(`drawing.projection.${pg.sheet.projection}`),
   };
   for (const c of titleCells()) {

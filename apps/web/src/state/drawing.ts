@@ -40,6 +40,7 @@ import {
   type ViewEdgeSet,
   sameDrawingRef,
   type DrawingRef,
+  type DrawingSketchCircle,
   type ClosedOutline,
   placementRows,
   placeElementFacts,
@@ -196,6 +197,8 @@ export interface DrawingState {
   problems: Map<Id, string>;
   /** What each view can be dimensioned from (C16.4), by view id; a detail has its parent's. Absent while not known. */
   features: Map<Id, ViewFeature[]>;
+  /** Explicit theoretical circle choices, kept separate from visible solid features. */
+  sketchCircles: Map<Id, DrawingSketchCircle[]>;
   /** The edges and vertices of the part each view shows, by name (D-I2); absent while not known, and for a view of an assembly. */
   edges: Map<Id, ViewEdgeSet>;
   /** What the elements each dimension points at are, by dimension id; absent while not known. */
@@ -259,7 +262,7 @@ export class DrawingStore {
   private computeAgain = false;
   private sceneCache: { pageIndex: number; doc: DrawingDoc; lines: DrawingState['lines']; elements: DrawingState['elements']; features: DrawingState['features']; boms: DrawingState['boms']; edges: DrawingState['edges']; value: { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]> } } | null = null;
   /** What a view can be dimensioned from, by the part's key and where it looks from; and what an element is, by the part's key and the reference. */
-  private featureCache = new Map<string, { features: ViewFeature[]; edges?: ViewEdgeSet } | { error: string }>();
+  private featureCache = new Map<string, { features: ViewFeature[]; edges?: ViewEdgeSet; sketchCircles?: DrawingSketchCircle[] } | { error: string }>();
   private elementCache = new Map<string, ElementFacts | { error: string }>();
   /** The font the PDF embeds (read from the file the user chose; not part of the drawing). */
   private font: TrueTypeFont | null = null;
@@ -290,6 +293,7 @@ export class DrawingStore {
       lines: new Map(),
       problems: new Map(),
       features: new Map(),
+      sketchCircles: new Map(),
       edges: new Map(),
       elements: new Map(),
       boms: new Map(),
@@ -1081,7 +1085,7 @@ export class DrawingStore {
           if (this.closed) return;
           uniqueFeatures.forEach((w, i) => {
             const r = results[i]!;
-            this.featureCache.set(w.id, 'error' in r ? { error: r.error } : { features: r.features, ...(r.edges ? { edges: r.edges } : {}) });
+            this.featureCache.set(w.id, 'error' in r ? { error: r.error } : { features: r.features, ...(r.edges ? { edges: r.edges } : {}), ...(r.sketchCircles ? { sketchCircles: r.sketchCircles } : {}) });
           });
         }
         // what the elements are
@@ -1138,6 +1142,7 @@ export class DrawingStore {
         }
         // the answers, by view and by dimension
         const features = new Map<Id, ViewFeature[]>();
+        const sketchCircles = new Map<Id, DrawingSketchCircle[]>();
         const edges = new Map<Id, ViewEdgeSet>();
         for (const p of doc.pages) {
           for (const v of p.views) {
@@ -1147,6 +1152,7 @@ export class DrawingStore {
             const found = asmFound ?? (r?.featureId ? this.featureCache.get(r.featureId) : undefined);
             if (found && !('error' in found)) {
               features.set(v.id, found.features);
+              if (found.sketchCircles && !asmFound) sketchCircles.set(v.id, found.sketchCircles);
               if (found.edges) edges.set(v.id, found.edges);
             }
           }
@@ -1177,7 +1183,7 @@ export class DrawingStore {
             elements.set(d.id, bad ? { error: bad.error } : { elements: got as (ElementFacts | null)[] });
           }
         }
-        this.set({ features, edges, elements });
+        this.set({ features, sketchCircles, edges, elements });
         this.autoScaleWhenReady();
       } while (this.featureAgain && !this.closed);
     } catch (e) {

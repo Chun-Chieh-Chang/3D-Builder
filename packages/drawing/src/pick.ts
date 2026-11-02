@@ -284,7 +284,7 @@ export function dimensionAt(items: readonly SceneItem[], p: P2, tol: number): { 
   const offer = (id: string, text: boolean, d: number) => {
     if (d > tol) return;
     // a text under the pointer wins over a line of the same dimension (that is how it is told apart: the text slides, the line moves away)
-    if (!best || d < best.d - 1e-9 || (text && best.id === id && !best.text && d <= tol)) best = { id, text, d };
+    if (!best || d < best.d - 1e-9 || (text && !best.text && d <= best.d + 1e-9)) best = { id, text, d };
   };
   for (const it of items) {
     if (!it.group) continue;
@@ -292,9 +292,14 @@ export function dimensionAt(items: readonly SceneItem[], p: P2, tol: number): { 
       for (let i = 0; i + 3 < it.points.length; i += 2) offer(it.group, false, segmentDistance(p, [it.points[i]!, it.points[i + 1]!], [it.points[i + 2]!, it.points[i + 3]!]));
       if (it.closed && it.points.length >= 4) offer(it.group, false, segmentDistance(p, [it.points[it.points.length - 2]!, it.points[it.points.length - 1]!], [it.points[0]!, it.points[1]!]));
     } else {
-      const b = itemsBounds([it]);
+      // Test rotated text in its own coordinates. Its axis-aligned fit box is
+      // deliberately generous and can cover distant adjacent annotations.
+      const a = (it.angle ?? 0) * Math.PI / 180;
+      const dx = p[0] - it.at[0], dy = p[1] - it.at[1];
+      const local: P2 = [it.at[0] + dx * Math.cos(a) + dy * Math.sin(a), it.at[1] - dx * Math.sin(a) + dy * Math.cos(a)];
+      const b = itemsBounds([{ ...it, angle: 0 }]);
       if (!b) continue;
-      const inside = p[0] >= b.x0 - 0.5 && p[0] <= b.x1 + 0.5 && p[1] >= b.y0 - 0.5 && p[1] <= b.y1 + 0.5;
+      const inside = local[0] >= b.x0 - 0.5 && local[0] <= b.x1 + 0.5 && local[1] >= b.y0 - 0.5 && local[1] <= b.y1 + 0.5;
       if (inside) offer(it.group, true, 0);
     }
   }
@@ -380,8 +385,8 @@ function planChamfer(picks: readonly Pickable[], p: P2, placed: PlacedView, axes
   const cone = f.type === 'slant' ? f.cone : undefined;
   if (!Number.isFinite(dx + dy) || (!cone && (dx <= 1e-9 || dy <= 1e-9))) return { error: t('drawing.dimNeedsChamfer') };
   const equalLegs = Math.abs(dx - dy) <= 1e-7;
-  const c = cone ? cone.axial : Math.max(dx, dy);
-  const chamferAngle = Math.atan2(cone ? cone.radial : Math.min(dx, dy), c) * 180 / Math.PI;
+  const c = cone ? (cone.setback ?? cone.axial) : Math.max(dx, dy);
+  const chamferAngle = Math.atan2(cone ? cone.radial : Math.min(dx, dy), cone ? cone.axial : c) * 180 / Math.PI;
   const midPoint: P2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   const sheetMid = toSheet(placed, midPoint[0], midPoint[1]);
   const g = leaderAt({ kind: 'round', centre: sheetMid, radius: 0 }, p);

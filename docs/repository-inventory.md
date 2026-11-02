@@ -6,9 +6,9 @@
 
 | 項目 | 程式來源值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 87／7／34 |
-| ADR 文件 | 222 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 212／208／260 |
+| 零件／組合件／工程圖 Schema | 87／7／37 |
+| ADR 文件 | 225 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 215／211／263 |
 | 實機清單項目 | 92 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -452,6 +452,9 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0221：STL 輸出與輸入（F4.1 補完、F2.3）](<adr/0221-stl-exchange.md>)
 - [ADR 0222: 草圖獨立 Split 工具探針 (G08, D1)](<adr/0222-sketch-split-probe.md>)
 - [ADR 0223: 草圖自動尺寸配置探針 (G19, D5)](<adr/0223-sketch-auto-dimension-probe.md>)
+- [ADR 0224：註解的自適應圓形及圓角外框](<adr/0224-note-enclosures.md>)
+- [ADR 0225：錐面倒角的端面退距標註](<adr/0225-tapered-chamfer-callout.md>)
+- [ADR 0226：工程圖標註草圖截面的理論直徑](<adr/0226-theoretical-sketch-diameter.md>)
 
 ### 歷史驗證
 
