@@ -8,10 +8,10 @@
 ## 1. 接續入口與當前代碼基準 (Current Baseline)
 
 - **目前分支**：`main`
-- **最新 Commit**：`510f55c` (`fix(test): two verify:ui races (assembly solve in H.loaded, section-captions edges)` 的 PR #8 合併提交，見 §3o)
-- **遠端狀態**：本地 `main` 已與 `origin/main`（`510f55c`）同步。
-- **CI 狀態**：GitHub Actions integrity 三平台（`ubuntu-latest`, `windows-latest`, `macos-latest`）**全數綠燈**（`510f55c`：Run `41391653913`／`41391657225`／`41392269791`；`full-suite` 為夜間排程另計；`a8e30b8` 起每次推送另跑 large-sketch solver 測試，皆通過）。
-- **工作區狀態**：**有他人在途檔——工程圖工作階段的 9 改＋3 新檔**（`docs/adr/0227-dimension-line-on-view.md` 等，見 §3o 末條），**不得代提交或覆蓋**。注意：worktree 一律放在專案資料夾內（`.claude/worktrees/` 慣例），`wt-gizmo` 已用畢移除。
+- **最新 Commit**：`187e325` (`feat(drawing): a linear dimension's line can be drawn on the view (ADR 0227)`，見 §3p)
+- **遠端狀態**：本地 `main` **領先 `origin/main`（`d37c4a7`）1 個提交**；`187e325` 尚未推送（未經使用者指示，不自行推送）。
+- **CI 狀態**：GitHub Actions integrity 三平台（`ubuntu-latest`, `windows-latest`, `macos-latest`）**全數綠燈**（`510f55c`：Run `41391653913`／`41391657225`／`41392269791`；`full-suite` 為夜間排程另計；`a8e30b8` 起每次推送另跑 large-sketch solver 測試，皆通過）。`d37c4a7`（僅文件）與 `187e325`（未推送）尚無可查的 CI 紀錄。
+- **工作區狀態**：**乾淨，無在途檔**（工程圖工作階段的 9 改＋3 新檔已於 `187e325` 提交，見 §3p）。注意：worktree 一律放在專案資料夾內（`.claude/worktrees/` 慣例），`wt-gizmo` 已用畢移除。
 
 ---
 
@@ -202,7 +202,18 @@
 - **PR #8 內容**（他方交付，非本工作階段）：兩個 `verify:ui` 競態修復——`H.loaded` 等 assembly solve 後才算載入完成（`apps/web/src/state/assembly.ts` 公開 `solvePending`）、section-captions step 6 等 top view 的投影邊入圖再斷言（`tests/e2e/manual-assembly-section-captions.js`），＋`tests/e2e/phase2-assembly.js`。＋37/−3；聲明完整 `verify:ui` **260/260**、以實延遲重現驗證必要性、**不鬆門檻**（AGENTS §3.3）。
 - **合併方式**：分支已含 main 歷史（ahead 3、behind 0），本機 `git merge --ff-only origin/claude/busy-bhaskara-16e42c` 快進 `d661b7f..510f55c` 後推送；GitHub 自動判定 PR #8 **merged**（merged_at `2026-11-02T05:08:25Z`，merge_commit_sha `510f55c`）。
 - **分支清理**：遠端 `claude/busy-bhaskara-16e42c`、`feat/stl-exchange` 均已刪除；合併後本地 typecheck **0 錯**、CI 三平台全綠。
-- **主樹在途（勿動）**：工程圖工作階段仍有 9 改＋3 新檔未提交（`apps/web/src/components/{DimensionPanel,DrawingViewport}.tsx`、`packages/drawing/src/{arrange,dimension,pick}.ts`、`packages/i18n/src/{en,zh-TW}/drawing.ts`、`packages/model/src/{drawing,serialize}.ts`；新檔 `docs/adr/0227-dimension-line-on-view.md`、`tests/e2e/manual-drawing-dimension-on-view.js`、`tests/phase5/drawing-dimension-inside.test.ts`），由該工作階段自行收尾。
+- **主樹在途（勿動）**：~~工程圖工作階段仍有 9 改＋3 新檔未提交~~ — **已於 `187e325` 提交**（見 §3p）；本節該提示已過期。
+
+
+## 3p. 2026-11-02 尺寸線可以畫在視圖上（ADR 0227，已提交 `187e325`，未推送）
+
+> **狀態：功能、測試、文件、ADR 齊備並提交；本地領先 `origin/main` 1 個提交，尚未推送（未經指示不推）。**
+
+- **起因**：使用者問階梯銷的 Ø10.54（軸向水平的圓柱段）能不能標註在左右兩端面之間。實測：線性尺寸的尺寸線只能在視圖**外**（`offset` 是視圖框外的距離，正負各一側，0 不合法），故這不是位置調不準，而是根本沒有這個位置。依「面對選項一律選系統性方案」做成可複用功能，而非一次性特例。
+- **做法**：線性尺寸新增 `insideAt`（視圖本身的毫米：垂直尺寸為視圖的 x、水平尺寸為視圖的 y）。畫在視圖上時箭頭尖直接接觸被量的輪廓、**不畫延伸線**（延伸線會壓在輪廓上），位置經 `toSheet` 換算，視圖縮放時跟著零件走。指標在視圖上 → `insideAt`；在視圖外 → `offset`（既有語意不變，且 `offset` 保留，拖回去時回到原處）。面板另有「尺寸線畫在視圖上」開關與「位置（視圖的毫米）」欄位。Schema 37→38（遷移為不改舊值的 no-op）。ADR：[0227](docs/adr/0227-dimension-line-on-view.md)。
+- **紅隊與 RCA**：① 座標尺寸改用獨立的 handle kind（`kind: 'ordinate'`）後，被 `arrange.ts` 的 `span()`（以 `handle.kind === 'linear'` 決定是否參與疊排）整個排除，`tests/phase5/drawing-arrange.test.ts`（B2.5）紅 → `span()` 同時接受兩種 handle。**教訓：handle 的種類不只是渲染端的事，每一個讀它的消費端都要逐一列出**（與 AGENTS §4「新的本體種類不得借用既有旗標」同型）。② e2e 首版兩次紅皆為腳本斷言寫錯（挑的尺寸不在被選中的視圖上；復原的是上一個命令，狀態與腳本預期相反），非產品缺陷。③ 整輪 `verify:ui` 第一輪跨了兩棵樹（另一工作階段於中途 fast-forward `origin` 分支），雖 264/264 通過但非單一樹結果 → 穩定後整輪重跑。
+- **驗證**：`tests/phase5/drawing-dimension-inside.test.ts` 15 項；全量 `npx vitest run` 364 檔／4339 通過／0 失敗；`tsc` 0 錯；`lint:rules`／`lint:deps`／`lint:i18n` 全過；瀏覽器 `tests/e2e/manual-drawing-dimension-on-view.js` 1/1 PASS（真實定位板，截圖 `out/shots/manual-drawing-dimension-on-view/`）；**完整 `npm run verify:ui` 264/264**（穩定樹重跑，日誌 `out/verify-ui-adr0227.log`）。
+- **接手注意**：本提交只改工程圖尺寸線的**位置語意**，未動求解器與拓樸；`insideAt` 與 `offset` 互斥但非覆寫——拖曳與面板走同一個 `setDimension` 命令，沒有第二條真值。
 
 
 ## 3l. 2026-11-01 P4 完成後待裁項目裁決與後續執行進度
