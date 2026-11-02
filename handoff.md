@@ -8,10 +8,10 @@
 ## 1. 接續入口與當前代碼基準 (Current Baseline)
 
 - **目前分支**：`main`
-- **最新 Commit**：`187e325` (`feat(drawing): a linear dimension's line can be drawn on the view (ADR 0227)`，見 §3p)；其上是本檔的交接提交 `e171790`。
-- **遠端狀態**：本地 `main` 已與 `origin/main`（`e171790`）同步（快進推送 `d37c4a7..e171790`，含 `187e325` 與 `e171790`）。
-- **CI 狀態**：GitHub Actions integrity 三平台（`ubuntu-latest`, `windows-latest`, `macos-latest`）**全數綠燈**（`e171790`：Run `41407308974`，三平台 job 皆 `success`；`d37c4a7`：Run `41392524538`；`510f55c`：Run `41391653913`／`41391657225`／`41392269791`；`full-suite` 為夜間排程另計，`e171790` 一輪為 `skipped`；`a8e30b8` 起每次推送另跑 large-sketch solver 測試，皆通過）。
-- **工作區狀態**：**乾淨，無在途檔**（工程圖工作階段的 9 改＋3 新檔已於 `187e325` 提交，見 §3p）。注意：worktree 一律放在專案資料夾內（`.claude/worktrees/` 慣例），`wt-gizmo` 已用畢移除。
+- **最新 Commit**：`e577a18`（本檔的交接提交）；其上是 `4b867f0`（`docs(manual): map every core item to its help topics, reclassify C27/D10 and refresh the counts`，手冊待辦盤點，見 §3q），再上是 `dba3303`。
+- **遠端狀態**：本地 `main` 比 `origin/main`（`dba3303`）**多 2 個提交**（`4b867f0`、`e577a18`），**尚未推送**（本次未取得推送授權）。推送時為快進 `dba3303..e577a18`。
+- **CI 狀態**：GitHub Actions integrity 三平台（`ubuntu-latest`, `windows-latest`, `macos-latest`）**全數綠燈**（`e171790`：Run `41407308974`，三平台 job 皆 `success`；`d37c4a7`：Run `41392524538`；`510f55c`：Run `41391653913`／`41391657225`／`41392269791`；`full-suite` 為夜間排程另計，`e171790` 一輪為 `skipped`；`a8e30b8` 起每次推送另跑 large-sketch solver 測試，皆通過）。**本次兩個提交尚未推送，故尚無對應的 CI 結果**。
+- **工作區狀態**：**乾淨，無在途檔**（手冊盤點的 6 個檔已於 `4b867f0` 提交，本檔的更新是 `e577a18`，見 §3q）。注意：worktree 一律放在專案資料夾內（`.claude/worktrees/` 慣例），`wt-gizmo` 已用畢移除。
 
 ---
 
