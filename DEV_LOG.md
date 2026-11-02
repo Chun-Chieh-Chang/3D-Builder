@@ -2,6 +2,38 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-11-02（三）：尺寸線可以畫在視圖上（ADR 0227）
+
+使用者問：階梯銷的 Ø10.54（軸向水平的圓柱段）能不能標註在左右兩端面之間。實測：線性尺寸的尺寸線只能在視圖**外**（`offset` 是視圖框外的距離，正負各一側，0 不合法），所以這不是位置調不準，是根本沒有這個位置。依「面對選項一律選系統性方案」，做成可複用的功能而非一次性特例：線性尺寸新增 `insideAt`（視圖本身的毫米）。
+
+### 1. 交付內容
+- `packages/model/src/drawing.ts`：`LinearDimension.insideAt?`（視圖本身的毫米：水平尺寸為視圖的 y、垂直尺寸為視圖的 x）、`DimensionPatch.insideAt`；`checkDimension` 拒絕非有限值與對齊尺寸（`drawing.dimBadInside`）；`setDimension` 只讓線性尺寸用它，給 `offset` 就取走 `insideAt`，給 `insideAt` 不動 `offset`（視圖外的距離保留，拖回去時回到原處）。Schema 37→38。
+- `packages/model/src/serialize.ts`：37→38 遷移（可選欄位，不改舊值；舊程式讀到新欄位會把尺寸線畫在視圖外，故仍升版）。
+- `packages/drawing/src/dimension.ts`：畫在視圖上時箭頭尖直接接觸被量的輪廓、**不畫延伸線**（延伸線會壓在輪廓上）；位置經 `toSheet` 換算，視圖縮放時跟著零件走。座標尺寸另給 `kind: 'ordinate'` 的 handle（它的行本來就在視圖外，不該與線性尺寸共用「畫在視圖上」的路徑）。
+- `packages/drawing/src/pick.ts`：指標在視圖上 → `insideAt`；在視圖外 → `offset`（既有語意不變）。
+- `apps/web/src/components/DrawingViewport.tsx`：拖曳的內外切換（拖進視圖＝畫在視圖上；拖出＝回到視圖外，距離以指標所在為準）；數字仍只沿線滑。
+- `apps/web/src/components/DimensionPanel.tsx`：「尺寸線畫在視圖上」開關＋「位置（視圖的毫米）」欄位。
+- i18n 中英各二鍵；文件：ADR 0227、儲存庫盤點（`docs:sync`）。
+
+### 2. 紅隊四問（節錄）
+1. **輸入破壞**：`insideAt` 必須有限——NaN／Infinity 與對齊尺寸以 `drawing.dimBadInside` 拒絕；非線性尺寸以 `drawing.notForKind` 拒絕。單元與命令層都有實例。
+2. **防禦性空轉**：`insideAt` 與 `offset` 不是互相覆蓋，而是互斥的兩種位置——畫在視圖上時 `offset` 保留，拖回視圖外時回到原處（瀏覽器實測兩次切換都量到）。
+3. **依賴鏈**：i18n 中英同步（`lint:i18n` 過）；拖曳與面板走同一個 `setDimension` 命令，沒有第二條真值。
+4. **真值**：數值來自同一對特徵（Ø10.54 仍是 10.54，與畫在視圖外時逐位相同），不是手填；瀏覽器實測的是真實定位板。
+
+### 3. 失敗紀錄與 RCA
+1. **座標尺寸被排版漏掉（真迴歸，已修）**：座標尺寸原本借用線性尺寸的 handle（`kind: 'linear'`）。為了不讓它誤入「畫在視圖上」的路徑，我把它改成 `kind: 'ordinate'`——卻讓 `arrange.ts` 的 `span()`（以 `handle.kind === 'linear'` 決定要不要參與疊排）把座標尺寸整個排除，`tests/phase5/drawing-arrange.test.ts`（B2.5）紅：某側第一列是 4.70 而不是 7。修法：`span()` 同時接受兩種 handle。**教訓**：handle 的種類不只是渲染端的事——每一個讀它的消費端都要逐一列出（與 AGENTS §4「新的本體種類不得借用既有旗標」同型，只是這次借的是 handle 種類）。
+2. **e2e 首版兩次紅**：① 腳本挑的尺寸不在被選中的視圖上，屬性面板顯示的是另一個尺寸；② 復原後尺寸線回到「畫在視圖上」的狀態（復原的是上一個命令），腳本卻以為它已回到視圖外，於是點開關時把它關掉了。兩者都是腳本的斷言寫錯，不是產品的錯——重寫腳本後才量到真正的行為。
+3. **整輪瀏覽器實測跨了兩棵樹**：第一輪跑到 13:08 時，另一工作階段把 `origin` 的分支 fast-forward 進來（動到 `apps/web/src/state/assembly.ts` 與兩支 e2e 腳本，未動本次任何檔案），該輪雖然 264/264 通過，但不是單一樹的結果，故在穩定後**整輪重跑**（264/264 通過）。AGENTS §4 第 7 點的硬性要求。
+
+### 4. 驗證
+- `tests/phase5/drawing-dimension-inside.test.ts` 15 項：尺寸線落在指定的視圖位置、箭頭接觸輪廓、無延伸線、數值與視圖外逐位相同、視圖縮放後位置仍對、視圖外的排版與原來一致、拖曳的內外切換、文字仍只沿線滑、命令的接受與拒絕（NaN／Infinity／對齊／非線性）、存檔讀回與舊檔照開。
+- 全量 `npx vitest run`：364 檔，4339 通過／26 略過／0 失敗；`tsc` 0 錯誤；`lint:rules`／`lint:deps`／`lint:i18n` 全過。
+- 瀏覽器 `tests/e2e/manual-drawing-dimension-on-view.js`：1/1 PASS（真實定位板：把尺寸線拖進視圖、拖出、復原，再用面板開關與位置欄位各切一次）；截圖 `out/shots/manual-drawing-dimension-on-view/`（120 的尺寸線畫在上視圖內，箭頭接觸兩個孔）。
+- **完整 `npm run verify:ui`：264/264 通過**（0 已知缺陷）；本輪在穩定樹上重跑一次，日誌 `out/verify-ui-adr0227.log`。
+
+---
+
 ## 2026-11-02：manual-d6 只在完整 verify:ui 失敗的根因（結合求解的競態）
 
 ### 1. 現象

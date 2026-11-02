@@ -23,8 +23,11 @@ function way(d: Stacked): 'horizontal' | 'vertical' | 'aligned' {
 
 /** How long a dimension is on the sheet, along the way it measures: the shorter ones go nearest the view, so that no dimension line crosses another's extension lines. */
 function span(d: Stacked, outcome: DimensionOutcome | undefined): number | null {
-  if (!outcome || 'error' in outcome || outcome.handle?.kind !== 'linear') return null;
-  const { a, b } = outcome.handle;
+  if (!outcome || 'error' in outcome) return null;
+  // an ordinate's row has its own handle kind (ADR 0227), but it is stacked with the linear dimensions of its side just the same
+  const h = outcome.handle;
+  if (!h || (h.kind !== 'linear' && h.kind !== 'ordinate')) return null;
+  const { a, b } = h;
   const w = way(d);
   return w === 'horizontal' ? Math.abs(b[0] - a[0]) : w === 'vertical' ? Math.abs(b[1] - a[1]) : Math.hypot(b[0] - a[0], b[1] - a[1]);
 }

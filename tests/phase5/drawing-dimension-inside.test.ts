@@ -1,0 +1,168 @@
+/**
+ * A linear dimension whose line is drawn on the view (ADR 0227) instead of outside it: the place on the view is kept in the view's own millimetres, so it stays
+ * on the part when the view is scaled; the arrows touch the contour and no extension line is drawn; and the number is the one the dimension outside the view
+ * gives.
+ *
+ * The part is a turned pin seen from the side, as in the drawing the question was asked about: its axis runs across the view at y = 30, the Ø10.54 section from
+ * x = 60 to x = 90 (its two end faces), and the Ø was written outside the view on the right. The view is 100 x 60 at the sheet point (200, 150), scale 1, its
+ * own origin (0, 0) at the lower left corner of its box — so the box is x 150 to 250, y 120 to 180 on the sheet.
+ */
+import { describe, expect, it } from 'vitest';
+import { applyDrawingCommand, CommandError, createEmptyDrawing, DRAWING_SCHEMA_VERSION, page, parseDrawing, serializeDrawing, viewVectors, type Dimension, type DrawingView, type ElementFacts, type ViewAxes } from '@3db/model';
+import { dragDimension, evaluateDimension, insideAt, toSheet, type PlacedView, type SceneItem } from '@3db/drawing';
+
+const placed: PlacedView = { id: 'v', at: [200, 150], scale: 1, w: 100, h: 60, centre: [50, 30] };
+const axes: ViewAxes = viewVectors('front');
+const R = 5.27; // Ø10.54
+const AXIS_Y = 30;
+/** The pin's Ø10.54 section, seen from the side: its axis across the view, its radius R. */
+const cylinder: ElementFacts = { kind: 'face', type: 'cylinder', point: [50, AXIS_Y, 0], dir: [1, 0, 0], radius: R };
+/** The Ø of the section: a distance from the top of the outline to the bottom of it, written as a diameter. */
+const diameter = (extra: Partial<Dimension> = {}): Dimension =>
+  ({ id: 'd', view: 'v', kind: 'linear', a: { kind: 'face', name: 'cyl' }, b: { kind: 'face', name: 'cyl' }, orientation: 'vertical', offset: 20, aSide: 1, bSide: -1, prefix: 'Ø', ...extra }) as Dimension;
+
+const run = (d: Dimension) => evaluateDimension(d, { elements: [cylinder, cylinder] }, axes, placed);
+const items = (d: Dimension): SceneItem[] => {
+  const o = run(d);
+  if (!('items' in o)) throw new Error(o.error);
+  return o.items;
+};
+/** The dimension line: the polyline that is not an arrowhead (which is a closed one) and not an extension line (which is across the dimension). */
+const line = (d: Dimension): number[] => {
+  const open = items(d).filter((i) => i.kind === 'polyline' && !i.closed) as { kind: 'polyline'; points: number[] }[];
+  const vertical = open.filter((p) => p.points.length === 4 && p.points[0] === p.points[2]);
+  expect(vertical.length).toBe(1);
+  return vertical[0]!.points;
+};
+/** How many lines are drawn without the arrows: the dimension line and the extension lines. */
+const openLines = (d: Dimension): number => items(d).filter((i) => i.kind === 'polyline' && !i.closed).length;
+
+describe('the line of a linear dimension drawn on the view', () => {
+  it('is where the place on the view is, between the two end faces of the section', () => {
+    // the place is the x of the section's middle (75), in the view's own millimetres
+    const d = diameter({ insideAt: 75 });
+    const points = line(d);
+    expect(points[0]).toBeCloseTo(toSheet(placed, 75, 0)[0], 9);
+    expect(points[2]).toBeCloseTo(toSheet(placed, 75, 0)[0], 9);
+    // the section runs from x = 60 to x = 90, so the line is between its two end faces
+    expect(points[0]!).toBeGreaterThan(toSheet(placed, 60, 0)[0]!);
+    expect(points[0]!).toBeLessThan(toSheet(placed, 90, 0)[0]!);
+    // and it spans the outline of the cylinder, from its top to its bottom
+    expect(points[1]).toBeCloseTo(toSheet(placed, 50, AXIS_Y + R)[1], 9);
+    expect(points[3]).toBeCloseTo(toSheet(placed, 50, AXIS_Y - R)[1], 9);
+  });
+
+  it('has no extension line: the arrows touch the contour itself', () => {
+    // outside the view the line is drawn with two extension lines; on the view there is none, for it would lie on the outline
+    expect(openLines(diameter())).toBe(3);
+    expect(openLines(diameter({ insideAt: 75 }))).toBe(1);
+  });
+
+  it('gives the same number as the dimension outside the view', () => {
+    const outside = run(diameter());
+    const inside = run(diameter({ insideAt: 75 }));
+    if (!('value' in outside) || !('value' in inside)) throw new Error('no value');
+    expect(inside.value).toBeCloseTo(outside.value, 9);
+    expect(inside.value).toBeCloseTo(10.54, 9);
+    expect(inside.text).toBe(outside.text);
+    expect(inside.text).toBe('Ø10.54');
+  });
+
+  it('keeps its place on the part when the view is scaled', () => {
+    const scaled: PlacedView = { ...placed, scale: 2 };
+    const d = diameter({ insideAt: 75 });
+    const o = evaluateDimension(d, { elements: [cylinder, cylinder] }, axes, scaled);
+    if (!('items' in o)) throw new Error(o.error);
+    const open = o.items.filter((i) => i.kind === 'polyline' && !i.closed) as { kind: 'polyline'; points: number[] }[];
+    expect(open[0]!.points[0]).toBeCloseTo(toSheet(scaled, 75, 0)[0], 9);
+  });
+
+  it('outside the view, the line is where the offset puts it, as it was', () => {
+    const points = line(diameter({ offset: 20 }));
+    expect(points[0]).toBeCloseTo(270, 9); // the box's right edge (250) and 20 beyond it
+    expect(points[2]).toBeCloseTo(270, 9);
+  });
+});
+
+describe('the pointer and the line of a linear dimension', () => {
+  const handle = () => {
+    const o = run(diameter());
+    if (!('handle' in o) || !o.handle) throw new Error('no handle');
+    return o.handle;
+  };
+
+  it('over the view the line is put on it, at the place the pointer is at', () => {
+    expect(dragDimension(handle(), false, [toSheet(placed, 75, 0)[0], 150])).toEqual({ insideAt: 75 });
+    expect(dragDimension(handle(), false, [toSheet(placed, 70, 0)[0], 150])).toEqual({ insideAt: 70 });
+  });
+
+  it('off the view the line stays outside it, at the distance the pointer is at', () => {
+    expect(dragDimension(handle(), false, [270, 150])).toEqual({ offset: 20 });
+    expect(dragDimension(handle(), false, [130, 150])).toEqual({ offset: -20 });
+  });
+
+  it('the text of a dimension still slides along its line', () => {
+    // the line runs from the first element (the top of the outline) to the second (the bottom), so the text slides down as the pointer moves up
+    expect(dragDimension(handle(), true, [215, 195])).toEqual({ slide: -45 });
+  });
+
+  it('the place is the view own millimetres, and none when the pointer is off the view', () => {
+    const h = handle();
+    if (h.kind !== 'linear') throw new Error('not a linear handle');
+    expect(insideAt(h, [toSheet(placed, 75, 0)[0], 150])).toBe(75);
+    expect(insideAt(h, [270, 150])).toBeNull();
+  });
+});
+
+describe('the command that puts a dimension line on the view', () => {
+  const views: DrawingView[] = [{ id: 'view1', name: '前視', source: 'part', direction: 'front' }];
+  const base = (): Dimension => ({ id: 'd1', view: 'view1', kind: 'linear', a: { kind: 'face', name: 'f1' }, b: { kind: 'face', name: 'f2' }, orientation: 'vertical', offset: 20 } as Dimension);
+  const doc = () => {
+    let d = applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views });
+    d = applyDrawingCommand(d, { type: 'insertDimensions', dimensions: [base()] });
+    return d;
+  };
+  const of = (d: ReturnType<typeof doc>) => page(d).dimensions.find((x) => x.id === 'd1') as Extract<Dimension, { kind: 'linear' }>;
+
+  it('puts the line on the view and keeps it there', () => {
+    const d = applyDrawingCommand(doc(), { type: 'setDimension', dimensionId: 'd1', patch: { insideAt: 12.5 } });
+    expect(of(d).insideAt).toBe(12.5);
+  });
+
+  it('takes the line off the view when the distance outside it is given', () => {
+    const d = applyDrawingCommand(doc(), { type: 'setDimension', dimensionId: 'd1', patch: { insideAt: 12.5 } });
+    const back = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'd1', patch: { offset: 30 } });
+    expect(of(back).insideAt).toBeUndefined();
+    expect(of(back).offset).toBe(30);
+  });
+
+  it('takes the place away on its own, and the line goes back outside where it was', () => {
+    const d = applyDrawingCommand(doc(), { type: 'setDimension', dimensionId: 'd1', patch: { insideAt: 12.5 } });
+    const back = applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'd1', patch: { insideAt: null } });
+    expect(of(back).insideAt).toBeUndefined();
+    expect(of(back).offset).toBe(20);
+  });
+
+  it('refuses a place that is not a number, and a dimension whose line is not square to the view', () => {
+    expect(() => applyDrawingCommand(doc(), { type: 'setDimension', dimensionId: 'd1', patch: { insideAt: Number.NaN } })).toThrow(CommandError);
+    expect(() => applyDrawingCommand(doc(), { type: 'setDimension', dimensionId: 'd1', patch: { insideAt: Number.POSITIVE_INFINITY } })).toThrow(CommandError);
+    expect(() => applyDrawingCommand(doc(), { type: 'setDimension', dimensionId: 'd1', patch: { orientation: 'aligned', insideAt: 3 } })).toThrow(CommandError);
+  });
+
+  it('refuses a place for a dimension that has no line to put on the view', () => {
+    let d = applyDrawingCommand(doc(), { type: 'insertDimensions', dimensions: [{ id: 'd2', view: 'view1', kind: 'diameter', ref: { kind: 'face', name: 'f1' }, angle: 0 } as Dimension] });
+    expect(() => applyDrawingCommand(d, { type: 'setDimension', dimensionId: 'd2', patch: { insideAt: 3 } })).toThrow(CommandError);
+  });
+
+  it('is written with the drawing and read back, and an older drawing still opens', () => {
+    const d = applyDrawingCommand(doc(), { type: 'setDimension', dimensionId: 'd1', patch: { insideAt: 12.5 } });
+    const written = JSON.parse(serializeDrawing(d)) as { schemaVersion: number };
+    expect(written.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
+    const back = parseDrawing(JSON.stringify(written));
+    const dim = page(back).dimensions.find((x) => x.id === 'd1') as Extract<Dimension, { kind: 'linear' }>;
+    expect(dim.insideAt).toBe(12.5);
+    // a drawing written before the place existed opens as it was
+    const old = { ...written, schemaVersion: DRAWING_SCHEMA_VERSION - 1 };
+    expect(page(parseDrawing(JSON.stringify(old))).dimensions.find((x) => x.id === 'd1')).toBeDefined();
+  });
+});

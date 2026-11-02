@@ -2,7 +2,7 @@ import { t } from '@3db/i18n';
 import { DIM_STYLE_DEFAULT, normalizedViewAxes, dimensionRefs, fitDeviations, inUnit, rightOf, sheetUp, type CalloutStyle, type ThreadCallout, type DimStyle, type LengthUnit, type Dimension, type DimensionTolerance, type ElementFacts, type HoleInfo, type ViewAxes } from '@3db/model';
 import { projectionFacts } from './projectionRefs';
 import { circlePolyline } from './geometry';
-import { toSheet, type PlacedView, type ViewLines } from './layout';
+import { toSheet, fromSheet, type PlacedView, type ViewLines } from './layout';
 import { HELVETICA_CAP_HEIGHT, helveticaWidth } from './helvetica';
 import type { SceneDimensionGeometry, SceneItem, SceneText } from './scene';
 
@@ -19,7 +19,9 @@ export type ElementsResult = { elements: (ElementFacts | null)[] } | { error: st
  * pointer is), for a diameter or a radius where the circle is, for an angle where the arc is. Not drawn, not written.
  */
 export type DimensionHandle =
-  | { kind: 'linear'; orientation: 'horizontal' | 'vertical' | 'aligned'; /** the middle of the dimension line before the text was slid */ mid: [number, number]; /** along the line, from the first element toward the second */ u: [number, number]; /** the view's box, and the two points for an aligned one */ box: { left: number; right: number; bottom: number; top: number }; a: [number, number]; b: [number, number] }
+  | { kind: 'linear'; orientation: 'horizontal' | 'vertical' | 'aligned'; /** the middle of the dimension line before the text was slid */ mid: [number, number]; /** along the line, from the first element toward the second */ u: [number, number]; /** the view's box, and the two points for an aligned one */ box: { left: number; right: number; bottom: number; top: number }; a: [number, number]; b: [number, number]; /** the view the dimension is on, so a point of the sheet is turned into a place on the view */ placed: PlacedView }
+  /** An ordinate dimension's row of texts: it is a row outside the view, so its line is never drawn on the view. */
+  | { kind: 'ordinate'; orientation: 'horizontal' | 'vertical'; mid: [number, number]; u: [number, number]; box: { left: number; right: number; bottom: number; top: number }; a: [number, number]; b: [number, number]; placed: PlacedView }
   | { kind: 'round'; centre: [number, number]; radius: number }
   | { kind: 'angle'; centre: [number, number]; radius: number; /** where the middle of the arc is, in radians */ mid: number };
 
@@ -476,13 +478,14 @@ function ordinate(d: Extract<Dimension, { kind: 'ordinate' }>, els: readonly Ele
   }
   const values = entries.slice(1).map((e) => e.value);
   const handle: DimensionHandle = {
-    kind: 'linear',
+    kind: 'ordinate',
     orientation: d.axis === 'x' ? 'horizontal' : 'vertical',
     mid: d.axis === 'x' ? [(box.left + box.right) / 2, row] : [row, (box.bottom + box.top) / 2],
     u: d.axis === 'x' ? [1, 0] : [0, 1],
     box,
     a: entries[0]!.s,
     b: entries[entries.length - 1]!.s,
+    placed,
   };
   return { value: values[0] ?? 0, text: entries.map((e) => e.text).join(' / '), items, handle };
 }
@@ -625,6 +628,8 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
   }
   const value = d.orientation === 'horizontal' ? Math.abs(B[0] - A[0]) : d.orientation === 'vertical' ? Math.abs(B[1] - A[1]) : Math.hypot(B[0] - A[0], B[1] - A[1]);
   const { text, parts } = dimensionWords(d, value, undefined, unit);
+  // The line of a linear dimension is either on the view (ADR 0227: a place of the view, in the view's own millimetres) or outside it (`offset` from its box).
+  const inside = d.insideAt !== undefined && d.orientation !== 'aligned';
   // Extend from the referenced contour, never the overall view rectangle. Native
   // face centres select the relevant interval when separate parts are coplanar.
   const attach = (p: P, e: ElementFacts): P => {
@@ -647,10 +652,15 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
     const distance = (range: P) => Math.max(range[0] - centre[t], centre[t] - range[1], 0);
     merged.sort((a, b) => distance(a) - distance(b));
     const q: P = [...p];
-    q[t] = merged.length ? merged[0]![d.offset > 0 ? 1 : 0] : centre[t];
+    if (merged.length) {
+      const interval = merged[0]!;
+      // the end of the contour on the side the dimension line is: the extension line starts there
+      q[t] = interval[d.offset > 0 ? 1 : 0];
+    } else q[t] = centre[t];
     return q;
   };
-  const attachedA = attach(A, ea), attachedB = attach(B, eb);
+  // On the view the line is drawn (ADR 0227), so the arrows touch the feature itself and no extension line is drawn: it would lie on the outline.
+  const attachedA = inside ? A : attach(A, ea), attachedB = inside ? B : attach(B, eb);
   const sA = toSheet(placed, attachedA[0], attachedA[1]);
   const sB = toSheet(placed, attachedB[0], attachedB[1]);
   const box = { left: placed.at[0] - placed.w / 2, right: placed.at[0] + placed.w / 2, bottom: placed.at[1] - placed.h / 2, top: placed.at[1] + placed.h / 2 };
@@ -661,15 +671,30 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
   let c: number; // n · (a point of the dimension line)
   let edge: number | null = null; // view-box datum used only to position the dimension line
   if (d.orientation === 'horizontal') {
-    n = above ? [0, 1] : [0, -1];
     u = [sB[0] >= sA[0] ? 1 : -1, 0];
-    edge = above ? box.top : -box.bottom;
-    c = edge + off;
+    if (inside) {
+      // the place on the view, turned into the sheet; the side the line is on is the side of the features it falls
+      const lineY = toSheet(placed, 0, d.insideAt!)[1];
+      const side = lineY >= sA[1] ? 1 : -1;
+      n = [0, side];
+      c = side * lineY;
+    } else {
+      n = above ? [0, 1] : [0, -1];
+      edge = above ? box.top : -box.bottom;
+      c = edge + off;
+    }
   } else if (d.orientation === 'vertical') {
-    n = above ? [1, 0] : [-1, 0];
     u = [0, sB[1] >= sA[1] ? 1 : -1];
-    edge = above ? box.right : -box.left;
-    c = edge + off;
+    if (inside) {
+      const lineX = toSheet(placed, d.insideAt!, 0)[0];
+      const side = lineX >= sA[0] ? 1 : -1;
+      n = [side, 0];
+      c = side * lineX;
+    } else {
+      n = above ? [1, 0] : [-1, 0];
+      edge = above ? box.right : -box.left;
+      c = edge + off;
+    }
   } else {
     const dd = sub(sB, sA);
     const l = len(dd);
@@ -680,11 +705,13 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
   const nd = (p: P) => n[0] * p[0] + n[1] * p[1];
   const onLine = (p: P): P => add(p, n, c - nd(p));
   const items: SceneItem[] = [];
-  for (const s of [sA, sB]) {
-    // Leave the usual paper-space gap at the actual referenced contour.
-    const from: P = add(s, n, GAP);
-    const to = add(onLine(s), n, OVERSHOOT);
-    if (nd(to) > nd(from)) items.push(line(from, to));
+  if (!inside) {
+    for (const s of [sA, sB]) {
+      // Leave the usual paper-space gap at the actual referenced contour.
+      const from: P = add(s, n, GAP);
+      const to = add(onLine(s), n, OVERSHOOT);
+      if (nd(to) > nd(from)) items.push(line(from, to));
+    }
   }
   const a = onLine(sA);
   const b = onLine(sB);
@@ -693,7 +720,7 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
   const label = textOn(add(mid, u, d.slide ?? 0), (Math.atan2(u[1], u[0]) * 180) / Math.PI, parts);
   items.push(...label.items);
   const textAt: P = add(label.at, n, DIM_TEXT / 2);
-  const handle: DimensionHandle = { kind: 'linear', orientation: d.orientation, mid, u, box, a: sA, b: sB };
+  const handle: DimensionHandle = { kind: 'linear', orientation: d.orientation, mid, u, box, a: sA, b: sB, placed };
   return { value, text, ...stackedParts(parts), items, handle, dxf: { textAt, geometry: { kind: 'linear', a: sA, b: sB, line: a, ...(d.orientation === 'horizontal' ? { rotation: 0 } : d.orientation === 'vertical' ? { rotation: 90 } : {}) } } };
 }
 
@@ -835,7 +862,7 @@ function chamfer(d: Extract<Dimension, { kind: 'chamfer' }>, e: ElementFacts, ax
  * on the side `p` is on (at least 1 mm, so that it stays off the view); for an aligned one from the farther of its two points, on the side of the line between them that
  * `p` is on.
  */
-export function offsetAt(h: Extract<DimensionHandle, { kind: 'linear' }>, p: P): number {
+export function offsetAt(h: Extract<DimensionHandle, { kind: 'linear' | 'ordinate' }>, p: P): number {
   const least = 1;
   if (h.orientation === 'horizontal' || h.orientation === 'vertical') {
     const w = h.orientation === 'horizontal' ? p[1] : p[0];
@@ -848,6 +875,19 @@ export function offsetAt(h: Extract<DimensionHandle, { kind: 'linear' }>, p: P):
   const n: P = [npos[0] * side, npos[1] * side];
   const c0 = Math.max(n[0] * h.a[0] + n[1] * h.a[1], n[0] * h.b[0] + n[1] * h.b[1]);
   return side * Math.max(least, n[0] * p[0] + n[1] * p[1] - c0);
+}
+
+/**
+ * The place on the view where the line of a linear dimension is, when the pointer is put over the view (ADR 0227): the point of the sheet turned into the
+ * view's own millimetres, along the axis the dimension is square to (the x of a vertical dimension, the y of a horizontal one). Null when the pointer is off
+ * the view, or when the dimension is aligned (its line is not square to the view): the line is then outside the view, `offset` from its box.
+ */
+export function insideAt(h: Extract<DimensionHandle, { kind: 'linear' }>, p: P): number | null {
+  if (h.orientation === 'aligned') return null;
+  const { box } = h;
+  if (p[0] < box.left || p[0] > box.right || p[1] < box.bottom || p[1] > box.top) return null;
+  const [vx, vy] = fromSheet(h.placed, p[0], p[1]);
+  return Math.round((h.orientation === 'horizontal' ? vy : vx) * 100) / 100;
 }
 
 /** The direction (degrees counter-clockwise from the x axis) and the leader a diameter or a radius takes when its text is put at the point `p`. */

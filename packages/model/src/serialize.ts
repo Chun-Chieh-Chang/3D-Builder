@@ -442,6 +442,9 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   }) : doc.pages }),
   // v37: drawing dimensions may refer to solved sketch circles.
   36: (doc) => doc,
+  // v38: a linear dimension's line may be drawn on the view (`insideAt`): optional, nothing to convert; the version keeps an older program from opening a
+  // drawing whose dimension line it would draw outside the view.
+  37: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

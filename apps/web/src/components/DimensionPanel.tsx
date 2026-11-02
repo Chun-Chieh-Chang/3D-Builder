@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { formatNumber, overlappingDimensions } from '@3db/drawing';
+import { formatNumber, overlappingDimensions, toView } from '@3db/drawing';
 import { MM_PER_INCH, axesOf, normalizedViewAxes, rightOf, sheetUp, page, resolveDimStyle } from '@3db/model';
 import type { DimStyle, Dimension, DimensionOrientation, DimensionTolerance, DrawingSketchCircle, ViewFeature } from '@3db/model';
 import { DimStyleFields } from './DimStyleFields';
@@ -136,6 +136,14 @@ export function DimensionPanel() {
   const current = batch ? null : (mine.find((x) => x.id === selected) ?? null);
   const currentOutcome = current ? outcomes.get(current.id) : undefined;
   const measuredChamfer = currentOutcome && !('error' in currentOutcome) ? currentOutcome.chamfer : undefined;
+  // Where the line of a linear dimension is put when it is drawn on the view (ADR 0227): the place of what it measures along the axis the dimension is square
+  // to (the y of a horizontal dimension, the x of a vertical one), in the view's own millimetres.
+  const placeOnView = (() => {
+    if (!current || current.kind !== 'linear' || !currentOutcome || 'error' in currentOutcome || currentOutcome.handle?.kind !== 'linear') return 0;
+    const h = currentOutcome.handle;
+    const [ax, ay] = toView(h.placed, h.a);
+    return current.orientation === 'horizontal' ? ay : ax;
+  })();
   const nonEqualCone = current?.kind === 'chamfer' && current.coneSide !== undefined && measuredChamfer && Math.abs(measuredChamfer.angle - 45) > 1e-6;
   // the numbers of a tolerance are typed and shown in the unit of the sheet; the document holds millimetres
   const perUnit = curPage.sheet.unit === 'in' ? MM_PER_INCH : 1;
@@ -362,10 +370,25 @@ export function DimensionPanel() {
                 </label>
               )}
               {current.kind === 'linear' ? (
-                <label className="pm-row">
-                  <span>{t('drawingUi.dimOffset')}</span>
-                  <NumberBox field="dimOffset" value={current.offset} onCommit={(v) => d.setDimension(current.id, { offset: v })} />
-                </label>
+                <>
+                  {current.orientation !== 'aligned' && (
+                    <label className="pm-row checkbox">
+                      <input type="checkbox" data-field="dimOnView" checked={current.insideAt !== undefined} onChange={(e) => d.setDimension(current.id, { insideAt: e.target.checked ? placeOnView : null })} />
+                      <span>{t('drawingUi.dimOnView')}</span>
+                    </label>
+                  )}
+                  {current.insideAt !== undefined ? (
+                    <label className="pm-row">
+                      <span>{t('drawingUi.dimOnViewAt')}</span>
+                      <NumberBox field="dimOnViewAt" value={current.insideAt} onCommit={(v) => d.setDimension(current.id, { insideAt: v })} />
+                    </label>
+                  ) : (
+                    <label className="pm-row">
+                      <span>{t('drawingUi.dimOffset')}</span>
+                      <NumberBox field="dimOffset" value={current.offset} onCommit={(v) => d.setDimension(current.id, { offset: v })} />
+                    </label>
+                  )}
+                </>
               ) : current.kind === 'angle' ? (
                 <>
                   <label className="pm-row">

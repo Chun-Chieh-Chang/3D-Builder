@@ -102,6 +102,16 @@ type DrawPlacement =
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/**
+ * The dimension as a drag leaves it (ADR 0227): the place its line is drawn on the view (`insideAt`) and the distance it is outside it (`offset`) take turns — a
+ * distance given on its own takes the line off the view, and the place given takes it back on.
+ */
+function dimensionWithPatch(d: Dimension, patch: { offset?: number; slide?: number; angle?: number; leader?: number; arc?: number; insideAt?: number }): Dimension {
+  const next = { ...d, ...patch } as Dimension & { insideAt?: number };
+  if (patch.offset !== undefined) delete next.insideAt;
+  return next as Dimension;
+}
+
 /** An annotation moved by `dv` (view units): where it stands moves, the point its leader touches does not (it is on the feature). */
 function movedAnnotation(a: Annotation, dv: P): Annotation {
   const by = (q: P): P => [round2(q[0] + dv[0]), round2(q[1] + dv[1])];
@@ -212,7 +222,7 @@ export function DrawingViewport() {
     if (drag.kind === 'placeDraw') return pg;
     if (drag.kind === 'box') return pg;
     if (drag.kind === 'caption') return { ...pg, views: pg.views.map(v => v.id === drag.id ? { ...v, caption: { ...v.caption, offset: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } } : v) };
-    if (drag.kind === 'dimension') return { ...pg, dimensions: pg.dimensions.map((x) => (x.id === drag.id ? ({ ...x, ...drag.patch } as Dimension) : x)) };
+    if (drag.kind === 'dimension') return { ...pg, dimensions: pg.dimensions.map((x) => (x.id === drag.id ? dimensionWithPatch(x, drag.patch) : x)) };
     if (drag.kind === 'table') return { ...pg, tables: pg.tables.map((x) => (x.id === drag.id ? { ...x, at: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } : x)) };
     if (drag.kind === 'balloon') return { ...pg, tables: pg.tables.map((x) => (x.id === drag.id && x.kind === 'bom' ? { ...x, balloonAt: { ...x.balloonAt, [drag.item]: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } } : x)) };
     if (drag.kind === 'sectionLine') return { ...pg, views: pg.views.map((v) => (v.id === drag.id && v.kind === 'section' ? { ...v, line: movedLine(drag.line, drag.vertical, drag.delta) } : v)) as DrawingView[] };
@@ -830,9 +840,19 @@ export function DrawingViewport() {
         if (patch.offset !== undefined && start.offset !== undefined && 'offset' in original) {
           // Extension lines may start inside the view. offsetAt clamps placement
           // there, so use actual pointer displacement for an axis-aligned drag.
-          patch.offset = original.kind === 'linear' && original.orientation !== 'aligned'
-            ? round2(original.offset + (original.orientation === 'horizontal' ? p[1] - drag.from[1] : p[0] - drag.from[0]))
-            : round2(original.offset + patch.offset - start.offset);
+          // A line drawn on the view (ADR 0227) has no distance outside it to
+          // carry on: the pointer's own distance is where the line goes.
+          patch.offset = original.kind === 'linear' && original.insideAt !== undefined
+            ? patch.offset
+            : original.kind === 'linear' && original.orientation !== 'aligned'
+              ? round2(original.offset + (original.orientation === 'horizontal' ? p[1] - drag.from[1] : p[0] - drag.from[0]))
+              : round2(original.offset + patch.offset - start.offset);
+        }
+        if (patch.insideAt !== undefined && original.kind === 'linear' && original.insideAt !== undefined) {
+          // The place on the view follows the pointer, keeping the point it was taken hold of.
+          const scale = basePlaced.get(original.view)?.scale ?? 1;
+          const along = original.orientation === 'horizontal' ? p[1] - drag.from[1] : p[0] - drag.from[0];
+          patch.insideAt = round2(original.insideAt + along / scale);
         }
         if (patch.slide !== undefined && start.slide !== undefined && (original.kind === 'linear' || original.kind === 'angle')) patch.slide = round2((original.slide ?? 0) + patch.slide - start.slide);
         if (patch.arc !== undefined && start.arc !== undefined && 'arc' in original) patch.arc = round2(original.arc + patch.arc - start.arc);

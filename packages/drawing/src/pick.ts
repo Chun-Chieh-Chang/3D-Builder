@@ -2,7 +2,7 @@ import { sameDrawingRef, rightOf, sheetUp, type DrawingRef, type ElementFacts, t
 import { t } from '@3db/i18n';
 import { projectedAt } from './projectionRefs';
 import type { DimensionDraft } from './autoDimension';
-import { arcAt, leaderAt, offsetAt, type DimensionHandle } from './dimension';
+import { arcAt, insideAt, leaderAt, offsetAt, type DimensionHandle } from './dimension';
 import { itemsBounds } from './fit';
 import { fromSheet, toSheet, type PlacedView, type ViewLines } from './layout';
 import type { SceneItem } from './scene';
@@ -308,11 +308,15 @@ export function dimensionAt(items: readonly SceneItem[], p: P2, tol: number): { 
 }
 
 /** What the pointer does to a dimension that is dragged: the changes to make, from where the pointer is (sheet mm). */
-export function dragDimension(handle: DimensionHandle, onText: boolean, p: P2): { offset?: number; slide?: number; angle?: number; leader?: number; arc?: number } {
+export function dragDimension(handle: DimensionHandle, onText: boolean, p: P2): { offset?: number; slide?: number; angle?: number; leader?: number; arc?: number; insideAt?: number } {
   if (handle.kind === 'linear') {
     if (onText) return { slide: Math.round((handle.u[0] * (p[0] - handle.mid[0]) + handle.u[1] * (p[1] - handle.mid[1])) * 100) / 100 };
+    // over the view, the line is drawn on it (ADR 0227); off it, outside the view as it was
+    const on = insideAt(handle, p);
+    if (on !== null) return { insideAt: on };
     return { offset: Math.round(offsetAt(handle, p) * 100) / 100 };
   }
+  if (handle.kind === 'ordinate') return { offset: Math.round(offsetAt(handle, p) * 100) / 100 };
   if (handle.kind === 'round') {
     const g = leaderAt(handle, p);
     return { angle: Math.round(g.angle * 10) / 10, leader: Math.round(g.leader * 100) / 100 };
@@ -580,7 +584,7 @@ function planPlain(picks: readonly Pickable[], p: P2, placed: PlacedView, axes: 
   if (Math.abs(coordOf(a, k) - coordOf(b, k)) < 1e-6) return { error: t('drawing.dimZero') };
   const pa = orientation === 'horizontal' ? sheetOf(coordOf(a, 0), 0) : sheetOf(0, coordOf(a, 1));
   const pb = orientation === 'horizontal' ? sheetOf(coordOf(b, 0), 0) : sheetOf(0, coordOf(b, 1));
-  const handle: Extract<DimensionHandle, { kind: 'linear' }> = { kind: 'linear', orientation, mid: [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2], u: orientation === 'horizontal' ? [1, 0] : [0, 1], box, a: pa, b: pb };
+  const handle: Extract<DimensionHandle, { kind: 'linear' }> = { kind: 'linear', orientation, mid: [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2], u: orientation === 'horizontal' ? [1, 0] : [0, 1], box, a: pa, b: pb, placed };
   const offset = Math.round(offsetAt(handle, p) * 100) / 100;
   return { draft: { kind: 'linear', a: a.ref, b: b.ref, orientation, offset }, refs: [a, b], facts };
 }
@@ -610,8 +614,7 @@ function linearDraft(a: Pickable, b: Pickable, orientation: 'horizontal' | 'vert
   const d: P2 = [pb[0] - pa[0], pb[1] - pa[1]];
   const l = hyp(d[0], d[1]) || 1;
   const u: P2 = orientation === 'horizontal' ? [1, 0] : orientation === 'vertical' ? [0, 1] : [d[0] / l, d[1] / l];
-  const handle: Extract<DimensionHandle, { kind: 'linear' }> = { kind: 'linear', orientation, mid: [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2], u, box, a: pa, b: pb };
-  void placed;
+  const handle: Extract<DimensionHandle, { kind: 'linear' }> = { kind: 'linear', orientation, mid: [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2], u, box, a: pa, b: pb, placed };
   return { draft: { kind: 'linear', a: a.ref, b: b.ref, orientation, offset: Math.round(offsetAt(handle, p) * 100) / 100 } };
 }
 
@@ -744,7 +747,7 @@ export function planOrdinate(picks: readonly Pickable[], p: P2, placed: PlacedVi
   const sheetPoint = (f: Pickable): P2 => toSheet(placed, ...(k === 0 ? ([coordOf(f, 0), placed.centre[1]] as const) : ([placed.centre[0], coordOf(f, 1)] as const)));
   const a = sheetPoint(picks[0]!);
   const b = sheetPoint(picks[picks.length - 1]!);
-  const handle: Extract<DimensionHandle, { kind: 'linear' }> = { kind: 'linear', orientation: axis === 'x' ? 'horizontal' : 'vertical', mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], u: axis === 'x' ? [1, 0] : [0, 1], box, a, b };
+  const handle: Extract<DimensionHandle, { kind: 'ordinate' }> = { kind: 'ordinate', orientation: axis === 'x' ? 'horizontal' : 'vertical', mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], u: axis === 'x' ? [1, 0] : [0, 1], box, a, b, placed };
   const offset = Math.round(offsetAt(handle, p) * 100) / 100;
   return { draft: { kind: 'ordinate', axis, origin: picks[0]!.ref, refs: picks.slice(1).map((f) => f.ref), offset } };
 }

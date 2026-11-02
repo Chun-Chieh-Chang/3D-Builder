@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 37;
+export const DRAWING_SCHEMA_VERSION = 38;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -454,6 +454,12 @@ export interface LinearDimension extends DimensionCommon {
    */
   aSide?: 1 | -1;
   bSide?: 1 | -1;
+  /**
+   * The dimension line drawn on the view instead of outside it (ADR 0227): where it is, in the view's own millimetres (full size), along the view's x for a
+   * vertical dimension and along its y for a horizontal one — so it is a place on the part, and it keeps it when the view is scaled. Absent: the line is outside
+   * the view, `offset` from its box. An aligned dimension has no such place: its line is not square to the view.
+   */
+  insideAt?: number;
 }
 
 /** The diameter (Ø) of a cylinder or a circle seen as a circle in the view; `angle` is the direction of its leader on the sheet (degrees counter-clockwise from the x axis) and `count` how many equal ones it stands for (「4×Ø9」). */
@@ -863,6 +869,10 @@ export type DimensionPatch = {
   reference?: boolean | null;
   tolerance?: DimensionTolerance | null;
   offset?: number;
+  /**
+   * A linear dimension (ADR 0227): the place of its line on the view (full-size view millimetres), or `null` to take the line back outside the view.
+   */
+  insideAt?: number | null;
   orientation?: DimensionOrientation;
   angle?: number;
   count?: number | null;
@@ -1137,6 +1147,11 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     if ([d.a, d.b].some(r => r.kind === 'sketch' && !r.point)) throw new CommandError(t('drawing.dimBadRef'));
     if (!ORIENTATIONS.includes(d.orientation)) throw new CommandError(t('drawing.dimBadOrientation', { orientation: String(d.orientation) }));
     if (!Number.isFinite(d.offset) || d.offset === 0) throw new CommandError(t('drawing.dimBadOffset'));
+    if (d.insideAt !== undefined) {
+      if (!Number.isFinite(d.insideAt)) throw new CommandError(t('drawing.dimBadInside'));
+      // an aligned dimension's line is not square to the view, so there is no place on the view to put it
+      if (d.orientation === 'aligned') throw new CommandError(t('drawing.dimBadInside'));
+    }
     for (const [side, r] of [[d.aSide, d.a], [d.bSide, d.b]] as const) {
       if (side === undefined) continue;
       if (side !== 1 && side !== -1) throw new CommandError(t('drawing.dimBadSide'));
@@ -1382,7 +1397,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     case 'setDimension': {
       const d = pg.dimensions.find((x) => x.id === cmd.dimensionId);
       if (!d) throw new CommandError(t('drawing.noDimension', { id: cmd.dimensionId }));
-      const { reference, tolerance, count, callout, calloutStyle, supplementary, precision, prefix, suffix, text, slide, leader, style, kind, size, chamferAngle, chamferFormat, ...rest } = cmd.patch;
+      const { reference, tolerance, count, callout, calloutStyle, supplementary, precision, prefix, suffix, text, slide, leader, style, kind, size, chamferAngle, chamferFormat, insideAt, ...rest } = cmd.patch;
       if (kind !== undefined) {
         if (d.kind !== 'diameter' && d.kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'kind', kind: d.kind }));
         if (kind !== 'diameter' && kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'kind', kind }));
@@ -1397,6 +1412,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
         ordinate: ['offset', 'axis', 'origin', 'refs'],
         chamfer: ['angle', 'ref', 'size', 'chamferAngle', 'chamferFormat', 'coneSide'],
       };
+      if (insideAt !== undefined && targetKind !== 'linear') throw new CommandError(t('drawing.notForKind', { field: 'insideAt', kind: targetKind }));
       if (slide !== undefined && targetKind !== 'linear' && targetKind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'slide', kind: targetKind }));
       if (leader !== undefined && targetKind !== 'diameter' && targetKind !== 'radius' && targetKind !== 'chamfer') throw new CommandError(t('drawing.notForKind', { field: 'leader', kind: targetKind }));
       if (calloutStyle !== undefined && targetKind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'calloutStyle', kind: targetKind }));
@@ -1441,6 +1457,14 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (count !== undefined) next.count = count;
       if (tolerance === null) delete next.tolerance;
       else if (tolerance !== undefined) next.tolerance = tolerance;
+      // Where the line of a linear dimension is (ADR 0227): on the view (`insideAt`), or outside it (`offset`). A distance given on its own is the outside
+      // placement, so it takes the line off the view; the distance is kept, so it can come back where it was.
+      if (next.kind === 'linear') {
+        const linear = next as Extract<Dimension, { kind: 'linear' }>;
+        if (insideAt === null) delete linear.insideAt;
+        else if (insideAt !== undefined) linear.insideAt = insideAt;
+        else if (rest.offset !== undefined) delete linear.insideAt;
+      }
       // a style with nothing in it is the drawing's, written as none
       if (style === null || (style && typeof style === 'object' && Object.keys(style).length === 0)) delete next.style;
       else if (style !== undefined) next.style = { ...style };
