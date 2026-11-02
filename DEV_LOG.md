@@ -19,7 +19,12 @@ main（da7c8e6）完整 `verify:ui` 中 `manual-d6.js` 在 `.steps.7`（組合�
 
 ### 4. 確效
 - 同樣的 1.5 s 延遲下，修正後 `manual-d6`、`phase3-subassembly`／`measure`／`physical`／`check` 6/6 通過；延遲已移除。`typecheck`、`lint:rules` 通過。
-- 完整 `verify:ui`（自有埠 5491／9433／5493）：**259/260**，`manual-d6` 通過。唯一失敗為 `manual-assembly-section-captions` 步驟 6「a real horizontal projected edge is required」——單獨跑 3/3 通過；**在乾淨 HEAD（da7c8e6）**上把 `drawingAssemblyEdges` 延遲 1.5 s 即以相同訊息失敗，為既有的另一個競態：重開工程圖後步驟 5 只等剖面的 `cutRegions`，組合件視圖的投影邊（另一個 worker 呼叫）還沒回來，步驟 6 就讀上視圖的邊。與本次修正無關，列為後續。
+- 完整 `verify:ui`（自有埠 5491／9433／5493）：**259/260**，`manual-d6` 通過。唯一失敗為 `manual-assembly-section-captions` 步驟 6「a real horizontal projected edge is required」——單獨跑 3/3 通過；**在乾淨 HEAD（da7c8e6）**上把 `drawingAssemblyEdges` 延遲 1.5 s 即以相同訊息失敗，為既有的另一個競態：重開工程圖後步驟 5 只等剖面的 `cutRegions`，組合件視圖的投影邊（另一個 worker 呼叫）還沒回來，步驟 6 就讀上視圖的邊。與本次修正無關。
+
+### 5. 後續：manual-assembly-section-captions 的競態（同日修正）
+- 根因如上：組合件視圖的投影邊由 `drawingAssemblyEdges` 另外計算，晚於步驟 5 等待的 `cutRegions`；步驟 6 的 `D.visibleElements(…, state().edges.get(top.id), …)` 拿到 `undefined`，找不到水平邊。
+- 修正：步驟 6 開頭等待 `state().edges.get(top.id)`（等的正是它要讀的東西），不改逾時、不放寬檢查。
+- 確效：同樣把 `drawingAssemblyEdges` 延遲 1.5 s，修正前（乾淨 HEAD）失敗、修正後通過；延遲已移除。完整 `verify:ui` **260/260**（`manual-d6`、`manual-assembly-section-captions` 皆通過）。
 
 ## 2026-11-01:STL 輸出與輸入(F4.1 補完、F2.3,ADR 0221,Schema 87)
 

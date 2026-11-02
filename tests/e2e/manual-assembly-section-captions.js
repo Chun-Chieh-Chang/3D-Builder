@@ -99,6 +99,8 @@ window.__assemblySectionCaptions = { run: async () => {
       check(caption('detail').text === 'D (4:1)', 'scale stays associative after reopen');
     });
     await step('6 dimension selection, placement and numeric editing win over overlapping view captions', async () => {
+      // an assembly view's projected edges come from their own worker call, after the lines step 5 waited for
+      await H.waitFor(() => state().edges.get(top.id), 30000, 'projected edges of the top view');
       const native = D.visibleElements(state().lines.get(top.id), state().edges.get(top.id), state().features.get(top.id) ?? []);
       const edge = native.edges.find(e => Math.abs(e.a[1] - e.b[1]) < 1e-7 && Math.abs(e.a[0] - e.b[0]) > 5);
       check(edge, 'a real horizontal projected edge is required');
