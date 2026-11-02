@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Parameters, type ExtrudeFeature } from '@3db/model';
 import { t } from '@3db/i18n';
 import { store, useStore } from '../state/store';
-import { draggedExtrusion, extrusionGrowSign, previewArrowUnit } from '../state/instantDepth';
+import { draggedExtrusion, extrusionGrowSign, extrudeHandlePlacement, previewArrowUnit } from '../state/instantDepth';
 
 /** During construction the pointer changes the real feature, not just a ruler label. */
 export function ExtrudePreviewHandle() {
@@ -18,11 +18,15 @@ export function ExtrudePreviewHandle() {
   if(!(depth>0))return null;
   const cap=result?.faceNames.findIndex(name=>name===`${f.id}:cap:end`)??-1;
   const center=cap>=0?result?.faceFingerprints[cap]?.center:undefined;
-  if(!center)return null;
+  // The end face vanishes when the feature cannot rebuild (a reversed cut that removed nothing loses its `cap:end`): rest the handle on the sketch plane
+  // instead of going quiet — it stays visible and stays draggable, so pulling it back to a positive depth is one gesture away (ADR 0203 §修正).
+  const status=result?.features.find(r=>r.id===f.id);
+  const place=extrudeHandlePlacement(center,frame.origin,status?.status==='error'?status.message??'':undefined);
+  if(!place)return null;
   const viewer=store.viewer,host=document.querySelector('.viewport-canvas')?.getBoundingClientRect();if(!viewer||!host)return null;
   // The value is counted along the way the feature grows with a positive one: with the sketch normal for a boss, into the material against it for a cut (C4.1).
   const grow=extrusionGrowSign(f.op);
-  const at=viewer.screenPoint(center),one=viewer.screenPoint(center.map((v,i)=>v+frame.normal[i]!*grow) as [number,number,number]);
+  const at=viewer.screenPoint(place.at),one=viewer.screenPoint(place.at.map((v,i)=>v+frame.normal[i]!*grow) as [number,number,number]);
   const scaleFactor=f.dir1.type==='midPlane'?0.5:1;
   let axis=[(one[0]!-at[0]!)*scaleFactor,(one[1]!-at[1]!)*scaleFactor];
   if(Math.hypot(...axis)<1e-4){const scale=scaleFactor/viewer.pixelSize();axis=[0,-scale*grow];}
@@ -43,5 +47,5 @@ export function ExtrudePreviewHandle() {
     cleanup.current=stop;store.cancelFeatureGesture=restore;setShown(signed);window.addEventListener('pointermove',move,true);window.addEventListener('pointerup',up,true);window.addEventListener('pointercancel',cancel,true);window.addEventListener('keydown',key,true);
   };
   void tick;
-  return <div className="extrude-preview-handle" data-extrude-preview={f.id} style={{left:at[0]!-host.left,top:at[1]!-host.top}}><svg width="140" height="140" viewBox="-70 -70 140 140" aria-hidden="true"><path d={`M0 0L${u[0]!*56} ${u[1]!*56}`} stroke="var(--accent)" strokeWidth="3"/><path d={`M${u[0]!*56} ${u[1]!*56}L${u[0]!*43-u[1]!*6} ${u[1]!*43+u[0]!*6}L${u[0]!*43+u[1]!*6} ${u[1]!*43-u[0]!*6}Z`} fill="var(--accent)"/></svg><button type="button" data-action="drag-extrude-preview" disabled={!direct} aria-invalid={invalid} title={t(direct?'extrude.dragHint':'instantDepth.expression')} onPointerDown={down} style={{left:u[0]!*38,top:u[1]!*38}}>{Number((shown??signed).toFixed(3))} mm</button></div>;
+  return <div className="extrude-preview-handle" data-extrude-preview={f.id} data-extrude-anchor={place.onSketchPlane?'sketch':'face'} style={{left:at[0]!-host.left,top:at[1]!-host.top}}><svg width="140" height="140" viewBox="-70 -70 140 140" aria-hidden="true"><path d={`M0 0L${u[0]!*56} ${u[1]!*56}`} stroke="var(--accent)" strokeWidth="3"/><path d={`M${u[0]!*56} ${u[1]!*56}L${u[0]!*43-u[1]!*6} ${u[1]!*43+u[0]!*6}L${u[0]!*43+u[1]!*6} ${u[1]!*43-u[0]!*6}Z`} fill="var(--accent)"/></svg><button type="button" data-action="drag-extrude-preview" disabled={!direct} aria-invalid={invalid} title={place.onSketchPlane?(place.failed?t('instantDepth.anchorLostWith',{message:place.failed}):t('instantDepth.anchorLost')):t(direct?'extrude.dragHint':'instantDepth.expression')} onPointerDown={down} style={{left:u[0]!*38,top:u[1]!*38}}>{Number((shown??signed).toFixed(3))} mm</button></div>;
 }

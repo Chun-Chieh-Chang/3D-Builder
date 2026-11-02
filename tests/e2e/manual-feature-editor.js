@@ -60,11 +60,16 @@ M.cutDrag=async()=>{
  await H.waitFor(()=>{const d=state().doc.features.find(x=>x.id===f.id);return d.dir1.type==='blind'&&!!d.dir1.reverse;},5000,'crossing the plane reverses the cut');
  await H.waitFor(()=>!state().rebuilding&&state().result?.features.find(x=>x.id===f.id)?.status==='error',10000,'reversed cut into air fails');
  must(JSON.stringify(state().result.features.find(x=>x.id===f.id)).includes('除料沒有移除任何材料'),'the failure names the removal honestly');
- must(!document.querySelector('[data-action="drag-extrude-preview"]'),'handle hides while the reversed cut has no end cap');
+ // 可見退路（ADR 0203 §修正之二）：把手不靜默退場，改貼草圖平面、如實說明、仍可拖曳
+ const lost=await H.waitFor(()=>{const b=document.querySelector('[data-action="drag-extrude-preview"]');return b&&!b.disabled&&b.title.includes('除料沒有移除任何材料')?b:null;},5000,'the handle stays visible and explains the failure');
+ const rest=lost.closest('[data-extrude-anchor="sketch"]');
+ must(rest,'the handle rests on the sketch plane, not a quiet exit');
+ must(rest.dataset.extrudePreview===f.id,"the resting handle is still this feature's");
  await window.__shot?.('cut-drag-reversed-error');
  send(window,'pointermove',5); // 拉回正向：恢復可以套用的除料
  await volume(block-30*20*(depth+5));
  must(!state().result.features.some(x=>x.status==='error'),'pulling back clears the error');
+ must(document.querySelector('[data-extrude-anchor="face"]'),'the handle anchors on the end face again once the cut removes material');
  send(window,'pointerup',5);await apply();await ready();await volume(block-30*20*(depth+5));
  store.undo();await ready();must(!state().doc.features.some(x=>x.id===f.id),'single undo removes the whole creation');store.redo();await volume(block-30*20*(depth+5));
  // 編輯既有除料：拖曳加深、Esc 只還原手勢
@@ -78,7 +83,7 @@ M.cutDrag=async()=>{
  await volume(block-30*20*(depth+5));must(state().editing,'Escape restores only the gesture');
  document.querySelector('[data-floating-parameters] .pm-cancel').click();await volume(block-30*20*(depth+5));
  await H.tidy();
- return{pass:true,deepen:true,tracking:Math.round(along*10)/10,reversedFails:true,undo:true,escape:true};
+ return{pass:true,deepen:true,tracking:Math.round(along*10)/10,reversedFails:true,visibleRetreat:true,undo:true,escape:true};
 };
 
 M.assembly=async()=>{

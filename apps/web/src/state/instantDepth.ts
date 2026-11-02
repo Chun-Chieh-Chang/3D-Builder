@@ -30,3 +30,18 @@ export function draggedExtrusion(initial:number,from:readonly number[],to:readon
   if(!Number.isFinite(value)||value===0)throw new Error('Extrusion depth must be nonzero');
   return value;
 }
+
+/** The resting place of the floating drag handle (ADR 0203 §修正): on the feature's own end face while the rebuild carries it; on the sketch plane —
+ *  with what the failure said in `failed` for the tooltip — when the feature cannot rebuild so the face cannot anchor it (a reversed cut that removed
+ *  nothing loses its `cap:end`). Never a quiet exit: a projected handle every time the values are good. `undefined` only when neither anchor exists. */
+export interface HandlePlacement {
+  at: [number, number, number];
+  /** The handle does not rest on the feature's own end face, so the tooltip must say why. */
+  onSketchPlane: boolean;
+  failed?: string;
+}
+export function extrudeHandlePlacement(face: readonly number[]|undefined, sketchOrigin: readonly number[]|undefined, failed: string|undefined): HandlePlacement|undefined {
+  if(face) return {at:[face[0]!,face[1]!,face[2]!],onSketchPlane:false};
+  if(sketchOrigin) return {at:[sketchOrigin[0]!,sketchOrigin[1]!,sketchOrigin[2]!],onSketchPlane:true,failed};
+  return undefined;
+}

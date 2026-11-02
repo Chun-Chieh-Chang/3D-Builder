@@ -26,6 +26,10 @@
 
 同日補上 §§2.3 的後續待辦一：`midPlane`＋方向 2 的衝突原本只在再生層攔（`feature.mid2`），命令層可以靠 `setExtrudeDirections`／`setEndCondition` 把文件編進這個註定失敗的狀態。現在兩個編輯命令在前置就拒絕（`packages/model/src/commands.ts` 的 `refuseMid2`，同一訊息鍵）；刻意不掛進 `validateNewFeature`——`build()` 與結構式文件保有攜帶這個組合的權利，其失敗仍在特徵樹可見（`tests/phase3/extrude-p1.test.ts` 依賴此語意），編輯命令只斷「不能由介面造出它」。覆蓋：`tests/phase7/extrude-direction-editor.test.ts` 兩種組合 × 兩個命令、拒絕後文件逐字不變；反向對照：把拒絕改成空轉時新測恰在 throw 斷言失敗。
 
+## 修正之二（2026-11-02：特徵失敗時操控器的可見退路）
+
+後續待辦二：反向除料切到空氣時，重建失敗、`${feature}:cap:end` 端面名稱消失，操控器 `if(!center) return null` **靜默退場**——畫面只留屬性面板的紅字，畫面上的把手憑空不見，使用者不知它去了哪、也沒有一眼看得到的「拉回來」入口。修正（`apps/web` 的 `instantDepth.ts` 新 `extrudeHandlePlacement`）：掛把手的端面不在重建結果裡時，把手改**貼在草圖平面上**而不是消失，仍可拖曳（拖回正向一步回正）；tooltip 如實說明——特徵失敗時引用其訊息（「{message}——把手暫貼在草圖平面上，仍可拖回原方向」），端面無故消失（非已知失敗）時也講「已不在重建結果裡」。退化樣式以虛線邊框區別正常貼端面狀態（`data-extrude-anchor="sketch"`），不打新色。拖曳值映射以投影增量計算、不依賴錨點，退化狀態下照常工作。覆蓋：`instant-depth.test.ts` 貼端面／貼草圖平面／未知缺陷無特徵錯誤／骨架皆缺 四態；`manual-feature-editor.js` `cutDrag` 延伸——反向切空氣時把手持續可見、`data-extrude-anchor="sketch"` 且 title 含「除料沒有移除任何材料」、拉回正向後把手的錨點回到端面；反向對照：退化退路關閉（回 `!place` 就退場）時恰在此處逾時。
+
 ## 組合件編輯
 
 展開零組件，在草圖／特徵列雙擊或右鍵「編輯零組件草圖／特徵」，開啟該來源零件後直接進入正確編輯交易。等原生重建與自訂基準面框架完成才開始編輯，以文件序號取消過時請求；取消未存檔提示亦清除待開啟目標。插入／配合等活動操作須先結束，失效／抑制目標明示。

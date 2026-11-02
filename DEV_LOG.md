@@ -2,6 +2,34 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-11-02：特徵失敗時，操控器的可見退路（ADR 0203 §修正之二，登記待辦收尾二）
+
+承接「命令層前置擋兩側對稱＋方向 2」條目（`0542d65`，在獨立 worktree 開發，origin 已由 STL／G16 等推進到 `a496d55`）：反向除料切到空氣時，重建失敗使 `${feature}:cap:end` 端面名稱消失，操控器 `if(!center) return null` **靜默退場**——畫面上把手憑空不見，只剩屬性面板的紅字，使用者不知道它去了哪、也沒有抬眼可見的「拉回來」入口。
+
+### 1. 交付內容
+- `apps/web/src/state/instantDepth.ts`：新純函式 `extrudeHandlePlacement`——掛把手的端面存在時貼端面；缺失時（特徵重建失敗或端面無故不見）退回**草圖平面**並附 `failed`（特徵失敗訊息），兩者皆缺才回 `undefined`。
+- `apps/web/src/components/ExtrudePreviewHandle.tsx`：以 placement 取代裸 `center`；退化時 `data-extrude-anchor="sketch"`、虛線框樣式（`app.css`，不打新色）、button title 以 `instantDepth.anchorLostWith`（引用失敗訊息）或 `instantDepth.anchorLost`（非已知失敗）如實說明；**不**停用拖曳——拉回正向一步回正（拖曳值映射以投影增量計算，不依賴錨點）。
+- i18n 中英各二鍵；文件：ADR 0203 §修正之二、[verification-coverage](docs/verification-coverage.md) 操控器列更新舊「暫時退場」措辭。
+
+### 2. 紅隊四問（節錄）
+1. **輸入破壞**：placement 全以結果陣列與幾何為真值，`??` 只用於 faceFingerprints 的查找既有形；無數值篡改。
+2. **防禦性空轉**：退化分支只能由「端面真失蹤」觸發——單元四態（貼端面／貼草圖平面／未知缺陷／骨架皆缺回 undefined）＋ e2e narrative 實觸發；反向對照（把退路關回靜默）證新測非恆真。
+3. **依賴鏈**：title 鍵在 i18n 中英同步（`lint:i18n`）；e2e 斷言 title 含「除料沒有移除任何材料」與 `cap:end` 重建恢復後 `data-extrude-anchor="face"`。
+4. **真值**：截圖 Two 張實檢視（退化虛線框貼草圖平面 `cut-drag-reversed-error`；深化正常 `cut-drag-deepen`）；不宣稱 WASM 指標（本項不涉新底層配置；`verify:ui` 的 Worker 高水位回收如常）。
+
+### 3. 失敗紀錄與 RCA
+1. **e2e 六項全在 import 段失敗**：我在 `tests/e2e/manual-feature-editor.js`（純 .js）裡寫了 TS 型別斷言（`as HTMLButtonElement|null`），esbuild PARSE_ERROR 使**每一個案例**都 fetch module 失敗。RCA：以編輯器肌肉記憶寫 TS；AGENTS「大量測試在同一個早期步驟一起失敗先懷疑環境」在這裡給了錯誤的第一印象——是內容、不是環境（vite 鋸出 500 error 頁才定位）。CAPA：e2e 檔一律純 JS，寫完先看第一行錯誤是否為 transform 類。
+2. **首次 `verify:ui --only` 全 import 失敗（另一次）**：預設 dev 埠 5391 被另一工作階段的 `vite --open`（根目錄為主資料夾）佔用，我的 worktree `@fs` 模組自然取不到。照 AGENTS 用自訂三埠（5446／9352／5397）後該次仍失敗、其實是上述第 1 點；修完 6/6。
+3. **完整輪兩次的 2 案失敗皆是環境，不是本次變更**：worktree 的 node_modules 是手工組裝（只建了 `@3db/*`、libcascade、planegcs），漏掉普通依賴 `three`——直接 import 它的 `manual-grid-depth` 兩案全在 import 段失敗（vite 對不存在路徑回 SPA fallback HTML，`fetch` 得到 200＋HTML 而非模組）。worktree `npm ci` 一次到位（npm 會自建 workspace `@3db/*` junction，等於所有依賴按鎖檔落齊）；單跑失敗腳本 2/2 只證明該案，依 AGENTS 再整輪重跑收案。教訓已錄 AGENTS §4。
+
+### 4. 驗證
+- `apps/web/test/instant-depth.test.ts` 5 項（新增端面/草圖平面/未知/骨架四態）；typecheck 0 錯。
+- `npm run verify:ui -- --only manual-feature-editor`（自訂埠）6/6；**反向對照**：`if(!place||place.onSketchPlane)return null` 還原靜默退場 → cutDrag 恰在「the handle stays visible and explains the failure」超時，還原後復 6/6。
+- 完整 `npm run verify:ui`（AGENTS §4 第 7 點，改到畫面疊加元素）：前兩輪各 256/258——兩案失敗皆為環境（見 RCA 3）；worktree `npm ci` 補齊依賴、單跑復活後**整輪重跑 258/258**（0 已知缺陷）。
+- 截圖：`out/gizmo-retreat/manual-feature-editor/__featureEditor_cutDrag/`。
+
+---
+
 ## 2026-11-01:STL 輸出與輸入(F4.1 補完、F2.3,ADR 0221,Schema 87)
 
 STL 輸入成為**網格參考**(特徵 `importedMesh`):純 TypeScript 讀檔、不經 OCCT、不在本體清單中,特徵/質量/零件表/輸出按構造看不到它。輸出加對話框(二進位/ASCII、mm/inch、細緻度、座標系統)、多本體各存一檔(ZIP)、組合件 STL。詳見 [ADR 0221](docs/adr/0221-stl-exchange.md)。

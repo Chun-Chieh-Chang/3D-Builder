@@ -41,3 +41,17 @@ it('the value axis follows the real growth of boss and cut alike: dragging along
   expect(Math.abs(crossed)).toBeCloseTo(2,10);
  }
 });
+
+it('the handle rests on the end face while it exists, on the sketch plane when the rebuild loses it, and is never a quiet exit',async()=>{
+ const {extrudeHandlePlacement}=await import('../src/state/instantDepth');
+ const face=[10,0,30] as const,sketch=[0,0,0] as const;
+ const onFace=extrudeHandlePlacement(face,sketch,undefined);
+ expect(onFace).toEqual({at:[10,0,30],onSketchPlane:false,failed:undefined});
+ // a reversed cut that removed nothing cannot anchor on its `cap:end`: it says why in the tooltip and stays draggable
+ const failed=extrudeHandlePlacement(undefined,sketch,'除料沒有移除任何材料（試試反轉方向）');
+ expect(failed).toEqual({at:[0,0,0],onSketchPlane:true,failed:'除料沒有移除任何材料（試試反轉方向）'});
+ const unknown=extrudeHandlePlacement(undefined,sketch,undefined);
+ expect(unknown).toEqual({at:[0,0,0],onSketchPlane:true,failed:undefined});
+ expect(extrudeHandlePlacement(undefined,undefined,'somewhere')).toBeUndefined();
+});
+
