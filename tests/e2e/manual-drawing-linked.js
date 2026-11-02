@@ -73,11 +73,20 @@ M.run = async () => {
     await H.project({ '定位板.3dbx': `${H.GOLDEN}locating-plate.3dbx` });
     await H.open('定位板.3dbx');
     await H.waitFor(() => store.getState().result?.mesh, 20000, 'the part');
-    await H.newDrawing();
-    await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
-    // the steps below are worked out for first angle; new drawings default to third angle
+    // the steps below are worked out for first angle. A new drawing is fitted (最適比例) once, when the lines and the marks of its views are known, for the
+    // projection the sheet has then (ADR 0147), and changing the projection afterwards re-lays the arrangement out but does not fit it again: the sheet is
+    // set to first angle on the empty sheet, before 「標準三視圖」 lays the views out and they are fitted (a new drawing defaults to third angle).
+    await H.action('檔案', '新工程圖');
+    await H.waitFor(() => store.getState().drw, 20000, 'the new drawing');
     store.drawingStore.setSheet({ projection: 'first' });
     await H.waitFor(() => page()?.sheet.projection === 'first', 3000, 'first angle');
+    const standardViews = await H.waitFor(() => {
+      const b = document.querySelector('[data-action="standardViews"]');
+      return b && !b.disabled ? b : null;
+    }, 30000, 'the standard 3 views button');
+    standardViews.click();
+    await H.wait(150);
+    await H.waitFor(() => drw() && page()?.views.length === 3 && [...drw().lines.values()].filter(Boolean).length === 3, 30000, 'the three views');
     await H.wait(300);
     await H.waitFor(() => drw().features.size === 3, 30000, 'the features of the three views (the centre marks)');
     await H.wait(300);

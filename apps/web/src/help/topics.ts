@@ -140,6 +140,7 @@ const FEATURE_ACTION: Record<string, string> = {
   refPoint: 'ref-point',
   coordSys: 'coord-sys',
   importedBody: 'import-step',
+  importedMesh: 'import-step',
   deleteFace: 'delete-face',
   offsetSurface: 'offset-surface',
   splitLine: 'split-line',

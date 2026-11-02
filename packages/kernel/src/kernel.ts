@@ -2585,6 +2585,7 @@ export class Kernel {
         const unified = coneSlab ? { shape: mk.Shape(), origins } : this.unify(raw, origins, arena, apart);
         if (!this.valid(unified.shape)) {
           unified.shape.delete();
+          if (square && distance < 0) throw new KernelError(t('edit.moveTooFar'));
           throw new KernelError(t('edit.moveInvalid'));
         }
         // A face of the slab is named after the face of the body it stands for.
@@ -2607,6 +2608,7 @@ export class Kernel {
         const result = this.put(unified.shape);
         if (!(this.massProps(result).volume > 1e-12)) {
           this.release(result);
+          if (square && distance < 0) throw new KernelError(t('edit.moveTooFar'));
           throw new KernelError(t('edit.moveInvalid'));
         }
         // Pushed into the material by more than the body is thick there, the sweep comes out of the far side:

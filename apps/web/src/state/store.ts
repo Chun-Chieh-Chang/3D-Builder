@@ -42,6 +42,9 @@ import {
   type Fingerprint,
   type Id,
   type ImportedBodyFeature,
+  type ImportedMeshFeature,
+  parseStl,
+  StlError,
   type PartDoc,
   type PatternDefinition,
   type PlaneDefinition,
@@ -64,17 +67,19 @@ import {
   isShown,
   bodyKey,
 } from '@3db/model';
-import { readAnyDocumentFile, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, igesFileName, isStepData, stepAssemblyFiles, stepFileName, stlFileName, writePartFile } from '@3db/io';
+import { readAnyDocumentFile, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, igesFileName, isStepData, safeFileName, stepAssemblyFiles, stepFileName, stlEntryNames, stlFileName, writePartFile, writeZip } from '@3db/io';
 import { gatherSources } from './sources';
 import { DrawingStore, type DrawingSource, type DrawingState } from './drawing';
 import { dxfText, flatPatternDxf, importDxf, surveyDxf, type DxfImport, type DxfSurvey } from '@3db/drawing';
 import type { FlatReport, SheetCheck } from '@3db/regen';
 import { orderProblem, suppressionTargets, type SuppressAction } from '@3db/regen/dag';
-import { contourChoices, findProfiles, type ContourChoice } from '@3db/sketch/profiles';
+import { contourChoices, findProfiles, outlineContains, pickContourSelection, regionOutline, type ContourChoice, type RegionOutline } from '@3db/sketch/profiles';
 import type { ModelItem } from '@3db/sketch/ops';
+import type { SolvedGeometry } from '@3db/sketch';
+import type { UnresolvedRef } from '../sketcher/sketch-references';
 import type { PickFilter, Snap, Viewer } from '@3db/render';
 import { captureVertexAnchor, resolveVertexAnchor } from './measureAnchors';
-import type { KernelApi, PartExportOptions, PartIgesOptions, ProbeApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
+import type { KernelApi, PartExportOptions, PartIgesOptions, StlExportOptions, ProbeApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
 import { shouldRestartHeap } from '../worker/heap';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 import { accepts, axisDefinitionFor, emptyRef, put, treePick, treeRef } from './datumSlots';
@@ -102,6 +107,7 @@ import {
   writeFile,
   pickDxfFile,
   pickImageFile,
+  isStlFile,
   type OpenedFile,
   dropRecovery,
   keepRecovery,
@@ -322,14 +328,29 @@ export interface UiState {
   dimensionEdit: Id | null;
   /** The picture of the sketch being edited whose scale is being set from two points of it (ADR 0116), and the points clicked so far (in the plane of the sketch). */
   pictureScale: { pictureId: Id; points: [number, number][] } | null;
+  /**
+   * 「在畫布選取輪廓」 (C1.34, G10): the boss or cut whose sketch's closed regions are being picked in the graphics area, with
+   * what can be picked — the regions as the list numbers them and their outlines for filling and hit-testing.
+   */
+  contourPick: { featureId: Id; sketchId: Id; choices: ContourChoice[]; outlines: RegionOutline[] } | null;
+  /** The region the cursor is over while picking (an index into `contourPick.outlines`), or null. */
+  contourHover: number | null;
+  /** The feasible motions the solver probed for the selected point (G13, P4), drawn as arrows by the point until the selection changes. */
+  dofMotion: { point: Id; at: [number, number]; probes: { axis: 'x' | 'y'; delta: [number, number] }[] } | null;
+  /** What a hovered fix of an over-defined sketch would make of the geometry (G13, P4): the entities that move, dashed, before it is applied. */
+  fixPreview: { shapes: SolvedGeometry[]; at: [number, number]; moved: boolean } | null;
+  /** The reference problems of the last rebuild, by feature (G15, P4): kept while a sketch is edited (its own rebuild-to-limit reports none) and cleared when the feature rebuilds cleanly. */
+  referenceProblems: { [id: Id]: UnresolvedRef[] };
   /** 「匯入 DXF」 (F2.6): the file read and what it holds, while its dialog is open. */
   dxfImport: { name: string; text: string; survey: DxfSurvey } | null;
+  /** 「輸入 STL」 (F2.3): the file read, and what it holds read in millimetres, while the dialog asks for its unit. */
+  stlImport: { name: string; bytes: Uint8Array; format: 'binary' | 'ascii'; triangles: number; extent: [number, number, number]; closed: boolean } | null;
   /** Feature whose 「確認刪除」 dialog is open (B2.8). */
   confirmDelete: Id | null;
   /** 「錯誤為何？」 dialog (D7.1). */
   whatsWrong: boolean;
   /** The equations or file-properties dialog (B5.2, B8.3), when open. */
-  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | 'igesOptions' | 'template' | 'shortcuts' | 'options' | 'bom' | 'physical' | 'viewOrientation' | null;
+  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | 'igesOptions' | 'stlOptions' | 'template' | 'shortcuts' | 'options' | 'bom' | 'physical' | 'viewOrientation' | null;
   /** The file the part was opened from or last saved to (F7.1); null for a part never saved. */
   fileName: string | null;
   /** The document differs from what was last opened or saved (the title shows 「*」). */
@@ -587,7 +608,13 @@ class AppStore {
       sketchSolve: null,
       dimensionEdit: null,
       pictureScale: null,
+      contourPick: null,
+      contourHover: null,
+      dofMotion: null,
+      fixPreview: null,
+      referenceProblems: {},
       dxfImport: null,
+      stlImport: null,
       confirmDelete: null,
       whatsWrong: false,
       dialog: null,
@@ -2619,7 +2646,7 @@ class AppStore {
   private leaveSession(): void {
     this.sketcher = null;
     this.modelSnap = [];
-    this.set({ editing: null, sketchSolve: null, dimensionEdit: null, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
+    this.set({ editing: null, sketchSolve: null, dimensionEdit: null, contourPick: null, contourHover: null, dofMotion: null, fixPreview: null, referenceProblems: {}, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
     this.requestRebuild();
   }
 
@@ -3061,6 +3088,61 @@ class AppStore {
     return solved.status === 'failed' ? [] : contourChoices(findProfiles(sketch, solved).regions);
   }
 
+  /**
+   * Starts picking a boss or cut's contours in the graphics area (C1.34, G10): its sketch's closed regions are filled, the one
+   * under the cursor is highlighted and a click chooses it. The sketch is shown while this lasts, even when it is a hidden one.
+   */
+  startContourPick(featureId: Id): void {
+    const doc = this.history.doc;
+    const feature = findFeature(doc, featureId);
+    const sketchId = feature && 'sketch' in feature ? feature.sketch : undefined;
+    if (!sketchId) return;
+    const sketch = findFeature(doc, sketchId);
+    if (sketch?.type !== 'sketch') return;
+    const geometry = this.state.result?.sketchGeometry.get(sketch.id);
+    if (!geometry) return void this.notify(t('contour.pickNone'), 'info');
+    const regions = findProfiles(sketch, { geometry }).regions;
+    if (regions.length < 2) return void this.notify(t('contour.pickNone'), 'info');
+    this.set({ contourPick: { featureId, sketchId: sketch.id, choices: contourChoices(regions), outlines: regions.map(regionOutline) }, contourHover: null });
+  }
+
+  stopContourPick(): void {
+    if (this.state.contourPick || this.state.contourHover !== null) this.set({ contourPick: null, contourHover: null });
+  }
+
+  /** The region of the sketch plane under `p` while picking, or null (a hole or outside every region is none). */
+  contourAt(p: [number, number]): number | null {
+    const pick = this.state.contourPick;
+    if (!pick) return null;
+    const i = pick.outlines.findIndex((o) => outlineContains(o, p));
+    return i < 0 ? null : i;
+  }
+
+  setContourHover(i: number | null): void {
+    if (this.state.contourHover !== i) this.set({ contourHover: i });
+  }
+
+  /** The feasible motions the analysis probed for a point (G13); drawn on the canvas until the selection or session changes. */
+  setDofMotion(motion: { point: Id; at: [number, number]; probes: { axis: 'x' | 'y'; delta: [number, number] }[] } | null): void {
+    this.set({ dofMotion: motion });
+  }
+
+  /** The geometry a hovered fix would produce (G13); dashed on the canvas while the row is under the cursor. */
+  setFixPreview(preview: { shapes: SolvedGeometry[]; at: [number, number]; moved: boolean } | null): void {
+    this.set({ fixPreview: preview });
+  }
+
+  /** A click on the sketch plane while picking: that region alone, or with Ctrl added to (or taken from) the choice. */
+  contourPickClick(p: [number, number], additive: boolean): void {
+    const pick = this.state.contourPick;
+    if (!pick) return;
+    const i = this.contourAt(p);
+    if (i === null) return;
+    const feature = findFeature(this.history.doc, pick.featureId);
+    const chosen = feature && 'contours' in feature ? feature.contours ?? null : null;
+    this.execute({ type: 'setContours', featureId: pick.featureId, contours: pickContourSelection(pick.choices, chosen, i, additive) });
+  }
+
   editDimension(id: Id | null): void {
     this.set({ dimensionEdit: id });
   }
@@ -3198,6 +3280,16 @@ class AppStore {
     });
   }
 
+  /** Keeps each feature's reference problems until the feature rebuilds cleanly (G15): a sketch being edited is rebuilt only up to itself, and that entry says nothing about its references. */
+  private referenceProblemsOf(result: RebuildPayload): { referenceProblems: { [id: Id]: UnresolvedRef[] } } {
+    const problems = { ...this.state.referenceProblems };
+    for (const f of result.features) {
+      if (f.unresolved && f.unresolved.length > 0) problems[f.id] = f.unresolved;
+      else if (f.status === 'ok') delete problems[f.id];
+    }
+    return { referenceProblems: problems };
+  }
+
   private async run(): Promise<void> {
     const worker = this.workerGeneration;
     this.inFlight = true;
@@ -3212,7 +3304,7 @@ class AppStore {
       if (worker !== this.workerGeneration) return; // the worker was replaced meanwhile: this is not an answer to use
       // A queued request supersedes this result: showing it would briefly contradict the current document.
       if (result.seq === this.seq && !this.pending) {
-        this.set({ result });
+        this.set({ result, ...this.referenceProblemsOf(result) });
         this.takePendingSketch();
         this.takePendingFeatureEdit();
         void this.refreshModelSnap();
@@ -3278,13 +3370,25 @@ class AppStore {
     }
   }
 
-  /** 「輸出 STL」 (F4.1): the bodies that count, as fine as the document's quality says. */
-  async exportStl(): Promise<void> {
+  /** 「輸出 STL」 (F4.1, ADR 0221): a part or an assembly; it first asks how (binary or ASCII, the unit, how fine, one file or one for each). */
+  exportStl(): void {
+    this.openDialog('stlOptions');
+  }
+
+  async writeStl(options: StlExportOptions = {}): Promise<void> {
     try {
       const name = this.documentName();
-      const bytes = await this.api.exportStl(this.history.doc, name);
-      download(stlFileName(name), bytes as Uint8Array<ArrayBuffer>, 'model/stl');
-      this.notify(t('export.done', { file: stlFileName(name) }));
+      const out = this.assembly ? await this.api.exportAssemblyStl(this.assembly.stepRequest(), options) : await this.api.exportStl(this.history.doc, name, options);
+      if (out.files.length === 1) {
+        download(stlFileName(name), out.files[0]!.data as Uint8Array<ArrayBuffer>, 'model/stl');
+        this.notify(t('export.done', { file: stlFileName(name) }));
+        return;
+      }
+      const names = stlEntryNames(out.files.map((f) => f.name));
+      const zip = await writeZip(out.files.map((f, i) => ({ name: names[i]!, data: f.data })));
+      const file = `${safeFileName(name)}.zip`;
+      download(file, zip as Uint8Array<ArrayBuffer>, 'application/zip');
+      this.notify(t('export.stlDone', { file, files: out.files.length, triangles: out.triangles }));
     } catch (e) {
       this.notify(t('export.failed', { what: t('export.stlWhat'), why: e instanceof Error ? e.message : String(e) }), 'error');
     }
@@ -3368,9 +3472,9 @@ class AppStore {
     try {
       const picked = await pickFileToOpen(this.project ?? this.remembered);
       if (!picked) return;
-      if (isStepFile(picked) || isIgesFile(picked)) {
-        // Like SolidWorks: a new, unsaved part named after the file, holding the imported body.
-        this.load(createEmptyPart(), null, null, new Map(), picked.name.replace(/\.(step|stp|igs|iges)$/i, ''));
+      if (isStepFile(picked) || isIgesFile(picked) || isStlFile(picked)) {
+        // Like SolidWorks: a new, unsaved part named after the file, holding the imported body (or, from an STL, the mesh).
+        this.load(createEmptyPart(), null, null, new Map(), picked.name.replace(/\.(step|stp|igs|iges|stl)$/i, ''));
         return await this.importData(picked.name, picked.bytes);
       }
       const file = await readAnyDocumentFile(picked.bytes);
@@ -3387,7 +3491,7 @@ class AppStore {
     }
   }
 
-  /** 「輸入 STEP／IGES」 (F2.1, F2.2): the file's solids become an imported body at the rollback bar, in one undoable step. */
+  /** 「輸入 STEP／IGES／STL」 (F2.1–F2.3): the file's solids become an imported body at the rollback bar, in one undoable step; an STL asks its unit first. */
   async importStep(): Promise<void> {
     try {
       const picked = await pickImportFile();
@@ -3466,6 +3570,7 @@ class AppStore {
    * kept in the session even if the feature is deleted later: undo can bring the feature back.
    */
   private async importData(fileName: string, data: Uint8Array): Promise<void> {
+    if (isStlFile({ name: fileName, bytes: data })) return this.readStl(fileName, data);
     // what the bytes say first (a STEP file saved as .igs is read as STEP), then the name
     const kind = isStepData(data) ? 'step' : isIgesFile({ name: fileName, bytes: data }) ? 'iges' : 'step';
     if (kind === 'iges' && !(await this.probeIges(fileName, data))) return;
@@ -3479,6 +3584,42 @@ class AppStore {
     if (this.execute({ type: 'importBody', blob, feature, index: doc.rollbackIndex ?? doc.features.length })) {
       this.set({ selected: feature.id, selectedFace: null, selectedElements: [], fitRequest: this.state.fitRequest + 1 });
       this.notify(t('file.imported', { name: fileName }));
+    }
+  }
+
+  /**
+   * An STL file (F2.3, ADR 0221) is read here first, so a file that cannot be read is refused before anything is added; then its dialog asks for its
+   * unit, showing how large the mesh is either way, since the file does not say.
+   */
+  private readStl(name: string, bytes: Uint8Array): void {
+    try {
+      const m = parseStl(bytes);
+      this.set({ stlImport: { name, bytes, format: m.format, triangles: m.indices.length / 3, extent: [m.max[0] - m.min[0], m.max[1] - m.min[1], m.max[2] - m.min[2]], closed: m.closed } });
+    } catch (e) {
+      if (!(e instanceof StlError)) throw e;
+      this.notify(t('file.importFailed', { why: e.message }), 'error');
+    }
+  }
+
+  cancelStlImport(): void {
+    this.set({ stlImport: null });
+  }
+
+  /** The STL of the open dialog, in the unit chosen, as an imported mesh at the rollback bar: the data and the feature in one undoable step. */
+  async confirmStlImport(unit: 'mm' | 'inch'): Promise<void> {
+    const open = this.state.stlImport;
+    if (!open) return;
+    this.set({ stlImport: null });
+    const sha256 = await sha256Hex(open.bytes);
+    await this.api.addBlob(sha256, open.bytes);
+    this.blobs.set(sha256, open.bytes);
+    const doc = this.history.doc;
+    const ids = this.allocator();
+    const blob: BlobRef = { id: ids.take('blob'), sha256, kind: 'stl', fileName: open.name };
+    const feature: ImportedMeshFeature = { id: ids.take('import'), type: 'importedMesh', name: nextName(doc, t('feature.meshName')), suppressed: false, blob: blob.id, ...(unit === 'mm' ? {} : { unit }) };
+    if (this.execute({ type: 'importBody', blob, feature, index: doc.rollbackIndex ?? doc.features.length })) {
+      this.set({ selected: feature.id, selectedFace: null, selectedElements: [], fitRequest: this.state.fitRequest + 1 });
+      this.notify(t('file.imported', { name: open.name }));
     }
   }
 

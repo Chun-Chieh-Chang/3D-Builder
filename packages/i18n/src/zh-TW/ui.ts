@@ -21,6 +21,7 @@ export const ui = {
   'feature.chamfer': '導角',
   'feature.refPlane': '基準面',
   'feature.importedBody': '輸入本體',
+  'feature.importedMesh': '輸入網格',
   'feature.derivedBody': '衍生本體',
   'feature.deleteFace': '刪除面',
   'feature.moveFace': '移動面',

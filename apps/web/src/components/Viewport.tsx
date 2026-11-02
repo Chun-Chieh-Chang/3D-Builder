@@ -6,10 +6,11 @@ import { ExtrudePreviewHandle } from './ExtrudePreviewHandle';
 import { InstantDepthHandle } from './InstantDepthHandle';
 import { DATUM_PLANES, findFeature, isDimension, isShown, ORIGIN_KEY, Parameters, settingsOf, type DatumPlaneName, type Id, type Feature, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
-import { cubeFacets, Viewer, type DatumDisplay, type DisplayMode, type PlaneDisplay, type SectionPlane, type SketchOverlay, type StandardView } from '@3db/render';
+import { cubeFacets, Viewer, type DatumDisplay, type DisplayMode, type OverlayFill, type PlaneDisplay, type SectionPlane, type SketchOverlay, type StandardView } from '@3db/render';
 import { ACTIONS, shortcutOf } from '../actions';
 import { chosen, pickable, prompt } from '../state/datumSlots';
 import { sample } from '@3db/sketch/interact';
+import { sameContour } from '@3db/sketch/profiles';
 import { buildOverlay, SKETCH_COLORS } from '../sketcher/overlay';
 import type { EntryView } from '../sketcher/controller';
 import type { P2 } from '@3db/sketch';
@@ -119,6 +120,8 @@ export function Viewport() {
   const bootError = useStore((s) => s.bootError);
   const fitRequest = useStore((s) => s.fitRequest);
   const view = useSketcherView();
+  const contourPick = useStore((s) => s.contourPick);
+  const contourHover = useStore((s) => s.contourHover);
   const gridVisible = useStore(s => s.options.showGrid);
   const gridSpacing = useStore(s => s.options.snap.gridSpacing);
   const documentSerial=useStore(s=>s.documentSerial);
@@ -284,6 +287,8 @@ export function Viewport() {
           ? thicknessColors(thicknessReport)
           : null;
   const pick = picking(feature, !!editing, modelTool, measure !== null, editing?.kind === 'sketchPlane');
+  const dofMotion = useStore((s) => s.dofMotion);
+  const fixPreview = useStore((s) => s.fixPreview);
 
   // the flat pattern shown in the place of the folded part (ADR 0115): nothing of the model's names fits its faces, so nothing is picked and no colors are painted
   const flatMesh = useStore((s) => (s.flat?.show3d ? s.flat.mesh : null));
@@ -392,6 +397,13 @@ export function Viewport() {
     v.setCosmeticThreads(result?.cosmeticThreads ?? []);
   }, [result?.cosmeticThreads]);
 
+  // which imported meshes are shown is the document's choice (D4.6), so hiding or showing one needs no rebuild; the geometry is made again only when that changes
+  const shownMeshes = (result?.meshes ?? []).filter((m) => isShown(doc, m.featureId)).map((m) => m.featureId).join(' ');
+  useEffect(() => {
+    const shown = new Set(shownMeshes.split(' '));
+    store.viewer?.setReferenceMeshes((result?.meshes ?? []).filter((m) => shown.has(m.featureId)).map((m) => ({ key: m.featureId, positions: m.positions, indices: m.indices })));
+  }, [result?.meshes, shownMeshes]);
+
   // Shown sketches and the origin (D4.6). The sketch being edited is drawn by its own overlay.
   const zoomBand = store.viewer ? Math.round(Math.log2(store.viewer.pixelSize())) : 0;
   useEffect(() => {
@@ -400,17 +412,31 @@ export function Viewport() {
     v.setOrigin(isShown(doc, ORIGIN_KEY));
     const px = v.pixelSize();
     const overlays: SketchOverlay[] = [];
+    // 「在畫布選取輪廓」 (G10, P3): its sketch is shown (even when a feature has hidden it) and its closed regions are filled —
+    // the one under the cursor, the chosen ones and the rest — with the same choices the list shows.
+    const pickedFeature = contourPick ? doc.features.find((f) => f.id === contourPick.featureId) : undefined;
+    const pickedContours = pickedFeature && 'contours' in pickedFeature ? pickedFeature.contours ?? null : null;
     for (const [id, geometry] of result?.sketchGeometry ?? []) {
       const frame = result?.frames.get(id);
-      if (!frame || id === editing?.featureId || !isShown(doc, id)) continue;
+      const forced = id === contourPick?.sketchId;
+      if (!frame || id === editing?.featureId || (!forced && !isShown(doc, id))) continue;
       const status = result?.features.find((f) => f.id === id)?.sketch?.status;
       const color = status === 'over' ? SKETCH_COLORS.over : status === 'fully' ? SKETCH_COLORS.fully : SKETCH_COLORS.under;
       const curves: SketchOverlay['curves'] = [];
       for (const g of geometry.values()) if (g.type !== 'point') curves.push({ points: sample(g, px), color, dashed: g.construction });
-      overlays.push({ frame, curves, points: [], labels: [] });
+      const fills: OverlayFill[] = [];
+      if (forced && contourPick) {
+        contourPick.outlines.forEach((o, i) => {
+          const c = contourPick.choices[i];
+          const on = pickedContours === null || (c !== undefined && pickedContours.some((w) => sameContour(w, c.ids)));
+          const hovered = contourHover === i;
+          fills.push({ outer: o.outer, holes: o.holes, color: hovered ? SKETCH_COLORS.hover : on ? SKETCH_COLORS.selected : SKETCH_COLORS.preview, opacity: hovered ? 0.3 : on ? 0.26 : 0.14 });
+        });
+      }
+      overlays.push({ frame, curves, points: [], labels: [], ...(fills.length > 0 ? { fills } : {}) });
     }
     v.setSketches(overlays);
-  }, [doc, result, editing?.featureId, zoomBand]);
+  }, [doc, result, editing?.featureId, zoomBand, contourPick, contourHover]);
 
   // The pictures of the sketch being edited, under its curves (ADR 0116): decoded once per image, and drawn again when a picture changes.
   const pictureCount = useRef(0);
@@ -469,6 +495,25 @@ export function Viewport() {
     return () => v.setToolHandler(null);
   }, [sketching, editing?.featureId, modelTool]);
 
+  // 「在畫布選取輪廓」 (G10, P3): while picking, the left button chooses a closed region of the sketch and the cursor lights it.
+  // The view is still turned with the middle button, which a tool handler does not take.
+  useEffect(() => {
+    const v = store.viewer;
+    const frame = contourPick ? result?.frames.get(contourPick.sketchId) : undefined;
+    if (!v || !contourPick || !frame || sketching) return;
+    v.setToolHandler((e) => {
+      if (e.type === 'leave') return void store.setContourHover(null);
+      const p = v.planePoint(e.clientX, e.clientY, frame);
+      if (!p) return;
+      if (e.type === 'move') return void store.setContourHover(store.contourAt(p));
+      if (e.type === 'down') {
+        store.setContourHover(store.contourAt(p));
+        store.contourPickClick(p, e.ctrl || e.shift);
+      }
+    });
+    return () => v.setToolHandler(null);
+  }, [contourPick, result, sketching]);
+
   useEffect(() => {
     const v = store.viewer;
     const sketcher = store.sketcher;
@@ -491,11 +536,11 @@ export function Viewport() {
     const corners = box ? [v.planePoint(box.left, box.top, frame), v.planePoint(box.right, box.top, frame), v.planePoint(box.left, box.bottom, frame), v.planePoint(box.right, box.bottom, frame)] : [];
     const onPlane = corners.filter((c): c is [number, number] => c !== null);
     const visible = onPlane.length === 4 ? { min: [Math.min(...onPlane.map((c) => c[0])), Math.min(...onPlane.map((c) => c[1]))] as [number, number], max: [Math.max(...onPlane.map((c) => c[0])), Math.max(...onPlane.map((c) => c[1]))] as [number, number] } : undefined;
-    overlay.current = buildOverlay(frame, sketch, sketchSolve, { ...view, grid: gridVisible ? gridSpacing : null }, v.pixelSize(), { showRelations: true, values, dimensionPreview: sketcher.dimensionPreview(), precision: settingsOf(doc).dimensionPrecision, visible });
+    overlay.current = buildOverlay(frame, sketch, sketchSolve, { ...view, grid: gridVisible ? gridSpacing : null }, v.pixelSize(), { showRelations: true, values, dimensionPreview: sketcher.dimensionPreview(), precision: settingsOf(doc).dimensionPrecision, visible, dofMotion: dofMotion && dofMotion.point ? { at: dofMotion.at, probes: dofMotion.probes } : null, fixPreview });
     v.setOverlay(overlay.current);
     // a dimension that brings a point of its own (a crossing, ADR 0212) has no label until the solver has answered with that point: the box is shown then
     setEditorOverlay(store.getState().dimensionEdit ? overlay.current : null);
-  }, [sketching, doc, sketchSolve, view, viewTick, gridVisible, gridSpacing]);
+  }, [sketching, doc, sketchSolve, view, viewTick, gridVisible, gridSpacing, dofMotion, fixPreview]);
 
   const shown = displayed.current;
   const hoverName =
@@ -657,13 +702,16 @@ function EntryBoxes({ typed, at, overlay }: { typed: EntryView; at: P2 | null; o
   if (!sketcher || !v || !overlay || !at) return null;
   const screen = v.screenOf(overlay.frame, at);
   const error = typed.fields.find((f) => f.error)?.error;
-  const circle = typed.fields.find((f) => f.key === 'diameter' || f.key === 'radius');
+  const tool = sketcher.getView().tool;
+  // the size box whose way of saying it can be switched: a circle's diameter / radius, a polygon's radius / edge length (G16)
+  const circle = tool !== 'polygon' ? typed.fields.find((f) => f.key === 'diameter' || f.key === 'radius') : undefined;
+  const polygon = tool === 'polygon' ? typed.fields.find((f) => f.key === 'radius' || f.key === 'edge') : undefined;
   return (
     <div className="entry-box" data-sketch-entry style={{ left: screen.x, top: screen.y }} onPointerDown={(e) => e.stopPropagation()} title={t('sketch.entry.help')}>
       <div className="entry-fields">
         {typed.fields.map((f, i) => (
           <label key={f.key} className={i === typed.active ? 'active' : ''}>
-            <span>{t(`sketch.entry.${f.key}`)}</span>
+            <span>{f.label}</span>
             <input
               ref={(el) => void (inputs.current[i] = el)}
               data-entry={f.key}
@@ -694,6 +742,11 @@ function EntryBoxes({ typed, at, overlay }: { typed: EntryView; at: P2 | null; o
         {circle && (
           <button type="button" data-entry-mode title={t('sketch.entry.circleMode')} onClick={() => sketcher.setCircleEntry(circle.key === 'diameter' ? 'radius' : 'diameter')}>
             {circle.key === 'diameter' ? 'Ø→R' : 'R→Ø'}
+          </button>
+        )}
+        {polygon && (
+          <button type="button" data-entry-mode title={t('sketch.entry.polygonMode')} onClick={() => sketcher.setPolygonEntry(polygon.key === 'radius' ? 'edge' : 'radius')}>
+            {polygon.key === 'radius' ? 'R→L' : 'L→R'}
           </button>
         )}
       </div>

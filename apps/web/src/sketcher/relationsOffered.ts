@@ -1,4 +1,4 @@
-import { isSketchAxis, SKETCH_ORIGIN, type Id, type SketchConstraint, type SketchFeature } from '@3db/model';
+import { isSketchAxis, entityPoints, SKETCH_ORIGIN, type Id, type SketchConstraint, type SketchFeature } from '@3db/model';
 import { applicableRelations, constraintsOf, sameRelation, type RelationBody } from '@3db/sketch/interact';
 import type { SketchSolvePayload } from '../worker/protocol';
 
@@ -8,7 +8,11 @@ import type { SketchSolvePayload } from '../worker/protocol';
  */
 export function relationsOffered(f: SketchFeature, solve: Pick<SketchSolvePayload, 'geometry'> | null, selection: readonly Id[]): { entityIds: Id[]; existing: SketchConstraint[]; offered: RelationBody[] } {
   const entityIds = selection.filter((id) => id === SKETCH_ORIGIN || isSketchAxis(id) || f.entities.some((e) => e.id === id));
-  const existing = constraintsOf(f.constraints, entityIds);
+  // The list shows what the selection is about, at both ends (G12): a relation naming one of its entities or one of their end points.
+  // The relations still on offer read the entities alone, as they did.
+  const about = new Set<Id>(entityIds);
+  for (const e of f.entities) if (about.has(e.id)) for (const p of entityPoints(e)) about.add(p);
+  const existing = constraintsOf(f.constraints, about);
   const offered = solve ? applicableRelations(solve.geometry, entityIds, f).filter((r) => !existing.some((c) => sameRelation(c, r))) : [];
   return { entityIds, existing, offered };
 }

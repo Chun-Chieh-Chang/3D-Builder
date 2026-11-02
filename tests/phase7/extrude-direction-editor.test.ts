@@ -13,6 +13,16 @@ it('changes both directions atomically, retains expressions, cancels and undoes 
  const safe=serializePart(h.doc);expect(()=>h.execute({type:'setExtrudeDirections',featureId:'e',first:{type:'blind',depth:'7'},second:{type:'blind',depth:'missing_name'}})).toThrow();expect(serializePart(h.doc)).toBe(safe);
  expect(()=>h.execute({type:'setExtrudeDirections',featureId:'s',first:{type:'blind',depth:'7'},second:null})).toThrow();expect(serializePart(h.doc)).toBe(safe);
 });
+it('the edit commands refuse 兩側對稱 together with 方向 2 up front, and leave the document untouched',()=>{
+  const h=new DocHistory(doc());
+  expect(()=>h.execute({type:'setExtrudeDirections',featureId:'e',first:{type:'midPlane',depth:'6'},second:{type:'blind',depth:'4'}})).toThrow('兩側對稱');
+  expect(()=>h.execute({type:'setExtrudeDirections',featureId:'e',first:{type:'blind',depth:'6'},second:{type:'midPlane',depth:'4'}})).toThrow('兩側對稱');
+  h.execute({type:'setExtrudeDirections',featureId:'e',first:{type:'blind',depth:'7'},second:{type:'blind',depth:'4'}});
+  const both=serializePart(h.doc);
+  expect(()=>h.execute({type:'setEndCondition',featureId:'e',dir:'dir1',value:{type:'midPlane',depth:'6'}})).toThrow('兩側對稱');
+  expect(()=>h.execute({type:'setEndCondition',featureId:'e',dir:'dir2',value:{type:'midPlane',depth:'4'}})).toThrow('兩側對稱');
+  expect(serializePart(h.doc)).toBe(both);
+});
 it('100 seeded single, symmetric, reversed and two-sided modes give exact native material and bounds',()=>{
  const reg=new Regenerator(k,solver,new Map());let seed=738;const rand=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
  try{for(let i=0;i<100;i++){

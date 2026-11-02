@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { constraintRefs, isDimension, isPlain, modelRefOf, SKETCH_AXIS_H, SKETCH_AXIS_V, SKETCH_ORIGIN, type DimensionConstraint, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
+import { constraintRefs, entityPoints, isDimension, isPlain, modelRefOf, SKETCH_AXIS_H, SKETCH_AXIS_V, SKETCH_ORIGIN, type DimensionConstraint, type Id, type PlaneFrame, type SketchConstraint, type SketchFeature } from '@3db/model';
 import { add, arcMidpoint, dimensionText, geometryOf, layoutDimension, measuredText, mid, polar, sample, type Geometry } from '@3db/sketch/interact';
 import { visibleGridSpacing } from '@3db/sketch/snaps';
 import { textContours } from '@3db/sketch/font';
@@ -7,7 +7,7 @@ import type { EntityStatus, P2, SolvedGeometry } from '@3db/sketch';
 import type { OverlayCurve, OverlayLabel, OverlayPoint, SketchOverlay } from '@3db/render';
 import { RELATION_LABEL } from '../strings';
 import type { SketchSolvePayload } from '../worker/protocol';
-import type { ControllerView, PreviewShape } from './controller';
+import type { ControllerView, OpRole, PreviewShape } from './controller';
 
 /** SolidWorks sketch colours: black = fully defined, blue = under-defined, red = over-defined. */
 /**
@@ -24,13 +24,17 @@ export const SKETCH_COLORS = {
   selected: 0x0ca678,
   hover: 0xf08c00,
   preview: 0x74b0e8,
+  /** what a G06 operation plan previews: the piece it adds, the one it changes, and the one it deletes */
+  opAdd: 0x74b0e8,
+  opChange: 0x7048e8,
+  opRemove: 0xe03131,
   guide: 0x868e96,
   grid: 0xe9ecef,
   gridMajor: 0xced4da,
   dimension: 0x3d4650,
   origin: 0xe03131,
   reference: 0x7048e8,
-} as Record<'fully' | 'under' | 'over' | 'selected' | 'hover' | 'preview' | 'guide' | 'grid' | 'gridMajor' | 'dimension' | 'origin' | 'reference', number>;
+} as Record<'fully' | 'under' | 'over' | 'selected' | 'hover' | 'preview' | 'opAdd' | 'opChange' | 'opRemove' | 'guide' | 'grid' | 'gridMajor' | 'dimension' | 'origin' | 'reference', number>;
 
 export type SketchColors = typeof SKETCH_COLORS;
 
@@ -78,10 +82,41 @@ export interface OverlayOptions {
   precision?: number;
   /** The part of the sketch plane on the screen, for the grid (drawn only there). */
   visible?: { min: P2; max: P2 };
+  /** The feasible motions the solver probed for the selected point, drawn as arrows by the point (G13). */
+  dofMotion?: { at: P2; probes: { axis: 'x' | 'y'; delta: P2 }[] } | null;
+  /** What a hovered fix of an over-defined sketch would make of the geometry, dashed, before it is applied (G13). */
+  fixPreview?: { shapes: SolvedGeometry[]; at: P2; moved: boolean } | null;
 }
 
 /** More lines than this across the screen and the grid is not drawn (it would be a gray wash; the stepping keeps it far below this). */
 const GRID_MAX_LINES = 600;
+
+/** How long (pixels) a motion arrow of the DOF analysis is drawn (G13). */
+export const MOTION_ARROW_PX = 26;
+
+/**
+ * The strokes of one motion arrow: a shaft from `from` along `dir` and a head at its tip, all sized in pixels (G13).
+ * A direction with no length draws nothing.
+ */
+export function arrowPoints(from: P2, dir: P2, px: number): P2[][] {
+  const n = Math.hypot(dir[0], dir[1]);
+  if (!(n > 1e-12)) return [];
+  const [ux, uy] = [dir[0] / n, dir[1] / n];
+  const len = MOTION_ARROW_PX * px;
+  const head = 8 * px;
+  const tip: P2 = [from[0] + ux * len, from[1] + uy * len];
+  const wing = (s: number): P2 => [tip[0] - ux * head - uy * s * head * 0.7, tip[1] - uy * head + ux * s * head * 0.7];
+  return [
+    [from, tip],
+    [wing(-1), tip, wing(1)],
+  ];
+}
+
+/** Where an arrow's tip lands (the label of the axis sits beside it). */
+export function arrowTip(from: P2, dir: P2, px: number): P2 {
+  const n = Math.hypot(dir[0], dir[1]) || 1;
+  return [from[0] + (dir[0] / n) * MOTION_ARROW_PX * px, from[1] + (dir[1] / n) * MOTION_ARROW_PX * px];
+}
 
 /**
  * The sketch grid over `visible` (SolidWorks and FreeCAD draw it under the sketch): lines at the spacing the grid snap uses at this zoom, every fifth
@@ -102,6 +137,11 @@ export function gridCurves(visible: { min: P2; max: P2 }, spacing: number, px: n
 }
 
 const shown = (v: number, decimals = 4) => String(Math.round(v * 10 ** decimals) / 10 ** decimals);
+
+/** What a role-marked preview shape means (G06, P2): a new piece in the preview family, a modified one in the child purple, a removed one dashed in the error red. */
+function roleColor(role: OpRole | undefined): number {
+  return role === 'remove' ? SKETCH_COLORS.opRemove : role === 'change' ? SKETCH_COLORS.opChange : role === 'add' ? SKETCH_COLORS.opAdd : SKETCH_COLORS.preview;
+}
 
 /** A dimension's text: as typed when it is a plain number, else its value marked with Σ. */
 function dimensionLabel(c: DimensionConstraint, value: number | undefined, measured: string | undefined, precision = 4): string {
@@ -143,17 +183,87 @@ function anchorOf(geometry: Geometry, id: Id): P2 | null {
   }
 }
 
+// ---------------------------------------------------------------- relation symbols on clear ground (G12, P4)
+
+/**
+ * A relation symbol's box on the screen, in pixels — a shade larger than the stylesheet draws `.overlay-label.relation`
+ * (11 px text, 1 px padding, 1 px border), so a layout kept clear of these boxes is clear of the real ones too.
+ * The width grows with the symbol's characters (`∥` is one, `a:b` three).
+ */
+export function relationLabelSize(text: string): { w: number; h: number } {
+  return { w: 12 + 8 * [...text].length, h: 20 };
+}
+
+/** One relation symbol to place: its label key, its text, the anchor it belongs to, and whether the selection is about it. */
+export interface RelationLabelRequest {
+  key: string;
+  text: string;
+  anchor: P2;
+  /** 0 for a relation the selection is about — it takes the spot beside its anchor; 1 for one that has nothing to do with it. */
+  rank: number;
+}
+
+/** How far (pixels) a symbol is put from its anchor to begin with, and the step between the rings of places it can move to. */
+const RELATION_OFFSET_PX = 12;
+const RELATION_RING_PX = 17;
+/** Six rings of eight directions: a symbol never wanders further than 12 + 6·17 = 114 px from its anchor. */
+const RELATION_MAX_RING = 6;
+/** The directions round an anchor, the spot up and to the right first (the plane's +y is up on the screen). */
+const RELATION_DIRECTIONS: P2[] = [
+  [1, 1],
+  [0, 1],
+  [1, 0],
+  [1, -1],
+  [0, -1],
+  [-1, 0],
+  [-1, 1],
+  [-1, -1],
+];
+
+/** Two boxes centred on `a` and `b` share no ground (labels are centred on their point, `translate(-50%, -50%)`). */
+const clearOf = (a: { w: number; h: number }, pa: P2, px: number, b: { w: number; h: number }, pb: P2): boolean =>
+  Math.abs(pa[0] - pb[0]) >= (((a.w + b.w) / 2 + 1) * px) || Math.abs(pa[1] - pb[1]) >= (((a.h + b.h) / 2 + 1) * px);
+
+/**
+ * Where each relation symbol goes (G12): the ones the selection is about (rank 0) take the spots beside their anchors; one that would
+ * lie on a symbol already placed moves out to the next free place on a ring round its anchor, so no symbol is ever on another and every
+ * one stays clickable. Pure and deterministic: the same requests always lay out the same way, in plane units (one pixel is `px`).
+ */
+export function layoutRelationLabels(requests: readonly RelationLabelRequest[], px: number): Map<string, P2> {
+  const placed: { box: { w: number; h: number }; p: P2 }[] = [];
+  const out = new Map<string, P2>();
+  // stable sort: rank first, the sketch's own order within a rank
+  const ordered = [...requests].sort((a, b) => a.rank - b.rank);
+  for (const r of ordered) {
+    const box = relationLabelSize(r.text);
+    let best: { p: P2; hits: number } | null = null;
+    for (let ring = 0; ring <= RELATION_MAX_RING && (!best || best.hits > 0); ring++) {
+      const step = RELATION_OFFSET_PX + ring * RELATION_RING_PX;
+      for (const [dx, dy] of RELATION_DIRECTIONS) {
+        const p: P2 = [r.anchor[0] + dx * step * px, r.anchor[1] + dy * step * px];
+        const hits = placed.reduce((n, q) => n + (clearOf(box, p, px, q.box, q.p) ? 0 : 1), 0);
+        if (!best || hits < best.hits) best = { p, hits };
+        if (hits === 0) break;
+      }
+    }
+    const p = best!.p;
+    placed.push({ box, p });
+    out.set(r.key, p);
+  }
+  return out;
+}
+
 function previewCurves(shapes: PreviewShape[], px: number): OverlayCurve[] {
   return shapes.map((s): OverlayCurve => {
     switch (s.kind) {
       case 'line':
-        return { points: [s.a, s.b], color: SKETCH_COLORS.preview, dashed: s.construction ?? false };
+        return { points: [s.a, s.b], color: roleColor(s.role), dashed: (s.construction ?? false) || s.role === 'remove' };
       case 'box':
         return { points: [s.a, [s.b[0], s.a[1]], s.b, [s.a[0], s.b[1]], s.a], color: SKETCH_COLORS.dimension, dashed: true };
       case 'circle':
-        return { points: sample({ type: 'circle', c: s.c, r: s.r, center: '', construction: false }, px), color: SKETCH_COLORS.preview };
+        return { points: sample({ type: 'circle', c: s.c, r: s.r, center: '', construction: false }, px), color: roleColor(s.role) };
       case 'arc':
-        return { points: sample({ type: 'arc', c: s.c, r: s.r, a0: s.a0, a1: s.a1, center: '', start: '', end: '', construction: false }, px), color: SKETCH_COLORS.preview };
+        return { points: sample({ type: 'arc', c: s.c, r: s.r, a0: s.a0, a1: s.a1, center: '', start: '', end: '', construction: false }, px), color: roleColor(s.role) };
     }
   });
 }
@@ -167,11 +277,28 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   const selected = new Set(view.selection);
   const highlighted = new Set([...(view.hover ? [view.hover] : []), ...view.picks]);
   const over = new Set([...(solve?.conflicting ?? []), ...(solve?.redundant ?? [])]);
+  // What the selection is about, at both ends (G12): the relations naming a picked entity or one of its points, and the geometry a picked
+  // relation names (with its points). Dimensions keep the selection display they already have; the axes and the origin can be picked and named too.
+  const relationIds = new Set<Id>(view.selection.filter((id) => sketch.constraints.some((c) => c.id === id && !isDimension(c))));
+  const about = new Set<Id>(view.selection.filter((id) => geometry.has(id) || id === SKETCH_ORIGIN || id === SKETCH_AXIS_H || id === SKETCH_AXIS_V));
+  for (const e of sketch.entities) if (about.has(e.id)) for (const p of entityPoints(e)) about.add(p);
+  const related = new Set<Id>(relationIds);
+  for (const c of sketch.constraints) if (!related.has(c.id) && constraintRefs(c).some((r) => about.has(r))) related.add(c.id);
+  const lit = new Set<Id>(about);
+  for (const id of relationIds) {
+    const c = sketch.constraints.find((x) => x.id === id);
+    if (!c) continue;
+    for (const r of constraintRefs(c)) {
+      lit.add(r);
+      const e = sketch.entities.find((x) => x.id === r);
+      if (e) for (const p of entityPoints(e)) lit.add(p);
+    }
+  }
   const fallback: EntityStatus | undefined = solve?.status === 'fully' ? 'fully' : undefined;
   // what follows the model (C1.18) is drawn in its own colour: it is the model's, not the sketch's, to change
   const followed = new Set(sketch.entities.filter((e) => modelRefOf(e)).map((e) => e.id));
   const colorOf = (id: Id) =>
-    selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) ? SKETCH_COLORS.hover : followed.has(id) ? SKETCH_COLORS.reference : statusColor(solve?.entityStatus?.get(id) ?? fallback);
+    selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) || lit.has(id) ? SKETCH_COLORS.hover : followed.has(id) ? SKETCH_COLORS.reference : statusColor(solve?.entityStatus?.get(id) ?? fallback);
 
   const curves: OverlayCurve[] = [];
   const points: OverlayPoint[] = [];
@@ -183,12 +310,12 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   curves.push({ points: [[0, 0], [14 * px, 0]], color: SKETCH_COLORS.origin }, { points: [[0, 0], [0, 14 * px]], color: SKETCH_COLORS.origin });
   // the sketch's axes (ADR 0170, FreeCAD's H_Axis and V_Axis): across what is on the screen, dashed, lit like anything else under the cursor or selected
   const span = options.visible ?? { min: [-2000 * px, -2000 * px] as P2, max: [2000 * px, 2000 * px] as P2 };
-  const axisColor = (id: Id) => (selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) ? SKETCH_COLORS.hover : SKETCH_COLORS.origin);
+  const axisColor = (id: Id) => (selected.has(id) ? SKETCH_COLORS.selected : highlighted.has(id) || lit.has(id) ? SKETCH_COLORS.hover : SKETCH_COLORS.origin);
   curves.push(
     { points: [[span.min[0], 0], [span.max[0], 0]], color: axisColor(SKETCH_AXIS_H), dashed: true, fit: false },
     { points: [[0, span.min[1]], [0, span.max[1]]], color: axisColor(SKETCH_AXIS_V), dashed: true, fit: false },
   );
-  points.push({ p: [0, 0], color: highlighted.has(SKETCH_ORIGIN) ? SKETCH_COLORS.hover : SKETCH_COLORS.origin, size: 6 });
+  points.push({ p: [0, 0], color: highlighted.has(SKETCH_ORIGIN) || lit.has(SKETCH_ORIGIN) ? SKETCH_COLORS.hover : SKETCH_COLORS.origin, size: 6 });
 
   for (const [id, g] of geometry) {
     if (g.type === 'point') points.push({ p: g.p, color: colorOf(id), size: selected.has(id) || highlighted.has(id) ? 8 : 5 });
@@ -255,6 +382,19 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   if (options.dimensionPreview) {
     labels.push({ key: 'dimension-preview', p: add(options.dimensionPreview.at, [16 * px, 16 * px]), text: options.dimensionPreview.text, className: 'dimension preview' });
   }
+  // what the solver probed as still movable for the selected point (G13): one arrow per probed axis, along the displacement the solver
+  // actually made — a probe result, not a guess from a colour; the panel's hint says the probed axes are not independent degrees of freedom
+  if (options.dofMotion) {
+    for (const probe of options.dofMotion.probes) {
+      for (const poly of arrowPoints(options.dofMotion.at, probe.delta, px)) curves.push({ points: poly, color: SKETCH_COLORS.under });
+      labels.push({ key: `motion:${probe.axis}`, p: add(arrowTip(options.dofMotion.at, probe.delta, px), [10 * px, 10 * px]), text: t('overlay.motionProbe', { axis: probe.axis.toUpperCase() }), className: 'motion' });
+    }
+  }
+  // what a hovered fix of an over-defined sketch would make of the geometry (G13): the entities that move, dashed, before anything is applied
+  if (options.fixPreview) {
+    for (const shape of options.fixPreview.shapes) curves.push({ points: sample(shape, px), color: SKETCH_COLORS.opChange, dashed: true });
+    labels.push({ key: 'fix-preview', p: add(options.fixPreview.at, [14 * px, -14 * px]), text: t(options.fixPreview.moved ? 'sketch.diagnose.preview' : 'sketch.diagnose.previewStatic'), className: 'hint' });
+  }
 
   // dimensions (D6.2) laid out outside the geometry
   const pts = [...geometry.values()].flatMap((g) => (g.type === 'point' ? [g.p] : []));
@@ -271,23 +411,27 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
     labels.push({ key: `dim:${c.id}`, p: text, text: dimensionLabel(c, options.values?.get(c.id), measuredText(c, geometry), options.precision), className: `dimension ${state}${c.driving === false ? ' driven' : ''}`, interactive: true, title: c.label ?? t('overlay.editDimension') });
   }
 
-  // relation symbols (C1.27), stacked when several sit at the same place
+  // relation symbols (C1.27, G12): the ones the selection is about are lit at both ends and take the spots beside their anchors; the ones
+  // that have nothing to do with it fold back while something is picked (a conflicting one never folds); and no symbol is placed on another,
+  // so every one stays on clear ground and clickable. The panel's list keeps every relation regardless.
   if (options.showRelations) {
-    const stack = new Map<string, number>();
+    const symbols: { request: RelationLabelRequest; c: SketchConstraint }[] = [];
     for (const c of sketch.constraints) {
       if (isDimension(c)) continue;
       const first = constraintRefs(c)[0];
       const anchor = first === undefined ? null : anchorOf(geometry, first);
       if (!anchor) continue;
-      const key = `${anchor[0].toFixed(3)},${anchor[1].toFixed(3)}`;
-      const n = stack.get(key) ?? 0;
-      stack.set(key, n + 1);
-      const state = selected.has(c.id) ? 'selected' : over.has(c.id) ? 'over' : '';
+      symbols.push({ request: { key: `rel:${c.id}`, text: RELATION_SYMBOL[c.type], anchor, rank: related.has(c.id) ? 0 : 1 }, c });
+    }
+    const where = layoutRelationLabels(symbols.map((s) => s.request), px);
+    for (const { request: r, c } of symbols) {
+      const state = selected.has(c.id) ? 'selected' : over.has(c.id) ? 'over' : related.has(c.id) ? 'related' : '';
+      const fold = view.selection.length > 0 && state === '' && !over.has(c.id);
       labels.push({
-        key: `rel:${c.id}`,
-        p: add(anchor, [(12 + 15 * n) * px, 12 * px]),
-        text: RELATION_SYMBOL[c.type],
-        className: `relation ${state}`,
+        key: r.key,
+        p: where.get(r.key) ?? r.anchor,
+        text: r.text,
+        className: `relation ${state}${fold ? ' dim' : ''}`,
         interactive: true,
         title: t('overlay.relationTip', { name: RELATION_LABEL[c.type] }),
       });

@@ -171,7 +171,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'save-as', get label() { return t('act.saveAs'); }, group: 'file', enabled: idle, run: () => void store.saveAs() },
   { id: 'export-step', get label() { return t('export.step'); }, group: 'file', enabled: (s) => (partIdle(s) || (assemblyIdle(s) && hasComponents(s))) && s.bootMs !== null, run: () => store.exportStep() },
   { id: 'export-iges', get label() { return t('export.iges'); }, group: 'file', enabled: (s) => partIdle(s) && hasBody(s) && s.bootMs !== null, run: () => store.exportIges() },
-  { id: 'export-stl', get label() { return t('export.stl'); }, group: 'file', enabled: (s) => hasBody(s) && s.bootMs !== null, run: () => void store.exportStl() },
+  { id: 'export-stl', get label() { return t('export.stl'); }, group: 'file', enabled: (s) => (hasBody(s) || (assemblyIdle(s) && hasComponents(s))) && s.bootMs !== null, run: () => store.exportStl() },
   { id: 'export-image', get label() { return t('export.image'); }, group: 'file', enabled: (s) => (s.active === 'assembly' ? assemblyIdle(s) && hasComponents(s) : hasBody(s)), run: () => void store.exportImage() },
   { id: 'new-drawing', get label() { return t('drawing.act'); }, group: 'file', enabled: (s) => s.bootMs !== null && (s.active === 'assembly' ? assemblyIdle(s) && !!s.asm?.fileName && !s.asm.dirty : partIdle(s) && s.fileName !== null && !s.dirty), run: () => void store.newDrawing() },
   { id: 'generate-assembly', get label() { return t('derived.act'); }, group: 'file', enabled: (s) => partIdle(s) && !!s.result?.mesh && s.bootMs !== null, run: () => void store.generateAssembly() },
@@ -597,6 +597,9 @@ export function installShortcuts(): () => void {
       if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey && store.sketcher?.nextEntry(e.shiftKey)) { e.preventDefault(); return; }
       if (e.key === 'Escape') return void store.sketcher?.escape();
       if (e.key === 'Delete') return void store.sketcher?.deleteSelection();
+    } else if (s.contourPick && e.key === 'Escape') {
+      // picking contours in the view ends first; Esc again closes the PropertyManager (G10, P3)
+      return void store.stopContourPick();
     } else if (s.editing) {
       if (e.key === 'Enter') {const button=document.querySelector<HTMLButtonElement>('[data-floating-parameters] .pm-ok');if(button)return void button.click();return void store.commitEdit();}
       if (e.key === 'Escape') return void store.cancelEdit();

@@ -6,9 +6,9 @@
 
 | 項目 | 程式來源值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 86／7／34 |
-| ADR 文件 | 219 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 204／200／251 |
+| 零件／組合件／工程圖 Schema | 87／7／34 |
+| ADR 文件 | 222 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 212／208／260 |
 | 實機清單項目 | 92 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -449,12 +449,15 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0218：移動面至目標平面](<adr/0218-move-face-target-plane.md>)
 - [ADR 0219：匯入 DXF 到草圖（F2.6）](<adr/0219-dxf-import-into-sketch.md>)
 - [ADR 0220：IGES 輸出與輸入（F1.4、F2.2）](<adr/0220-iges-exchange.md>)
+- [ADR 0221：STL 輸出與輸入（F4.1 補完、F2.3）](<adr/0221-stl-exchange.md>)
+- [ADR 0222: 草圖獨立 Split 工具探針 (G08, D1)](<adr/0222-sketch-split-probe.md>)
+- [ADR 0223: 草圖自動尺寸配置探針 (G19, D5)](<adr/0223-sketch-auto-dimension-probe.md>)
 
 ### 歷史驗證
 
 - [Phase 0 驗收紀錄](<phase0-verification.md>)
 - [Phase 1 驗收紀錄](<phase1-verification.md>)
-- [人工驗證清單的自動化覆蓋（更新至 2026-10-14）](<verification-coverage.md>)
+- [人工驗證清單的自動化覆蓋（更新至 2026-10-30）](<verification-coverage.md>)
 
 ### 清理紀錄
 
@@ -494,6 +497,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [3D-Builder 選單與工具圖示重新規劃](<design/menu-redesign/plan.md>)
 - [草圖互動方案：執行驗收表](<design/sketch-interaction/acceptance.md>)
 - [草圖建構互動比較與改進計畫](<design/sketch-interaction/plan.md>)
+- [草圖互動改善方案 P0~P5 任務成果報告](<design/sketch-interaction/report.md>)
 
 ### 設計歷史
 

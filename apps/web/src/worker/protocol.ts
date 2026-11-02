@@ -45,6 +45,23 @@ export interface PartIgesOptions extends Omit<PartExportOptions, 'schema'> {
   unit?: 'MM' | 'INCH';
 }
 
+/**
+ * What the user chose for an STL (F4.1, ADR 0221): binary or ASCII, the unit, how fine the mesh is (the document's quality when absent), and one file
+ * for each body of a part or each component of an assembly instead of one for all. A coordinate system applies to a part only.
+ */
+export interface StlExportOptions extends Pick<PartExportOptions, 'coordSys'> {
+  format?: 'binary' | 'ascii';
+  unit?: 'mm' | 'inch';
+  quality?: 'coarse' | 'normal' | 'fine';
+  split?: boolean;
+}
+
+/** STL files written (ADR 0221): one, or one for each body or component, named after it (without `.stl`), and how many triangles there are in all. */
+export interface StlOutput {
+  files: { name: string; data: Uint8Array }[];
+  triangles: number;
+}
+
 /** A part file a derived body reads (C7.5), read by the app from the project folder, with the files it reads in turn. */
 export interface SourceFileData {
   /** The path as the derived body writes it (relative to the file that reads it). */
@@ -116,6 +133,8 @@ export interface RebuildPayload {
   sketchGeometry: Map<Id, Map<Id, SolvedGeometry>>;
   /** Cosmetic threads (C4.9, ADR 0156). */
   cosmeticThreads: CosmeticThreadInfo[];
+  /** The STL meshes imported as references (F2.3, ADR 0221), shown or not (the page draws the ones the document shows): copies, so sending them leaves the worker's own read files whole. */
+  meshes: { featureId: Id; positions: Float32Array; indices: Uint32Array }[];
   mass: MassProps | null;
   totalMs: number;
   /**
@@ -284,8 +303,10 @@ export interface KernelApi {
   exportStep(doc: PartDoc, name: string, options?: PartExportOptions): Promise<StepOutput>;
   /** IGES of the rebuilt part (F1.4), its product named `name`; the text and what was said about writing it. */
   exportIges(doc: PartDoc, name: string, options?: PartIgesOptions): Promise<StepOutput>;
-  /** Binary STL of the bodies that count, meshed as finely as the document's quality says (F4.1). */
-  exportStl(doc: PartDoc, name: string, options?: PartExportOptions): Promise<Uint8Array>;
+  /** STL of the bodies that count (F4.1, ADR 0221): reference bodies and imported meshes are not written. */
+  exportStl(doc: PartDoc, name: string, options?: StlExportOptions): Promise<StlOutput>;
+  /** STL of an assembly (ADR 0221): each part meshed once, placed where each of its components is, down through the sub-assemblies. */
+  exportAssemblyStl(request: AssemblyStepRequest, options?: StlExportOptions): Promise<StlOutput>;
   /** Rebuilds a part file of an assembly, once per content (`key` = SHA-256 of `bytes`). */
   buildPart(key: string, bytes: Uint8Array, onStage?: (stage: PartStage) => void, sources?: SourceFileData[]): Promise<PartBuildPayload>;
   /** STEP of an assembly (F1.2) as the components are placed in `req`; parts are the ones rebuilt for it (`buildPart`). */

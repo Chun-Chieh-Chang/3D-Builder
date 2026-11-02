@@ -55,6 +55,7 @@ import {
   type CoordSysFeature,
   type Feature,
   type ImportedBodyFeature,
+  type ImportedMeshFeature,
   type LoftFeature,
   type MoveFaceFeature,
   type OffsetSurfaceFeature,
@@ -109,8 +110,11 @@ import {
   type SketchFeature,
 } from '@3db/model';
 import type { RebuildPayload, SketchSolvePayload } from '../worker/protocol';
-import { constraintsOf, conditionEnds, dimensionText, measuredText } from '@3db/sketch/interact';
+import type { SolvedGeometry } from '@3db/sketch';
+import { constraintsOf, conditionEnds, dimensionText, measuredText, mid } from '@3db/sketch/interact';
 import { relationsOffered } from '../sketcher/relationsOffered';
+import { referenceRows, withReplacedRef, type ReferenceRow, type UnresolvedRef } from '../sketcher/sketch-references';
+import type { Candidate } from '@3db/naming';
 import { nearestElement } from '../state/candidates';
 import { store, useSketcherView, useStore, type FilletGroup } from '../state/store';
 import { accepts, attachFlip, axisDefinitionFor, fill, filled, planeDefinitionFor, pointDefinitionFor, slotsOf } from '../state/datumSlots';
@@ -119,7 +123,7 @@ import { Icon } from './Icon';
 import type { ControllerView, SketchController, SketchFix } from '../sketcher/controller';
 import type { SketchIssue } from '@3db/sketch/check';
 import type { EntityFreedom } from '@3db/sketch';
-import type { ContourChoice } from '@3db/sketch/profiles';
+import { sameContour, type ContourChoice } from '@3db/sketch/profiles';
 
 /**
  * What an expression comes to in this document, for showing next to the box (D2.4): the value when it is
@@ -248,7 +252,19 @@ function ToolOptionsBox({ view, sketcher }: { view: ControllerView; sketcher: Sk
         </>
       );
     case 'offset':
-      return <OptionNumber label={t('sketch.option.offset')} value={o.offsetDistance} onChange={(v) => sketcher.setOption('offsetDistance', v)} />;
+      return (
+        <>
+          <OptionNumber label={t('sketch.option.offset')} value={o.offsetDistance} onChange={(v) => sketcher.setOption('offsetDistance', v)} />
+          <label className="pm-row checkbox">
+            <input type="checkbox" name="offsetBoth" checked={o.offsetBoth} onChange={(e) => sketcher.setOption('offsetBoth', e.target.checked)} />
+            <span>{t('sketch.option.offsetBoth')}</span>
+          </label>
+          <label className="pm-row checkbox">
+            <input type="checkbox" name="offsetCaps" checked={o.offsetCaps} onChange={(e) => sketcher.setOption('offsetCaps', e.target.checked)} />
+            <span>{t('sketch.option.offsetCaps')}</span>
+          </label>
+        </>
+      );
     case 'stretchEntities':
     case 'moveEntities':
     case 'copyEntities':
@@ -359,6 +375,7 @@ function FreedomList({ f, freedom, sketcher }: { f: SketchFeature; freedom: Map<
 /** Over-defined sketch (A2.5, D7.2): the relations and dimensions that conflict, and what the solver confirms cures it, one click each. */
 function DiagnosisBox({ f, solve, sketcher }: { f: SketchFeature; solve: SketchSolvePayload; sketcher: SketchController }) {
   const [fixes, setFixes] = useState<SketchFix[] | null>(null);
+  const previewVersion = useRef(0);
   const key = `${solve.status}|${solve.conflicting.join(',')}|${solve.redundant.join(',')}`;
   useEffect(() => {
     let live = true;
@@ -366,21 +383,38 @@ function DiagnosisBox({ f, solve, sketcher }: { f: SketchFeature; solve: SketchS
     if (solve.status === 'over') void sketcher.diagnose().then((r) => live && setFixes(r)).catch((error:unknown)=>{if(live){setFixes([]);store.notify(error instanceof Error?error.message:String(error));}});
     return () => {
       live = false;
+      previewVersion.current++;
+      store.setFixPreview(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, sketcher, f]);
+  // a hovered fix selects its relations (the canvas lights them, G12) and dashes what they would move (G13); leaving takes the preview back
+  const enter = (x: SketchFix) => {
+    sketcher.select([x.id, ...(x.related ?? []).map((c) => c.id)]);
+    const current = ++previewVersion.current;
+    void sketcher
+      .fixPreview(x)
+      .then((r) => {
+        if (current === previewVersion.current) store.setFixPreview(r);
+      })
+      .catch(() => {});
+  };
+  const leave = () => {
+    previewVersion.current++;
+    store.setFixPreview(null);
+  };
   if (solve.status !== 'over') return null;
   return (
-    <section className="pm-group">
+    <section className="pm-group" onMouseLeave={leave}>
       <h4>{t('sketch.diagnose.title')}</h4>
       {fixes === null && <p className="muted">{t('sketch.diagnose.busy')}</p>}
       {fixes !== null && fixes.length === 0 && <p className="hint">{t('sketch.diagnose.none')}</p>}
       {fixes !== null && fixes.length > 0 && <p className="hint">{t('sketch.diagnose.intro')}</p>}
       <ul className="relation-list">
         {(fixes ?? []).map((x) => (
-          <li key={[x.id,...(x.related??[]).map(c=>c.id)].join(',')} onMouseEnter={() => sketcher.select([x.id,...(x.related??[]).map(c=>c.id)])}>
+          <li key={[x.id,...(x.related??[]).map(c=>c.id)].join(',')} onMouseEnter={() => enter(x)}>
             <span>{[x,...(x.related??[])].map(c=>`${describe(f,c.id)} (${c.kind==='driven'?t('sketch.diagnose.driven'):t('sketch.diagnose.delete')})`).join(' + ')}</span>
-            <button type="button" onClick={() => sketcher.applyFix(x)}>
+            <button type="button" onClick={() => { leave(); sketcher.applyFix(x); }}>
               {t('sketch.diagnose.apply')}
             </button>
           </li>
@@ -394,17 +428,138 @@ function DiagnosisBox({ f, solve, sketcher }: { f: SketchFeature; solve: SketchS
 function ConstraintAnalysisBox({f,selection,sketcher,solve}:{f:SketchFeature;selection:Id[];sketcher:SketchController;solve:SketchSolvePayload|null}) {
   const [busy,setBusy]=useState(false),[motion,setMotion]=useState<Awaited<ReturnType<SketchController['motionProbes']>>|null>(null),[contributions,setContributions]=useState<Awaited<ReturnType<SketchController['constraintContributions']>>|null>(null);
   const version=useRef(0),key=selection.join(',');
-  useEffect(()=>{version.current++;setMotion(null);setContributions(null);setBusy(false);return ()=>{version.current++;};},[f,key]);
+  useEffect(()=>{version.current++;setMotion(null);setContributions(null);setBusy(false);store.setDofMotion(null);return ()=>{version.current++;store.setDofMotion(null);};},[f,key]);
   if(!solve||!['fully','under'].includes(solve.status))return null;
   const point=selection.length===1&&f.entities.some(e=>e.id===selection[0]&&e.type==='point')?selection[0]:undefined;
   const affected=new Set(selection);for(const e of f.entities){if(selection.includes(e.id))for(const p of entityPoints(e))affected.add(p);if(entityPoints(e).some(p=>selection.includes(p)))affected.add(e.id);}
   const relations=constraintsOf(f.constraints,affected);
-  const run=async()=>{const current=version.current;setBusy(true);try{const m=point?await sketcher.motionProbes(point):null,c=await sketcher.constraintContributions(relations.map(c=>c.id));if(current===version.current){setMotion(m);setContributions(c);}}catch(error){if(current===version.current)store.notify(error instanceof Error?error.message:String(error));}finally{if(current===version.current)setBusy(false);}};
+  const run=async()=>{const current=version.current;setBusy(true);try{const m=point?await sketcher.motionProbes(point):null,c=await sketcher.constraintContributions(relations.map(c=>c.id));if(current===version.current){setMotion(m);setContributions(c);const g=point?solve.geometry.get(point):null;store.setDofMotion(point&&m&&g?.type==='point'?{point,at:[g.p[0],g.p[1]],probes:m.map(x=>({axis:x.axis,delta:[x.delta[0],x.delta[1]] as [number,number]}))}:null);}}catch(error){if(current===version.current)store.notify(error instanceof Error?error.message:String(error));}finally{if(current===version.current)setBusy(false);}};
   if(!point&&relations.length===0)return null;
   return <div className="constraint-analysis"><button disabled={busy} onClick={()=>void run()}>{busy?t('sketch.diagnose.busy'):t('sketch.analysis.run')}</button>
     {motion!==null&&<><p className="hint">{t('sketch.analysis.motionHint')}</p>{motion.length===0?<p>{t('sketch.analysis.noMotion')}</p>:<ul>{motion.map(m=><li key={m.axis}>{t('sketch.analysis.motion',{axis:m.axis.toUpperCase(),dx:m.delta[0].toFixed(4),dy:m.delta[1].toFixed(4),dof:m.remainingDof})}</li>)}</ul>}</>}
     {contributions!==null&&contributions.length>0&&<><p className="hint">{t('sketch.analysis.contributionHint')}</p><ul>{contributions.map(c=><li key={c.id}>{describe(f,c.id)}: {t('sketch.analysis.released',{n:c.releasedDof})}</li>)}</ul></>}
   </div>;
+}
+
+/** Where an entity of a trial solve would lie, as one point of it (the place the panel can quote). */
+function placeOf(g: SolvedGeometry): [number, number] | null {
+  switch (g.type) {
+    case 'point':
+      return g.p;
+    case 'line':
+      return mid(g.a, g.b);
+    case 'circle':
+    case 'arc':
+    case 'ellipse':
+      return g.c;
+    case 'spline':
+      return g.points[0] ?? null;
+    case 'text':
+      return g.at;
+  }
+}
+
+/**
+ * The sketch's model references as a list (G15, P4): what each follows, what following it means, and — when the rebuild could not
+ * resolve one — why, with the candidates found near where it used to be. Re-specifying runs a trial solve first: nothing is committed
+ * until the user confirms, and cancelling leaves the document exactly as it was.
+ */
+const NO_UNRESOLVED: UnresolvedRef[] = []; // a stable empty: a fresh array per getSnapshot would re-render the store forever
+
+function ReferencesBox({ f, sketcher }: { f: SketchFeature; sketcher: SketchController }) {
+  const unresolved = useStore((s) => s.referenceProblems[f.id] ?? NO_UNRESOLVED);
+  const [reassigning, setReassigning] = useState<ReferenceRow | null>(null);
+  const [trial, setTrial] = useState<{ candidate: Candidate; status: 'running' | 'ok' | 'fail'; state?: string; at?: [number, number]; message?: string } | null>(null);
+  const version = useRef(0);
+  useEffect(
+    () => () => {
+      version.current++;
+    },
+    [],
+  );
+  if (!f.entities.some((e) => modelRefOf(e))) return null;
+  const rows = referenceRows(f, unresolved);
+  const runTrial = (row: ReferenceRow, candidate: Candidate) => {
+    const current = ++version.current;
+    setTrial({ candidate, status: 'running' });
+    void sketcher
+      .trial(withReplacedRef(f, row.ref, candidate))
+      .then((payload) => {
+        if (current !== version.current) return;
+        if (payload.status === 'under' || payload.status === 'fully') {
+          const g = payload.geometry.get(row.entityId);
+          const at = g ? placeOf(g) : null;
+          setTrial({ candidate, status: 'ok', state: SKETCH_STATUS_LABEL[payload.status], ...(at ? { at } : {}) });
+        } else {
+          setTrial({ candidate, status: 'fail', message: payload.message ?? '' });
+        }
+      })
+      .catch((error: unknown) => {
+        if (current === version.current) setTrial({ candidate, status: 'fail', message: error instanceof Error ? error.message : String(error) });
+      });
+  };
+  const confirm = (row: ReferenceRow, candidate: Candidate) => {
+    store.replaceRef(f.id, row.ref, candidate);
+    version.current++;
+    setReassigning(null);
+    setTrial(null);
+  };
+  return (
+    <section className="pm-group" data-sketch-references>
+      <h4>{t('pm.modelReferences')}</h4>
+      <ul className="relation-list">
+        {rows.map((row) => (
+          <li key={`${row.entityId}:${row.ref.name}`} className={row.state === 'failed' ? 'over' : ''}>
+            <span>
+              <button type="button" className="link" onClick={() => sketcher.select([row.entityId])}>
+                {describe(f, row.entityId)}
+              </button>{' '}
+              <code>{row.ref.name}</code>{' '}
+              <span className="muted">{t(row.semantic)}</span>{' '}
+              {row.state === 'ok' ? (
+                <span className="ok-text">{t('reference.ok')}</span>
+              ) : (
+                <span className="error-text">
+                  {t('reference.failed')} ({t(row.reason === 'ambiguous' ? 'reference.reasonAmbiguous' : 'reference.reasonMissing')})
+                </span>
+              )}
+            </span>
+            {row.state === 'failed' && (
+              <button type="button" onClick={() => { setReassigning(reassigning?.entityId === row.entityId ? null : row); setTrial(null); }}>
+                {t('reference.reassign')}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {reassigning &&
+        (reassigning.candidates ?? []).map((candidate, i) => {
+          const mine = trial !== null && trial.candidate === candidate;
+          return (
+            <div key={candidate.name} className="reassign-trial">
+              <p className="hint">
+                {i === 0 ? t('pm.nearest.use') : t('wrong.useThis')} <code>{candidate.name}</code>
+                {mine && trial!.status === 'ok' && trial!.at && (
+                  <span className="ok-text"> {t('reference.trialOk', { state: trial!.state ?? '', x: trial!.at[0].toFixed(2), y: trial!.at[1].toFixed(2) })}</span>
+                )}
+                {mine && trial!.status === 'fail' && <span className="error-text"> {t('reference.trialFail', { message: trial!.message ?? '' })}</span>}
+              </p>
+              {!mine && (
+                <div className="relation-buttons">
+                  <button type="button" onClick={() => runTrial(reassigning, candidate)}>{t('reference.reassign')}</button>
+                </div>
+              )}
+              {mine && trial!.status === 'ok' && (
+                <div className="relation-buttons">
+                  <button type="button" onClick={() => confirm(reassigning, candidate)}>{t('reference.confirm', { name: candidate.name })}</button>
+                  <button type="button" onClick={() => { version.current++; setReassigning(null); setTrial(null); }}>{t('reference.cancel')}</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+    </section>
+  );
 }
 
 /** 「檢查草圖用於特徵」 (C1.35): what keeps the sketch from making a profile; click one to see where, and 「修復草圖」 for what needs no decision. */
@@ -720,6 +875,8 @@ function SketchPanel({ f }: { f: SketchFeature }) {
         {sketcher && solve?.status === 'under' && solve.entityFreedom && <FreedomList f={f} freedom={solve.entityFreedom} sketcher={sketcher} />}
       </section>
 
+      {sketcher && <ReferencesBox f={f} sketcher={sketcher} />}
+
       {view?.tool === 'select' && sketcher && (view.candidates?.length ?? 0) > 1 && (
         <section className="pm-group" data-sketch-candidates>
           <h4>{t('sketch.pick.title')}</h4>
@@ -762,11 +919,11 @@ function SketchPanel({ f }: { f: SketchFeature }) {
               <h4 className="sub">{t('pm.existingRelations')}</h4>
               <ul className="relation-list">
                 {existing.map((c) => (
-                  <li key={c.id} className={solve?.conflicting.includes(c.id) ? 'over' : ''}>
+                  <li key={c.id} className={`${solve?.conflicting.includes(c.id) ? 'over ' : ''}${selection.includes(c.id) ? 'picked' : ''}`.trim()} title={t('pm.relationRowTip')} onClick={() => sketcher.select([c.id], true)}>
                     <span>{relationText(f, c, solve?.geometry)}</span>
                     {c.type==='ellipseAxes'&&<span><label>{t('sketch.ellipseMajor')}<ValueInput value={c.majorRadius} toCommand={majorRadius=>({type:'setEllipseAxes',featureId:f.id,constraintId:c.id,majorRadius,minorRadius:c.minorRadius})}/></label><label>{t('sketch.ellipseMinor')}<ValueInput value={c.minorRadius} toCommand={minorRadius=>({type:'setEllipseAxes',featureId:f.id,constraintId:c.id,majorRadius:c.majorRadius,minorRadius})}/></label></span>}
                     {c.type==='lengthRatio'&&<ValueInput value={c.ratio} suffix="" toCommand={ratio=>({type:'setLengthRatio',featureId:f.id,constraintId:c.id,ratio})}/>}
-                    <button title={t('pm.delete')} onClick={() => store.execute({ type: 'removeSketchItems', featureId: f.id, ids: [c.id] })}>
+                    <button title={t('pm.delete')} onClick={(e) => { e.stopPropagation(); store.execute({ type: 'removeSketchItems', featureId: f.id, ids: [c.id] }); }}>
                       <Icon name="cancel" />
                     </button>
                   </li>
@@ -1028,6 +1185,8 @@ function ThinBox({ f }: { f: ExtrudeFeature | RevolveFeature }) {
 /** 「所選輪廓」 (C1.34): which of the sketch's closed regions a boss or cut uses. Nothing chosen means all of them. */
 function ContourBox({ f }: { f: ExtrudeFeature | RevolveFeature | SweepFeature }) {
   const doc = useStore((s) => s.doc);
+  const pick = useStore((s) => s.contourPick);
+  const hover = useStore((s) => s.contourHover);
   const [choices, setChoices] = useState<ContourChoice[] | null>(null);
   useEffect(() => {
     let live = true;
@@ -1037,9 +1196,12 @@ function ContourBox({ f }: { f: ExtrudeFeature | RevolveFeature | SweepFeature }
       live = false;
     };
   }, [f.sketch, doc]);
+  // picking in the graphics area belongs to the panel it was started from: closing the panel ends it (G10, P3)
+  useEffect(() => () => store.stopContourPick(), [f.id]);
   if (choices !== null && choices.length < 2) return null; // one contour (or none) is not a choice
-  const same = (a: readonly string[], b: readonly string[]) => a.length > 0 && a.filter((id) => b.includes(id)).length / new Set([...a, ...b]).size >= 0.5;
-  const chosen = (c: ContourChoice) => !f.contours || f.contours.some((w) => same(w, c.ids));
+  const picking = pick?.featureId === f.id;
+  const lit = picking && hover !== null && choices !== null && hover < choices.length ? choices[hover]!.ids.join('+') : null;
+  const chosen = (c: ContourChoice) => !f.contours || f.contours.some((w) => sameContour(w, c.ids));
   const toggle = (c: ContourChoice) => {
     if (!choices) return;
     const next = choices.filter((x) => (x === c ? !chosen(x) : chosen(x)));
@@ -1049,9 +1211,13 @@ function ContourBox({ f }: { f: ExtrudeFeature | RevolveFeature | SweepFeature }
   return (
     <>
       <h4 className="sub">{t('contour.title')}</h4>
+      <button type="button" data-field="contourPick" className={picking ? 'active' : ''} onClick={() => (picking ? store.stopContourPick() : store.startContourPick(f.id))}>
+        {t(picking ? 'contour.pickStop' : 'contour.pick')}
+      </button>
+      {picking && <p className="hint">{t('contour.pickHint')}</p>}
       {choices === null && <p className="muted">{t('contour.loading')}</p>}
       {choices?.map((c, i) => (
-        <label key={c.ids.join('+')} className="pm-row checkbox">
+        <label key={c.ids.join('+')} className={`pm-row checkbox${lit === c.ids.join('+') ? ' contour-hover' : ''}`} data-contour={i}>
           <input type="checkbox" checked={chosen(c)} onChange={() => toggle(c)} />
           <span>
             {t('contour.item', {
@@ -3845,6 +4011,34 @@ function DeleteKeepBodyPanel({ f }: { f: DeleteKeepBodyFeature }) {
 }
 
 /** Imported body (F2.1): where the data came from, and what happened to it on the way in. */
+/** 輸入網格 (F2.3, ADR 0221): the file, what was found in it, and the unit its numbers are read in. */
+function ImportedMeshPanel({ f }: { f: ImportedMeshFeature }) {
+  const doc = useStore((s) => s.doc);
+  const result = useStore((s) => s.result);
+  const blob = doc.blobs.find((b) => b.id === f.blob);
+  const status = result?.features.find((r) => r.id === f.id);
+  return (
+    <section className="pm-group">
+      <h4>{t('pm.import.heading')}</h4>
+      <p>{blob?.fileName ?? t('pm.import.noName')}</p>
+      {status?.status === 'error' ? <p className="error-text">{status.message}</p> : <p>{status?.info ?? '…'}</p>}
+      {(status?.warnings ?? []).map((w) => (
+        <p key={w} className="warning-text">
+          {w}
+        </p>
+      ))}
+      <label className="pm-row">
+        <span>{t('import.stlUnit')}</span>
+        <select value={f.unit ?? 'mm'} onChange={(e) => store.execute({ type: 'setMeshUnit', featureId: f.id, unit: e.target.value as 'mm' | 'inch' })}>
+          <option value="mm">mm</option>
+          <option value="inch">inch</option>
+        </select>
+      </label>
+      <p className="hint">{t('pm.mesh.hint', { hash: `${blob?.sha256.slice(0, 12)}…` })}</p>
+    </section>
+  );
+}
+
 function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
   const doc = useStore((s) => s.doc);
   const result = useStore((s) => s.result);
@@ -4392,6 +4586,7 @@ export function FeatureParams({ f }: { f: Feature }) {
       {f.type === 'pattern' && <PatternPanel f={f} />}
       {f.type === 'mirror' && <MirrorPanel f={f} />}
       {f.type === 'importedBody' && <ImportedBodyPanel f={f} />}
+      {f.type === 'importedMesh' && <ImportedMeshPanel f={f} />}
       {f.type === 'deleteFace' && <DeleteFacePanel f={f} />}
       {f.type === 'shell' && <ShellPanel f={f} />}
       {f.type === 'draft' && <DraftPanel f={f} />}
@@ -4450,7 +4645,7 @@ export function PropertyManager() {
   // Like the message box at the top of a SolidWorks PropertyManager: why the feature cannot be built yet.
   const status = sketching || isSketchPlane ? undefined : result?.features.find((r) => r.id === f.id);
   if (!sketching && !isSketchPlane && floating) {
-    const action = f.type === 'importedBody' ? 'import-step' : f.type.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()) + ('op' in f && f.op==='cut'?'-cut':'');
+    const action = f.type === 'importedBody' || f.type === 'importedMesh' ? 'import-step' : f.type.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()) + ('op' in f && f.op==='cut'?'-cut':'');
     return <FloatingFeatureEditor key={f.id} title={`${featureLabel(f)}: ${f.name}`} action={action} error={status?.status==='error'?status.message:undefined}><FeatureParams f={f}/></FloatingFeatureEditor>;
   }
   return (

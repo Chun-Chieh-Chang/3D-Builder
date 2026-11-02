@@ -191,12 +191,12 @@ export const help: Translation = {
   'help.exportIges.keywords': 'export iges igs file trimmed surfaces solid brep unit inch colors',
 
   'help.exportIges.see': 'export-step import-step coord-sys',
-  'help.exportStl.summary': 'Writes the solids of the part as an STL (triangle mesh) file; the fineness follows the document\'s mesh quality.',
+  'help.exportStl.summary': 'Writes a part or an assembly as an STL (triangle mesh) file: binary or ASCII, mm or inch, optionally one file per body or component.',
 
   'help.exportStl.body':
-    'Exports the solids of the part as an STL (triangle mesh) file, for 3D printing and slicing programs.\n\n- The fineness follows the document\'s "Display and export quality" (set in "File properties", fine or coarse): on the coarse setting a cylinder shows the edges of a polygon.\n- The browser downloads an .stl file.',
+    'Exports the solids of the part, or the assembly, as an STL (triangle mesh) file, for 3D printing and slicing programs.\n\n- A dialog comes first: the format (binary is smaller; ASCII is text), the unit (STL does not record one, so whoever reads it must choose the same), the mesh quality (the document\'s "Display and export quality" unless you choose; on coarse a cylinder shows the edges of a polygon) and, for a part, the coordinate system.\n- A part with two or more bodies can be written "one file per body"; an assembly "one file per component". You then download a ZIP holding one file per body or component, named after it.\n- In an assembly each part is placed where its component is, also inside sub-assemblies; suppressed components are not written.\n- Reference bodies and imported meshes are not written.\n\nVerified example: a 40 × 30 × 20 block is 12 triangles in STL and reads back as 24000 mm³; written in inches its numbers are those in mm divided by 25.4.',
 
-  'help.exportStl.keywords': 'export stl mesh printing fineness quality',
+  'help.exportStl.keywords': 'export stl mesh printing fineness quality binary ascii unit inch assembly zip body',
 
   'help.exportStl.see': 'export-step properties export-image',
   'help.exportImage.summary': 'Saves what the graphics area shows as a PNG image.',
@@ -754,12 +754,12 @@ export const help: Translation = {
   'help.coordSys.keywords': 'coordinate system origin step export direction right-handed',
 
   'help.coordSys.see': 'ref-plane export-step ref-point',
-  'help.importStep.summary': 'Reads a STEP or IGES file as the body of the part, repairing it only when needed.',
+  'help.importStep.summary': 'Reads a STEP or IGES file as the body of the part, repairing it only when needed; an STL file comes in as a reference mesh.',
 
   'help.importStep.body':
-    'Reads a STEP or IGES file in as a body of the part, repairing it when necessary.\n\n- Press it in a new part, choose the .step or .igs file in the browser\'s window, wait a few seconds; the model appears in the 3D window and the tree gains a row "Import1".\n- Double-click "Import1" (a single click only selects) to open its panel: "Imported data" (the file name; the data is kept in the part file, so the original is not needed) and "Diagnostic report" (how many solids and faces the file holds, the result of the validity check, what was changed).\n- The "sewing tolerance" (0.01 at first) matters only when the file holds surfaces and no solid; most IGES files are such files, and their surfaces are sewn into a solid.\n- "Open" also opens a STEP or IGES file, as a new part holding it.\n- You can then add features to it: sketch on its faces, extrude, delete faces, move faces and so on.\n- When the diagnostic report has warnings, look again with "Check geometry".\n\nVerified example: a plate of 40 × 30 × 10 with a hole of radius 4 in the middle: volume 40 × 30 × 10 − π × 4² × 10 ≈ 11497 mm³.',
+    'Reads a STEP or IGES file in as a body of the part, repairing it when necessary.\n\n- Press it in a new part, choose the .step or .igs file in the browser\'s window, wait a few seconds; the model appears in the 3D window and the tree gains a row "Import1".\n- Double-click "Import1" (a single click only selects) to open its panel: "Imported data" (the file name; the data is kept in the part file, so the original is not needed) and "Diagnostic report" (how many solids and faces the file holds, the result of the validity check, what was changed).\n- The "sewing tolerance" (0.01 at first) matters only when the file holds surfaces and no solid; most IGES files are such files, and their surfaces are sewn into a solid.\n- "Open" also opens a STEP or IGES file, as a new part holding it.\n- You can then add features to it: sketch on its faces, extrude, delete faces, move faces and so on.\n- When the diagnostic report has warnings, look again with "Check geometry".\n- An STL file (binary or ASCII) does not become a body but "Mesh1" in the tree: a reference triangle mesh you can view and compare against; features, mass, the parts list and exports do not use it. STL records no unit, so before it is read you are asked the unit of the file (mm or inch), with the size either way; you can change it later in the mesh\'s panel. The panel lists the triangles, the extent, the surface area, and whether it is closed (only then does it have a volume); holes, inconsistent orientation and non-manifold edges are listed as warnings.\n\nVerified example: a plate of 40 × 30 × 10 with a hole of radius 4 in the middle: volume 40 × 30 × 10 − π × 4² × 10 ≈ 11497 mm³.',
 
-  'help.importStep.keywords': 'import step iges igs body diagnostic report repair sewing',
+  'help.importStep.keywords': 'import step iges igs stl mesh body diagnostic report repair sewing unit',
 
   'help.importStep.see': 'delete-face move-face check-part export-step export-iges',
 
@@ -1102,12 +1102,12 @@ export const help: Translation = {
   'help.toolTrim.keywords': 'trim cut crossing segment',
 
   'help.toolTrim.see': 'tool-extend tool-sketchFillet concept.sketch-snaps tool-line sketch',
-  'help.toolExtend.summary': 'Extends: click the end of a line to lengthen it up to the line in its way.',
+  'help.toolExtend.summary': 'Extends: click the end of a line to lengthen it up to the line in its way; select a curve first and that curve becomes the boundary.',
 
   'help.toolExtend.body':
-    'Click near the end of a line or arc to extend: that end grows until it meets the first curve in its way.\n\n- For a free endpoint, the new end lies on the target curve; the old endpoint and its relations, as well as whole-curve length and equality relations, are removed.\n- A shared end is preserved along with its original entity: a collinear line or same-circle arc continues from it. Rectangle neighbors and dimensions stay put. The original length remains its own dimension; the continuation is a separate entity. If an extension already overlaps the path, pick the outermost segment instead.\n- When there is nothing ahead of the end to extend to, it says so too.\n- Only lines and arcs can be extended.',
+    'Click near the end of a line or arc to extend: that end grows until it meets the first curve in its way.\n\n- For a free endpoint, the new end lies on the target curve; the old endpoint and its relations, as well as whole-curve length and equality relations, are removed.\n- A shared end is preserved along with its original entity: a collinear line or same-circle arc continues from it. Rectangle neighbors and dimensions stay put. The original length remains its own dimension; the continuation is a separate entity. If an extension already overlaps the path, pick the outermost segment instead.\n- When there is nothing ahead of the end to extend to, it says so too.\n- Select a curve before starting Extend and it is taken as the boundary: the end grows to that curve, crossing any curves in between (an explicit target past a nearer one). With nothing selected, the nearest curve in its way is used, as before. A boundary behind the end, or one the extension does not meet, is refused.\n- Only lines and arcs can be extended.',
 
-  'help.toolExtend.keywords': 'extend lengthen end meet curve',
+  'help.toolExtend.keywords': 'extend lengthen end meet curve boundary',
 
   'help.toolExtend.see': 'tool-trim tool-sketchFillet concept.sketch-snaps tool-line sketch',
   'help.toolOffset.summary': 'Offsets the selected entities to one side by a distance.',

@@ -68,6 +68,136 @@ export function pointOf(geometry: Geometry, id: Id): P2 | undefined {
   return g?.type === 'point' ? g.p : undefined;
 }
 
+/** Distance squared, the value the minimisations below compare (no square roots in the loop). */
+const dist2 = (a: P2, b: P2) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2;
+
+/**
+ * The `t` in [lo, hi] where `f` is smallest, for `f` unimodal on that stretch: golden-section search, which needs no derivative and only function values.
+ * It stops when the bracket is below `tol` (a millionth of the coarse step of the callers), which is far below what a screen pixel can show.
+ */
+function goldenMin(f: (t: number) => number, lo: number, hi: number, tol: number): number {
+  const phi = (Math.sqrt(5) - 1) / 2;
+  let [a, b] = [lo, hi];
+  let c = b - phi * (b - a);
+  let d = a + phi * (b - a);
+  let fc = f(c);
+  let fd = f(d);
+  for (let i = 0; i < 200 && b - a > tol; i++) {
+    if (fc <= fd) {
+      b = d;
+      d = c;
+      fd = fc;
+      c = b - phi * (b - a);
+      fc = f(c);
+    } else {
+      a = c;
+      c = d;
+      fc = fd;
+      d = a + phi * (b - a);
+      fd = f(d);
+    }
+  }
+  return (a + b) / 2;
+}
+
+/**
+ * The point of the ellipse (a, b) nearest to (x, y), both in the ellipse's own frame. The old code took the direction of the cursor as the
+ * eccentric angle (`atan2(y·a, x·b)`), which is exact for a circle and for the ends of a very flat one, and off by tens of millimetres everywhere between
+ * (measured: 27–75 mm off on a 200:1 ellipse; G18, P4). What is minimised here is the distance itself: a coarse sweep of the parameter, then a golden-section
+ * refinement inside the best step. That is the true nearest point to within a millionth of a millimetre, on circles and flat ellipses alike.
+ */
+export function ellipseNearest(a: number, b: number, x: number, y: number): P2 {
+  const at = (t: number): P2 => [a * Math.cos(t), b * Math.sin(t)];
+  const f = (t: number) => dist2(at(t), [x, y]);
+  const step = TAU / 256;
+  let best = 0;
+  let bestValue = Infinity;
+  for (let i = 0; i < 256; i++) {
+    const value = f(i * step);
+    if (value < bestValue) {
+      bestValue = value;
+      best = i * step;
+    }
+  }
+  // the brackets wrap: the step before 0 is TAU - step, and the search runs on the whole circle, not on a stretch of it
+  const t = goldenMin((u) => f(((u % TAU) + TAU) % TAU), best - step, best + step, 1e-12);
+  return at(((t % TAU) + TAU) % TAU);
+}
+
+/** The control point `idx` of a spline, as `sample` draws it: wrapping when closed, mirrored past the ends when open. */
+function splineControl(g: Extract<SolvedGeometry, { type: 'spline' }>, idx: number): P2 {
+  const n = g.points.length;
+  if (g.closed) return g.points[((idx % n) + n) % n]!;
+  if (idx < 0) {
+    const p0 = g.points[0]!;
+    const p1 = g.points[1]!;
+    return [2 * p0[0] - p1[0], 2 * p0[1] - p1[1]];
+  }
+  if (idx >= n) {
+    const pn1 = g.points[n - 1]!;
+    const pn2 = g.points[n - 2]!;
+    return [2 * pn1[0] - pn2[0], 2 * pn1[1] - pn2[1]];
+  }
+  return g.points[idx]!;
+}
+
+/** One point of a Catmull-Rom segment (the curve `sample` draws: the tangent at each control point is the chord of its two neighbours). */
+function catmullRom(p0: P2, p1: P2, p2: P2, p3: P2, t: number): P2 {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return [
+    0.5 * (2 * p1[0] + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3),
+    0.5 * (2 * p1[1] + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3),
+  ];
+}
+
+/**
+ * The point of a spline nearest to `p`. `sample` draws it as a fixed 16-step polyline per segment, and taking the nearest point on those chords was
+ * off by a quarter of a millimetre on a fast turn — a pixel and a half at 100%, enough to snap to a curve the cursor is not on. This walks the real
+ * curve (the same Catmull-Rom evaluation, or the Bezier `bezierPoint` where the spline is a Bezier) and refines the best coarse step.
+ */
+export function splineNearest(g: Extract<SolvedGeometry, { type: 'spline' }>, p: P2): P2 {
+  if (g.bezier) {
+    const f = (t: number) => dist2(bezierPoint(g.points, t), p);
+    const step = 1 / 256;
+    let best = 0;
+    let bestValue = Infinity;
+    for (let i = 0; i <= 256; i++) {
+      const value = f(i * step);
+      if (value < bestValue) {
+        bestValue = value;
+        best = i * step;
+      }
+    }
+    return bezierPoint(g.points, goldenMin(f, Math.max(0, best - step), Math.min(1, best + step), 1e-12));
+  }
+  const n = g.points.length;
+  if (n < 2) return g.points[0] ?? p;
+  const segments = g.closed ? n : n - 1;
+  const at = (s: number, t: number) => catmullRom(splineControl(g, s - 1), splineControl(g, s), splineControl(g, s + 1), splineControl(g, s + 2), t);
+  // one parameter for the whole curve, u = segment + t, so a bracket spanning a segment join (where the curve is smooth, C1) is searched too: a nearest
+  // point just past a control point used to be missed because the bracket stopped at the join
+  const point = (u: number): P2 => {
+    if (!g.closed && (u <= 0 || u >= segments)) return u <= 0 ? at(0, 0) : at(segments - 1, 1);
+    const s = Math.floor(u);
+    return at(g.closed ? ((s % segments) + segments) % segments : s, u - s);
+  };
+  const steps = 32;
+  let bestU = 0;
+  let bestValue = Infinity;
+  for (let s = 0; s < segments; s++) {
+    for (let i = 0; i < steps; i++) {
+      const u = s + i / steps;
+      const value = dist2(point(u), p);
+      if (value < bestValue) {
+        bestValue = value;
+        bestU = u;
+      }
+    }
+  }
+  return point(goldenMin((u) => dist2(point(u), p), bestU - 1 / steps, bestU + 1 / steps, 1e-12));
+}
+
 /** Closest point on a curve (null for points). */
 export function closestOn(g: SolvedGeometry, p: P2): P2 | null {
   switch (g.type) {
@@ -91,13 +221,12 @@ export function closestOn(g: SolvedGeometry, p: P2): P2 | null {
       const dy = p[1] - g.c[1];
       const lx = dx * cosA + dy * sinA;
       const ly = -dx * sinA + dy * cosA;
-      const t = Math.atan2(ly * g.majorRadius, lx * g.minorRadius);
-      const ex = g.majorRadius * Math.cos(t);
-      const ey = g.minorRadius * Math.sin(t);
+      const [ex, ey] = ellipseNearest(g.majorRadius, g.minorRadius, lx, ly);
       return [g.c[0] + ex * cosA - ey * sinA, g.c[1] + ex * sinA + ey * cosA];
     }
     case 'spline':
     case 'text': {
+      if (g.type === 'spline') return splineNearest(g, p);
       const pts = sample(g, 1);
       let best: P2 | null = null;
       let bestDist = Infinity;
@@ -145,46 +274,11 @@ export function sample(g: SolvedGeometry, px: number): P2[] {
       if(g.bezier)return Array.from({length:65},(_,i)=>bezierPoint(g.points,i/64));
       const n = g.points.length;
       if (n < 2) return g.points;
-      const getP = (idx: number): P2 => {
-        if (g.closed) return g.points[((idx % n) + n) % n]!;
-        if (idx < 0) {
-          const p0 = g.points[0]!;
-          const p1 = g.points[1]!;
-          return [2 * p0[0] - p1[0], 2 * p0[1] - p1[1]];
-        }
-        if (idx >= n) {
-          const pn1 = g.points[n - 1]!;
-          const pn2 = g.points[n - 2]!;
-          return [2 * pn1[0] - pn2[0], 2 * pn1[1] - pn2[1]];
-        }
-        return g.points[idx]!;
-      };
       const out: P2[] = [];
       const segments = g.closed ? n : n - 1;
       const steps = 16;
       for (let s = 0; s < segments; s++) {
-        const p0 = getP(s - 1);
-        const p1 = getP(s);
-        const p2 = getP(s + 1);
-        const p3 = getP(s + 2);
-        for (let i = 0; i < steps; i++) {
-          const t = i / steps;
-          const t2 = t * t;
-          const t3 = t2 * t;
-          const x = 0.5 * (
-            2 * p1[0] +
-            (-p0[0] + p2[0]) * t +
-            (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 +
-            (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3
-          );
-          const y = 0.5 * (
-            2 * p1[1] +
-            (-p0[1] + p2[1]) * t +
-            (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 +
-            (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3
-          );
-          out.push([x, y]);
-        }
+        for (let i = 0; i < steps; i++) out.push(catmullRom(splineControl(g, s - 1), splineControl(g, s), splineControl(g, s + 1), splineControl(g, s + 2), i / steps));
       }
       if (g.closed) out.push(out[0]!);
       else out.push(g.points[n - 1]!);
@@ -593,6 +687,17 @@ export function angleRays(ga: SolvedLine, gb: SolvedLine, flip: AngleFlip): { ve
 
 /** Counter-clockwise angle from ray a to ray b, in (-π, π]. */
 const rayAngle = (ra: P2, rb: P2) => Math.atan2(cross(ra, rb), dot(ra, rb));
+
+/**
+ * Which quadrant of the plane a point is in, seen from `vertex`, numbered the way the quadrants of a graph are (1 upper right, 2 upper left,
+ * 3 lower left, 4 lower right; a point level with the vertex counts as the right-hand side). An angle dimension measures the sector of the two
+ * lines that the placement lies in (G14), so this names that sector in a way the person placing it can see on the screen: the two sectors that
+ * show the same value (vertical angles, opposite each other) are told apart before the click.
+ */
+export function quadrantOf(vertex: P2, p: P2): 1 | 2 | 3 | 4 {
+  const [dx, dy] = [p[0] - vertex[0], p[1] - vertex[1]];
+  return dy >= 0 ? (dx >= 0 ? 1 : 2) : dx >= 0 ? 4 : 3;
+}
 
 /** Horizontal, vertical or aligned, from where the dimension is placed relative to two points (SW behaviour). */
 function placementKind(a: P2, b: P2, place: P2): 'x' | 'y' | 'aligned' {

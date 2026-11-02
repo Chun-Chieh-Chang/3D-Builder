@@ -209,10 +209,10 @@ describe('sketch tools', () => {
     click(c, 10, 0);
     click(c, 10, 10);
     c.setTool('line');
-    click(c, 10, 10); // start at the arc's end …
-    click(c, -10, 10.4); // … leaving along its tangent: tangent wins over horizontal
+    click(c, 10, 10); // the chain is kept: the line starts at the arc's end; a click on that very point makes nothing
+    click(c, -10, 10.4); // leaving along its tangent: tangent wins over horizontal
     c.escape();
-    c.setTool('tangentArc');
+    c.setTool('tangentArc'); // the Esc dropped the chain, so the start is clicked again
     click(c, -10, 10);
     click(c, -10, 0); // back onto the first line's start
     const tangents = h.sketch().constraints.filter((x) => x.type === 'tangent');
@@ -221,6 +221,87 @@ describe('sketch tools', () => {
     expect(h.sketch().constraints.filter((x) => x.type === 'horizontal')).toHaveLength(2);
     expect(h.last!.status).toBe('under');
     expect(h.last!.problems).toEqual([]);
+  });
+
+  it('hands the chain from a line to a tangent arc and back without re-clicking the shared point (G05, P2-6)', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 10, 0);
+    c.setTool('tangentArc'); // the chain is carried over: the arc starts at the line's end
+    expect(c.getView().hint).toContain('設定終點'); // one click is all the end takes now
+    click(c, 14, 4);
+    c.setTool('line'); // and the line carries on from the arc's end
+    click(c, 14, 10); // leaving along the arc's tangent: tangent wins over vertical
+    const s = h.sketch();
+    const arc = s.entities.find((e) => e.type === 'arc')!;
+    const lines = s.entities.filter((e) => e.type === 'line');
+    expect(lines).toHaveLength(2);
+    expect(s.constraints.filter((x) => x.type === 'tangent')).toHaveLength(2); // the arc's own and the line's inferred
+    expect(lines[1]!.p1).toBe(arc.end); // the shared point is one point, not two
+    expect(h.last!.status).toBe('under');
+    // the two free ends of the path are the only loose ones: the shared end is one point, not two
+    expect(h.last!.problems).toHaveLength(2);
+    expect(h.last!.redundant).toEqual([]);
+  });
+
+  it('ends the chain on Esc with nothing half-made, and the second Esc returns to selection (G05, P2-6)', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 10, 0);
+    c.setTool('tangentArc');
+    const before = h.sketch();
+    c.escape(); // ends the chain: no arc, no stray point
+    expect(h.sketch()).toEqual(before);
+    expect(c.getView().hint).toContain('端點'); // asks for the start point again
+    c.escape(); // a second Esc leaves the tool
+    expect(c.getView().tool).toBe('select');
+    expect(h.sketch()).toEqual(before);
+  });
+
+  it('adds no tangency when the segment leaving the arc follows neither its tangent nor an axis (G05, P2-6)', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 10, 0);
+    c.setTool('tangentArc');
+    click(c, 14, 4);
+    c.setTool('line');
+    click(c, 20, 12); // off the arc's tangent (straight up) and off any axis
+    const s = h.sketch();
+    expect(s.entities.filter((e) => e.type === 'line')).toHaveLength(2); // the chain still carried on
+    expect(s.constraints.filter((x) => x.type === 'tangent')).toHaveLength(1); // only the arc's own: none added by itself
+  });
+
+  it('makes no segment from a click on the very point a line starts from (G05, P2-6)', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    click(c, 0, 0);
+    click(c, 0, 0); // the same point again: nothing half-made
+    expect(h.sketch().entities).toHaveLength(0);
+    click(c, 10, 0);
+    expect(h.sketch().entities.filter((e) => e.type === 'line')).toHaveLength(1);
+    click(c, 10, 0); // the chain's own end again: still nothing, and the chain keeps running
+    expect(h.sketch().entities.filter((e) => e.type === 'line')).toHaveLength(1);
+  });
+
+  it('draws on when a snapped click lands near the chain end, not on it (G05, P2-6)', () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('line');
+    // The zoom the manual-thread tooth is drawn at: the guides pull the third click up from (9, 4.5) to (9, 5),
+    // which is within a pick radius of the chain end (9, 5.5) but a different point: it must still make a segment.
+    click(c, 10, 5, { px: 0.2 });
+    click(c, 9, 5.5, { px: 0.2 });
+    click(c, 9, 4.5, { px: 0.2 });
+    const lines = h.sketch().entities.filter((e) => e.type === 'line');
+    expect(lines).toHaveLength(2);
+    expect(h.last!.status).toBe('under');
   });
 
   it('drags an under-defined corner and stores where it was dropped', () => {

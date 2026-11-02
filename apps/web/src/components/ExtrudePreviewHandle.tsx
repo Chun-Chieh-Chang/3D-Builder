@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Parameters, type ExtrudeFeature } from '@3db/model';
 import { t } from '@3db/i18n';
 import { store, useStore } from '../state/store';
-import { draggedExtrusion } from '../state/instantDepth';
+import { draggedExtrusion, extrusionGrowSign, previewArrowUnit } from '../state/instantDepth';
 
 /** During construction the pointer changes the real feature, not just a ruler label. */
 export function ExtrudePreviewHandle() {
@@ -20,12 +20,14 @@ export function ExtrudePreviewHandle() {
   const center=cap>=0?result?.faceFingerprints[cap]?.center:undefined;
   if(!center)return null;
   const viewer=store.viewer,host=document.querySelector('.viewport-canvas')?.getBoundingClientRect();if(!viewer||!host)return null;
-  const at=viewer.screenPoint(center),one=viewer.screenPoint(center.map((v,i)=>v+frame.normal[i]!) as [number,number,number]);
+  // The value is counted along the way the feature grows with a positive one: with the sketch normal for a boss, into the material against it for a cut (C4.1).
+  const grow=extrusionGrowSign(f.op);
+  const at=viewer.screenPoint(center),one=viewer.screenPoint(center.map((v,i)=>v+frame.normal[i]!*grow) as [number,number,number]);
   const scaleFactor=f.dir1.type==='midPlane'?0.5:1;
   let axis=[(one[0]!-at[0]!)*scaleFactor,(one[1]!-at[1]!)*scaleFactor];
-  if(Math.hypot(...axis)<1e-4){const scale=scaleFactor/viewer.pixelSize();axis=[0,-scale];}
-  const n=Math.hypot(...axis),signed=f.dir1.type==='blind'&&f.dir1.reverse?-depth:depth;
-  const u=axis.map(v=>v/n*(signed<0?-1:1));
+  if(Math.hypot(...axis)<1e-4){const scale=scaleFactor/viewer.pixelSize();axis=[0,-scale*grow];}
+  const signed=f.dir1.type==='blind'&&f.dir1.reverse?-depth:depth;
+  const u=previewArrowUnit(axis,signed);
   const direct=/^\s*\d+(?:\.\d*)?(?:e[+-]?\d+)?\s*$/i.test(f.dir1.depth);
   const down=(event:React.PointerEvent<HTMLButtonElement>)=>{
     if(event.button!==0||!direct)return;

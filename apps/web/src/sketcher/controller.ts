@@ -14,6 +14,7 @@ import {
   type PartDoc,
   type PointPosition,
   type SketchConstraint,
+  type SketchEdit,
   type SketchEntity,
   type SketchFeature,
   type SketchPlacement,
@@ -22,7 +23,9 @@ import {
   add,
   bezierPoint,
   alignments,
+  angleRays,
   circleThrough,
+  closestOn,
   closestOnSegment,
   layoutDimension,
   dist,
@@ -37,7 +40,11 @@ import {
   inferLine,
   measure,
   perp,
+  pointOf,
+  quadrantOf,
   scale,
+  sample,
+  mid,
   smartDimension,
   snap,
   snapModel,
@@ -46,12 +53,15 @@ import {
   unit,
   cross,
   dot,
+  type DimensionBody,
+  type Geometry,
   type Hit,
   type RelationBody,
   type Snap,
 } from '@3db/sketch/interact';
 import type { P2, SolvedGeometry } from '@3db/sketch';
 import { angleStep, DEFAULT_SNAPS, extensionSnap, gridPoint, intersectionSnap, lengthStep, perpendicularSnap, quadrantSnap, quickSettings, tangentSnap, visibleGridSpacing, type SnapItem, type SnapSettings } from '@3db/sketch/snaps';
+import { snapHold, type HoldCandidate, type HoldKind } from './snap-hold';
 import { checkSketch, repairSketch, type SketchIssue } from '@3db/sketch/check';
 import {
   anchorModel,
@@ -136,6 +146,9 @@ type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'tr
 /** Tools that pick existing geometry instead of placing points: no snapping, the element under the cursor is what counts. */
 const PICK_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'trim', 'extend', 'sketchFillet', 'sketchChamfer', 'offset', 'mirror']);
 
+/** Drawing tools that keep the chain when one is switched for another, so a path runs on from where the last segment ended. */
+const CHAIN_TOOLS: ReadonlySet<ToolId> = new Set(['line', 'centerline', 'tangentArc']);
+
 /** One way out of an over-defined sketch: delete this relation or dimension, or make this dimension a reference. */
 export interface SketchFix {
   id: Id;
@@ -154,6 +167,10 @@ export interface ToolOptions {
   chamferDistance1: number;
   chamferDistance2: number;
   offsetDistance: number;
+  /** 偏移 copies to both sides at once (G09, P2-3). */
+  offsetBoth: boolean;
+  /** 偏移 closes an open chain's two ends with straight lines. */
+  offsetCaps: boolean;
   /** 「修復草圖」 closes gaps up to this wide (mm). */
   gapTolerance: number;
   /**
@@ -189,6 +206,8 @@ const DEFAULT_OPTIONS: ToolOptions = {
   chamferDistance1: 5,
   chamferDistance2: 5,
   offsetDistance: 5,
+  offsetBoth: false,
+  offsetCaps: false,
   gapTolerance: 0.1,
   keepRelations: false,
   transformCopy: false,
@@ -232,19 +251,21 @@ export interface PointerInput {
   shift: boolean;
 }
 
-/** Previewed geometry of the tool in progress (drawn by the overlay). */
+/** What a shared operation plan says will happen to a curve it previews (G06, P2): new piece, a cut/moved one, and what stays of the entity being changed. */
+export type OpRole = 'add' | 'remove' | 'change';
+
 export type PreviewShape =
-  | { kind: 'line'; a: P2; b: P2; construction?: boolean }
-  | { kind: 'circle'; c: P2; r: number }
-  | { kind: 'arc'; c: P2; r: number; a0: number; a1: number }
+  | { kind: 'line'; a: P2; b: P2; construction?: boolean; role?: OpRole }
+  | { kind: 'circle'; c: P2; r: number; role?: OpRole }
+  | { kind: 'arc'; c: P2; r: number; a0: number; a1: number; role?: OpRole }
   | { kind: 'box'; a: P2; b: P2 };
 
-/** A value typed in while drawing (P1, G01): it becomes a driving dimension of what the click makes. */
-export type EntryField = 'length' | 'angle' | 'width' | 'height' | 'radius' | 'diameter';
+/** A value typed in while drawing (P1, G01): it becomes a driving dimension of what the click makes. 'edge' is a polygon's side length (G16). */
+export type EntryField = 'length' | 'angle' | 'width' | 'height' | 'radius' | 'diameter' | 'edge';
 
-/** The boxes next to the cursor: what is typed in each, what the cursor gives meanwhile, and why a typed value cannot be used. */
+/** The boxes next to the cursor: what is typed in each, what the cursor gives meanwhile, and why a typed value cannot be used. The label says what each box locks: a polygon's angle is the vertex's direction or the first side's, as the polygon option picks (B06). */
 export interface EntryView {
-  fields: { key: EntryField; text: string; locked: boolean; error: string | null; live: string }[];
+  fields: { key: EntryField; text: string; locked: boolean; error: string | null; live: string; label: string }[];
   active: number;
   /** Goes up each time typing should move the keyboard focus into the active box. */
   focus: number;
@@ -358,10 +379,26 @@ export class SketchController {
   private entry: { texts: Partial<Record<EntryField, string>>; active: number; focus: number } = { texts: {}, active: 0, focus: 0 };
   /** What the circle's box takes: its diameter, or its radius. Kept from circle to circle. */
   private circleEntry: 'diameter' | 'radius' = 'diameter';
+  /** What the polygon's size box takes: the construction circle's radius through the corners, or one side's length (G16). Kept from polygon to polygon. */
+  private polygonEntry: 'radius' | 'edge' = 'radius';
+  /** The length and angle typed for a slot's two centers, kept from the first phase into the one that types the width: the boxes of a phase are the only ones evaluated. */
+  private slotEntry: { length?: string; angle?: string } | null = null;
   /** The typed values evaluated, for the document and texts they were evaluated for. */
   private entryCache: { doc: PartDoc; key: string; values: Partial<Record<EntryField, number>>; errors: Partial<Record<EntryField, string>> } | null = null;
   /** What a typed value kept the cursor from snapping to, said in the hint. */
   private ignoredSnap: Id[] | null = null;
+  /** The snap being held (G04, P4; the rules are in `snap-hold.ts`), with the document it was found in: a new document releases it. */
+  private held: ({ doc: PartDoc } & HoldCandidate) | null = null;
+  /** Whether the snap shown is the held one: the hint says so, so a cursor that stays put is not mistaken for a frozen one. */
+  private snapHeld = false;
+  /** The operation plan the tool has under the pointer: hover shows it, the confirming click submits the same plan (G06, P2-1). Null again once the document it was built from changes. */
+  private opPlan: { doc: PartDoc; target: Id; shapes: PreviewShape[] } | null = null;
+
+  /**
+   * Drag-sweep trim (G07, P2-4): the stroke with the trim tool holds the curves it has crossed, each once, with the point
+   * where it crossed them. Committed as one edit on release; a stroke that crosses nothing, or an Esc, changes nothing.
+   */
+  private trimSweep: { at: Map<Id, P2>; cancelled: boolean } | null = null;
   /** The last pointer position, which Enter in the boxes clicks at. */
   private pointer: PointerInput | null = null;
   /** Crossings of two lines picked by the dimension tool, by the id a pick stands for them with. They become a point and an `intersection` relation only with the dimension (ADR 0212). */
@@ -406,10 +443,13 @@ export class SketchController {
 
   private snapshot(): ControllerView {
     if (this.candidateDoc !== this.host.doc()) { this.candidates = []; this.candidate = null; }
+    if (this.opPlan && this.opPlan.doc !== this.host.doc()) this.opPlan = null;
 
     if (this.message && (this.tool !== 'select' || this.message.selection !== [...this.selection].join(','))) this.message = null;
     const drawingLine = this.tool === 'line' || this.tool === 'centerline';
-    const step = this.tool === 'dimension' ? Math.min(this.picks.length, 2) : drawingLine && this.chain ? 1 : this.clicks.length;
+    // line, centerline and tangent arc read a chain as "the start is fixed": the next click is the far end (G05, P2-6)
+    const chained = !!this.chain && (drawingLine || this.tool === 'tangentArc');
+    const step = this.tool === 'dimension' ? Math.min(this.picks.length, 2) : chained ? 1 : this.clicks.length;
     return {
       entry: this.entryView(),
       dimensionDrag: this.dimensionDrag?.moved ? { id: this.dimensionDrag.id, position: this.dimensionDrag.position } : undefined,
@@ -482,7 +522,7 @@ export class SketchController {
       case 'trim':
         return t('sketch.hint.trim');
       case 'extend':
-        return t('sketch.hint.extend');
+        return t(this.picks.length > 0 ? 'sketch.hint.extendBoundary' : 'sketch.hint.extend');
       case 'offset':
         return t('sketch.hint.offset');
       case 'mirror':
@@ -514,6 +554,7 @@ export class SketchController {
   private hint(step: number): string {
     let base = this.baseHint(step);
     if (this.ignoredSnap) base = `${base} · ${t('sketch.entry.snapIgnored', { ids: this.ignoredSnap.join(', ') })}`;
+    if (this.snapHeld) base = `${base} · ${t('sketch.entry.snapHeld')}`;
     if (!this.inference) return base;
     const infer = t(`infer.${this.inference}`);
     const sources = this.snapSources();
@@ -522,12 +563,15 @@ export class SketchController {
 
   setOption<K extends keyof ToolOptions>(key: K, value: ToolOptions[K]): void {
     this.options = { ...this.options, [key]: value };
+    // a plan was drawn from the old option: drop it, and (if the pointer is on the sketches) draw the new one right away
+    this.opPlan = null;
+    if (this.pointer && PICK_TOOLS.has(this.tool)) this.updateSnap(this.pointer);
     this.changed();
   }
 
   // ------------------------------------------------------------------ values typed while drawing (P1, G01)
 
-  /** The boxes the click about to be made takes: a line's length and angle, a rectangle's width and height, a circle's diameter or radius. */
+  /** The boxes the click about to be made takes: a line's length and angle, a rectangle's width and height, a circle's diameter or radius, a slot's center distance and direction and then its width, a polygon's size and direction (P1, G01; G16). */
   private entryFields(): EntryField[] {
     switch (this.tool) {
       case 'line':
@@ -538,6 +582,10 @@ export class SketchController {
         return this.clicks.length === 1 ? ['width', 'height'] : [];
       case 'circle':
         return this.clicks.length === 1 ? [this.circleEntry] : [];
+      case 'slot':
+        return this.clicks.length === 1 ? ['length', 'angle'] : this.clicks.length === 2 ? ['width'] : [];
+      case 'polygon':
+        return this.clicks.length === 1 ? [this.polygonEntry, 'angle'] : [];
       default:
         return [];
     }
@@ -561,7 +609,11 @@ export class SketchController {
       try {
         params ??= new Parameters(doc);
         const v = params.evaluate(text, f === 'angle' ? 'angle' : 'length');
-        if (f === 'angle' ? !(v > 0 && v < Math.PI) : !(v > 0 && v <= MAX_ENTRY_MM)) errors[f] = t(f === 'angle' ? 'sketch.entry.angleRange' : 'sketch.entry.lengthRange', { value: text });
+        // a polygon's or slot's angle locks a direction from the sketch's X axis: exactly horizontal (0°) is a direction too, and
+        // the cursor below the start mirrors it down; a line's angle is an included angle, so 0° and 180° would say nothing (G16, B06)
+        const direction = f === 'angle' && (this.tool === 'slot' || this.tool === 'polygon');
+        if (f === 'angle' ? direction ? !(v >= 0 && v < Math.PI) : !(v > 0 && v < Math.PI) : !(v > 0 && v <= MAX_ENTRY_MM))
+          errors[f] = t(f === 'angle' ? (direction ? 'sketch.entry.dirRange' : 'sketch.entry.angleRange') : 'sketch.entry.lengthRange', { value: text });
         else values[f] = v;
       } catch (e) {
         errors[f] = e instanceof Error ? e.message : String(e);
@@ -636,6 +688,53 @@ export class SketchController {
         const r = v.radius ?? (v.diameter === undefined ? undefined : v.diameter / 2);
         return c && r !== undefined ? toward(c, r) : null;
       }
+      case 'slot': {
+        const c1 = this.clicks[0]?.p;
+        if (!c1) return null;
+        if (this.clicks.length === 1) {
+          // the second center, like a line's end: the typed length, and the typed direction from the cursor's side of the first center
+          if (v.angle === undefined) return toward(c1, v.length ?? dist(c1, p));
+          const az0 = Math.atan2(p[1] - c1[1], p[0] - c1[0]);
+          const az = Math.atan2(Math.sin(az0), Math.cos(az0)) < 0 ? -v.angle : v.angle;
+          return add(c1, scale([Math.cos(az), Math.sin(az)], v.length ?? dist(c1, p)));
+        }
+        // the third click puts a boundary line's point: the typed width/2 from the centers line, on the side the cursor is on
+        if (this.clicks.length === 2 && v.width !== undefined) {
+          const c2 = this.clicks[1]!.p;
+          const d = sub(c2, c1);
+          if (Math.hypot(d[0], d[1]) < 1e-12) return null;
+          const u = scale(d, 1 / Math.hypot(d[0], d[1]));
+          const foot = add(c1, scale(u, dot(sub(p, c1), u)));
+          const n: P2 = [-u[1], u[0]];
+          return add(foot, scale(n, (cross(u, sub(p, c1)) < 0 ? -1 : 1) * (v.width / 2)));
+        }
+        return null;
+      }
+      case 'polygon': {
+        const c = this.clicks[0]?.p;
+        const n = this.options.polygonSides;
+        // an unusable side count is the op's refusal; the cursor stays where it is
+        if (!c || this.clicks.length !== 1 || !Number.isInteger(n) || n < 3 || n > 100) return null;
+        const circ = this.options.circumscribed;
+        const R = v.radius ?? (v.edge === undefined ? undefined : v.edge / (2 * Math.sin(Math.PI / n)));
+        // what the angle box locks (G16, B06): the first corner's direction in a polygon picked by its corner, the first side's direction
+        // in one picked by the middle of a side — always the direction the cursor shows, mirrored when the cursor is past its break
+        // G16: when the cursor is over an existing line, the polygon can be oriented to it (Enter then locks that angle)
+        const lineAz = this.hoveredLineAngle();
+        const pointP = lineAz === null ? this.hoveredPoint() : null;
+        const shownAz = lineAz !== null
+          ? (circ ? lineAz + Math.PI / 2 : lineAz)
+          : pointP !== null
+            ? (circ ? Math.atan2(pointP[1] - c[1], pointP[0] - c[0]) + Math.PI / 2 : Math.atan2(pointP[1] - c[1], pointP[0] - c[0]))
+            : (circ ? Math.atan2(p[1] - c[1], p[0] - c[0]) + Math.PI / 2 : Math.atan2(p[1] - c[1], p[0] - c[0]));
+        const shown = Math.atan2(Math.sin(shownAz), Math.cos(shownAz));
+        const dir = v.angle === undefined ? shown : shown < 0 ? -v.angle : v.angle;
+        // the corner's own direction out of the box's: the polygon op rebuilds both from where this second click lands
+        const cornerAz = circ ? dir - Math.PI / n - Math.PI / 2 : dir;
+        const az = cornerAz + (circ ? Math.PI / n : 0);
+        const pick = R !== undefined ? (circ ? R * Math.cos(Math.PI / n) : R) : dist(c, p);
+        return add(c, scale([Math.cos(az), Math.sin(az)], pick));
+      }
       default:
         return null;
     }
@@ -664,6 +763,44 @@ export class SketchController {
         const c = this.clicks[0]?.p;
         return c ? { radius: fmt(dist(c, p)), diameter: fmt(2 * dist(c, p)) } : {};
       }
+      case 'slot': {
+        const c1 = this.clicks[0]?.p;
+        if (!c1) return {};
+        if (this.clicks.length === 1) {
+          const d = sub(p, c1);
+          return { length: fmt(Math.hypot(d[0], d[1])), angle: fmt((Math.abs(Math.atan2(d[1], d[0])) * 180) / Math.PI) };
+        }
+        const c2 = this.clicks[1]?.p;
+        if (!c2) return {};
+        const d = sub(c2, c1);
+        const l = Math.hypot(d[0], d[1]);
+        // the width the cursor shows: twice the boundary's distance from the centers line
+        return l > 1e-12 ? { width: fmt(2 * Math.abs(cross(scale(d, 1 / l), sub(p, c1)))) } : {};
+      }
+      case 'polygon': {
+        const c = this.clicks[0]?.p;
+        const n = this.options.polygonSides;
+        if (!c || this.clicks.length !== 1 || !Number.isInteger(n) || n < 3 || n > 100) return {};
+        const circ = this.options.circumscribed;
+        const d = dist(c, p);
+        // the size the cursor shows about the picked way: from a corner, or from the middle of a side
+        const out: Partial<Record<EntryField, string>> = {
+          radius: fmt(circ ? d * Math.cos(Math.PI / n) : d),
+          edge: fmt(2 * d * (circ ? Math.tan(Math.PI / n) : Math.sin(Math.PI / n))),
+        };
+        // the direction box's value: the first corner's, or the first side's, as the picked way says (G16, B06).
+        // when the cursor is over an existing line, the polygon can be oriented to it (G16): the line's angle is shown
+        // and Enter locks it, so the polygon comes out parallel to that edge instead of chasing the cursor
+        const lineAz = this.hoveredLineAngle();
+        const pointP = lineAz === null ? this.hoveredPoint() : null;
+        const shownAz = lineAz !== null
+          ? (circ ? lineAz + Math.PI / 2 : lineAz)
+          : pointP !== null
+            ? (circ ? Math.atan2(pointP[1] - c[1], pointP[0] - c[0]) + Math.PI / 2 : Math.atan2(pointP[1] - c[1], pointP[0] - c[0]))
+            : (circ ? Math.atan2(p[1] - c[1], p[0] - c[0]) + Math.PI / 2 : Math.atan2(p[1] - c[1], p[0] - c[0]));
+        out.angle = fmt((Math.abs(Math.atan2(Math.sin(shownAz), Math.cos(shownAz))) * 180) / Math.PI);
+        return out;
+      }
       default:
         return {};
     }
@@ -675,10 +812,26 @@ export class SketchController {
     const { values, errors } = this.evaluatedEntry();
     const live = this.entryLive();
     return {
-      fields: fields.map((key) => ({ key, text: this.entry.texts[key] ?? '', locked: values[key] !== undefined, error: errors[key] ?? null, live: live[key] ?? '' })),
+      fields: fields.map((f) => ({ key: f, text: this.entry.texts[f] ?? '', locked: values[f] !== undefined, error: errors[f] ?? null, live: live[f] ?? '', label: this.entryLabel(f) })),
       active: Math.min(this.entry.active, fields.length - 1),
       focus: this.entry.focus,
     };
+  }
+
+  /** What a box says it takes: a polygon's angle is the vertex's direction or the first side's, as the polygon's picked way says (B06). */
+  private entryLabel(f: EntryField): string {
+    if (f === 'angle' && this.tool === 'polygon') {
+      return t(this.options.circumscribed ? 'sketch.entry.sideAngle' : 'sketch.entry.vertexAngle');
+    }
+    switch (f) {
+      case 'length': return t('sketch.entry.length');
+      case 'angle': return t('sketch.entry.angle');
+      case 'width': return t('sketch.entry.width');
+      case 'height': return t('sketch.entry.height');
+      case 'radius': return t('sketch.entry.radius');
+      case 'diameter': return t('sketch.entry.diameter');
+      case 'edge': return t('sketch.entry.edge');
+    }
   }
 
   /** The cursor snapped again, now that the typed values have changed. */
@@ -736,6 +889,30 @@ export class SketchController {
     this.changed();
   }
 
+  /**
+   * The polygon's size box between the construction circle's radius through the corners and one side's length (G16). A typed value is carried over
+   * as the same polygon: a plain number converted with the sides' own sine, an expression wrapped so a variable it names still drives it. Only one dimension is ever made.
+   */
+  setPolygonEntry(mode: 'radius' | 'edge'): void {
+    if (mode === this.polygonEntry) return;
+    const texts = { ...this.entry.texts };
+    const text = texts[this.polygonEntry]?.trim();
+    delete texts[this.polygonEntry];
+    if (text) texts[mode] = this.polygonSizeSwap(text, mode);
+    this.polygonEntry = mode;
+    this.entry = { ...this.entry, texts };
+    this.relock();
+    this.changed();
+  }
+
+  /** The same polygon size said the other way: a side is two radii and the sides' own angle apart, so 2·R·sin(180/側數). */
+  private polygonSizeSwap(text: string, mode: 'radius' | 'edge'): string {
+    const s = Math.sin(Math.PI / this.options.polygonSides);
+    if (PLAIN_NUMBER.test(text)) return fmt(mode === 'edge' ? Number(text) * 2 * s : Number(text) / (2 * s));
+    const deg = String(Number((180 / this.options.polygonSides).toFixed(10))); // sin()'s argument in degrees, kept exact enough to round-trip
+    return mode === 'edge' ? `(${text})*2*sin(${deg})` : `(${text})/(2*sin(${deg}))`;
+  }
+
   /** Enter: makes what the boxes and the cursor say, with the typed values as its dimensions. False, and nothing made, when a typed value cannot be used. */
   commitEntry(): boolean {
     const e = this.pointer;
@@ -745,9 +922,10 @@ export class SketchController {
       return false;
     }
     const before = this.host.doc();
+    const clicksBefore = this.clicks.length;
     this.click(e);
     this.changed();
-    return this.host.doc() !== before;
+    return this.host.doc() !== before || this.clicks.length !== clicksBefore || this.busy;
   }
 
   /** Esc in a box: drops what was typed. False when nothing was. */
@@ -786,16 +964,19 @@ export class SketchController {
 
   setTool(tool: ToolId): void {
     // mirror, offset and the transforms act on what is selected when the tool starts (SolidWorks takes a pre-selection too)
-    const chosen = tool==='stretchEntities' ? [...this.selection].filter(id=>this.sketch().entities.some(e=>e.id===id&&e.type==='point')) : tool === 'mirror' || isTransformTool(tool) ? this.mirrorTargets() : tool === 'offset' ? this.offsetTargets() : [];
+    const chosen = tool==='stretchEntities' ? [...this.selection].filter(id=>this.sketch().entities.some(e=>e.id===id&&e.type==='point')) : tool === 'mirror' || isTransformTool(tool) ? this.mirrorTargets() : tool === 'offset' ? this.offsetTargets() : tool === 'extend' ? this.extendBoundaryTargets() : [];
     if ((tool === 'mirror' || tool === 'offset' || isTransformTool(tool)) && chosen.length === 0) {
       const why = t(tool==='stretchEntities'?'sketch.hint.stretch':tool === 'mirror' ? 'sketch.needMirrorSelection' : tool === 'offset' ? 'sketch.needOffsetSelection' : 'sketch.needTransformSelection');
       this.host.notify(why, 'info');
       this.notice(why);
       return;
     }
+    // line, centerline and tangent arc hand the chain over to each other (G05, P2-6); any other tool ends it
+    const keepChain = this.chain && CHAIN_TOOLS.has(tool) && CHAIN_TOOLS.has(this.tool) ? this.chain : null;
     this.tool = tool;
     this.quick = null;
     this.resetTool();
+    this.chain = keepChain;
     this.picks = chosen;
     if (tool !== 'select') this.selection.clear();
     this.changed();
@@ -805,6 +986,15 @@ export class SketchController {
   private mirrorTargets(): Id[] {
     const s = this.sketch();
     return s.entities.filter((e) => this.selection.has(e.id)).map((e) => e.id);
+  }
+
+  /**
+   * The boundary the extend tool has been given (G08, P2-5): the first selected curve, if any. Extend goes to that curve,
+   * crossing any in between; with nothing selected it keeps its default of the nearest curve in the way.
+   */
+  private extendBoundaryTargets(): Id[] {
+    const first = this.sketch().entities.find((e) => this.selection.has(e.id) && e.type !== 'point' && e.type !== 'text');
+    return first ? [first.id] : [];
   }
 
   /** The selected lines, arcs and circles, and the curves joined to them end to end (a chain is offset as a whole). */
@@ -837,19 +1027,32 @@ export class SketchController {
     this.picks = [];
     this.crossings.clear();
     this.snapTarget = null;
+    this.held = null;
+    this.snapHeld = false;
     this.inference = null;
     this.tangentTo = null;
     this.sweep = { total: 0, last: 0 };
+    this.opPlan = null;
+    this.trimSweep = null;
     this.clearEntry();
   }
 
   /** Esc: drops the values typed in, ends the current chain or pick, then returns to selection (SolidWorks behaviour). */
   escape(): void {
+    this.held = null;
+    this.snapHeld = false;
+    if (this.trimSweep) { this.trimSweep.cancelled = true; this.opPlan = null; this.changed(); return; }
     if (this.drag || this.box) { this.drag = null; this.box = null; this.press = null; this.host.dragPreview(null); }
     else if (this.cancelEntry()) return;
     else if (this.candidate) { this.candidate = null; this.hover = null; this.candidates = []; this.press = null; }
     else if (this.dimensionDrag) { this.dimensionDrag = null; this.press = null; }
     else if (this.tool === 'mirror' || this.tool === 'offset' || isTransformTool(this.tool)) this.setTool('select');
+    else if (this.tool === 'slot' && this.clicks.length === 2 && this.slotEntry) {
+      this.clicks.pop();
+      this.entry = { texts: { ...this.slotEntry }, active: 0, focus: this.entry.focus + 1 };
+      this.slotEntry = null;
+      this.relock();
+    }
     else if (this.clicks.length > 0 || this.chain || this.picks.length > 0) this.resetTool();
     else if (this.tool !== 'select') this.tool = 'select';
     else this.selection.clear();
@@ -863,6 +1066,11 @@ export class SketchController {
       else this.selection.add(id);
     }
     this.changed();
+  }
+
+  /** Solves a what-if sketch without changing anything (G15): the reference pipeline runs in the worker, exactly as a rebuild would. */
+  trial(sketch: SketchFeature, doc?: PartDoc): Promise<SketchSolvePayload> {
+    return this.host.trial(sketch, doc);
   }
 
   /**
@@ -1052,6 +1260,7 @@ export class SketchController {
       this.updateSnap(e);
       if (this.tool === 'arc' && this.clicks.length === 2) this.trackSweep(e.p);
       if (pressed && this.press && dist(this.press.p, e.p) > DRAG_PX * e.px) this.press.moved = true;
+      if (this.tool === 'trim' && pressed && this.press?.moved) this.sweepTrim(e);
     }
     this.changed();
   }
@@ -1059,6 +1268,7 @@ export class SketchController {
   pointerDown(e: PointerInput): void {
     this.cursor = e.p;
     this.pointer = e;
+    if (this.tool === 'trim') this.trimSweep = { at: new Map(), cancelled: false };
     if (this.tool === 'select') {
       const hit = this.dimensionAt(e);
       if (hit) {
@@ -1088,6 +1298,20 @@ export class SketchController {
     }
     const press = this.press;
     this.press = null;
+    if (this.trimSweep) {
+      const sweep = this.trimSweep;
+      this.trimSweep = null;
+      // a drag or an Esc ends the stroke: the crossed curves are trimmed at once (one undo), a cancelled stroke changes nothing
+      if (sweep.cancelled || (press?.moved ?? false)) {
+        if (!sweep.cancelled) {
+          const merged = this.mergedTrims(sweep.at);
+          if (merged) this.run({ edit: merged });
+        }
+        this.opPlan = null;
+        this.changed();
+        return;
+      }
+    }
     if (this.tool === 'select') {
       this.selectUp(e, press);
     } else if (!press || !press.moved || this.clicks.length > 0 || this.chain || this.tool === 'point' || PICK_TOOLS.has(this.tool)) {
@@ -1120,6 +1344,8 @@ export class SketchController {
     this.cursor = null;
     this.hover = null;
     this.snapTarget = null;
+    this.opPlan = null;
+    this.trimSweep = null;
     this.changed();
   }
 
@@ -1311,9 +1537,71 @@ export class SketchController {
     return out;
   }
 
+  /**
+   * Candidate holding (G04, P4): `fresh` is what the snaps found under the cursor; the answer is that, or the candidate already shown (the rules
+   * are in `snap-hold.ts`). A held curve keeps moving with the cursor; a held point or midpoint stays where it is. Everything the later steps would have
+   * added (a tangent, a horizontal, a square foot) is dropped with it: the click goes to the held place, not to the one it passed over.
+   */
+  private holdSnap(fresh: Snap, geometry: Geometry, p: P2, tol: number, allow: Record<HoldKind, boolean>): Snap {
+    const doc = this.host.doc();
+    const held = this.held && this.held.doc === doc ? this.held : null;
+    this.held = null;
+    const candidate = (s: Snap): HoldCandidate | null =>
+      s.kind === 'point'
+        ? { kind: 'point', id: s.id, d: dist(p, s.p) }
+        : s.kind === 'midpoint'
+          ? { kind: 'midpoint', id: s.line, d: dist(p, s.p) }
+          : s.kind === 'curve'
+            ? { kind: 'curve', id: s.id, d: dist(p, s.p) }
+            : null;
+    /** Where the held candidate is now, and how far: a point or a midpoint is where it was, a curve's nearest point moves with the cursor. */
+    const now = (): { c: HoldCandidate; p: P2 } | null => {
+      if (!held) return null;
+      if (held.kind === 'point') {
+        const q = pointOf(geometry, held.id);
+        return q ? { c: { kind: 'point', id: held.id, d: dist(p, q) }, p: q } : null;
+      }
+      const g = geometry.get(held.id);
+      if (held.kind === 'midpoint') {
+        if (g?.type !== 'line') return null;
+        const q = mid(g.a, g.b);
+        return { c: { kind: 'midpoint', id: held.id, d: dist(p, q) }, p: q };
+      }
+      const q = g ? closestOn(g, p) : null;
+      return g && q ? { c: { kind: 'curve', id: held.id, d: dist(p, q) }, p: q } : null;
+    };
+    const current = now();
+    const freshC = candidate(fresh);
+    this.snapHeld = false;
+    // the same element again is nothing to hold: the answer is what the snaps found (a square foot, a tangent, a crossing on it) and is kept as it is
+    if (current && freshC && freshC.kind === current.c.kind && freshC.id === current.c.id) {
+      this.held = { ...current.c, doc };
+      return fresh;
+    }
+    // a crossing, a quarter point or a place on the model is a place of its own: it is never held, and it beats a held stretch of curve
+    const beside = fresh.kind === 'intersection' || fresh.kind === 'quadrant' || fresh.kind === 'model';
+    const decision = snapHold(current && allow[current.c.kind] ? current.c : null, freshC ?? (beside ? { kind: 'other' } : null), tol);
+    if (decision === 'hold' && current) {
+      const { kind, id } = current.c;
+      const s: Snap = kind === 'point' ? { kind: 'point', id, p: current.p } : kind === 'midpoint' ? { kind: 'midpoint', line: id, p: current.p } : { kind: 'curve', id, p: current.p };
+      this.held = { ...current.c, doc };
+      this.inference = kind === 'point' ? 'coincident' : kind === 'midpoint' ? 'midpoint' : 'onCurve';
+      this.lineTo = null;
+      this.tangentTo = null;
+      // said only when the snap that stayed is not what is under the cursor: a cursor resting on its own point is not "held"
+      this.snapHeld = !freshC || freshC.kind !== kind || freshC.id !== id;
+      return s;
+    }
+    this.snapHeld = false;
+    if (freshC) this.held = { ...freshC, doc };
+    return fresh;
+  }
+
   private updateSnap(e: PointerInput): void {
     const geometry = this.geometry();
     if (PICK_TOOLS.has(this.tool)) {
+      this.held = null;
+      this.snapHeld = false;
       this.snapTarget = null;
       this.inference = null;
       if (this.tool === 'dimension') {
@@ -1326,6 +1614,7 @@ export class SketchController {
         return;
       }
       this.hover = hitTest(geometry, e.p, PICK_PX * e.px, undefined, AXIS_TOOLS.has(this.tool));
+      this.opPlan = this.operationPlan(e);
       return;
     }
     const cfg = this.settings();
@@ -1336,7 +1625,9 @@ export class SketchController {
     this.ignoredSnap = null;
     if (!cfg.enabled || e.ctrl) {
       // nothing snaps, and nothing is added by itself; Ctrl does it for as long as it is held (SolidWorks: hold Ctrl while sketching to keep
-      // automatic relations from being added)
+      // automatic relations from being added). A held candidate ends with it too (G04).
+      this.held = null;
+      this.snapHeld = false;
       this.snapTarget = this.lockSnap({ kind: 'free', p: e.p }, e.p);
       this.hover = null;
       return;
@@ -1461,6 +1752,7 @@ export class SketchController {
       else if (drawingLine && from && cfg.angle) s = { kind: 'free', p: angleStep(from, s.p, cfg.angleStep) };
       else if (cfg.grid && makes) s = { kind: 'free', p: gridPoint(s.p, visibleGridSpacing(cfg.gridSpacing, e.px)) }; // the grid that is drawn
     }
+    s = this.holdSnap(s, geometry, e.p, tol, { point: cfg.point, midpoint: cfg.midpoint, curve: cfg.curve });
     s = this.lockSnap(s, e.p);
     this.snapTarget = s;
     this.hover = this.lineTo
@@ -1510,6 +1802,13 @@ export class SketchController {
     return this.clicks[0]?.p ?? null;
   }
 
+  /** The chain's current end as a snap, so the next segment starts there without a click of its own (G05, P2-6). */
+  private chainSnap(): Snap | null {
+    if (!this.chain) return null;
+    const p = this.positionOf(this.chain.from);
+    return p ? { kind: 'point', id: this.chain.from, p } : null;
+  }
+
   private positionOf(id: Id): P2 | null {
     if (id === SKETCH_ORIGIN) return [0, 0];
     const g = this.geometry().get(id);
@@ -1540,14 +1839,59 @@ export class SketchController {
       case 'bezier': {
         this.clicks.push(s);if(this.clicks.length===4){const b=this.builder(),points=this.clicks.map(s=>b.pointFor(s));if(new Set(points).size===4){b.entities.push({id:b.ids.take('sp'),type:'spline',points,bezier:true});this.commit(b);}else this.host.notify(t('sketch.bezierInvalid'),'info');this.clicks=[];}return;
       }
-      case 'slot':
-      case 'polygon':
-        this.clicks.push(s);
-        if (this.clicks.length === (this.tool === 'slot' ? 3 : 2)) {
-          this.finishShape();
-          this.clicks = [];
+      case 'slot': {
+        if (this.clicks.length === 0) {
+          this.slotEntry = null;
+          this.clicks.push(s);
+          return;
         }
+        if (this.clicks.length === 1) {
+          const { values } = this.evaluatedEntry();
+          const hasTyped = values.length !== undefined || values.angle !== undefined;
+          this.slotEntry = hasTyped
+            ? { length: values.length !== undefined ? this.entry.texts.length!.trim() : undefined, angle: values.angle !== undefined ? this.entry.texts.angle!.trim() : undefined }
+            : null;
+          this.clicks.push(s);
+          this.clearEntry();
+          return;
+        }
+        const typed = this.entryTexts();
+        this.clicks.push(s);
+        this.finishShape(typed);
+        this.clicks = [];
         return;
+      }
+      case 'polygon': {
+        if (this.clicks.length === 0) {
+          this.clicks.push(s);
+          return;
+        }
+        const typed = this.entryTexts();
+        // G16: when no angle was typed but the cursor is over an existing line, orient the polygon to that line
+        // (synthesise the second point along the line's angle, keeping the cursor's distance as the size) and
+        // constrain the first side to be parallel to it, so the polygon follows that edge
+        const hoveredLine = this.hoveredLineAngle() !== null ? this.hover?.id : undefined;
+        // G16 third knife: vertex toward an existing point (no parallel relation; the angle is locked to that point)
+        const snapIsPoint = s.kind === 'point';
+        if (typed.angle === undefined && !hoveredLine && snapIsPoint) {
+          const c1p = this.clicks[0]!.p;
+          const ang = Math.atan2(s.p[1] - c1p[1], s.p[0] - c1p[0]);
+          const d = dist(c1p, s.p);
+          const q: P2 = [c1p[0] + Math.cos(ang) * (d > 1e-9 ? d : 1), c1p[1] + Math.sin(ang) * (d > 1e-9 ? d : 1)];
+          this.clicks[1] = { ...s, p: q };
+        }
+        if (typed.angle === undefined && hoveredLine) {
+          const la = this.hoveredLineAngle()!;
+          const c1p = this.clicks[0]!.p;
+          const d = dist(c1p, s.p);
+          const q: P2 = [c1p[0] + Math.cos(la) * (d > 1e-9 ? d : 1), c1p[1] + Math.sin(la) * (d > 1e-9 ? d : 1)];
+          this.clicks[1] = { ...s, p: q };
+        }
+        this.clicks.push(s);
+        this.finishShape(typed, hoveredLine && typed.angle === undefined ? hoveredLine : undefined);
+        this.clicks = [];
+        return;
+      }
       case 'line':
       case 'centerline':
         return this.lineClick(s);
@@ -1567,9 +1911,7 @@ export class SketchController {
       case 'rect':
       case 'centerRect':
       case 'circle':
-      case 'tangentArc':
         if (this.clicks.length === 0) {
-          if (this.tool === 'tangentArc' && !this.tangentStart(s)) return this.host.notify(t('sketch.tangentFromEnd'), 'info');
           this.clicks.push(s);
           return;
         }
@@ -1577,6 +1919,24 @@ export class SketchController {
         this.clicks = [];
         this.clearEntry();
         return;
+      case 'tangentArc': {
+        // A chain left by the previous segment fixes the start, so the click only sets the end (G05, P2-6).
+        const from = this.clicks[0] ?? this.chainSnap();
+        if (!from) {
+          if (!this.tangentStart(s)) return this.host.notify(t('sketch.tangentFromEnd'), 'info');
+          this.clicks.push(s);
+          return;
+        }
+        if (!this.tangentStart(from)) {
+          this.clicks = [];
+          return this.host.notify(t('sketch.tangentFromEnd'), 'info');
+        }
+        if (this.clicks.length === 0) this.clicks.push(from); // the chain's end stands in for the first click
+        this.finishTwoClick(s);
+        this.clicks = [];
+        this.clearEntry();
+        return;
+      }
       case 'ellipse':
       case 'perimeterCircle':
       case 'threePointArc':
@@ -1601,7 +1961,10 @@ export class SketchController {
       return;
     }
     const b = this.builder();
-    const from = this.chain ? ({ kind: 'point', id: this.chain.from, p: this.positionOf(this.chain.from) ?? s.p } as Snap) : this.clicks[0]!;
+    const at = this.chain ? this.positionOf(this.chain.from) : this.clicks[0]!.p;
+    // A click on the very point the segment starts from makes no segment, as for a zero-size rectangle; a chain keeps running (T03).
+    if (at && dist(at, s.p) < 1e-9) return;
+    const from = this.chain ? ({ kind: 'point', id: this.chain.from, p: at ?? s.p } as Snap) : this.clicks[0]!;
     const p1 = this.chain ? this.chain.from : b.pointFor(from);
     const p2 = b.pointFor(s);
     if (p1 === p2) return;
@@ -1641,6 +2004,8 @@ export class SketchController {
     const b = this.builder();
     const [a, q] = [first.p, s.p];
     const typed = this.entryTexts();
+    /** The chain the next segment continues from, set only when a tangent arc commits (G05, P2-6). */
+    let nextChain: { from: Id; first: Id } | null = null;
     // a rectangle's width and height are the lengths of its first (horizontal) and second (vertical) sides
     const sized = (sides: Id[]) => {
       if (typed.width !== undefined) b.dimension({ type: 'distance', a: sides[0]! }, typed.width);
@@ -1675,6 +2040,7 @@ export class SketchController {
       case 'tangentArc': {
         const start = this.tangentStart(first);
         if (!start || first.kind !== 'point') return;
+        if (dist(a, q) < 1e-9) return; // a click on the very point the arc leaves from makes no arc (T03)
         const center = tangentArcCenter(a, start.dir, q);
         if (!center) return;
         const ccw = cross(start.dir, sub(center, a)) > 0;
@@ -1682,10 +2048,14 @@ export class SketchController {
         if (end === first.id) return;
         const arc = ccw ? b.arc(b.newPoint(center), first.id, end) : b.arc(b.newPoint(center), end, first.id);
         b.relation({ type: 'tangent', a: start.curve, b: arc });
+        // The path runs on from the arc's end; closing it on the point it started from ends the chain.
+        const chainFirst = this.chain?.first ?? first.id;
+        nextChain = end === chainFirst ? null : { from: end, first: chainFirst };
         break;
       }
     }
-    this.commit(b);
+    if (!this.commit(b)) return;
+    if (nextChain) this.chain = nextChain;
   }
 
   private finishThreeClick(): void {
@@ -1735,16 +2105,22 @@ export class SketchController {
 
   // ------------------------------------------------------------------ slot, polygon, trim, round, offset, mirror (C1.8–C1.19)
 
-  private finishShape(): void {
+  private finishShape(lastTyped?: Partial<Record<EntryField, string>>, parallelTo?: Id): void {
     const [c1, c2, c3] = this.clicks as [Snap, Snap, Snap | undefined];
     const place = (s: Snap) => ({ p: s.p, ...(s.kind === 'point' && s.id !== SKETCH_ORIGIN ? { id: s.id } : {}) });
+    // the evaluated boxes of the phase the shape finishes in; a slot keeps the ones its second center was placed with
+    const typed = lastTyped ?? this.entryTexts();
+    const slotTyped = { ...this.slotEntry, width: typed.width };
+    const polygonTyped = { size: this.polygonEntry === 'radius' ? typed.radius : typed.edge, sizeKind: this.polygonEntry, angle: typed.angle };
     if (this.tool === 'slot') {
       const axis = sub(c2.p, c1.p);
       const width = c3 ? Math.abs(cross(unit(axis), sub(c3.p, c1.p))) : 0;
-      this.run(slot(this.allocator(), place(c1), place(c2), width));
+      this.run(slot(this.allocator(), place(c1), place(c2), width, slotTyped));
     } else {
-      this.run(polygon(this.allocator(), place(c1), c2.p, this.options.polygonSides, this.options.circumscribed));
+      this.run(polygon(this.allocator(), place(c1), c2.p, this.options.polygonSides, this.options.circumscribed, polygonTyped, parallelTo));
     }
+    this.slotEntry = null;
+    this.clearEntry();
   }
 
   /** One of the sketch's axes under the cursor (ADR 0170), and nothing else: the last thing the select tool looks for. */
@@ -1752,11 +2128,134 @@ export class SketchController {
     return hitTest(new Map(), e.p, PICK_PX * e.px, new Set([SKETCH_ORIGIN]), true);
   }
 
+  /** The direction of the line the cursor is over (G16): null when it is not over a line, so a polygon can be oriented to an existing edge without typing an angle. */
+  private hoveredLineAngle(): number | null {
+    const h = this.hover;
+    if (!h) return null;
+    const g = geometryOf(this.geometry(), h.id);
+    if (g?.type !== 'line') return null;
+    return Math.atan2(g.b[1] - g.a[1], g.b[0] - g.a[0]);
+  }
+
+  /** The point the cursor is over (G16, third knife): null when it is not over a point, so a polygon's first vertex can be aimed at an existing point without typing an angle. */
+  private hoveredPoint(): P2 | null {
+    const h = this.hover;
+    if (!h) return null;
+    const g = geometryOf(this.geometry(), h.id);
+    if (g?.type !== 'point') return null;
+    return g.p;
+  }
   /** The line a click picks, or null; one of the sketch's axes only when `axes` (ADR 0170: a mirror line, never something to trim). */
   private pickedCurve(e: PointerInput, axes = false): { id: Id; g: SolvedGeometry } | null {
     const hit = hitTest(this.geometry(), e.p, PICK_PX * e.px, undefined, axes);
     const g = hit && geometryOf(this.geometry(), hit.id);
     return hit && g && g.type !== 'point' ? { id: hit.id, g } : null;
+  }
+
+  /**
+   * The two lines a corner op (fillet or chamfer) takes: both lines meeting at the picked point, or the hovered line with one
+   * picked before it. `report` marks a point that does not join exactly two lines, for the click to say so; null while no corner
+   * is complete — a hover has no plan then, and the click either stores the first line or does nothing.
+   */
+  private cornerPair(g: SolvedGeometry, hitId: Id): { pair: [Id, Id] } | { report: true } | null {
+    if (g.type === 'point') {
+      const lines = [...this.geometry()].filter(([, x]) => x.type === 'line' && (x.p1 === hitId || x.p2 === hitId)).map(([id]) => id);
+      if (lines.length !== 2) return { report: true };
+      return { pair: [lines[0]!, lines[1]!] };
+    }
+    if (g.type !== 'line' || this.picks.length === 0) return null;
+    return { pair: [this.picks[0]!, hitId] };
+  }
+
+  /**
+   * The plan of the operation the tool would make under the pointer, drawn from the same pure op the confirming click submits
+   * (G06, P2-1 trim; P2-2 the rest of the PICK tools). Null where the op would fail or the corner is not complete, so hover
+   * then offers nothing instead of a preview the click could not submit.
+   */
+  private operationPlan(e: PointerInput): { doc: PartDoc; target: Id; shapes: PreviewShape[] } | null {
+    if (this.tool === 'mirror' && this.picks.length > 0) {
+      // a sketch axis (ADR 0170) is not in the sketch's geometry, so it is only found by axisAt (empty geometry, axes always on);
+      // the generic hover below skips axes whenever a curve is nearby, which is why mirroring across an axis showed no preview
+      const geometry = this.geometry();
+      const sketch = this.sketch(), ids = this.allocator();
+      const axisHit = this.axisAt(e);
+      const hoverHit = this.hover;
+      const h = axisHit ?? hoverHit;
+      const g = h && geometryOf(geometry, h.id);
+      if (!h || !g || g.type === 'point') return null;
+      const plan = mirror(sketch, geometry, ids, this.picks, h.id);
+      if ('error' in plan) return null;
+      return { doc: this.host.doc(), target: h.id, shapes: editPreviewShapes(plan.edit, geometry) };
+    }
+    if (this.tool === 'offset') {
+      // the offset needs no curve under the pointer: the cursor only says which side the copy goes to
+      if (this.picks.length === 0) return null; // the tool takes a pre-selection (setTool refuses without one)
+      const geometry = this.geometry();
+      const plan = offset(this.sketch(), geometry, this.allocator(), this.picks, this.options.offsetDistance, e.p, { both: this.options.offsetBoth, caps: this.options.offsetCaps });
+      if ('error' in plan) return null;
+      return { doc: this.host.doc(), target: this.hover?.id ?? '', shapes: editPreviewShapes(plan.edit, geometry) };
+    }
+    const hit = this.hover;
+    const geometry = this.geometry();
+    const g = hit && geometryOf(geometry, hit.id);
+    if (!hit || !g) return null;
+    const sketch = this.sketch(), ids = this.allocator(), o = this.options;
+    let plan: OpResult;
+    switch (this.tool) {
+      case 'trim':
+      case 'extend':
+        if (g.type === 'point') return null;
+        plan = this.tool === 'trim' ? trim(sketch, geometry, ids, hit.id, e.p) : extend(sketch, geometry, ids, hit.id, e.p, this.picks[0]);
+        break;
+      case 'sketchFillet':
+      case 'sketchChamfer': {
+        const corner = this.cornerPair(g, hit.id);
+        if (!corner || !('pair' in corner)) return null;
+        plan = this.tool === 'sketchFillet'
+          ? fillet(sketch, geometry, ids, corner.pair[0], corner.pair[1], o.filletRadius)
+          : chamfer(sketch, geometry, ids, corner.pair[0], corner.pair[1], o.chamferDistance1, o.chamferDistance2);
+        break;
+      }
+      case 'mirror':
+        if (this.picks.length === 0 || g.type === 'point') return null;
+        plan = mirror(sketch, geometry, ids, this.picks, hit.id);
+        break;
+      default:
+        return null;
+    }
+    if ('error' in plan) return null;
+    return { doc: this.host.doc(), target: hit.id, shapes: editPreviewShapes(plan.edit, geometry) };
+  }
+
+  /**
+   * One step of a drag-sweep trim (G07, P2-4): the curve under the stroke — and the one it started on — joins the sweep,
+   * each curve only once, and the preview shows the whole stroke's result so far.
+   */
+  private sweepTrim(e: PointerInput): void {
+    const sweep = this.trimSweep;
+    if (!sweep) return;
+    const geometry = this.geometry();
+    const add = (p: P2) => {
+      const hit = hitTest(geometry, p, PICK_PX * e.px);
+      const g = hit && geometry.get(hit.id);
+      if (hit && g && g.type !== 'point' && !sweep.at.has(hit.id)) sweep.at.set(hit.id, p);
+    };
+    if (this.press) add(this.press.p);
+    add(e.p);
+    const merged = this.mergedTrims(sweep.at);
+    this.opPlan = merged ? { doc: this.host.doc(), target: '', shapes: editPreviewShapes(merged, geometry) } : null;
+  }
+
+  /** The trims of every curve a stroke crossed, each computed by the same pure op a single click uses, folded into one edit. */
+  private mergedTrims(at: Map<Id, P2>): SketchEdit | null {
+    if (at.size === 0) return null;
+    const geometry = this.geometry(), sketch = this.sketch(), ids = this.allocator();
+    const edits: SketchEdit[] = [];
+    for (const [id, p] of at) {
+      const r = trim(sketch, geometry, ids, id, p);
+      if (!('error' in r)) edits.push(r.edit); // a curve the op cannot trim (a spline, a point) is left out of the sweep
+    }
+    return edits.length > 0 ? mergeEdits(edits) : null;
   }
 
   private operationClick(e: PointerInput): void {
@@ -1767,7 +2266,7 @@ export class SketchController {
       case 'trim':
       case 'extend': {
         const hit = this.pickedCurve(e);
-        if (hit) this.run((this.tool === 'trim' ? trim : extend)(sketch, geometry, ids, hit.id, e.p));
+        if (hit) this.run(this.tool === 'trim' ? trim(sketch, geometry, ids, hit.id, e.p) : extend(sketch, geometry, ids, hit.id, e.p, this.picks[0]));
         return;
       }
       case 'sketchFillet':
@@ -1775,34 +2274,31 @@ export class SketchController {
         const hit = hitTest(geometry, e.p, PICK_PX * e.px);
         const g = hit && geometry.get(hit.id);
         if (!hit || !g) return;
-        let pair: [Id, Id] | null = null;
-        if (g.type === 'point') {
-          const lines = [...geometry].filter(([, x]) => x.type === 'line' && (x.p1 === hit.id || x.p2 === hit.id)).map(([id]) => id);
-          if (lines.length !== 2) return this.host.notify(t('sketch.cornerPick'), 'info');
-          pair = [lines[0]!, lines[1]!];
-        } else if (g.type === 'line') {
-          if (this.picks.length === 0) {
-            this.picks = [hit.id];
-            return;
-          }
-          pair = [this.picks[0]!, hit.id];
-          this.picks = [];
+        const corner = this.cornerPair(g, hit.id);
+        if (corner && 'report' in corner) return this.host.notify(t('sketch.cornerPick'), 'info');
+        if (!corner || !('pair' in corner)) {
+          if (g.type === 'line') this.picks = [hit.id]; // the first line of the corner, waiting for the second
+          return;
         }
-        if (!pair) return;
+        this.picks = [];
         const o = this.options;
         this.run(
           this.tool === 'sketchFillet'
-            ? fillet(sketch, geometry, ids, pair[0], pair[1], o.filletRadius)
-            : chamfer(sketch, geometry, ids, pair[0], pair[1], o.chamferDistance1, o.chamferDistance2),
+            ? fillet(sketch, geometry, ids, corner.pair[0], corner.pair[1], o.filletRadius)
+            : chamfer(sketch, geometry, ids, corner.pair[0], corner.pair[1], o.chamferDistance1, o.chamferDistance2),
         );
         return;
       }
       case 'offset':
-        this.run(offset(sketch, geometry, ids, this.picks, this.options.offsetDistance, e.p), () => this.setTool('select'));
+        this.run(offset(sketch, geometry, ids, this.picks, this.options.offsetDistance, e.p, { both: this.options.offsetBoth, caps: this.options.offsetCaps }), () => this.setTool('select'));
         return;
       case 'mirror': {
-        const hit = this.pickedCurve(e, true);
-        if (hit) this.run(mirror(sketch, geometry, ids, this.picks, hit.id), () => this.setTool('select'));
+        // a sketch axis is not in the geometry, so pickedCurve (which reads geometryOf) misses it whenever a curve is nearby;
+        // axisAt always considers the axes, so prefer it and fall back to a drawn line
+        const axisHit = this.axisAt(e);
+        const curveHit = this.pickedCurve(e, true);
+        const id = axisHit?.id ?? curveHit?.id;
+        if (id) this.run(mirror(sketch, geometry, ids, this.picks, id), () => this.setTool('select'));
         return;
       }
     }
@@ -2044,6 +2540,49 @@ export class SketchController {
     this.changed();
   }
 
+  /**
+   * What a fix would make of the geometry, before it is applied (G13): the fix's sketch solved by trial, and only the entities that
+   * actually move (a redundant relation's fix moves nothing, and the preview says so instead of drawing a ghost of the same shape).
+   * Null when the document moved under it or the solve failed.
+   */
+  async fixPreview(fix:SketchFix):Promise<{shapes:SolvedGeometry[];at:P2;moved:boolean}|null> {
+    const solved=this.host.solved(),base=this.host.doc(),sketch=this.sketch();
+    if(!solved||solved.status!=='over')return null;
+    const changes=[{id:fix.id,kind:fix.kind},...(fix.related??[])];
+    const chosen=new Map(changes.map(c=>[c.id,c.kind]));
+    const constraints=sketch.constraints.flatMap(c=>!chosen.has(c.id)?[c]:chosen.get(c.id)==='driven'?[{...c,driving:false} as SketchConstraint]:[]);
+    const r=await this.host.trial({...sketch,constraints},base);
+    if(this.host.doc()!==base||(r.status!=='under'&&r.status!=='fully'))return null;
+    const tol=0.01,moved:{id:Id;g:SolvedGeometry}[]=[];
+    for(const [id,g] of r.geometry){
+      const before=solved.geometry.get(id);
+      if(!before||this.shapeDiffers(g,before,tol))moved.push({id,g});
+    }
+    const at=(moved.length>0?this.entityAnchor(r.geometry,moved[0]!.id):this.entityAnchor(solved.geometry,changes[0]!.id))??([0,0] as P2);
+    return {shapes:moved.map((m)=>m.g),at,moved:moved.length>0};
+  }
+
+  /** Two solved shapes draw differently: any sampled point a step apart. */
+  private shapeDiffers(a:SolvedGeometry,b:SolvedGeometry,tol:number):boolean {
+    const sa=sample(a,0.1),sb=sample(b,0.1);
+    if(sa.length!==sb.length)return true;
+    return sa.some((p,i)=>dist(p,sb[i]!)>tol);
+  }
+
+  /** A point of the entity, for the fix-preview label to sit by. */
+  private entityAnchor(geometry:ReadonlyMap<Id,SolvedGeometry>,id:Id):P2|null {
+    if(id===SKETCH_ORIGIN)return [0,0];
+    const g=geometryOf(geometry,id);
+    if(!g)return null;
+    switch(g.type){
+      case 'point':return g.p;
+      case 'line':return mid(g.a,g.b);
+      case 'circle':case 'arc':case 'ellipse':return g.c;
+      case 'spline':return g.points[0]??null;
+      case 'text':return g.at;
+    }
+  }
+
   /** Read-only, finite feasible displacements. These are solver probes, not a claim that X/Y form independent DOFs. */
   async motionProbes(pointId:Id):Promise<MotionProbe[]> {
     const base=this.host.doc(),solved=this.host.solved(),sketch=this.sketch(),g=solved?.geometry.get(pointId);
@@ -2272,7 +2811,34 @@ export class SketchController {
     const proposal = smartDimension(geometry, hover, this.cursor) ?? smartDimension(geometry, this.picks, this.cursor);
     if (!proposal) return null;
     const kind = { distance: '', distanceX: t('dimension.prefixX'), distanceY: t('dimension.prefixY'), radius: 'R', diameter: 'Ø', arcLength: '⌒', angle: '' }[proposal.body.type];
-    return { text: `${kind}${fmt(proposal.value)}${proposal.unit === 'deg' ? '°' : ''}`, at: this.cursor };
+    const measured = this.measuredLabel(geometry, proposal.body);
+    return { text: `${kind}${fmt(proposal.value)}${proposal.unit === 'deg' ? '°' : ''}${measured ? ` · ${measured}` : ''}`, at: this.cursor };
+  }
+
+  /**
+   * What a dimension measures, said in the preview next to the cursor (G14): the two entities, 「圓心」 where a circle or arc is measured from its
+   * centre rather than from the nearest point of it, and which sector of an angle it is in. The sector is worth saying because two of the four
+   * show the same value (vertical angles) yet make different constraints, so the number is the only way to tell them apart before clicking.
+   */
+  private measuredLabel(geometry: Geometry, body: DimensionBody): string {
+    const fromCentre = (id: Id): string => {
+      const kind = geometryOf(geometry, id)?.type;
+      return kind === 'circle' || kind === 'arc' ? t('dimension.fromCentre', { id, what: t('sketch.condition.center') }) : id;
+    };
+    switch (body.type) {
+      case 'diameter':
+      case 'radius':
+      case 'arcLength':
+        return body.circle;
+      case 'angle': {
+        const [ga, gb] = [geometryOf(geometry, body.a), geometryOf(geometry, body.b)];
+        const vertex = ga?.type === 'line' && gb?.type === 'line' ? angleRays(ga, gb, body.flip).vertex : null;
+        const sector = vertex && this.cursor ? t('dimension.inSector', { sector: t('dimension.sector', { n: quadrantOf(vertex, this.cursor) }) }) : '';
+        return `${t('dimension.pair', { a: body.a, b: body.b })}${sector}`;
+      }
+      default:
+        return body.b ? t('dimension.pair', { a: fromCentre(body.a), b: fromCentre(body.b) }) : body.a;
+    }
   }
 
   // ------------------------------------------------------------------ previews
@@ -2281,7 +2847,8 @@ export class SketchController {
     const shapes: PreviewShape[] = [];
     if (this.box) shapes.push({ kind: 'box', a: this.box.a, b: this.box.b });
     const cursor = this.snapTarget?.p ?? this.cursor;
-    if (!cursor || this.tool === 'select' || PICK_TOOLS.has(this.tool)) return shapes;
+    if (!cursor || this.tool === 'select') return shapes;
+    if (PICK_TOOLS.has(this.tool)) return [...shapes, ...(this.opPlan?.shapes ?? [])];
     if (isTransformTool(this.tool)) return [...shapes, ...this.transformPreview(this.tool, cursor)];
     const [c1, c2] = this.clicks;
     switch (this.tool) {
@@ -2362,17 +2929,20 @@ export class SketchController {
           }
         } else if (c1) shapes.push({ kind: 'line', a: c1.p, b: cursor, construction: true });
         break;
-      case 'tangentArc':
-        if (c1) {
-          const start = this.tangentStart(c1);
-          const center = start && tangentArcCenter(c1.p, start.dir, cursor);
+      case 'tangentArc': {
+        // the chain's end stands in for the first click (G05, P2-6)
+        const from = this.clicks[0] ?? this.chainSnap();
+        if (from) {
+          const start = this.tangentStart(from);
+          const center = start && tangentArcCenter(from.p, start.dir, cursor);
           if (start && center) {
-            const r = dist(center, c1.p);
-            const [s, e] = cross(start.dir, sub(center, c1.p)) > 0 ? [c1.p, cursor] : [cursor, c1.p];
-            shapes.push({ kind: 'arc', c: center, r, a0: Math.atan2(s[1] - center[1], s[0] - center[0]), a1: Math.atan2(e[1] - center[1], e[0] - center[0]) });
+            const r = dist(center, from.p);
+            const [s2, e2] = cross(start.dir, sub(center, from.p)) > 0 ? [from.p, cursor] : [cursor, from.p];
+            shapes.push({ kind: 'arc', c: center, r, a0: Math.atan2(s2[1] - center[1], s2[0] - center[0]), a1: Math.atan2(e2[1] - center[1], e2[0] - center[0]) });
           }
         }
         break;
+      }
     }
     return shapes;
   }
@@ -2380,6 +2950,93 @@ export class SketchController {
 
 function rectLines(corners: P2[]): PreviewShape[] {
   return corners.map((a, i) => ({ kind: 'line' as const, a, b: corners[(i + 1) % 4]! }));
+}
+
+/**
+ * What a prepared edit will do, drawn where it happens (G06, P2-1): the entities it shortens re-drawn where they will lie
+ * (`change`), the new segments and arcs the op computes where they will be created (`add`), and what it deletes drawn on the
+ * spot (`remove`). The coordinates come from the plan itself — new points carry the draft positions the op computed — plus the
+ * solved geometry for what already exists, so the preview is what the confirming click will submit. Ellipses and splines as
+ * polylines (they still preview through the same transform helper).
+ */
+/** Folds several sketch edits into one command's edit: the parts concatenated, removals deduplicated (G07, P2-4 drag-sweep trim). */
+function mergeEdits(edits: SketchEdit[]): SketchEdit {
+  const entities: NonNullable<SketchEdit['entities']> = [];
+  const constraints: NonNullable<SketchEdit['constraints']> = [];
+  const remove = new Set<Id>();
+  const addEntities: SketchEntity[] = [];
+  const addConstraints: SketchConstraint[] = [];
+  for (const e of edits) {
+    entities.push(...(e.entities ?? []));
+    constraints.push(...(e.constraints ?? []));
+    for (const id of e.remove ?? []) remove.add(id);
+    addEntities.push(...(e.add?.entities ?? []));
+    addConstraints.push(...(e.add?.constraints ?? []));
+  }
+  const out: SketchEdit = {};
+  if (entities.length) out.entities = entities;
+  if (constraints.length) out.constraints = constraints;
+  if (remove.size) out.remove = [...remove];
+  if (addEntities.length || addConstraints.length) out.add = { entities: addEntities, constraints: addConstraints };
+  return out;
+}
+
+function editPreviewShapes(edit: SketchEdit, geometry: Geometry): PreviewShape[] {
+  const shapes: PreviewShape[] = [];
+  // the draft coordinates the op itself computed for the entities it adds
+  const draft = new Map<Id, P2>();
+  for (const en of edit.add?.entities ?? []) if (en.type === 'point') draft.set(en.id, [en.x, en.y]);
+  const at = (id: Id): P2 | null => {
+    const d = draft.get(id);
+    if (d) return d;
+    const g = geometry.get(id);
+    return g?.type === 'point' ? g.p : null;
+  };
+  /** An arc of a sketch entity: the center with the angles of its two ref points, radius as they measure. */
+  const arcOf = (c: P2 | null, start: Id | undefined, end: Id | undefined, radius?: number): PreviewShape | null => {
+    if (!c || !start || !end) return null;
+    const s = at(start), e = at(end);
+    if (!s || !e) return null;
+    const r = radius ?? dist(c, s);
+    return { kind: 'arc', c, r, a0: Math.atan2(s[1] - c[1], s[0] - c[0]), a1: Math.atan2(e[1] - c[1], e[0] - c[0]), role: 'add' };
+  };
+  for (const en of edit.add?.entities ?? []) {
+    if (en.type === 'line') {
+      const a = at(en.p1), b = at(en.p2);
+      if (a && b) shapes.push({ kind: 'line', a, b, construction: en.construction, role: 'add' });
+    } else if (en.type === 'circle') {
+      const c = at(en.center);
+      if (c) shapes.push({ kind: 'circle', c, r: en.radius, role: 'add' });
+    } else if (en.type === 'arc') {
+      const arc = arcOf(at(en.center) ?? null, en.start, en.end);
+      if (arc) shapes.push(arc);
+    }
+  }
+  for (const { id, set } of edit.entities ?? []) {
+    const g = geometry.get(id);
+    if (!g) continue;
+    if (g.type === 'line') {
+      const a = set.p1 ? at(set.p1) : g.a, b = set.p2 ? at(set.p2) : g.b;
+      if (a && b) shapes.push({ kind: 'line', a, b, construction: g.construction, role: 'change' });
+    } else if (g.type === 'arc') {
+      const c = set.center ? at(set.center) : g.c;
+      const s = at(set.start || g.start), e = at(set.end || g.end);
+      if (c && s && e) shapes.push({ kind: 'arc', c, r: g.r, a0: Math.atan2(s[1] - c[1], s[0] - c[0]), a1: Math.atan2(e[1] - c[1], e[0] - c[0]), role: 'change' });
+    } else if (g.type === 'circle') {
+      const c = set.center ? at(set.center) : g.c;
+      if (c) shapes.push({ kind: 'circle', c, r: g.r, role: 'change' });
+    }
+  }
+  for (const id of edit.remove ?? []) {
+    const g = geometry.get(id);
+    if (!g) continue;
+    if (g.type === 'line') shapes.push({ kind: 'line', a: g.a, b: g.b, construction: g.construction, role: 'remove' });
+    else if (g.type === 'circle') shapes.push({ kind: 'circle', c: g.c, r: g.r, role: 'remove' });
+    else if (g.type === 'arc') shapes.push({ kind: 'arc', c: g.c, r: g.r, a0: g.a0, a1: g.a1, role: 'remove' });
+    // ellipses and splines rough as polylines, through the transform preview with no transform applied
+    else if (g.type === 'ellipse' || g.type === 'spline') shapes.push(...transformedShapes(g, { kind: 'translate', d: [0, 0] }).map((s) => (s.kind === 'box' ? s : { ...s, role: 'remove' as const })));
+  }
+  return shapes;
 }
 
 /** How an entity looks where a transform takes it (ADR 0178 preview): lines, circles and arcs exactly; ellipses and splines as polylines; points and texts not at all. */

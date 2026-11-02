@@ -155,3 +155,15 @@
   1. **在 worktree 跑 `verify:ui` 或 dev server 前，這兩個套件必須是 worktree 內的實體複本**（其餘套件可用 junction；`@3db/*` 要指向 worktree 自己的 packages，否則測到的是主資料夾的程式碼）。開跑前先載入一次頁面，確認伺服器日誌沒有 wasm 錯誤。
   2. 大量測試在同一個早期步驟（求解、開檔）一起逾時，先懷疑環境而不是本次變更；這一輪作廢，修好環境後整輪重跑。
   3. 判斷失敗是否為自己造成：在同一個 worktree 還原為乾淨 HEAD，只跑失敗的腳本（`--only`），錯誤訊息相同才算既有失敗。
+
+- **2026-10-30（rebase 推送期的多工作階段協調）**：
+  1. **整個 `node_modules` junction 進 worktree 時，重指 `@3db/*` 的連結會建在「主資料夾」的 `node_modules` 裡**：`worktree/node_modules/@3db/kernel` 不是 worktree 的檔案，而是主資料夾 `node_modules/@3db/kernel` 本尊——在它上面 `.Delete()` 之後重建連結，刪掉 worktree 就會讓主資料夾的 `@3db/*` 變懸空連結，主工作樹的工具鏈跟著壞。重指之前先确认連結住在哪裡（`Get-Item ... | Select LinkType,Target`）；安全做法是刪掉整顆 junction（`cmd /c rmdir <worktree>\node_modules`，**不加 `/s`**）後在 worktree 內重建個別連結。typecheck 出現「明明在最新提交就有的符號『不存在』」，先懷疑 junction 解析到主資料夾舊程式碼，不是真的型別錯誤。
+  2. **推送位移後，工作樹快照是舊基準的通知**：用 `git update-ref`／rebase 搬動已檢出的分支後，乾淨的舊檔案要 checkout 到新 HEAD；**「乾淨且僅是過時」與「有未提交在途編輯」必須逐一判定**（比對該檔在舊基準的 blob 與工作樹內容，相同才 checkout）。有在途編輯的檔案不得 checkout——本次 `packages/i18n/{en,zh-TW}/help.ts`、`packages/model/src/serialize.ts` 在工程圖工作階段手上且有 origin 的新增（G01 說明），該工作階段**提交前必須先調和**，否則會把 origin 的條目蓋掉。從舊基準續做工的階段，動手與提交前一律 `git log origin/main` 讀 handoff，過時認知不得直接寫碼。
+  3. **ADR 編號在合併各分支後要用 `git log origin/main` 重新確認**：origin 已把 0220 用在 IGES 交換（ADR 0220），未提交的 `0220-tapered-chamfer-callout.md` 草稿因此撞號；取號在開工時確認、提交時再驗一次，撞號者改號並同步重產 `docs/repository-inventory.md`（本次 origin 合併也漏了 `docs:sync`，`lint:repo` 在 CI 才翻出）。
+
+
+- **2026-11-01（STL 輸出與輸入，ADR 0221）**：
+  1. **worktree 一律放在專案資料夾內**：使用者要求不得在 `D:\Self-developed_Apps\G3` 下另開 `3D-Builder-xxx` 之類的同層資料夾（本次一度建在 `../3D-Builder-stl`）。新 worktree 用 `git worktree add .claude/worktrees/<名稱> -b <分支>`，並以 `.git/info/exclude` 加 `/.claude/worktrees/`（本機設定，不改共用的 `.gitignore`）。主資料夾的工具不會掃進去：反模式檢查略過以 `.` 開頭的資料夾、`check-repository` 用 `git ls-files --exclude-standard`、Vitest／tsc 的根目錄固定。已建在外面的，先停掉其 dev server／verify:ui 的所有行程（Windows 不能搬被開著的資料夾），`git worktree move` 進來，再重建 worktree 內 `node_modules/@3db/*` 的 junction（它們存的是絕對路徑，搬移後會指向舊位置）。
+  2. **新的「看得到但不是本體」的東西，放在本體清單之外**：STL 網格若做成只有三角化的 OCCT 面放進 `BodyState`，所有讀本體的消費端都得逐一防禦（10-19 第 2 條）；改放 `RebuildResult.meshes`，消費端按構造就看不到它。
+  3. **顯示與否由文件決定的東西，不能在 worker 重建時過濾**：隱藏不觸發重建（D4.6），第一版在 worker 依 `isShown` 過濾網格，e2e 抓到「隱藏後仍畫著」。改由頁面依文件過濾，比照草圖。
+  4. **刪除特徵時清理資料，必須列出所有用資料的地方**：`deleteFeatures` 原本只保留 `importedBody` 的資料，草圖圖片的影像資料在刪除任何特徵時一起被丟掉（既有缺陷，本次修正並以紅隊回退確認測試會失敗）。

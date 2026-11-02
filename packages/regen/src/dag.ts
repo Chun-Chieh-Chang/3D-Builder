@@ -145,6 +145,7 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = fromRefs([...(feature.origin ? [feature.origin] : []), feature.x, feature.y]);
       break;
     case 'importedBody':
+    case 'importedMesh':
       parents = []; // it depends only on its data
       break;
     case 'cosmeticThread':

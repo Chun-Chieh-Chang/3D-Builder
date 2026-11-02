@@ -448,6 +448,7 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const sewTolerance = fn(feature.sewTolerance, 'length', 'positive');
       return sewTolerance === feature.sewTolerance ? feature : { ...feature, sewTolerance };
     }
+    case 'importedMesh':
     case 'deleteFace':
     case 'sweep':
     case 'loft':

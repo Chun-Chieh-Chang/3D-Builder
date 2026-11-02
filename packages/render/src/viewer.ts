@@ -81,6 +81,8 @@ const VIEW_DIRS_OF: Readonly<Record<PrincipalView, readonly number[]>> = Object.
 export const COLORS = {
   /** the shaded body */
   body: 0xb8c4d0,
+  /** an STL mesh imported as a reference (F2.3): warmer than the body, so the two are not taken for each other */
+  referenceMesh: 0xc8b48c,
   /** a visible edge, and what a part is drawn with in wireframe */
   edge: 0x1d232b,
   /** an edge behind the material, where hidden lines are shown */
@@ -696,6 +698,13 @@ export interface TriadRayEvent {
   dir: [number, number, number];
 }
 
+/** An STL mesh imported as a reference (F2.3, ADR 0221): its vertices and three indices a triangle, in model millimetres. */
+export interface ReferenceMeshDisplay {
+  key: string;
+  positions: Float32Array;
+  indices: Uint32Array;
+}
+
 export interface CosmeticThreadDisplay {
   threadType: 'external' | 'internal';
   majorDiameter: number;
@@ -772,6 +781,8 @@ export class Viewer {
   private planes: PlaneDisplay[] = [];
   private planeGroup: THREE.Group | null = null;
   private cosmeticThreadGroup: THREE.Group | null = null;
+  /** The imported reference meshes (F2.3): drawn and cut like the body, never picked as model elements. */
+  private referenceMeshes: THREE.Group | null = null;
   /** Whether the shown planes take clicks (a plane to sketch on, or to put in a reference geometry box). */
   private pickPlanes = false;
   private hoveredPlane: string | null = null;
@@ -916,6 +927,7 @@ export class Viewer {
     this.setGuides([]);
     this.setPlanes([]);
     this.setCosmeticThreads([]);
+    this.setReferenceMeshes([]);
     this.setVertices(new Float32Array(0));
     this.setGhost(null);
     this.setHighlights([]);
@@ -1493,6 +1505,7 @@ export class Viewer {
     const box = new THREE.Box3();
     if (this.body) box.expandByObject(this.body);
     for (const inst of this.instances.values()) box.expandByObject(inst.group);
+    if (this.referenceMeshes) box.expandByObject(this.referenceMeshes);
     return box;
   }
 
@@ -1608,6 +1621,7 @@ export class Viewer {
       entry.world.copy(toWorld(overlay!.frame, l.p));
       if (!entry.held) entry.offset = undefined; // the place is now the one stored
       entry.el.className = `overlay-label ${l.className ?? ''} ${l.interactive ? 'interactive' : ''}`;
+      entry.el.dataset.key = l.key; // which overlay label this is (tests and tools address one by it)
       if (entry.el.textContent !== l.text) entry.el.textContent = l.text;
       entry.el.title = l.title ?? '';
     }
@@ -2496,6 +2510,50 @@ export class Viewer {
     this.requestRender();
   }
 
+  /**
+   * The STL meshes imported as references (F2.3, ADR 0221). Each triangle is shaded flat, as the file has no smoother surface to show; the colour sets
+   * them apart from the body. They are cut by a section and follow the display mode (edges only: their triangles' edges), and the view fits round them.
+   */
+  setReferenceMeshes(meshes: readonly ReferenceMeshDisplay[]): void {
+    if (this.referenceMeshes) {
+      this.scene.remove(this.referenceMeshes);
+      disposeGroup(this.referenceMeshes);
+      this.referenceMeshes = null;
+    }
+    if (meshes.length > 0) {
+      const group = new THREE.Group();
+      group.name = 'reference-meshes';
+      for (const m of meshes) {
+        const indexed = new THREE.BufferGeometry();
+        indexed.setAttribute('position', new THREE.BufferAttribute(m.positions, 3));
+        indexed.setIndex(new THREE.BufferAttribute(m.indices, 1));
+        const geometry = indexed.toNonIndexed();
+        indexed.dispose();
+        geometry.computeVertexNormals();
+        const mesh = new THREE.Mesh(geometry, bodyMaterial({ color: COLORS.referenceMesh, metalness: 0.05, roughness: 0.8 }));
+        mesh.name = m.key;
+        group.add(mesh);
+      }
+      this.referenceMeshes = group;
+      this.scene.add(group);
+    }
+    this.styleReferenceMeshes();
+    this.requestRender();
+  }
+
+  private styleReferenceMeshes(): void {
+    const mode = this.displayMode;
+    for (const o of this.referenceMeshes?.children ?? []) {
+      const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial;
+      m.wireframe = mode === 'wireframe' || mode === 'hiddenVisible' || mode === 'hiddenRemoved';
+      m.transparent = mode === 'transparent';
+      m.opacity = mode === 'transparent' ? this.transparencyOpacity : 1;
+      m.depthWrite = mode !== 'transparent';
+      m.clippingPlanes = this.clip;
+      m.needsUpdate = true;
+    }
+  }
+
   /** The face the cursor is on and how far the body is there: -1 and Infinity when the ray misses it. */
   private pickFaceHit(clientX: number, clientY: number): { face: number; distance: number } {
     if (!this.body) return { face: -1, distance: Infinity };
@@ -2931,6 +2989,7 @@ export class Viewer {
 
   /** Puts the body and its edges as the display mode and the section say. */
   private applyDisplay(): void {
+    this.styleReferenceMeshes();
     const mode = this.displayMode;
     const body = this.body;
     if (body) {

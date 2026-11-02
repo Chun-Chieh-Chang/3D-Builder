@@ -12,6 +12,21 @@ window.__extendRectangle={run:async()=>{
  await H.dim([bottom],[10,-4],20);await H.dim([right],[24,5],10);
  for(const x of [30,40]) {await H.tool('直線');await H.sk(x,-5);await H.sk(x,15);await H.solved();await H.selectTool();}
  const initial=H.sketch(),before=new Map(geometry()),count=initial.entities.length;const values=initial.constraints.filter(c=>c.type==='distance').map(c=>[c.id,c.value]);
+ // G08 (P2-5): a chosen boundary is crossed past a nearer target — pick the far line, then extend the rectangle edge; it reaches x=40 in one go
+ const farLine=H.lineWhere(g=>Math.abs(g.a[0]-40)<1e-6&&Math.abs(g.b[0]-40)<1e-6);
+ store.sketcher.select([farLine]);
+ await H.tool('延伸');
+ await H.sk(19,0);await store.sketcher.settled();await H.solved();
+ const bridge=H.sketch().entities.find(e=>e.type==='line'&&!initial.entities.some(old=>old.id===e.id));
+ check(!!bridge,'chosen-boundary continuation created');
+ check(H.sketch().entities.length===count+2,'the chosen boundary adds one continuation only');
+ const bridgeLine=geometry().get(bridge.id);
+ check(Math.hypot(bridgeLine.a[0]-20,bridgeLine.a[1],bridgeLine.b[0]-40,bridgeLine.b[1])<1e-7,'continuation crosses the near target to the chosen far target');
+ unchanged(before);
+ for(const [id,value]of values)check(H.sketch().constraints.find(c=>c.id===id)?.value===value,'rectangle dimension kept across the boundary extension');
+ store.undo();await H.solved();
+ check(!H.sketch().entities.some(e=>e.id===bridge.id),'one undo removes the boundary extension');
+ unchanged(before);
  await H.tool('延伸');await H.sk(19,0);await store.sketcher.settled();await H.solved();
  const after=H.sketch(),extension=after.entities.find(e=>e.type==='line'&&!initial.entities.some(old=>old.id===e.id));check(!!extension,'new shared-end continuation created');
  check(after.entities.length===count+2,'exactly a new endpoint and continuation added');unchanged(before);

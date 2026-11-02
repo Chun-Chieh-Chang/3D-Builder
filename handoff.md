@@ -36,6 +36,10 @@
    - 1000 圖元 `tool: 'line'`：p95 由 0.637 ms 降至 **0.146 ms**（提速 4.4 倍）。
    - 18 檔 257 項 Smoke Tests 全數通過（耗時 11.3s）。
 
+## STL 輸出與輸入（分支 feat/stl-exchange）
+
+2026-11-01：STL 輸入為網格參考（`importedMesh`，Schema 87）、輸出對話框（二進位／ASCII、mm／inch、細緻度、座標系統）、多本體各存一檔、組合件 STL，[ADR 0221](docs/adr/0221-stl-exchange.md)。分支已推送、**尚未合併 main**；main 已有 Schema 87 或 ADR 0221 時合併要改號。待辦：使用者以 eDrawings 開 `D:\3DB實機確認\STL對照` 判定。worktree 在 `.claude/worktrees/stl-exchange`（不得建在專案資料夾外）。
+
 ## IGES 輸出與輸入（分支 claude/iges-exchange）
 
 最新交付（2026-10-30，分支 `claude/iges-exchange` 已合併 main `d66cabb`）：IGES 輸出（修剪曲面／B-rep，mm／inch）與輸入（「開啟舊檔」及「輸入 STEP／IGES」），Schema 86，[ADR0220](docs/adr/0220-iges-exchange.md)。原取 Schema 85／ADR 0219，與 main 的移動面（Schema 85）及 DXF 匯入（ADR 0219）撞號，合併時改號。壞檔會讓 OCCT 讀取器無窮迴圈，輸入先在拋棄式 worker 限時試讀。eDrawings：OCCT 直接寫出的 6 個檔與 `exportIges` 寫出的 6 個檔（含切半與顏色），使用者皆確認正確。沒有他牌 CAD 的 IGES 樣本。合併後的驗證見 DEV_LOG。
@@ -58,14 +62,211 @@
 
 ---
 
-## 3b. 2026-10-30 P1 第一批已完成：繪製時輸入尺寸（直線／中心線、圓、矩形）
+## 3b. 2026-10-30 P1 第一批與第二批已完成：繪製時輸入尺寸（直線／中心線、圓、矩形、狹槽、多邊形）
 
-- 依使用者確認的四項設計完成並驗收（見[驗收表 P1](docs/design/sketch-interaction/acceptance.md) 與 DEV_LOG 同日條目）：角度 0°～180° 由游標側定方向；部分鎖值 Enter 即完成；鎖值優先於吸附並提示；槽／多邊形留下一批。
-- 變更：`apps/web/src/sketcher/controller.ts`（entry 狀態、`lockSnap`、提交時加驅動尺寸）、`apps/web/src/components/Viewport.tsx` `EntryBoxes`、`apps/web/src/actions.ts`（數字鍵起始輸入、Tab）、`app.css`、i18n `sketch.entry.*`；新測試 `apps/web/test/sketch-entry.test.ts`（32 項）、`tests/e2e/manual-sketch-entry.js`；`apps/web/test/sketch-collapse.test.ts` 的 host 改為每文件只求解一次（RCA 見 DEV_LOG，門檻未改）。
-- **下一步**：
-  1. P1 第二批：槽與多邊形（G16、B06）——多邊形半徑／邊長、方向角、頂點朝向或邊平行；沿用 `entryFields`／`lockedPoint`／`Builder.dimension`。
-  2. 既有限制另案：PlaneGCS 對約 900 個拘束、大多已定義的草圖 `Aborted(OOM)`（150 個標尺寸矩形可重現，100 個 52 ms；對照程式在工作階段暫存區，不在版本庫）。
-  3. E03：P1 輸入框在 macOS 鍵盤與 DPR2／不同縮放尚未驗證。
+- **第一批（直線／中心線、圓、邊角／中心矩形）**：
+  - 依使用者確認的四項設計完成並驗收（見[驗收表 P1](docs/design/sketch-interaction/acceptance.md) 與 DEV_LOG 同日條目）：角度 0°～180° 由游標側定方向；部分鎖值 Enter 即完成；鎖值優先於吸附並提示。
+  - 變更：`apps/web/src/sketcher/controller.ts`（entry 狀態、`lockSnap`、提交時加驅動尺寸）、`apps/web/src/components/Viewport.tsx` `EntryBoxes`、`apps/web/src/actions.ts`（數字鍵起始輸入、Tab）、`app.css`、i18n `sketch.entry.*`。
+- **第二批（狹槽 B05、多邊形 B06 / G16）**：
+  - 狹槽（Slot，B05）：第一階段輸入中心線長度與角度，Tab 切換，Enter 前進到第二階段；第二階段輸入槽寬，Enter 完成狹槽；自動建立 `distance`、`angle`、`diameter` 3 個驅動尺寸；幾何圓弧半徑精確相符；單步 Undo 清空實體與尺寸，單步 Redo 恢復；Esc 多階段分層回退。純滑鼠繪製時加真值防呆，按 Esc 即時清除預覽線。
+  - 多邊形（Polygon，B06 / G16）：支援外接圓半徑模式（`radius`）與邊長模式（`edge`）數值輸入與切換按鈕；輸入角度時自動建立中心至第 1 頂點構造射線並標註相對於水平軸之驅動角度尺寸；無角度或角度 0° 時支援頂點或邊水平拘束；自動標註外接圓半徑或邊長尺寸；單步 Undo/Redo 原子復原。
+  - 變更：`packages/sketch/src/ops.ts`（`SlotEntry`、`PolygonEntry`）、`apps/web/src/sketcher/controller.ts`（多階段狀態競爭修復、`setPolygonEntry` early-return 修正、純滑鼠真值防呆）、`apps/web/src/components/Viewport.tsx`（切換按鈕）、`packages/i18n`（中英字典擴充）、`tests/e2e/manual-sketch-entry.js`（B05 與 B06 端到端實機步驟）。
+- **確效結果**：
+  - `apps/web/test/sketch-entry.test.ts`：**37/37 PASS**（含 180 組全隨機幾何 Fuzzing 壓力測試）。
+  - `apps/web/test/sketcher.test.ts`：**75/75 PASS**。
+  - `apps/web/test/*`：**29 檔 305 項全數 PASS**。
+  - `npm run build`：構建通過。
+- **下一步**:
+  1. E03：P1 輸入框在 macOS 鍵盤與 DPR2／不同縮放待 CI／實機驗證。
+  2. 既有限制另案：PlaneGCS 對約 900 個拘束、大多已定義的草圖 `Aborted(OOM)`（150 個標尺寸矩形可重現，100 個 52 ms）。
+  3. 接續推進草圖互動方案 Phase P2。（已開工，見 §3c）
+
+## 3c. 2026-10-30/31 P2 進行中:P2-1/P2-2 已提交,P2-3 偏移兩側與封口
+
+- **P2-1(G06 管道,`925378a`)**:此前修剪/延伸/圓角/倒角/偏移/鏡射六個 PICK 工具點擊即提交、無最終結果預覽;P2-1 建立共用管道——hover 以**與提交同一純 op** 算候選 `SketchEdit`,預覽以 `remove`/`change`/`add` 三角色畫在發生位置,確認才試解提交,取消零文件變更、預覽不產生 Undo。Schema 未變更。
+- **P2-2(六工具鋪開,已提交 `7a9b808`)**:`operationPlan()` 擴為全部 PICK 工具;抽出 `cornerPair()` 供 hover 與 `operationClick` 共用(角落行為逐項保持原樣);偏移特例 hover 無命中也出計畫(點擊本就不做 hitTest,游標僅決定邊);鏡射 hover 需在映軸曲線上。測試 8 項、全庫 313 項。**已知缺口**:鏡射以草圖軸參照時 hover 無預覽(點擊可提交)。
+- **P2-3(偏移兩側與封口,本批未提交的部分即此刀)**:`packages/sketch/src/ops.ts` 新增 `OffsetEntry { both?, caps? }`,`offset()` 主體收斂為 `runSide(forced: 1|-1|null)`(`null` 由 `toward` 決定=原行為;`both` 跑 `[1,-1]` 兩趟,各側自己的驅動距離;`caps` 於非環狀鏈兩端加直線接回原端點、直線腿加 `perpendicular`)。`apps/web` 的 `ToolOptions` 增 `offsetBoth`/`offsetCaps`(預設 false)+PropertyManager 兩個核取方塊+i18n;`operationPlan()`/`operationClick` 傳同一 `entry`(預覽自動獲得);`setOption()` 丟棄並在游標仍在時重算 `opPlan`。測試 4 項(`ops.test.ts` 2、`sketch-op-preview.test.ts` 2),全量 `apps/web`+`packages/sketch` **50 檔 550 項**。**已知缺口**:曲線(自由曲線)offset 留 P5 探針。
+- **接法**(續作 P2-4 的人必讀):`apps/web/src/sketcher/controller.ts` 的 `operationPlan()`(在 `updateSnap` 的 PICK 分支以暫存 `IdAllocator` 呼叫純 op)+模組層 `editPreviewShapes(edit, geometry)`(新增圖元用 op 在 `Parts.point` 攜帶的暫存座標渲染);`PreviewShape.role` → `overlay.ts previewCurves` 著色 → `theme.ts`/`app.css` 的 `--sketch-op-{add,change,remove}`。計畫在文件版本變更後由 `snapshot()` 丟棄(`candidateDoc` 同一模式),`leave()`/`resetTool()` 也清。
+- **確效**:P2-1/P2-2 完整 `verify:ui` 皆 **249/250**——唯一失敗 `manual-drawing-linked` 已以乾淨 HEAD `--only` 對照+DEV_LOG 2026-10-29 先例(同一 `centred:false` 在 `bca2d80` 重現)判定為**既有/環境性失敗**,非本工作線造成,另案追蹤(同 E03 macOS);P2-3、P2-4 同為 **249/250**(唯一失敗 `manual-drawing-linked`,既有/環境性,已定案為測試側問題;P2-4 為 250 列、0 新增失敗)。P2-3 已提交 `d5adf65`、P2-4 已提交 `baad645`,CI 皆綠。修好 `manual-drawing-linked`後(`f92164c`)基準為 **250/250**。
+- **下一刀**:P2-4 拖曳掃掠修剪(掃過多段一次復原、重複穿越去重、Esc 清預覽);之後 P2-5 延伸選邊界、P2-6 相切弧接續。
+
+## 3d. 2026-10-31 P2-4 進行中:拖曳掃掠修剪(G07)
+
+- **目標(C02/G07)**:拖曳修剪工具底下一筆畫過多段——同一片段只處理一次;三段一次 Undo/Redo 完整復原;空拖曳不加 Undo;Esc 取消不改原圖。
+- **現況**:程式已寫入工作樹、typecheck 乾淨、新增 4 項測試通過(`apps/web`+`packages/sketch` 50 檔 **554 項**)、lint:rules/deps/repo/i18n 全 PASS、完整 `verify:ui` **249/250**(唯一失敗 `manual-drawing-linked`,既有/環境性、已定案),徵得使用者同意後提交。改動檔:`apps/web/src/sketcher/controller.ts` + `apps/web/test/sketch-op-preview.test.ts` + `handoff.md`。
+- **實作(全在 `apps/web/src/sketcher/controller.ts`)**
+  - 新欄位 `trimSweep: { at: Map<Id, P2>; cancelled: boolean } | null`。
+  - `pointerDown`:tool==='trim' 時初始化空 sweep。
+  - `pointerMove`:else 分支在 `press.moved` 後呼叫 `sweepTrim(e)`。
+  - `sweepTrim(e)`:對 press 起點與當前點各 `hitTest`,非 point 且未收錄者收錄;以 `mergedTrims` 更新 `opPlan` 供預覽。
+  - `mergedTrims(at)`:對每個 (id, 點) 呼叫同一個純 `trim()`,跳過 error,用 `mergeEdits` 折成一個 `SketchEdit`。
+  - `pointerUp`:若 `trimSweep` 存在且(moved 或 cancelled) → cancelled 不改;否則(moved) 以單一 `{ edit: merged }` 呼叫 `run()`(一次 Undo);未移動則落回既有單擊路徑。
+  - `escape()`:sweep 存在 → `cancelled = true`、清 `opPlan`、返回。
+  - `resetTool()` / `leave()` 清 `trimSweep`。
+  - 模組層新 `mergeEdits(edits)`:entities/constraints 串接、remove 去重、add 合併。
+- **待驗風險**
+  1. 兩相鄰段同時被修剪時,`trim()` 內部 `dropEnd` 以「原始草圖」判斷端點是否他處仍被引用,可能留下孤立點;需以測試確認(必要時改為修剪後再判斷)。
+  2. sweep 期間覆寫 `opPlan`;需測「放開後無殘留預覽」「Esc 後無殘留」。
+  3. 既有限制:穿過與曲線重疊的「點」(如原點)時 `hitTest` 會回該點,該曲線不被修剪——與既有單擊 trim 同行為,非本刀新增(驗證場景已避開原點)。
+- **下一步**:P2-4 已提交並推送(`baad645`,CI 綠);`tests/e2e/manual-drawing-linked.js` 的方案 A 修正也已另開 `test:` 提交(`f92164c`,`--only` 1/1 通過,基準回到 **250/250**)。接著進 P2-5 延伸選邊界(每刀提交前徵詢),P2-6 相切弧接續。測試在 `apps/web/test/sketch-op-preview.test.ts` 新增 describe「拖曳掃掠修剪 (G07, P2-4)」4 項。
+
+### 另案已修並提交:`manual-drawing-linked` 換投影後最適比例不屬於該步(方案 A)
+
+- **根因(2026-10-31 定位;非產品錯、亦非「環境性」)**:該腳本 step 1 先 `H.newDrawing()`(第三角)才 `setSheet({projection:'first'})`。新圖的「最適比例」在該圖 views 的 lines 與 features 都齊時即套用一次(ADR 0147),而調色盤預覽(`ensurePalette`)與檔案三視圖**共用同一個請求 id**(`keyOf()` 回零件 key;`requestOf()` 的 `id`/`featureId` = `key|JSON.stringify(axes)`),所以快取幾乎立刻可用、fit 常在 `H.newDrawing()` 內就已套用。`autoScalePending` 用掉後,換投影會重排三視圖(`packages/drawing/src/layout.ts` 的 `cell(direction, projection)`)並產生新 axes 的請求,但**不會重算 fit**,圖紙因此留著第三角的 shift;第一角內容量到的中心 `[215,173.5]` 與 A3 可繪區中心 `[215,172.5]` 固定差 1.0 mm → `box.centred:false`;`centreViews()` 仍回非 null → 「自動排版」可按下 → `nothingToDo:false`。
+- **反證**:同一輪 step 7(按「自動排版」後斷言 `box.centred && panelButton().disabled`)通過,`verify:ui` 每腳本最多印 3 個失敗步驟而只出現 `.steps.0` → 置中邏輯本身正確,壞的只是「測試自己換了投影、而 fit 不屬於那一步」。
+- **修法(方案 A,測試側,已選定)**:在**空圖紙**上先 `setSheet({projection:'first'})`,再按「標準三視圖」——空圖紙 `views.length===0` 時 `autoScaleWhenReady()` 會等待,加視圖後 fit 只用第一角跑一次,無競態;step 1 語意(「新圖已置中、自動排版無事可做」)原樣保留。驗證以 `npm run verify:ui -- --only manual-drawing-linked`,另開 `test:` 提交。**結果**:已提交 `f92164c`(CI 綠),單腳本驗證 `npm run verify:ui -- --only manual-drawing-linked` **1/1 通過**。
+- **方案 B(產品側,未採用)**:換投影時若圖仍是全新(無 `at`/`scale`、shift 未被動過)就重跑最適比例;與「使用者放過的視圖保留原位」相衝,需 ADR,暫擱置。
+
+## 3e. 2026-10-31 P2-5 已提交:延伸明示邊界(G08 部分)
+
+- **目標(C03/G08)**:延伸工具可先選一條曲線作為邊界,延伸跨過中間的曲線直達所選邊界;未預選時維持「取該方向首個有效交點」的預設;邊界在端點後方或不在延伸路徑上時明確拒絕(不縮短、不靜默改目標)。
+- **實作**:
+  - `packages/sketch/src/ops.ts`:`extend(..., boundary?: Id)` 在既有 ahead 命中中改取該邊界的命中;取不到回 `sketch.extendBoundaryMissed`;「邊界 = 本體」視同未指定;「重疊」仍由 `extensionOverlaps` 把關。
+  - `apps/web/src/sketcher/controller.ts`:`setTool('extend')` 以 `extendBoundaryTargets()` 把當前選取的第一條非點/非文字圖元種入 `picks`(與 offset/mirror 同模式,但未預選不阻止進入);`operationPlan()`/`operationClick` 傳 `picks[0]`,預覽與提交同一 pure op;`picks` 非空時提示改顯 `sketch.hint.extendBoundary`。
+  - i18n:`sketch.extendBoundaryMissed`、`sketch.hint.extendBoundary`;`help.toolExtend` 的 summary/body/keywords 補「預選即邊界」(zh/en,並遵循該檔的全形標點)。
+  - 測試:`ops.test.ts` +1、`sketch-op-preview.test.ts` +2(describe「extend to a chosen boundary (G08, P2-5)」);e2e `manual-extend-rectangle.js` 加「選遠線 → 跨過近線直達 x=40」。
+- **確效**:`apps/web`+`packages/sketch` 50 檔 **557 項**;`verify:ui -- --only manual-extend-rectangle` 1/1;完整 `verify:ui` **250/250**;typecheck、lint:rules/deps/repo/i18n 全 PASS;`help.test.ts` 40 項。提交 `2e5887f`,CI 綠。
+- **已知缺口**:獨立 Split 需定義 ID/尺寸/外部參照繼承(P5);以自由曲線為邊界留 P5。
+- **下一刀**:P2-6 相切弧接續(提交前徵詢)。
+
+## 3f. 2026-10-31 P2-6 進行中:線與相切弧互換仍保留鏈(G05 部分)
+
+- **目標(G05)**:直線、中心線、相切弧互相切換時保留鏈與鏈端;相切仍由既有推斷決定,不偷偷加錯相切;Esc 無半成品。對應 T03:「直線→相切弧→直線,跨工具仍保留切向;中途 Esc 與取消無半成品、無多餘關係」。
+- **實作**(`apps/web/src/sketcher/controller.ts`):
+  - `CHAIN_TOOLS`(line/centerline/tangentArc);`setTool` 只在舊、新皆為鏈工具時帶過 `chain`。
+  - `chainSnap()` 把鏈端當吸附點;`tangentArc` 的 click/preview 以 `clicks[0] ?? chainSnap()` 為起點,單擊即終點;`snapshot` 的 `step` 在有鏈時視為 1,提示改問終點。
+  - `finishTwoClick` 的 tangentArc 以 `this.commit(b)` 成功為前提才設 `nextChain`;`end === chainFirst` 時收鏈。
+  - 重合判定:在 `lineClick`/`finishTwoClick` 以 `dist(起點, 落點) < 1e-9` 直接返回,不建零長段。
+- **交付前紅隊抓到的回歸**:第一版守門用 `PICK_PX * px`(7px 拾取半徑)判「同一個點」,吞掉被對齊吸附拉近鏈端的合法點 → `manual-thread` 由 PASS 變 FAIL(乾淨 HEAD 單跑通過,證明是本刀造成)。改為 1e-9 重合判定並補回歸測試(`draws on when a snapped click lands near the chain end`)。
+- **確效**:`apps/web` + `packages/sketch` 50 檔 **562 項**;typecheck、lint:rules/deps/repo/i18n 全 PASS;完整 `verify:ui` **251/251**;新增 e2e `manual-tangent-chain.js` 1/1。**提交前徵詢**。
+- **下一刀**:P3 區域式建模入口(G10)。
+
+## 3g. 2026-10-31 P3-1 進行中:畫布選區與清單同步(G10)
+
+- **目標(G10)**:伸長/旋轉/掃出的草圖,合法閉合輪廓在畫布淡填色、hover 與清單同亮、單擊單選 / Ctrl 加減(永不為零),沿用既有 contour IDs 與 `setContours`,不改 Schema。對應 P3 驗收出口「矩形帶圓孔 / 多個分離輪廓畫布選區、清單同步;實體體積、取消、存讀正確」。G11(交叉/分岔子區域)不在本階段。
+- **實作**:
+  - `packages/sketch/src/profiles.ts`:`regionOutline` / `outlineContains`(孔洞內不算命中)/ `sameContour`(共享一半圖元;清單的 inline 版抽出共用)/ `pickContourSelection`(單擊、Ctrl 加減、至少留一個、選滿回 `null`);`findProfiles` 第二參數放寬為 `Pick<SolvedSketch,'geometry'>`,主執行緒可直接用 Worker 的 `sketchGeometry`。
+  - `packages/render/src/overlay.ts`:`SketchOverlay.fills` + `OverlayFill`;`THREE.Shape`(孔洞為 `Path.holes`)+ `ShapeGeometry` + 平面矩陣,`renderOrder=-1`,有填色時線/點材質改 `transparent` 以維持排序。
+  - `apps/web/src/state/store.ts`:`contourPick`/`contourHover`;`startContourPick` 少於 2 個合法區域即提示 `contour.pickNone`;`contourAt`/`setContourHover`/`contourPickClick`;`leaveSession` 清除。
+  - `apps/web/src/components/Viewport.tsx`:選取期間強制顯示該草圖(即使被特徵隱藏)並加填色;tool handler 只接管左鍵,以 `planePoint` 取平面座標判定。
+  - `apps/web/src/components/PropertyManager.tsx`:「在畫布選取 / 結束選取」按鈕、hover 列高亮、卸載即停;`actions.ts` 的 Esc 先停選取再關閉面板;i18n 4 條 × 2 語。
+- **紅隊抓到(測試設計,非產品缺陷)**:① 俯視圖用「同一點螢幕位移」證明中鍵旋轉是錯的(量到 1.27 px),改以 `cubeMatrix()` + 全畫面像素差 >2000。② e2e 必須先把草圖平移到 PropertyManager 沒遮住的區域(約 32% 寬),否則點擊落在面板底下。
+- **確效**:`apps/web` + `packages/sketch` **51 檔 567 項**;typecheck PASS;完整 `verify:ui` **252/252**;新增 e2e `manual-contour-pick.js` 1/1(10 步)。**提交前徵詢**。
+- **下一刀**:P3 到此完成;進入 P4「診斷、關係與參照」,建議先 G12(關係標記跨 anchor 避讓與雙向高亮)、再 G13、G15,P4-4 依 P0 量測修 G04/14/18。
+
+## 3m. 2026-11-01 待裁項目執行進度（A1/A2/B1/C1/C2/E1 已完成）
+
+> **狀態：P4 4/4 完成；A1、A2、B1、C1、C2、E1 第一刀皆已完成並推送（CI 綠）。剩 D1、D5 探針與 D2/D3/D4 候選。**
+
+### 已完成（本 session 追加）
+
+| 編號 | 項目 | 提交 |
+|---|---|---|
+| E1 | G16 選邊平行/頂點朝向（第一刀：吸附到現有線的角度 + parallel 拘束） | `1899e1e` |
+| C1 | CI 兩段式（PR 精選 + 夜間全量） | `84c4911` |
+| C2 | PlaneGCS 預算守衛：以單一相連部分的量測上限取代拘束數門檻（2026-11-02 使用者裁決） | `f5d54c0`、本次合併 |
+
+### 待做（依建議優先順序）
+
+1. **D1 (G08)** 獨立 Split 與參照繼承探針 — ✅ 完成 (ADR 0222)：直線/圓弧/圓可行；樣條/Bézier 延後；外部參照阻擋。
+2. **D5 (G19)** 自動尺寸配置探針 — ✅ 完成 (ADR 0223)：MVP 可行（基準+偏好+預覽+確認）；3D/樣條延後。
+3. **B2** manual-asm 逾時 — 已加 Page.navigate 重試；若仍逾時，拆出單獨 CI job。
+4. **D2 (G09)** 自由曲線 offset — 留候選。
+5. **D3 (G11)** 交叉/分岔子區域 — 留候選（高風險）。
+6. **D4 (G17)** 樣條 G2/節點權重 — 留候選。
+
+### E1 後續（第二/三刀，未做）
+
+- 第二刀：「平行某邊」做成真正的 parallel 拘束聯動（第一刀已加 parallel relation，但 UI 入口/解除未做）。
+- 第三刀：「頂點朝向某點」（angle to a point）。
+
+### 進行中/暫停說明
+
+- D1/D5 是 2–4 日探針，本 session 額度不足，下一 session 從 D1 開始。
+- 即時看板：http://127.0.0.1:5399。
+
+## 3l. 2026-11-01 P4 完成後待裁項目裁決與後續執行進度
+
+> **狀態：A1、A2、B1 已完成並推送；其餘待做。額度不足時在此暫停，下個 session 依下表續做。**
+
+### 已完成（本 session）
+
+| 編號 | 項目 | 提交 |
+|---|---|---|
+| A1 | kernel `direct-edit` moveFace 訊息對齊測試期望 | `f71f0cc`（CI 綠，direct-edit 19/19） |
+| A2 | 單點「固定」關係被 refusedRelations 過濾（調查結論：維持過濾，正確行為；可選加 UX 提示） | 調查完成，無程式碼變更 |
+| B1 | 鏡射以草圖軸參照時 hover 預覽 | `a32f064`（CI 綠） |
+
+### 裁決紀錄（使用者選擇，詳見 report.md「P4 完成後待裁項目裁決紀錄」）
+
+B2 修環境與腳本、B3 記「未驗」不阻塞、C1 兩段式 CI、C2 減少方程規模+預算攔截、D1/D5 現在做探針、D2/D3/D4 留候選、E1 排入下一切片。
+
+### 待做（依建議優先順序）
+
+1. **E1 (G16) 第一刀**：多邊形第二點吸附到現有線的角度（Enter 鎖定）— 中型功能切片，接 G01 提供半徑/邊長與方向角。
+2. **B2**：manual-asm-* / assembly-section-captures 逾時 — 修環境與腳本（加重試/等待或拆出單獨 CI job）。
+3. **C1**：CI 兩段式（PR 精選 + 夜間全量）。
+4. **D1 (G08)**：獨立 Split 與參照繼承探針（2–4 日）。
+5. **D5 (G19)**：自動尺寸配置探針（2–4 日）。
+6. **C2**：PlaneGCS ~900 拘束 OOM（減少方程規模 + 預算攔截）。
+7. **B3**：E03 macOS 驗證（記「未驗」，不阻塞）。
+8. **D2/D3/D4**：G09/G11/G17 留候選，探針證實可行才核定。
+
+### 進行中/暫停說明
+
+- E1 尚未開始（本 session 額度不足）。下一 session 從 E1 第一刀開始：調查 polygon entry/live/preview 路徑，做「吸附到現有線角度」的最小可用版本。
+- 即時看板：http://127.0.0.1:5399（Review pane），config 於 `C:\\Users\\3kids\\AppData\\Local\\Temp\\opencode\\p2-board.config.json`。
+
+## 3k. 2026-11-01 P4-4 已完成:吸附保持、尺寸候選與精確最近點(G04/14/18,P4 最後一刀)
+
+> **狀態:完成。單元 4104 過 / 1 既有失敗(kernel moveFace,非本刀)/ 26 跳過、e2e 2/2、完整 verify:ui **257/257**、tsc 與四項 lint 全 PASS。待徵詢提交同意。**
+
+- **先量測**(P0 任務表):橢圓最近點偏差 27–75 mm、誤選 474/483、樣條 0.25 mm;無保持時 200 次移動切換 8/40/7 次。只修量到會壞的:G18、G04;G14 量測後確認既有模式可用,只補顯示。
+- **交付**:①G18 精確最近點(`interact.ts`:`closestOn` 粗掃+黃金分割;樣條改真實 Catmull-Rom 求最近,與 `sample()` 共用控制點 → 顯示不變,測試釘住)。修後位置差 ≤ 4.4e-7 mm、距離差 ≤ 7e-15 mm、誤選 0/483。②G04 保持(`snap-hold.ts` 純函式:point 3 > midpoint 2 > curve 1、其他 1.5;新候選要近 40% 才換手;離開容差/Ctrl/Esc/換工具/文件變更/實體消失皆解除;`controller` 接線 + 「保持吸附」提示只在顯示的候選≠真正最近時出現)。③G14 尺寸預覽改「值 · 量測對象」(圓/弧量到圓心時明說「圓心」;角度以 `quadrantOf` 標實際扇區,同值對頂角可分辨)。i18n 5 鍵 ×2 語。
+- **確效**:新增單元 26 項(nearest-point 8 含 200k 點真值與 200+100 組 fuzz、snap-hold 9、dimension-preview 5、interact G14 段 4);全倉庫單元 **4104 過 / 1 既有失敗 / 26 跳過**;e2e `manual-sketch-snap-hold`、`manual-dimension-preview` 2/2;完整 `verify:ui` **257/257**;**E02 效能重測**:1000 圖元 select p95 0.3 ms、line snap p95 0.4 ms(門檻 8 ms,故未加空間索引);tsc + 四項 lint PASS;inventory 271 文件 / 257 瀏覽器呼叫。
+- **教訓**:換手門檻只在平手區有意義——兩條相距 0.15 mm 的線在 18 px/mm 下都在 7 px 容差內,±0.01 mm 抖動才會讓「最近」跳動;e2e 第一版把「走回平手區」當換手而紅燈(情境本身要能以實測數字證明會壞)。G14 的 e2e 曾以 17.32 冒充 10·√3(標籤 59.9993°),改精確值並以數值解析比對,不放寬門檻。
+- **詳情**:DEV_LOG 2026-11-01 P4-4 條目、acceptance §P4-4、report.md(P0~P5 追蹤表:切片 11/17、P4 4/4)。
+- **下一刀**:P4 已完成(4/4);P5 維持**候選待立項**(每項先 2–4 日技術探針,先證實可行再核定範圍)。另案待辦:kernel moveFace 拒絕訊息與測試期望不一致;單點「固定」關係在面板被 refusedRelations 過濾(本刀未動,見 report.md 另案表);CI 只跑精選測試清單;E03 macOS 驗證;PlaneGCS ~900 拘束 OOM;`manual-asm-*` 逾時。
+
+## 3j. 2026-11-01 P4-3 已完成:參照來源、聯動/失效與重指定(G15)
+
+> **狀態:完成。單元 4078 過(1 既有失敗:kernel moveFace,乾淨 HEAD 已證非本刀)、e2e 8/8、完整 verify:ui 255/255、tsc 與四項 lint 全 PASS。待徵詢提交同意。**
+
+- **交付**:草圖面板「模型參照」清單(來源/跟隨語意/狀態+失效原因+候選);失效參照的「重新指定」= 試算(withReplacedRef + controller.trial 走 worker 真實 followReferences)→ 確認才提交(replaceRef 單命令)、取消零變更;store 的 referenceProblems 按特徵保留參照問題(進入編輯器時重建至該草圖為止、rolledBack 無 unresolved,故須保留);controller 公開 trial 透傳;i18n 16 鍵 ×2 語。
+- **確效**:單元 4078 過 / 1 既有失敗(kernel,非本刀);e2e `manual-reference-reassign` 8/8(D07 全流程:聯動→刪源失效定位→試算→取消零變更→確認→存讀);完整 `verify:ui` **255/255**;tsc 與四項 lint PASS。
+- **應用級缺陷(已修)**:ReferencesBox 的 useStore selector 每次造新陣列 → getSnapshot 不穩定 → React 無限重渲染、整個應用白屏(連已知良好的 contour-pick 都死)——selector 必須回穩定參照,空集合用模組級常數。
+- **詳情**:DEV_LOG 2026-11-01 P4-3 條目、acceptance §P4-3、report.md(P0~P5 追蹤表,新增)。
+- **下一刀**:P4-4(依 P0 量測修 G04/14/18,含「固定」關係對單點被拒絕過濾的行為檢查)。P4 完成後 P5 維持候選待立項。
+
+## 3i. 2026-11-01 P4-2 已完成:DOF 方向提示與修復前後畫布呈現(G13)
+
+> **狀態:完成。單元 4072 過(1 既有失敗:kernel moveFace,乾淨 HEAD 已證非本刀)、e2e 6/6、完整 verify:ui 254/254、tsc 與四項 lint 全 PASS。待徵詢提交同意。**
+
+- **視覺基準(修改前)**:分析按鈕可跑、面板有文字,畫布 0 個方向提示、0 個修復預覽(`Temp/opencode/g13-baseline/`)。
+- **實作**:`overlay.ts` 的 `arrowPoints`/`arrowTip` 純函式與 `dofMotion`/`fixPreview` 繪製;`controller.fixPreview`(與 diagnose 同一修復變換、trial 真解、逐圖元取樣比較、staleness 守護);store 的 `dofMotion`/`fixPreview` 上板狀態;PM 分析按鈕結果上板、診斷列 hover 預覽(版本號防競態);Viewport 接線;`.overlay-label.motion` 樣式;i18n 三鍵 ×2 語。
+- **e2e 情境的教訓(重要)**:此 app 對「製造衝突」的 UI 防護完整——過多定義尺寸**建立時自動降為從動**(C1.29)、從動翻回驅動**取量測值**、矛盾關係**拒絕**、間接矛盾求解回 **failed** 而非 over。矛盾實務上由**文件帶入**,e2e 以 `editSketch` 注入(與既有診斷測試同一做法)。另發現單一點的「固定」關係在面板被 refusedRelations 過濾,留 P4-3 檢視。
+- **確效**:單元 4072 過 / 26 跳過 / 1 既有失敗(kernel,非本刀);e2e 6/6;完整 `verify:ui` **254/254**;tsc 與四項 lint PASS;inventory 254 呼叫。
+- **下一刀**:P4-3(G15 參照來源/聯動/失效與重指定)、P4-4(依 P0 量測修 G04/14/18)。另案:kernel moveFace 訊息不一致;「固定」關係的面板過濾。
+
+## 3h. 2026-11-01 P4-1 已完成:關係標記避讓與雙向高亮(G12)
+
+> **狀態:完成。單元 4068 過(1 既有失敗,乾淨 HEAD 重現,非本刀)、e2e 6/6、完整 verify:ui 253/253、tsc 與四項 lint 全 PASS。待徵詢提交同意。**
+
+- **視覺基準(已量測,`tests/e2e/manual-relation-labels.js` 對未修改碼跑出)**:三個 10×6 矩形(直線工具四段閉合,共 19 個關係、4 個尺寸,完全定義、0 衝突)——關係符號 **19 個中 28 對互相重疊、1 個被完全遮住無法點選**;選取邊時 **0 個標記亮起、0 個收合**。截圖在 `C:\Users\3kids\AppData\Local\Temp\opencode\g12-baseline\`。修正後同情境:0 對重疊、0 個被遮住(待 e2e 全綠確認)。
+- **實作**:
+  - `apps/web/src/sketcher/overlay.ts`:新增純函式 `relationLabelSize(text)`(符號在畫面上的估算外框,比 CSS 實際略大)與 `layoutRelationLabels(requests, px)`(以 anchor 為中心的環狀候選位,12px 起、每環 17px、至多 6 環 8 方向;rank 0=與選取相關者先放、佔 anchor 旁最佳位;決定性、穩定排序)。`buildOverlay` 先算雙向集合:`relationIds`(選取中的非尺寸拘束)、`about`(選取圖元 + 其端點)、`related`(引用 about 的關係 ∪ 選取的關係)、`lit`(about ∪ 選取關係所引圖元與其端點);幾何以 `lit` 亮琥珀色(`SKETCH_COLORS.hover`),軸與原點同理;關係標記類別 `selected > over > related`,其餘在有選取時加 `dim`(**衝突/冗餘永不收合**);標記位置全部改由 `layoutRelationLabels` 決定(不再同 anchor 橫排堆疊)。
+  - `packages/render/src/viewer.ts`:`setOverlay` 給每個標籤 DOM 加 `data-key`(e2e 可定位單一標記)。
+  - `apps/web/src/sketcher/relationsOffered.ts`:「現有限制條件」清單改以 entityIds **及其端點** 過濾(與畫布亮起同一語意);`offered` 維持只看圖元本身,不改加入關係的候選。
+  - `apps/web/src/components/PropertyManager.tsx`:關係清單列可點(加入/移出選取,additive 切換;刪除鈕 stopPropagation);選中的列加 `.picked`。`app.css`:`.overlay-label.relation.related`(琥珀)、`.relation.dim`(0.4 透明)、`.relation-list li`(cursor+picked 樣式)。i18n 新增 `pm.relationRowTip`(zh-TW/en)。
+- **測試**:`apps/web/test/relation-labels.test.ts`(8 項,全過:估算外框、18 個符號擠在 1.8mm 內互不重疊且 ≤114px、決定性、rank 優先、無選取無 dim/related、選邊亮 2 摺 7、選關係亮遠端圖元、衝突不摺、真實 overlay 不重疊);e2e `tests/e2e/manual-relation-labels.js`(6 步)。
+- **中途發現並已修**:畫布亮起(含端點語意)與面板清單(只列直接引用)不一致 → `relationsOffered` 的 `existing` 擴及端點。
+- **完成紀錄**:
+  - **視覺基準(修改前)**:三個 10×6 矩形 19 關係 4 尺寸(完全定義、0 衝突)→ 符號 28 對重疊、1 個被完全遮住、選邊 0 亮 0 摺;修正後同情境 0 重疊 0 遮住。
+  - **實作**:`overlay.ts` 純函式 `relationLabelSize` + `layoutRelationLabels`(環狀候選位,rank 0 相關者優先,決定性,位移 ≤114px);`buildOverlay` 雙向集合(about/related/lit,擴及端點),幾何以 lit 亮琥珀,標記類別 selected>over>related、其餘收合,**衝突永不收合**;`viewer.ts` 標籤 `data-key`;`relationsOffered` 的 existing 擴及端點(與畫布同語意,offered 不變);面板清單列可點;CSS `.related`/`.dim`/`.picked`;i18n `pm.relationRowTip` ×2。
+  - **測試**:單元 `apps/web/test/relation-labels.test.ts` 8 項;e2e `tests/e2e/manual-relation-labels.js` 6 步(真實 DOM 量測 + WebGL 像素抽樣,基準與修正同法量測)。
+  - **確效**:全倉庫單元 4068 過 / 26 跳過 / **1 既有失敗**(kernel direct-edit moveFace 訊息不符,stash 後乾淨 HEAD 重現相同 → 非本刀,另案);完整 `verify:ui` **253/253**;`tsc` 0 錯誤;四項 lint PASS;inventory 270 文件 / 253 呼叫。
+  - **詳情**:DEV_LOG 2026-11-01 條目、acceptance §P4-1。
+- **下一刀**:P4-2(G13 DOF 方向與修復前後畫布呈現)、P4-3(G15 參照來源/聯動/失效)、P4-4(依 P0 量測修 G04/14/18)。另案待辦:kernel moveFace 拒絕訊息與測試期望不一致(本次於乾淨 HEAD 重現)。
 
 ## 4. 下一階段核心計畫：草圖互動改善方案 (P1 即時尺寸輸入)
 

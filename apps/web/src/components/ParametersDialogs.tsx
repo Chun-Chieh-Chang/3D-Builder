@@ -534,6 +534,117 @@ export function IgesOptionsDialog() {
   );
 }
 
+/** 輸出 STL (F4.1, ADR 0221): binary or ASCII, the unit, how fine the mesh is, one file or one for each body (a part) or component (an assembly). */
+export function StlOptionsDialog() {
+  const open = useStore((s) => s.dialog === 'stlOptions');
+  const doc = useStore((s) => s.doc);
+  const assembly = useStore((s) => s.active === 'assembly');
+  const bodies = useStore((s) => s.result?.bodies.filter((b) => !b.reference).length ?? 0);
+  const [format, setFormat] = useState<'binary' | 'ascii'>('binary');
+  const [unit, setUnit] = useState<'mm' | 'inch'>('mm');
+  const [quality, setQuality] = useState<'' | DocSettings['meshQuality']>('');
+  const [split, setSplit] = useState(false);
+  const [coordSys, setCoordSys] = useState('');
+  if (!open) return null;
+  const systems = assembly ? [] : doc.features.filter((f) => f.type === 'coordSys' && !f.suppressed);
+  const close = () => store.openDialog(null);
+  const docQuality = assembly ? 'normal' : settingsOf(doc).meshQuality;
+  const canSplit = assembly || bodies > 1;
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal parameters" role="dialog" aria-label={t('export.stlTitle')} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && close()}>
+        <h3>{t('export.stlTitle')}</h3>
+        <p className="hint">{t(assembly ? 'export.stlHintAssembly' : 'export.stlHint')}</p>
+        <label className="pm-row">
+          <span>{t('export.stlFormat')}</span>
+          <select value={format} onChange={(e) => setFormat(e.target.value as 'binary' | 'ascii')}>
+            <option value="binary">{t('export.stlBinary')}</option>
+            <option value="ascii">{t('export.stlAscii')}</option>
+          </select>
+        </label>
+        <label className="pm-row">
+          <span>{t('export.unit')}</span>
+          <select value={unit} onChange={(e) => setUnit(e.target.value as 'mm' | 'inch')}>
+            <option value="mm">mm</option>
+            <option value="inch">inch</option>
+          </select>
+        </label>
+        <label className="pm-row">
+          <span>{t('export.stlQuality')}</span>
+          <select value={quality} onChange={(e) => setQuality(e.target.value as '' | DocSettings['meshQuality'])}>
+            <option value="">{t('export.stlQualityDoc', { quality: t(`settings.mesh.${docQuality}`) })}</option>
+            {(['coarse', 'normal', 'fine'] as const).map((q) => (
+              <option key={q} value={q}>
+                {t(`settings.mesh.${q}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+        {canSplit && (
+          <label className="pm-row checkbox">
+            <input type="checkbox" checked={split} onChange={(e) => setSplit(e.target.checked)} />
+            <span>{t(assembly ? 'export.stlSplitComponents' : 'export.stlSplitBodies')}</span>
+          </label>
+        )}
+        {!assembly && (
+          <label className="pm-row">
+            <span>{t('export.coordSys')}</span>
+            <select value={coordSys} onChange={(e) => setCoordSys(e.target.value)}>
+              <option value="">{t('export.partOrigin')}</option>
+              {systems.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <div className="modal-actions">
+          <button
+            onClick={() => {
+              close();
+              void store.writeStl({ format, unit, ...(quality ? { quality } : {}), split: split && canSplit, coordSys: coordSys || null });
+            }}
+          >
+            {t('export.go')}
+          </button>
+          <button onClick={close}>{t('export.cancel')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 輸入 STL (F2.3, ADR 0221): the file does not say its unit, so it is asked, with how large the mesh is either way. */
+export function StlImportDialog() {
+  const open = useStore((s) => s.stlImport);
+  const [unit, setUnit] = useState<'mm' | 'inch'>('mm');
+  if (!open) return null;
+  const close = () => store.cancelStlImport();
+  const size = (scale: number) => open.extent.map((x) => (x * scale).toFixed(2)).join(' × ');
+  return (
+    <div className="modal-backdrop" onPointerDown={close}>
+      <div className="modal parameters" role="dialog" aria-label={t('import.stlTitle')} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && close()}>
+        <h3>{t('import.stlTitle')}</h3>
+        <p className="hint">{t('import.stlHint')}</p>
+        <p>{t('import.stlFile', { name: open.name, format: t(open.format === 'binary' ? 'mesh.binary' : 'mesh.ascii'), triangles: open.triangles })}</p>
+        {!open.closed && <p className="hint">{t('import.stlNotClosed')}</p>}
+        <label className="pm-row">
+          <span>{t('import.stlUnit')}</span>
+          <select value={unit} onChange={(e) => setUnit(e.target.value as 'mm' | 'inch')}>
+            <option value="mm">{t('import.stlUnitMm', { size: size(1) })}</option>
+            <option value="inch">{t('import.stlUnitInch', { size: size(25.4) })}</option>
+          </select>
+        </label>
+        <div className="modal-actions">
+          <button onClick={() => void store.confirmStlImport(unit)}>{t('import.stlGo')}</button>
+          <button onClick={close}>{t('export.cancel')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** 新零件（範本） (B1.4): which kind of part to begin with. */
 export function TemplateDialog() {
   const open = useStore((s) => s.dialog === 'template');

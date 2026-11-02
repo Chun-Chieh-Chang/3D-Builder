@@ -180,6 +180,7 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
     case 'snapCatch':
     case 'vent':
     case 'importedBody':
+    case 'importedMesh':
     case 'derivedBody':
       return { feature, replaced };
   }
