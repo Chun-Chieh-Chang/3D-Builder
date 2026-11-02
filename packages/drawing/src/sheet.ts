@@ -41,12 +41,12 @@ export function sheetMetrics(sheet: Pick<DrawingSheet, 'size' | 'orientation'>):
 /** One cell of the title block: where it is (from the block's lower left corner), what it is called, and what it holds. */
 export interface TitleCell extends Rect {
   /** A field of the document, or something worked out: the scale, the sheet, the projection. */
-  field: TitleField | 'scale' | 'sheet' | 'projection';
+  field: TitleField | 'scale' | 'sheet' | 'unit' | 'projection';
   /** The text is bigger (the title of the drawing). */
   large?: boolean;
 }
 
-/** The cells of the title block, in four rows from the top: company; title, number, revision; material, general tolerance, drafter, date; scale, sheet, projection. */
+/** The cells of the title block, in four rows from the top: company; title, number, revision; material, general tolerance, drafter, date; scale, sheet, unit, projection. */
 export function titleCells(): TitleCell[] {
   const W = TITLE_BLOCK.width;
   const rows = [10, 16, 11, 11];
@@ -64,7 +64,7 @@ export function titleCells(): TitleCell[] {
     ...row(0, [['company', W]]),
     ...row(1, [['drawingName', 100, true], ['drawingNo', 50], ['revision', 30]]),
     ...row(2, [['material', 50], ['generalTolerance', 60], ['drafter', 40], ['date', 30]]),
-    ...row(3, [['scale', 45], ['sheet', 45], ['projection', 90]]),
+    ...row(3, [['scale', 35], ['sheet', 35], ['unit', 35], ['projection', 75]]),
   ];
 }
 

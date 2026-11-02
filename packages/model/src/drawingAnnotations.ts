@@ -81,6 +81,8 @@ export interface NoteAnnotation extends AnnotationCommon {
   text: string;
   /** The height of the capitals (mm on the sheet). Absent: 3.5. */
   height?: number;
+  /** Optional outline fitted to all resolved text lines, in paper units. */
+  enclosure?: 'circle' | 'rounded';
   leader?: P;
   /** What the leader's point is fastened to. */
   attach?: Attachment;
@@ -174,6 +176,7 @@ export function checkAnnotation(a: Annotation, viewExists: (id: Id) => boolean, 
       if (typeof a.text !== 'string' || a.text.trim() === '') throw new CommandError(t('drawing.noteEmpty'));
       if (a.text.length > NOTE_MAX) throw new CommandError(t('drawing.noteTooLong', { max: String(NOTE_MAX) }));
       if (a.height !== undefined && !(Number.isFinite(a.height) && a.height >= NOTE_HEIGHT.min && a.height <= NOTE_HEIGHT.max)) throw new CommandError(t('drawing.noteBadHeight', { min: String(NOTE_HEIGHT.min), max: String(NOTE_HEIGHT.max) }));
+      if (a.enclosure !== undefined && a.enclosure !== 'circle' && a.enclosure !== 'rounded') throw new CommandError(t('drawing.noteBadEnclosure'));
       return;
     }
     case 'datum': {
@@ -230,7 +233,7 @@ export type AnnotationPatch = { [K in string]?: unknown };
 
 /** The fields each kind may have changed, and which of them may be taken away. */
 export const ANNOTATION_FIELDS: Record<AnnotationKind, { set: string[]; optional: string[] }> = {
-  note: { set: ['at', 'text', 'height', 'leader', 'attach'], optional: ['height', 'leader', 'attach'] },
+  note: { set: ['at', 'text', 'height', 'enclosure', 'leader', 'attach'], optional: ['height', 'enclosure', 'leader', 'attach'] },
   datum: { set: ['at', 'label', 'angle', 'length', 'attach'], optional: ['angle', 'length', 'attach'] },
   fcf: { set: ['at', 'characteristic', 'tolerance', 'diameter', 'material', 'datums', 'leader', 'attach'], optional: ['diameter', 'material', 'leader', 'attach'] },
   centreLine: { set: ['from', 'to'], optional: [] },

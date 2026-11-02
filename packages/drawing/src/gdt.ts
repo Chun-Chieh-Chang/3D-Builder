@@ -2,6 +2,7 @@ import { noteText, type Annotation, type Attachment, type DrawingRef, type ViewF
 import { CENTRE_OVERSHOOT } from './annotation';
 import { ARROW, DIM_TEXT, lengthNumber } from './dimension';
 import { circlePolyline } from './geometry';
+import { textWidthMm } from './sheet';
 import { toSheet, type PlacedView } from './layout';
 import type { SceneItem } from './scene';
 import type { VisibleElements } from './viewEdges';
@@ -183,12 +184,62 @@ function noteItems(a: NoteAnnotation, placed: PlacedView, lookup: (key: string) 
   const [x, y] = toSheet(placed, a.at[0], a.at[1]);
   const h = a.height ?? DIM_TEXT;
   const lines = noteText(a.text, lookup).split('\n');
-  const items: SceneItem[] = lines.map((text, i) => ({ kind: 'text', at: [x, y - i * 1.6 * h], text, height: h }));
+  const w = Math.max(...lines.map((line) => a.enclosure ? textWidthMm(line, h) : charWidth(line, h)));
+  // The same centre anchor is used by SVG, DXF and PDF. It also centres
+  // each line independently when the note contains lines of different lengths.
+  const items: SceneItem[] = lines.map((text, i) => ({ kind: 'text', at: [a.enclosure ? x + w / 2 : x, y - i * 1.6 * h], text, height: h, ...(a.enclosure ? { anchor: 'center' as const } : {}) }));
+  let outline: { centre: P; rx: number; ry: number; corner: number } | undefined;
+  if (a.enclosure) {
+    const bottom = y - (lines.length - 1) * 1.6 * h;
+    const centre: P = [x + w / 2, (bottom + y + h) / 2];
+    const halfWidth = w / 2 + h * 0.4;
+    const halfHeight = (y + h - bottom) / 2 + h * 0.4;
+    const rx = a.enclosure === 'circle' ? Math.hypot(halfWidth, halfHeight) : halfWidth + h * 0.25;
+    const ry = a.enclosure === 'circle' ? rx : halfHeight + h * 0.25;
+    const corner = a.enclosure === 'circle' ? 0 : Math.min(h * 0.6, rx, ry);
+    outline = { centre, rx, ry, corner };
+    const points: number[] = [];
+    if (a.enclosure === 'circle') {
+      for (let i = 0; i < 96; i++) {
+        const angle = 2 * Math.PI * i / 96;
+        points.push(centre[0] + rx * Math.cos(angle), centre[1] + ry * Math.sin(angle));
+      }
+    } else {
+      for (let q = 0; q < 4; q++) {
+        const angle0 = q * Math.PI / 2;
+        const cx = centre[0] + (q === 0 || q === 3 ? 1 : -1) * (rx - corner);
+        const cy = centre[1] + (q < 2 ? 1 : -1) * (ry - corner);
+        for (let i = 0; i <= 12; i++) {
+          const angle = angle0 + i * Math.PI / 24;
+          points.push(cx + corner * Math.cos(angle), cy + corner * Math.sin(angle));
+        }
+      }
+    }
+    items.push({ kind: 'polyline', points, style: 'thin', closed: true });
+  }
   if (a.leader) {
-    const w = Math.max(...lines.map((l) => charWidth(l, h)));
     const target = toSheet(placed, a.leader[0], a.leader[1]);
     // from the middle of the first line, on the side the feature is
-    const from: P = target[0] > x + w ? [x + w + 1, y + h / 2] : [x - 1, y + h / 2];
+    let from: P = target[0] > x + w ? [x + w + 1, y + h / 2] : [x - 1, y + h / 2];
+    if (outline) {
+      const dx = target[0] - outline.centre[0], dy = target[1] - outline.centre[1];
+      const factor = Math.hypot(dx / outline.rx, dy / outline.ry);
+      if (factor > 1e-9) {
+        let scale = 1 / factor;
+        if (outline.corner) {
+          let lo = 0, hi = 2 / Math.max(Math.abs(dx) / outline.rx, Math.abs(dy) / outline.ry);
+          for (let i = 0; i < 48; i++) {
+            const mid = (lo + hi) / 2;
+            const x = Math.abs(mid * dx), y = Math.abs(mid * dy);
+            const a = Math.max(0, x - (outline.rx - outline.corner));
+            const b = Math.max(0, y - (outline.ry - outline.corner));
+            if (x <= outline.rx && y <= outline.ry && a * a + b * b <= outline.corner ** 2) lo = mid; else hi = mid;
+          }
+          scale = lo;
+        }
+        from = [outline.centre[0] + dx * scale, outline.centre[1] + dy * scale];
+      }
+    }
     items.push(...leader(from, target));
   }
   return items;

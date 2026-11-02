@@ -183,6 +183,8 @@ export const output: Translation = {
   'pm.directionTwo': 'Two sides',
   'extrude.dragHint': 'Drag to preview extrusion depth; cross the sketch plane to reverse. Esc restores this drag.',
   'extrude.dragNonzero': 'Extrusion depth cannot be zero; this drag was restored',
+  'instantDepth.anchorLost': "The face the handle rests on is not in the rebuild; the handle rests on the sketch plane and stays draggable.",
+  'instantDepth.anchorLostWith': '{message} — the handle rests on the sketch plane and stays draggable.',
   'options.showGrid': 'Show model and sketch grid (independent of snapping)',
   'options.viewArrowStep': 'Arrow keys turn the view by (degrees; Alt+Left/Right roll by it too)',
   'options.viewCubeStep': 'The arrows of the view cube turn the view by (degrees; its roll arrows too)',

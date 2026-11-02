@@ -599,7 +599,9 @@ export function DrawingViewport() {
       }
     }
     // An idle dimension tool must not swallow a drag of an existing numeric label.
-    if (tool?.kind === 'dimension' && tool.picks.length === 0) {
+    // Explicit chamfer picking must reach the short profile even when an
+    // existing dimension's text hit box overlaps it.
+    if (tool?.kind === 'dimension' && tool.mode !== 'chamfer' && tool.picks.length === 0) {
       const hit = dimensionAt(dimensionItems, p, reach);
       const outcome = hit && built.dimensions.get(hit.id);
       if (hit?.text && outcome && !('error' in outcome) && outcome.handle) {
@@ -705,7 +707,10 @@ export function DrawingViewport() {
       return;
     }
     // a dimension: its text slides, the rest of it moves away from or round what it measures
-    const dim = dimensionAt(dimensionItems, p, reach);
+    // Resolve dimensions and annotations together so nearby dimension lines
+    // cannot pre-empt an annotation's text.
+    const picked = dimensionAt([...dimensionItems, ...annotationHit], p, reach);
+    const dim = picked && curPage.dimensions.some(x => x.id === picked.id) ? picked : null;
     const outcome = dim && built.dimensions.get(dim.id);
     if (dim && outcome && !('error' in outcome)) {
       d.selectDimension(dim.id);
@@ -716,7 +721,7 @@ export function DrawingViewport() {
       return;
     }
     // an annotation: chosen, and moved as a whole where it is let go
-    const ann = dimensionAt(annotationHit, p, reach);
+    const ann = picked && (attached.annotations ?? []).some(x => x.id === picked.id) ? picked : null;
     if (ann) {
       capture(e);
       d.pick([{ kind: 'annotation', id: ann.id }], 'replace');
@@ -786,10 +791,9 @@ export function DrawingViewport() {
   const pickUnder = (p: P): { kind: 'view' | 'dimension' | 'finish' | 'table' | 'annotation'; id: Id } | null => {
     const caption = captionUnder(p);
     if (caption) return { kind: 'view', id: caption.id };
-    const dim = dimensionAt(dimensionItems, p, reach);
-    if (dim) return { kind: 'dimension', id: dim.id };
-    const ann = dimensionAt(annotationHit, p, reach);
-    if (ann) return { kind: 'annotation', id: ann.id };
+    const hit = dimensionAt([...dimensionItems, ...annotationHit], p, reach);
+    if (hit && curPage.dimensions.some(x => x.id === hit.id)) return { kind: 'dimension', id: hit.id };
+    if (hit && (attached.annotations ?? []).some(x => x.id === hit.id)) return { kind: 'annotation', id: hit.id };
     const finish = finishUnder(p);
     if (finish) return { kind: 'finish', id: finish.id };
     for (const [tableId, box] of [...built.tableBoxes].reverse()) if (p[0] >= box.x && p[0] <= box.x + box.w && p[1] >= box.y && p[1] <= box.y + box.h) return { kind: 'table', id: tableId };

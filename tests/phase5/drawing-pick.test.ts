@@ -72,6 +72,19 @@ describe('the dimension under the pointer', () => {
     expect(dimensionAt(items, [100, 100], 1)).toBeNull(); // a line of the view is not a dimension
     expect(dimensionAt(items, [50, 50], 1)).toBeNull();
   });
+  it('uses rotated text bounds and allows neighbouring annotation text to win over a dimension line', () => {
+    const crowded: SceneItem[] = [
+      { kind: 'text', group: 'vertical', at: [0, 0], text: '10.411 ±0.01', height: 3, angle: 90 },
+      { kind: 'polyline', group: 'line', points: [8, 0, 8, 20], style: 'dimension' },
+      { kind: 'text', group: 'note', at: [7, 8], text: 'Note', height: 3 },
+    ];
+    expect(dimensionAt(crowded, [-1, 5], 1)).toEqual({ id: 'vertical', text: true });
+    expect(dimensionAt(crowded, [8, 9], 1)).toEqual({ id: 'note', text: true });
+    expect(dimensionAt(crowded, [20, 5], 1)).toBeNull();
+    const angled: SceneItem[] = [{ kind: 'text', group: 'diagonal', at: [0, 0], text: '123456', height: 2, angle: 45 }];
+    expect(dimensionAt(angled, [3, 4], 1)).toEqual({ id: 'diagonal', text: true });
+    expect(dimensionAt(angled, [7, -7], 1)).toBeNull();
+  });
 });
 
 describe('the dimension made from what is pointed at', () => {

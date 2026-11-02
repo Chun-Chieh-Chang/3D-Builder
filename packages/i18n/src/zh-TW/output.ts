@@ -181,6 +181,8 @@ export const output = {
   'pm.directionTwo': '雙向',
   'extrude.dragHint': '拖曳箭頭即時調整拉伸；越過草圖平面可反向。Esc還原本次拖曳。',
   'extrude.dragNonzero': '拉伸長度不能為零，已還原本次拖曳',
+  'instantDepth.anchorLost': '掛把手的端面已不在重建結果裡；把手暫貼在草圖平面上，仍可拖曳。',
+  'instantDepth.anchorLostWith': '{message}——把手暫貼在草圖平面上，仍可拖回原方向。',
   'options.showGrid': '顯示模型與草圖網格（不影響抓取）',
   'options.viewArrowStep': '方向鍵旋轉視角的角度（度；Alt＋左右滾轉也用它）',
   'options.viewCubeStep': '視角方塊箭頭旋轉的角度（度；滾轉箭頭也用它）',

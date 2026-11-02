@@ -1,6 +1,6 @@
 # 交接與接續工作 (Handoff for Claude Code)
 
-更新日期：2026-10-30。接手請優先閱讀本檔、[產品現況](docs/project-state.md)、[AGENTS.md](AGENTS.md) 與 [草圖互動改善方案](docs/design/sketch-interaction/plan.md)。  
+更新日期：2026-11-02。接手請優先閱讀本檔、[產品現況](docs/project-state.md)、[AGENTS.md](AGENTS.md) 與 [草圖互動改善方案](docs/design/sketch-interaction/plan.md)。  
 在進行任何操作前，請先執行 `git status --short --branch` 與 `git log -5 --oneline` 掌握最新狀況。
 
 ---
@@ -8,10 +8,10 @@
 ## 1. 接續入口與當前代碼基準 (Current Baseline)
 
 - **目前分支**：`main`
-- **最新 Commit**：`5594208` (`perf(sketch): eliminate Map allocation in snap curve hit testing`)
-- **遠端狀態**：本地 `main` 已與 `origin/main`（`5594208`）同步。
-- **CI 狀態**：GitHub Actions 三平台矩陣（`ubuntu-latest`, `windows-latest`, `macos-latest`）**`✔ 3 / 3` 全數綠燈通過**（Run `40989457377`）。
-- **工作區狀態**：乾淨無任何未追蹤或未提交修改。
+- **最新 Commit**：`ee0b710` (`test(fuzz): cut family gains bottom/midPlane/reversed variants plus a per-variant success gate, and pin the direction semantics (H-5/ADR 0094)`)
+- **遠端狀態**：本地 `main` 已與 `origin/main`（`ee0b710`）同步。
+- **CI 狀態**：GitHub Actions integrity 三平台（`ubuntu-latest`, `windows-latest`, `macos-latest`）**全數綠燈**（Run `41386824614`，`full-suite` 為夜間排程另計）；`a8e30b8` 起每次推送另跑 large-sketch solver 測試，皆通過。
+- **工作區狀態**：乾淨。注意：worktree 一律放在專案資料夾內（`.claude/worktrees/` 慣例），`wt-gizmo` 已用畢移除。
 
 ---
 
@@ -184,6 +184,16 @@
 
 - D1/D5 是 2–4 日探針，本 session 額度不足，下一 session 從 D1 開始。
 - 即時看板：http://127.0.0.1:5399。
+
+## 3n. 2026-11-02 特徵失敗時操控器的可見退路＋除料 fuzz reverse 維度（已完成並推送，CI 綠）
+
+> **狀態：登記待辦第 3 項的兩個子項收尾完畢，提交 `f960863`／`ee0b710`。**
+
+- **①反向切空氣時操控器的可見退路**：反向除料重建失敗使 `${feature}:cap:end` 端面名消失，操控器舊碼 `if(!center) return null` **靜默退場**。新純函式 `extrudeHandlePlacement`：端面缺失時把手退回**草圖平面**（虛線框、`data-extrude-anchor="sketch"`），button title 以 `instantDepth.anchorLost(_With)` 如實引用失敗訊息；**不停用拖曳**（拖曳值映射以投影增量計算，不依賴錨點）。單元四態＋e2e cutDrag narrative；**反向對照**：還原靜默退場恰在「the handle stays visible and explains the failure」逾時。詳見 DEV_LOG 2026-11-02 條目、[ADR 0203 §修正之二](docs/adr/0203-floating-editor-assembly-source-and-live-extrusion.md)。
+- **②除料 fuzz 補 `reverse` 維度**：`fuzz-solids` 除料家族四變體 `top/bottom/midPlane/reversed`（reversed 掛 front 基準面＋`reverse:true`），SEEDS 72→240，新增「每變體至少成功且過體積檢查一次」門檻（`stats.tags`）；`extrude-p1` 恆定釘住四向體積（1960/1960/1980/1960）與掛端面 `reverse` 的兩個如實失敗。**先探針後寫碼**：除料預設永遠朝材料內（掛端面 reverse 必切空氣）。詳見 [ADR 0094 補充](docs/adr/0094-random-tests.md)。
+- **驗證**：完整 `verify:ui` **258/258**（前兩輪各 256/258 的兩案失敗為 worktree 手配 node_modules 缺 `three` 的環境缺陷，`npm ci` 修復後整輪重跑收案；教訓已錄 AGENTS §4）。typecheck、`lint:repo` 全 PASS；CI 三平台綠。
+- **worktree 收尾**：`wt-gizmo` 已提交、rebase 到 `02dc7fb`、推送並移除（截圖備份 `out/gizmo-retreat/`）；主樹以 update-ref＋逐檔判定 checkout 收尾，他人未提交的在途檔未動。
+
 
 ## 3l. 2026-11-01 P4 完成後待裁項目裁決與後續執行進度
 

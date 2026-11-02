@@ -7,6 +7,7 @@ await import(here+'phase2-assembly.js?'+Date.now());
 const S=window.__ui,H=window.__ui2,{store}=H;
 const root=here.replace(/tests\/e2e\/$/,'');
 const {layoutDimension,mid}=await import(root+'packages/sketch/src/interact.ts');
+const {fromSheet}=await import(root+'packages/drawing/src/layout.ts');
 const check=(ok,why)=>{if(!ok)throw new Error(why);};
 const near=(a,b)=>Math.abs(a-b)<0.06;
 window.__dimensionLineDrag={sketch:async()=>{
@@ -54,5 +55,15 @@ window.__dimensionLineDrag={sketch:async()=>{
  // An extension line can be grabbed without snapping the dimension line to the pointer.
  d.undo();await H.wait(150);const extension=outcome().items.find(i=>i.kind==='polyline'&&i.points.length===4&&Math.abs(i.points[0]-i.points[2])<1e-8&&Math.abs(i.points[1]-i.points[3])>5);
  check(!!extension,'real extension line exists');await drag([(extension.points[0]+extension.points[2])/2,(extension.points[1]+extension.points[3])/2],[0,4]);check(near(dimension().offset-initial.offset,4),'extension drag preserves initial grab offset');
+ // A real note over a dimension line must be draggable without moving the dimension.
+ const now=outcome().handle, point=[now.mid[0]+(now.a[0]-now.b[0])*0.25,now.mid[1]];
+ const placed=d.scene().placed.get(view.id), at=fromSheet(placed,point[0]-1,point[1]-1);
+ const note=d.addAnnotation({kind:'note',view:view.id,at,text:'NOTE',height:3.5});
+ check(!!note,'note created');await H.wait(150);
+ const before=page().annotations.find(a=>a.id===note),offset=dimension().offset;
+ await drag(point,[7,5]);
+ const after=page().annotations.find(a=>a.id===note);
+ check(after && Math.hypot(after.at[0]-before.at[0],after.at[1]-before.at[1])>1,'overlapping note moves');
+ check(dimension().offset===offset,'nearby dimension stays in place');
  return {pass:true,value};
 }};

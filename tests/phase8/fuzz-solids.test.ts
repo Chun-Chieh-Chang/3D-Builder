@@ -53,6 +53,9 @@ interface Case {
   why: string;
   /** The volume worked out by hand, when there is a formula for it. */
   volume?: number;
+  /** What the seed exercises, so the gate can require every variant to have actually succeeded at least once (a broken
+   *  variant must not rot into silently tolerated errors — AGENTS §3.1/§3.2: an erroring seed only counts `said`). */
+  tag?: string;
 }
 
 function generate(seed: number): Case {
@@ -132,24 +135,38 @@ function generate(seed: number): Case {
       volume: ((outer * outer - r1 * r1) / 2) * h * ((angle * Math.PI) / 180),
     };
   }
-  // a block with a blind cut from the top
+  // a block with a blind cut, in four variants measured against real volumes before being written (2026-11-02, the reverse dimension). A cut by
+  // default goes into the material whichever cap its sketch hangs on, and `reverse` there cuts the air (the feature honestly fails — probed:
+  // cap default 23520, cap reversed 24000 with the failure, datum reversed 23520, datum midPlane 23760 for the removable half depth). So:
+  //   top      — sketch on `e:cap:end`, default; bottom — sketch on `e:cap:start`, default (the same removal, the normal the other way);
+  //   midPlane — sketch on the end cap, symmetric about it; reversed — sketch on the front datum under the block, `reverse: true` cuts up.
   const [L, W, H] = [r.round(r.between(40, 100), 5), r.round(r.between(40, 80), 5), r.round(r.between(10, 40), 5)];
   const room = Math.min(L, W) / 2 - 12;
   const [w, d] = [r.round(r.between(4, room), 0.5), r.round(r.between(4, room), 0.5)];
   const depth = r.round(r.between(1, H + 5), 0.5);
+  const variant = r.pick(['top', 'bottom', 'midPlane', 'reversed']);
+  const sketchAnchor = variant === 'top' || variant === 'midPlane' ? ({ kind: 'face', name: 'e:cap:end' } as const) : variant === 'bottom' ? ({ kind: 'face', name: 'e:cap:start' } as const) : front;
+  const dir1: Extract<Feature, { type: 'extrude' }>['dir1'] =
+    variant === 'midPlane' ? { type: 'midPlane', depth: String(depth) } :
+    variant === 'reversed' ? { type: 'blind', depth: String(depth), reverse: true } :
+    { type: 'blind', depth: String(depth) };
   return {
-    features: [sketch('s', front, rectangle('r', -L / 2, -W / 2, L, W)), extrude('e', 's', 'boss', { type: 'blind', depth: String(H) }), sketch('sc', { kind: 'face', name: 'e:cap:end' }, centred('c', w, d)), extrude('c', 'sc', 'cut', { type: 'blind', depth: String(depth) })],
-    why: `cut seed ${seed}: ${w} × ${d} ${depth} deep in ${L} × ${W} × ${H}`,
-    volume: L * W * H - w * d * Math.min(depth, H),
+    features: [sketch('s', front, rectangle('r', -L / 2, -W / 2, L, W)), extrude('e', 's', 'boss', { type: 'blind', depth: String(H) }), sketch('sc', sketchAnchor, centred('c', w, d)), extrude('c', 'sc', 'cut', dir1)],
+    why: `cut ${variant} seed ${seed}: ${w} × ${d} ${variant === 'midPlane' ? `±${depth / 2} symmetric` : `${depth} deep${variant === 'reversed' ? ', reversed up from the datum plane' : ''}`} in ${L} × ${W} × ${H}`,
+    volume: L * W * H - w * d * Math.min(variant === 'midPlane' ? depth / 2 : depth, H),
+    tag: `cut:${variant}`,
   };
 }
 
-const SEEDS = Array.from({ length: 72 }, (_, i) => 6000 + i * 5);
-const stats = { ok: 0, said: 0, hand: 0 };
+// 240 seeds (2026-11-02, raised from 72 when the cut family gained its reverse dimension, AGENTS §3.4): 33 of them are cuts,
+// so each of the four cut variants (top, bottom, midPlane, reversed) gets 7–10 random configurations instead of 1–2.
+const SEEDS = Array.from({ length: 240 }, (_, i) => 6000 + i * 5);
+const stats = { ok: 0, said: 0, hand: 0, tags: {} as Record<string, number> };
 
 describe('solids made at random from profiles', () => {
   it.each(SEEDS)('seed %i: the volume by hand where there is a formula, and whole, the same and through STEP', async (seed) => {
-    const { features, why, volume: hand } = generate(seed);
+    const case0 = generate(seed);
+    const { features, why, volume: hand } = case0;
     const r = rebuild(build(features));
     for (const f of r.features) {
       expect(['ok', 'error'], `${why}: ${f.id}`).toContain(f.status);
@@ -160,6 +177,8 @@ describe('solids made at random from profiles', () => {
       return;
     }
     stats.ok++;
+    const { tags } = stats;
+    if (case0.tag !== undefined) tags[case0.tag] = (tags[case0.tag] ?? 0) + 1;
     const shape = r.body!.shape;
     expect(kernel.isValid(shape), `${why}: valid`).toBe(true);
     const names = r.body!.names.faces;
@@ -192,5 +211,8 @@ describe('solids made at random from profiles', () => {
     expect(stats.ok + stats.said).toBe(SEEDS.length);
     expect(stats.ok).toBeGreaterThanOrEqual(Math.ceil(SEEDS.length * 0.7));
     expect(stats.hand).toBeGreaterThan(20);
+    // every cut variant must have actually succeeded (and been volume-checked) at least once: a direction semantics
+    // regression in one variant must turn red here, not rot into silently tolerated errors
+    for (const v of ['cut:top', 'cut:bottom', 'cut:midPlane', 'cut:reversed']) expect(stats.tags[v] ?? 0, `${v} never succeeded`).toBeGreaterThan(0);
   });
 });

@@ -184,6 +184,14 @@ function AnnotationFields({ a }: { a: Annotation }) {
           <span>{t('drawingUi.noteHeight')}</span>
           <NumberBox field="noteHeight" value={a.height ?? 3.5} onCommit={(v) => d.setAnnotation(a.id, { height: v === 3.5 ? null : v })} />
         </label>
+        <label className="pm-row">
+          <span>{t('drawingUi.noteEnclosure')}</span>
+          <select data-field="noteEnclosure" value={a.enclosure ?? ''} onChange={(e) => d.setAnnotation(a.id, { enclosure: e.target.value || null })}>
+            <option value="">{t('drawingUi.noteEnclosureNone')}</option>
+            <option value="circle">{t('drawingUi.noteEnclosureCircle')}</option>
+            <option value="rounded">{t('drawingUi.noteEnclosureRounded')}</option>
+          </select>
+        </label>
         {a.leader && (
           <div className="pm-row">
             <button className="pm-button" data-action="removeLeader" onClick={() => d.setAnnotation(a.id, { leader: null, attach: null })}>

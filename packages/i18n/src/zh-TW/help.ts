@@ -1332,7 +1332,7 @@ export const help = {
   'help.drwOrdinate.keywords': '座標尺寸 基準尺寸 孔位 原點',
   'help.drwArrange.summary': '把所有線性尺寸依長短往外排好，不改任何數值。',
   'help.drwArrange.keywords': '排列 對正 重疊 尺寸位置',
-  'help.drwNote.summary': '在圖上放一段文字，可以加引線並附著到模型。',
+  'help.drwNote.summary': '在圖上放文字，可加引線並附著到模型；選取註解後可在屬性選擇隨文字自動縮放的圓形或圓角外框。',
   'help.drwNote.keywords': '註解 文字 技術要求 引線',
   'help.drwDatum.summary': '放一個基準符號，附著到邊或頂點。',
   'help.drwDatum.keywords': '基準 基準符號 GD&T',
