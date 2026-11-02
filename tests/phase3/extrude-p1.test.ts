@@ -161,6 +161,23 @@ describe('a second direction (C4.1)', () => {
     expect(volume(rebuild(cut))).toBeCloseTo(60 * 40 * 10 - 100 * 3, 6); // only the way into the slab cuts anything; the other way is air
   });
 
+  it('a cut goes into the material from either cap by default, and only a datum plane makes `reverse` bite (the fixed form of the ADR 0203 §修正之二 probe)', () => {
+    // a 2 × 2 pocket, 10 mm deep, in a 20 × 10 × 10 block (2000 total); both footprints centred so that the sketch
+    // frame's flips between the caps cannot move the profile off the material. The volumes and the two honest
+    // failures were measured live first, then fixed here so a change of direction semantics turns red instead of
+    // slipping through the fuzz's tolerated failures (an erroring seed there only counts `said` and skips the volume).
+    const cut = (anchor: Ref, dir1: Extract<Feature, { type: 'extrude' }>['dir1']) =>
+      build(sketch('s1', front, rectangle('r', -10, -5, 20, 10)), extrude('e1', 's1', 'boss', { type: 'blind', depth: '10' }), sketch('sc', anchor, rectangle('c', -1, -1, 2, 2)), extrude('c', 'sc', 'cut', dir1) as Feature);
+    expect(volume(rebuild(cut(face('e1:cap:end'), { type: 'blind', depth: '10' })))).toBeCloseTo(1960, 6);
+    expect(volume(rebuild(cut(face('e1:cap:start'), { type: 'blind', depth: '10' })))).toBeCloseTo(1960, 6); // the other cap, into the material all the same
+    expect(volume(rebuild(cut(face('e1:cap:end'), { type: 'midPlane', depth: '10' })))).toBeCloseTo(1980, 6); // symmetric: only the half inside bites
+    expect(volume(rebuild(cut(front, { type: 'blind', depth: '10', reverse: true })))).toBeCloseTo(1960, 6); // from a datum plane under the block, reverse is what cuts
+    for (const cap of ['e1:cap:end', 'e1:cap:start']) {
+      const air = rebuild(cut(face(cap), { type: 'blind', depth: '10', reverse: true }));
+      expect(failures(air)[0]).toContain('除料沒有移除任何材料'); // on a cap reverse cuts the air, and the feature says so
+    }
+  });
+
   it('refuses two directions with 兩側對稱', () => {
     const r = rebuild(block({ dir1: { type: 'midPlane', depth: '10' }, dir2: { type: 'blind', depth: '4' } }));
     expect(failures(r)[0]).toContain('兩側對稱');

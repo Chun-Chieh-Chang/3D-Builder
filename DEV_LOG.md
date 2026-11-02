@@ -30,6 +30,29 @@
 
 ---
 
+## 2026-11-02（二）：除料 fuzz 補 reverse 維度＋方向語意恆定斷言（H-5/0094 延伸，登記待辦收尾尾項）
+
+除料家族在 `tests/phase8/fuzz-solids.test.ts` 原本只有「從頂端面往下切」一種方向（72 個種子裡約 6 案）。
+
+### 1. 交付內容
+- **四個變體**：`top`（掛 `e:cap:end`、預設往下切）、`bottom`（掛 `e:cap:start`、預設往上切——同一口袋另一端）、`midPlane`（端面草圖兩側對稱，移除量 `min(depth/2, H)`）、`reversed`（草圖掛塊體底下的 front 基準面＋`reverse: true`）。SEEDS 72→240（33 個除料案、每變體 7–10 組態；每夜約 23 秒）。
+- **恆定語意測試**（`tests/phase3/extrude-p1.test.ts`）：四向體積（1960/1960/1980/1960，2×2×10 口袋、20×10×10 塊）＋掛任一端面 `reverse` 的兩個「除料沒有移除任何材料」如實失敗。
+- **新門檻**：fuzz 末尾要求每個變體**至少成功且過體積檢查一次**（`stats.tags`）——否則 reverse 語意爛掉時會全數滑進被容忍的 `said` 而保持綠燈。
+
+### 2. 先實測、後寫碼（工作決策被探針推翻）
+規劃時的假設「掛 `e:cap:start`＋`reverse: true` 向上切進材料」是**錯的**。以真體積探針實測（24000 全塊對照）：本產品除料**預設方向永遠朝材料內**（SolidWorks 面法向語意），掛端面時 `reverse` 必切空氣→如實失敗；掛**基準面**時 `reverse` 才是切進材料的那邊。fuzz 的 `reversed` 變體因此改掛 front 基準面。
+
+### 3. 失敗紀錄與 RCA
+1. **恒定測試首版兩次紅燈**：塊體立足面不對稱於原點（0..20）而 `cap:start` 的草圖框架沿**原點**翻轉，偏心口袋被翻到面外→切空氣失敗；先用 2400 當基準也是手誤（20×10×10=2000）。修正：立足面與口袋都取**居中**（框架免疫）。AGENTS §4 已錄此幾何陷阱。
+2. **工具輸出截斷誤導**：本輪 shell/read 輸出屢被截斷成一兩行，一度誤判「檔案被截斷」差點盲修；一個中斷的編輯事實上已完整落檔（殘渣）,且把一段對話文字寫進了原始檔（TS1110 才現形）。CAPA：確認檔案狀態一律以 `git diff` 與 ASCII 標記小探測為準,不信任單一大段輸出;中斷的編輯必須立即以 git diff 全量核對。
+
+### 4. 驗證
+- `fuzz-solids.test.ts` 241 項＋`extrude-p1.test.ts` 16 項全綠（約 25 秒）；typecheck 0 錯。
+- **反向對照**：抽掉 `reversed` 的 `reverse: true`→恰在「cut:reversed never succeeded: expected 0 to be greater than 0」紅；還原後復綠。
+- rng 模擬確認分布（33 案除料：top 7／bottom 9／midPlane 9／reversed 8）。
+
+---
+
 ## 2026-11-01:STL 輸出與輸入(F4.1 補完、F2.3,ADR 0221,Schema 87)
 
 STL 輸入成為**網格參考**(特徵 `importedMesh`):純 TypeScript 讀檔、不經 OCCT、不在本體清單中,特徵/質量/零件表/輸出按構造看不到它。輸出加對話框(二進位/ASCII、mm/inch、細緻度、座標系統)、多本體各存一檔(ZIP)、組合件 STL。詳見 [ADR 0221](docs/adr/0221-stl-exchange.md)。
