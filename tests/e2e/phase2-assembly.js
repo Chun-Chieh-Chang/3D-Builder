@@ -34,10 +34,11 @@ H.page = (doc = store.getState().drw?.doc, index) => {
   if (doc.pages) return doc.pages[index ?? store.getState().drw?.activePageIndex ?? 0];
   return doc;
 };
-/** Every part file of the open assembly has been read and rebuilt (or found missing). */
+/** Every part file of the open assembly has been read and rebuilt (or found missing), and the mates solved with all of them: the solution of an
+ *  earlier solve (made before a sub-assembly's parts were read, its mates on them 「沒有載入」) stays in the state until the last one is done. */
 H.loaded = async () => {
   await H.wait(100);
-  await H.waitFor(() => H.asm() && ![...H.asm().files.values()].some((s) => s.status === 'loading'), 30000, 'part files');
+  await H.waitFor(() => H.asm() && ![...H.asm().files.values()].some((s) => s.status === 'loading') && !store.assembly?.solvePending, 30000, 'part files and the mates');
   await H.wait(100);
 };
 H.settle = async () => {

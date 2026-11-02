@@ -788,6 +788,11 @@ export class AssemblyStore {
     void this.solve();
   }
 
+  /** A solve is running or waiting: `solution` may still be one made before the latest change (a file read since, a mate edited). */
+  get solvePending(): boolean {
+    return this.solving || this.solveAgain;
+  }
+
   private async solve(): Promise<void> {
     this.solving = true;
     try {
@@ -826,7 +831,7 @@ export class AssemblyStore {
   stepRequest(): AssemblyStepRequest {
     const doc = this.history.doc;
     if (doc.components.every((c) => c.suppressed)) throw new Error('組合件沒有零組件');
-    if (this.solving || this.solveAgain) throw new Error('結合正在求解，請稍後再輸出');
+    if (this.solvePending) throw new Error('結合正在求解，請稍後再輸出');
     const structure = stepStructure(doc, this.folder, this.trees(), (id) => this.poseOf(id), this.state.solution?.inner, (path) => {
       const status = this.state.files.get(path);
       return status?.status === 'missing' || status?.status === 'error' ? status.message : '尚未讀取';

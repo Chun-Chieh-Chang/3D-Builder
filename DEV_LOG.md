@@ -2,6 +2,25 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-11-02：manual-d6 只在完整 verify:ui 失敗的根因（結合求解的競態）
+
+### 1. 現象
+main（da7c8e6）完整 `verify:ui` 中 `manual-d6.js` 在 `.steps.7`（組合件部分）失敗：`mate7`／`mate8`／`mate9` 為 `missing`，訊息「第一個元素的零件沒有載入」。單獨跑、與前面四支腳本一起跑都是 3/3 通過。
+
+### 2. 根因（RCA）
+- 這三個是夾具頂層、指到次組合件 `定位組` 內 `p1` 的結合。開檔時 `AssemblyStore.readInto` 每讀完一個檔就 `requestSolve()`：讀完 `定位組.3dba`（其零件尚未讀）時的那次求解，`mateGeometryIn` 拿不到來源，回報 `subassembly.notLoaded`，**這份解會寫進 `state.solution`**。零件讀完後再求解一次，這次是正確的，但要等 worker 回來才取代舊解。
+- `H.loaded()`（`tests/e2e/phase2-assembly.js`）只等「沒有檔案在 loading」，不等求解；`phase3-subassembly.js` 的 `sub.open` 接著 `waitFor(() => H.asm().solution)`——舊解早已存在，立刻成立，於是檢查到的是零件讀完前的解。worker 忙（完整一輪的負載）時最後一次求解較慢，視窗變大，才會失敗。
+- **重現**：暫時讓「所有檔案都讀完後才開始的那次求解」延遲 1.5 s，單獨跑 `manual-d6` 即以完全相同的三個結合、相同訊息、相同步驟失敗。（第一次把每次求解都延遲反而通過：第一次部分求解被拉長到涵蓋零件載入，`solveAgain` 把它丟掉，舊解從未寫入——延遲必須只加在最後一次。）
+
+### 3. 修正（CAPA）
+- `AssemblyStore.solvePending`（`solving || solveAgain`）：把 STEP 輸出原本就用來擋「結合正在求解」的條件公開為唯讀屬性，`stepRequest` 改用它。
+- `H.loaded()` 另外等待 `!store.assembly?.solvePending`。`requestSolve` 在最後一個檔讀完的同一個同步回呼中把 `solving` 設為 true，所以「檔案都讀完」與「求解中」之間沒有空隙。
+- 沒有延長任何逾時、沒有放寬任何檢查（AGENTS.md §3.3）。
+
+### 4. 確效
+- 同樣的 1.5 s 延遲下，修正後 `manual-d6`、`phase3-subassembly`／`measure`／`physical`／`check` 6/6 通過；延遲已移除。`typecheck`、`lint:rules` 通過。
+- 完整 `verify:ui`（自有埠 5491／9433／5493）：**259/260**，`manual-d6` 通過。唯一失敗為 `manual-assembly-section-captions` 步驟 6「a real horizontal projected edge is required」——單獨跑 3/3 通過；**在乾淨 HEAD（da7c8e6）**上把 `drawingAssemblyEdges` 延遲 1.5 s 即以相同訊息失敗，為既有的另一個競態：重開工程圖後步驟 5 只等剖面的 `cutRegions`，組合件視圖的投影邊（另一個 worker 呼叫）還沒回來，步驟 6 就讀上視圖的邊。與本次修正無關，列為後續。
+
 ## 2026-11-01:STL 輸出與輸入(F4.1 補完、F2.3,ADR 0221,Schema 87)
 
 STL 輸入成為**網格參考**(特徵 `importedMesh`):純 TypeScript 讀檔、不經 OCCT、不在本體清單中,特徵/質量/零件表/輸出按構造看不到它。輸出加對話框(二進位/ASCII、mm/inch、細緻度、座標系統)、多本體各存一檔(ZIP)、組合件 STL。詳見 [ADR 0221](docs/adr/0221-stl-exchange.md)。
