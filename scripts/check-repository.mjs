@@ -76,6 +76,13 @@ export function auditRepository(root = ROOT) {
   if (!jobs.some(job => job.calls.length)) problems.push('No runnable browser calls found');
   if (!workspaces.length) problems.push('No workspace manifests found');
   if (new Set(manualIds).size !== manualIds.length) problems.push('Duplicate manual acceptance IDs');
+  // two ADRs with one number make every "ADR nnnn" in the logs ambiguous (2026-11-02: 0224–0226 were taken twice and CI stayed green)
+  const adrNumbers = new Map();
+  for (const file of files) {
+    const number = file.match(/^docs\/adr\/(\d{4})-.*\.md$/)?.[1];
+    if (number) adrNumbers.set(number, [...(adrNumbers.get(number) ?? []), file]);
+  }
+  for (const [number, same] of adrNumbers) if (same.length > 1) problems.push(`Duplicate ADR number ${number}: ${same.join(', ')}`);
   const hashGroups = new Map();
   for (const file of files) {
     const bytes = readFileSync(join(root, file)), hash = createHash('sha256').update(bytes).digest('hex');
