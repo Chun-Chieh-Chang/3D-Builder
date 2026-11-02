@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 87／7／38 |
-| ADR 文件 | 226 |
+| ADR 文件 | 229 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 216／212／264 |
 | 實機清單項目 | 92 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -453,7 +453,10 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0222: 草圖獨立 Split 工具探針 (G08, D1)](<adr/0222-sketch-split-probe.md>)
 - [ADR 0223: 草圖自動尺寸配置探針 (G19, D5)](<adr/0223-sketch-auto-dimension-probe.md>)
 - [ADR 0224：註解的自適應圓形及圓角外框](<adr/0224-note-enclosures.md>)
+- [ADR 0224: 草圖自由曲線 offset 探針 (G09, D2)](<adr/0224-sketch-curve-offset-probe.md>)
+- [ADR 0225: 草圖交叉/分岔子區域探針 (G11, D3)](<adr/0225-sketch-subregion-probe.md>)
 - [ADR 0225：錐面倒角的端面退距標註](<adr/0225-tapered-chamfer-callout.md>)
+- [ADR 0226: 草圖樣條 G2/節點權重探針 (G17, D4)](<adr/0226-sketch-spline-g2-probe.md>)
 - [ADR 0226：工程圖標註草圖截面的理論直徑](<adr/0226-theoretical-sketch-diameter.md>)
 - [ADR 0227：尺寸線畫在視圖上](<adr/0227-dimension-line-on-view.md>)
 
