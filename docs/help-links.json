@@ -131,7 +131,8 @@
     "save",
     "save-as",
     "open",
-    "browser-projects"
+    "browser-projects",
+    "pack-and-go"
   ],
   "C19": [
     "concept.feature-tree",

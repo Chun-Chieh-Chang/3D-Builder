@@ -203,6 +203,42 @@ export function FolderDialog() {
   );
 }
 
+/**
+ * Unpacking a package into a folder that has some of its files with other contents (ADR 0234): each of those is listed, ticked to be replaced by the
+ * package's; unticked, the folder keeps its own. Files that are new are added and files that are the same are skipped without asking.
+ */
+export function UnpackDialog() {
+  const u = useStore((s) => s.unpack);
+  const ok = useRef<HTMLButtonElement>(null);
+  useEffect(() => ok.current?.focus(), [u?.name]);
+  if (!u) return null;
+  const cancel = () => store.answerUnpack(false);
+  return (
+    <div className="modal-backdrop" onPointerDown={cancel}>
+      <div className="modal wide" role="dialog" aria-label={t('pack.title', { name: u.name })} data-unpack onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && cancel()}>
+        <h3>{t('pack.title', { name: u.name })}</h3>
+        <p className="hint">{t('pack.summary', { added: u.added, same: u.same })}</p>
+        <p>{t('pack.differentHint')}</p>
+        <ul className="project-file-list unpack-list">
+          {u.different.map((d) => (
+            <li key={d.path}>
+              <label>
+                <input type="checkbox" data-replace={d.path} checked={d.replace} onChange={(e) => store.setUnpackReplace(d.path, e.target.checked)} /> {d.path}
+              </label>
+            </li>
+          ))}
+        </ul>
+        <div className="modal-actions">
+          <button ref={ok} className="primary" data-unpack-ok onClick={() => store.answerUnpack(true)}>
+            {t('pack.confirm')}
+          </button>
+          <button onClick={cancel}>{t('export.cancel')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** 「確認刪除」 for components and mates (C15.12): what goes. A component takes its mates along; part files stay. */
 export function DeleteComponentsDialog() {
   const asm = useStore((s) => s.asm);

@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { ASSEMBLY_FILE_EXTENSION, DRAWING_FILE_EXTENSION, isIgesData, isStepData, PART_FILE_EXTENSION } from '@3db/io';
+import { ASSEMBLY_FILE_EXTENSION, DRAWING_FILE_EXTENSION, isIgesData, isStepData, PACKAGE_FILE_EXTENSION, PART_FILE_EXTENSION } from '@3db/io';
 import { isStlData } from '@3db/model';
 import type { Recovery } from './autosave';
 import { browserProject, browserProjectName, writeBrowserFile } from './browserProjects';
@@ -56,12 +56,14 @@ const IGES_TYPE: PickerType = { get description() { return t('picker.iges'); }, 
 const STL_TYPE: PickerType = { get description() { return t('picker.stl'); }, accept: { 'model/stl': ['.stl'] } };
 const ASSEMBLY_TYPE: PickerType = { get description() { return t('picker.assembly'); }, accept: { 'application/x-3db-assembly': [ASSEMBLY_FILE_EXTENSION] } };
 const DRAWING_TYPE: PickerType = { get description() { return t('picker.drawing'); }, accept: { 'application/x-3db-drawing': [DRAWING_FILE_EXTENSION] } };
+/** A document with every file it uses (ADR 0234). */
+const PACKAGE_TYPE: PickerType = { get description() { return t('picker.package'); }, accept: { 'application/x-3db-package': [PACKAGE_FILE_EXTENSION] } };
 /** The first type is the dialog's default filter: everything 「開啟舊檔」 can open. */
 const ANY_TYPE: PickerType = {
   get description() {
     return t('picker.any');
   },
-  accept: { 'application/octet-stream': [PART_FILE_EXTENSION, ASSEMBLY_FILE_EXTENSION, DRAWING_FILE_EXTENSION], ...STEP_TYPE.accept, ...IGES_TYPE.accept, ...STL_TYPE.accept, ...OLD_PART_TYPE.accept },
+  accept: { 'application/octet-stream': [PART_FILE_EXTENSION, ASSEMBLY_FILE_EXTENSION, DRAWING_FILE_EXTENSION, PACKAGE_FILE_EXTENSION], ...STEP_TYPE.accept, ...IGES_TYPE.accept, ...STL_TYPE.accept, ...OLD_PART_TYPE.accept },
 };
 
 const acceptOf = (types: PickerType[]) => types.flatMap((t) => Object.values(t.accept).flat()).join(',');
@@ -93,7 +95,7 @@ const cancelled = (e: unknown) => e instanceof DOMException && e.name === 'Abort
 
 /** 「開啟舊檔」: a part, an assembly, or a STEP or IGES file to start a part from; null when the user cancels. */
 export function pickFileToOpen(startIn: FileSystemDirectoryHandle | null = null): Promise<OpenedFile | null> {
-  return pick([ANY_TYPE, PART_TYPE, ASSEMBLY_TYPE, DRAWING_TYPE, STEP_TYPE, IGES_TYPE, STL_TYPE, OLD_PART_TYPE], startIn);
+  return pick([ANY_TYPE, PART_TYPE, ASSEMBLY_TYPE, DRAWING_TYPE, PACKAGE_TYPE, STEP_TYPE, IGES_TYPE, STL_TYPE, OLD_PART_TYPE], startIn);
 }
 
 /** 「輸入 STEP 組合件」: a STEP file. */

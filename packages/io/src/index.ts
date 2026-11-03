@@ -10,3 +10,4 @@ export * from './stepAssembly';
 export * from './derivedAssembly';
 export * from './bomCsv';
 export * from './stl';
+export * from './package';

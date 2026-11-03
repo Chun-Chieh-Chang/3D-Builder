@@ -186,6 +186,8 @@ window.__browserProjects = { run: async () => {
     out.pass = true;
     return out;
   } finally {
+    // the project is remembered as the one to use next time: gone, the scripts that follow pick their own folder again
+    for (const n of await BP.listBrowserProjects()) if (n.startsWith(NAME)) await BP.deleteBrowserProject(n).catch(() => {});
     Object.assign(window, pickers);
     FileSystemFileHandle.prototype.createWritable = createWritable;
     HTMLAnchorElement.prototype.click = anchorClick;

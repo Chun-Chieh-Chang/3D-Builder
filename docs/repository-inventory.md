@@ -7,8 +7,8 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 88／7／38 |
-| ADR 文件 | 232 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 219／215／267 |
+| ADR 文件 | 233 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 220／216／268 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -462,6 +462,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0231：伸長除料可「保留輪廓內」](<adr/0231-keep-inside-extrude-cut.md>)
 - [ADR 0232：「保留輪廓內」改為範圍受限](<adr/0232-keep-inside-reach.md>)
 - [ADR 0233：瀏覽器內專案（Firefox、Safari 可用組合件與工程圖）與 GitHub Pages 部署](<adr/0233-browser-projects-and-pages.md>)
+- [ADR 0234：單一打包檔（.3dbp，Pack and Go）與解開時更新既有檔案](<adr/0234-pack-and-go.md>)
 
 ### 歷史驗證
 

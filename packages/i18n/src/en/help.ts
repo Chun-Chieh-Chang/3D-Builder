@@ -175,6 +175,14 @@ export const help: Translation = {
   'help.saveAs.keywords': 'save as rename folder relative paths',
 
   'help.saveAs.see': 'save open new-drawing',
+  'help.packAndGo.summary': 'Packs an assembly, a drawing or a part with every file it uses into one .3dbp file, to take to another computer or send to someone.',
+
+  'help.packAndGo.body':
+    'An assembly keeps only the paths of its parts, not their shapes, so the assembly file alone does not open elsewhere. A package holds every file it uses in one.\n\n- Save first, then "File → Pack and Go…": the program follows what the file uses — an assembly\'s parts and sub-assemblies, the parts or assemblies of a drawing\'s views, the masters of a part\'s derived bodies — to the end, each file once; files of the folder nothing uses are left out. The browser downloads a .3dbp.\n- When a file it uses is missing (not in the project folder, or outside it) nothing is packed and the missing files are named: a package without them would not open elsewhere either.\n- To open one, choose the .3dbp in "Open", then the project folder to unpack it into (a folder of the computer or a browser project); the files go in at their own subfolders, then the main file opens.\n  - Files the folder does not have: added.\n  - Files it has with the same contents: skipped.\n  - Files it has with other contents: listed, each ticked to be replaced by the package\'s; untick one to keep the folder\'s. Nothing is written until "Unpack and Open"; "Cancel" changes nothing.\n- A package is a ZIP: renamed to .zip it unzips with any tool; 3dbp.json in it names the main file and the files. A package whose paths would leave the folder, or whose files are not those it lists, is refused whole.',
+
+  'help.packAndGo.keywords': 'pack and go package 3dbp take send assembly part unpack update replace',
+
+  'help.packAndGo.see': 'open save-as browser-projects',
   'help.browserProjects.summary': 'Keeps a project in the browser, so Firefox and Safari can make assemblies and drawings too; export it as a .zip to keep a copy, import it again.',
 
   'help.browserProjects.body':

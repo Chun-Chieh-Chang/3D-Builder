@@ -170,6 +170,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'save', get label() { return t('act.save'); }, shortcut: 'Ctrl+S', group: 'file', enabled: idle, run: () => void store.save() },
   { id: 'save-as', get label() { return t('act.saveAs'); }, group: 'file', enabled: idle, run: () => void store.saveAs() },
   // ADR 0233: projects kept in the browser, for Firefox and Safari, which give a page no folder of the computer
+  // ADR 0234: the open document with every file it uses, in one .3dbp (SolidWorks' Pack and Go); 「開啟舊檔」 unpacks one
+  { id: 'pack-and-go', get label() { return t('pack.act'); }, group: 'file', enabled: (s) => s.bootMs !== null && (s.drw ? !!s.drw.fileName : s.asm ? !!s.asm.fileName : s.fileName !== null), run: () => void store.packAndGo() },
   { id: 'browser-projects', get label() { return t('bproj.act'); }, group: 'file', enabled: idle, run: () => store.openDialog('browserProjects') },
   { id: 'export-step', get label() { return t('export.step'); }, group: 'file', enabled: (s) => (partIdle(s) || (assemblyIdle(s) && hasComponents(s))) && s.bootMs !== null, run: () => store.exportStep() },
   { id: 'export-iges', get label() { return t('export.iges'); }, group: 'file', enabled: (s) => partIdle(s) && hasBody(s) && s.bootMs !== null, run: () => store.exportIges() },

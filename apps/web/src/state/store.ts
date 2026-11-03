@@ -67,7 +67,7 @@ import {
   isShown,
   bodyKey,
 } from '@3db/model';
-import { readAnyDocumentFile, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, igesFileName, isStepData, safeFileName, stepAssemblyFiles, stepFileName, stlEntryNames, stlFileName, writePartFile, writeZip } from '@3db/io';
+import { readAnyDocumentFile, collectPackage, compareWithFolder, isPackageData, PACKAGE_FILE_EXTENSION, readPackage, writePackage, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, igesFileName, isStepData, safeFileName, stepAssemblyFiles, stepFileName, stlEntryNames, stlFileName, writePartFile, writeZip } from '@3db/io';
 import { gatherSources } from './sources';
 import { DrawingStore, type DrawingSource, type DrawingState } from './drawing';
 import { dxfText, flatPatternDxf, importDxf, surveyDxf, type DxfImport, type DxfSurvey } from '@3db/drawing';
@@ -301,6 +301,15 @@ export interface Notice {
  * File actions that replace the open document, and so first ask about unsaved changes. 「開啟零件」
  * switches from an assembly to one of its parts, 「返回組合件」 back (one document at a time).
  */
+export interface UnpackState {
+  name: string;
+  folder: string;
+  added: number;
+  same: number;
+  /** The files that differ from the folder's, and whether each is replaced (ticked to begin with). */
+  different: { path: string; replace: boolean }[];
+}
+
 export type PendingFileAction = 'new-part' | 'new-demo' | 'new-assembly' | 'open' | 'open-part' | 'return-assembly' | 'import-step-assembly';
 
 /** One document is open at a time (2026-09-28 decision): a part or an assembly. */
@@ -394,6 +403,8 @@ export interface UiState {
   projectName: string | null;
   /** The project folder is one kept in the browser (ADR 0233). */
   projectInBrowser: boolean;
+  /** A package being unpacked into a folder that has some of its files with other contents (ADR 0234): which of them to replace. */
+  unpack: UnpackState | null;
   /** Bumped when browser projects are made, imported, exported or deleted: their dialogs read the list again. */
   browserProjectsSerial: number;
   /** Why the project folder is asked for: the dialog is open. */
@@ -593,6 +604,8 @@ class AppStore {
   private storageAsked = false;
   /** Browser projects already reminded of an export this session. */
   private exportReminded = new Set<string>();
+  /** Answers the unpack dialog: go on (with the replacements ticked) or not. */
+  private unpackAnswer: ((go: boolean) => void) | null = null;
   /** 「開啟零件」: the part file to open (path in the project folder). */
   private partToOpen: string | null = null;
   private partFeatureToOpen: Id | null = null;
@@ -658,6 +671,7 @@ class AppStore {
       drw: null,
       projectName: null,
       projectInBrowser: false,
+      unpack: null,
       browserProjectsSerial: 0,
       folderRequest: null,
       folderWrite: false,
@@ -3497,6 +3511,18 @@ class AppStore {
     try {
       const picked = await pickFileToOpen(this.project ?? this.remembered);
       if (!picked) return;
+      if (await isPackageData(picked.bytes)) return await this.unpackPackage(picked);
+      await this.openPicked(picked);
+    } catch (e) {
+      // After 「儲存」 in the unsaved-changes prompt the browser may refuse a second file dialog.
+      if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'NotAllowedError')) return this.notify(t('file.again'));
+      this.notify(t('file.openFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** A file chosen to open (or the main file of a package just unpacked): a part, an assembly, a drawing, or a STEP, IGES or STL file to start a part from. */
+  private async openPicked(picked: OpenedFile): Promise<void> {
+    {
       if (isStepFile(picked) || isIgesFile(picked) || isStlFile(picked)) {
         // Like SolidWorks: a new, unsaved part named after the file, holding the imported body (or, from an STL, the mesh).
         this.load(createEmptyPart(), null, null, new Map(), picked.name.replace(/\.(step|stp|igs|iges|stl)$/i, ''));
@@ -3509,11 +3535,88 @@ class AppStore {
       this.load(file.doc, file.format === '3dbx' ? picked.handle : null, picked.name, file.blobs);
       const notes = [...(file.format === 'json' ? [t('file.oldFormat')] : []), ...file.warnings];
       this.notify(notes.length ? t('file.openedNotes', { name: picked.name, notes: notes.join('; ') }) : t('file.opened', { name: picked.name }), file.warnings.length ? 'error' : 'info');
-    } catch (e) {
-      // After 「儲存」 in the unsaved-changes prompt the browser may refuse a second file dialog.
-      if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'NotAllowedError')) return this.notify(t('file.again'));
-      this.notify(t('file.openFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }
+  }
+
+  // ---------------------------------------------------------------- packages (ADR 0234)
+
+  /**
+   * 「打包成單一檔…」: the open document, as saved, with every file it uses (followed to the end), downloaded as one .3dbp. An assembly or a drawing
+   * is read from its project folder; a part opened without one is packed alone, which is enough unless it has derived bodies (then the missing
+   * masters are named).
+   */
+  async packAndGo(): Promise<void> {
+    try {
+      const s = this.state;
+      const dirty = s.drw ? s.drw.dirty : s.asm ? s.asm.dirty : s.dirty;
+      const handle = this.drawing ? this.drawing.file() : this.assembly ? this.assembly.file() : this.fileHandle;
+      if (dirty || !handle) return this.notify(t('pack.saveFirst'), 'error');
+      const project = this.drawing ? this.drawing.projectHandle() : this.assembly ? this.assembly.projectHandle() : this.project;
+      const main = project ? await pathIn(project, handle) : null;
+      let pkg;
+      if (project && main !== null) {
+        pkg = await collectPackage(main, (p) => fileIn(project, p).then(readBytes, () => null));
+      } else {
+        if (this.drawing || this.assembly) return this.notify(t('pack.noProject'), 'error');
+        const own = await readBytes(handle);
+        pkg = await collectPackage(handle.name, async (p) => (p === handle.name ? own : null));
+      }
+      const name = `${baseName(pkg.main).replace(/\.[^.]+$/, '')}${PACKAGE_FILE_EXTENSION}`;
+      download(name, (await writePackage(pkg)) as Uint8Array<ArrayBuffer>, 'application/octet-stream');
+      this.notify(t('pack.done', { name, n: pkg.files.length }));
+    } catch (e) {
+      this.notify(t('pack.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /**
+   * A package opened: unpacked into a project folder the user picks (a folder of the computer or a browser project), each file at its path in it, and
+   * its main file opened from there. A file the folder has with the same contents is skipped; one with other contents is replaced only if the user
+   * leaves it ticked in the list. Nothing is written when the package is refused or the user cancels.
+   */
+  private async unpackPackage(picked: OpenedFile): Promise<void> {
+    try {
+      const pkg = await readPackage(picked.bytes);
+      const folder = await this.askForFolder(t('pack.askFolder', { name: picked.name, n: pkg.files.length }), true);
+      if (!folder) return;
+      const changes = await compareWithFolder(pkg, (p) => fileIn(folder, p).then(readBytes, () => null));
+      const added = changes.filter((c) => c.change === 'new').map((c) => c.path);
+      let replaced = changes.filter((c) => c.change === 'different').map((c) => c.path);
+      if (replaced.length > 0) {
+        const go = await new Promise<boolean>((resolve) => {
+          this.unpackAnswer = resolve;
+          this.set({ unpack: { name: picked.name, folder: folder.name, added: added.length, same: changes.filter((c) => c.change === 'same').length, different: replaced.map((path) => ({ path, replace: true })) } });
+        });
+        const chosen = this.state.unpack?.different.filter((d) => d.replace).map((d) => d.path) ?? [];
+        this.set({ unpack: null });
+        if (!go) return;
+        replaced = chosen;
+      }
+      const bytesOf = new Map(pkg.files.map((f) => [f.path, f.bytes]));
+      await writeFilesInto(folder, added.map((path) => ({ path, bytes: bytesOf.get(path)! })));
+      for (const path of replaced) await writeFile(await fileIn(folder, path), bytesOf.get(path)!);
+      this.useProject(folder);
+      const handle = await fileIn(folder, pkg.main);
+      const file = await handle.getFile();
+      await this.openPicked({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()), handle });
+      this.notify(t('pack.opened', { name: picked.name, folder: folder.name, added: added.length, replaced: replaced.length, kept: pkg.files.length - added.length - replaced.length }));
+    } catch (e) {
+      this.set({ unpack: null });
+      this.notify(t('pack.unpackFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** A tick of the unpack list: whether that file is replaced by the package's. */
+  setUnpackReplace(path: string, replace: boolean): void {
+    const u = this.state.unpack;
+    if (u) this.set({ unpack: { ...u, different: u.different.map((d) => (d.path === path ? { ...d, replace } : d)) } });
+  }
+
+  /** 「解開並開啟」 or 「取消」 in the unpack list. */
+  answerUnpack(go: boolean): void {
+    const answer = this.unpackAnswer;
+    this.unpackAnswer = null;
+    answer?.(go);
   }
 
   /** 「輸入 STEP／IGES／STL」 (F2.1–F2.3): the file's solids become an imported body at the rollback bar, in one undoable step; an STL asks its unit first. */

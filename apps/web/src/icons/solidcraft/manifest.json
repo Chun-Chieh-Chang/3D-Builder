@@ -523,6 +523,7 @@
     "save": "save",
     "save-as": "save",
     "browser-projects": "list",
+    "pack-and-go": "export",
     "export-step": "export",
     "export-iges": "export",
     "export-stl": "export",
