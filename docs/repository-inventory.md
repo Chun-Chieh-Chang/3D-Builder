@@ -7,8 +7,8 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 87／7／38 |
-| ADR 文件 | 226 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 216／212／264 |
+| ADR 文件 | 229 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 217／213／265 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -456,6 +456,9 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0225：錐面倒角的端面退距標註](<adr/0225-tapered-chamfer-callout.md>)
 - [ADR 0226：工程圖標註草圖截面的理論直徑](<adr/0226-theoretical-sketch-diameter.md>)
 - [ADR 0227：尺寸線畫在視圖上](<adr/0227-dimension-line-on-view.md>)
+- [ADR 0228: 草圖自由曲線 offset 探針 (G09, D2)](<adr/0228-sketch-curve-offset-probe.md>)
+- [ADR 0229: 草圖交叉/分岔子區域探針 (G11, D3)](<adr/0229-sketch-subregion-probe.md>)
+- [ADR 0230: 草圖樣條 G2/節點權重探針 (G17, D4)](<adr/0230-sketch-spline-g2-probe.md>)
 
 ### 歷史驗證
 
