@@ -6,6 +6,7 @@ import { AssemblyTree } from './components/AssemblyTree';
 import { AssemblyViewport } from './components/AssemblyViewport';
 import { CommandBar } from './components/CommandBar';
 import { AppearanceDialog, EquationsDialog, OptionsDialog, IgesOptionsDialog, PropertiesDialog, ShortcutsDialog, StepOptionsDialog, StlImportDialog, StlOptionsDialog, TemplateDialog } from './components/ParametersDialogs';
+import { BrowserProjectsDialog, ProjectFileDialog } from './components/BrowserProjects';
 import { DeleteComponentsDialog, DeleteDialog, DxfImportDialog, FolderDialog, MissingFilesDialog, RecoveryDialog, UnsavedDialog, WhatsWrongDialog } from './components/Dialogs';
 import { FeatureTree } from './components/FeatureTree';
 import { HelpPanel } from './components/HelpPanel';
@@ -165,6 +166,8 @@ export function App() {
       <UnsavedDialog />
       <RecoveryDialog />
       <FolderDialog />
+      <BrowserProjectsDialog />
+      <ProjectFileDialog />
       <MissingFilesDialog />
       <ShutdownOverlay />
     </div>

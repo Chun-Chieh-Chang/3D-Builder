@@ -59,7 +59,7 @@ export const lowlevel: Translation = {
   'picker.assembly': '3D-Builder assembly',
   'picker.any': 'All supported files',
   'picker.partOrStep': 'Part or STEP file',
-  'files.foldersUnsupported': 'Assemblies need a browser that can reach folders (Chrome or Edge)',
+  'files.foldersUnsupported': 'This browser cannot reach folders of the computer: for assemblies and drawings use a browser project (File → Browser Projects…), or Chrome or Edge',
   'files.outside': 'Not inside the project folder: {path}',
   'files.noWrite': 'No permission to write this file',
   'file.kindPart': 'part file',

@@ -130,7 +130,8 @@
     "new-part",
     "save",
     "save-as",
-    "open"
+    "open",
+    "browser-projects"
   ],
   "C19": [
     "concept.feature-tree",

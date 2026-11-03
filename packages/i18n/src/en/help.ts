@@ -154,7 +154,7 @@ export const help: Translation = {
   'help.open.summary': 'Opens a part (.3dbx) or an assembly (.3dba) file.',
 
   'help.open.body':
-    'Opens a part (.3dbx) or assembly (.3dba) file.\n\n- The browser\'s own "Open file" window appears; find the file and press "Open". Press "Allow" when the browser asks for access; when the present file has unsaved changes it asks first whether to save.\n- When opening an assembly, the first time you choose the "project folder" (the folder the .3dba is in), because an assembly finds its parts by relative paths.\n- While parts load, the bottom of the window shows progress.\n- After a crash, or when the tab was closed by accident, the program asks whether to recover the unsaved part.',
+    'Opens a part (.3dbx) or assembly (.3dba) file.\n\n- The browser\'s own "Open file" window appears; find the file and press "Open". Press "Allow" when the browser asks for access; when the present file has unsaved changes it asks first whether to save.\n- When opening an assembly, the first time you choose the "project folder" (the folder the .3dba is in), because an assembly finds its parts by relative paths. Firefox and Safari cannot choose folders of the computer: use File → Browser Projects… there.\n- While parts load, the bottom of the window shows progress.\n- After a crash, or when the tab was closed by accident, the program asks whether to recover the unsaved part.',
 
   'help.open.keywords': 'open file part assembly project folder',
 
@@ -175,6 +175,14 @@ export const help: Translation = {
   'help.saveAs.keywords': 'save as rename folder relative paths',
 
   'help.saveAs.see': 'save open new-drawing',
+  'help.browserProjects.summary': 'Keeps a project in the browser, so Firefox and Safari can make assemblies and drawings too; export it as a .zip to keep a copy, import it again.',
+
+  'help.browserProjects.body':
+    'Keeps a project in the browser\'s own storage. Firefox and Safari do not let a page read and write folders of the computer, so assemblies and drawings cannot find their parts there; a browser project works in them, and in Chrome and Edge too.\n\n- "File → Browser Projects…": type a name and press "Create", or press "Import Project (.zip)…" to make a .zip of the computer a project (a single folder at the top of the .zip is taken off). After "Use", new parts, assemblies and drawings are saved and opened in that project.\n- Where the project folder is asked for (inserting the first component, say), the dialog lists the browser projects too: press "Use". Firefox and Safari show only these.\n- In a browser project, "Open", "Save As" and "Insert Component → Browse" use the program\'s own dialog: the files of the project; a name may include folders ("parts/pin.3dbx"); an existing name asks before replacing. "Add from the Computer…" copies a part or STEP file of the computer into the project; "Open from the Computer…" opens it without copying.\n- **Risk and backup**: clearing this site\'s data deletes the projects with it, and another computer or browser does not see them. So:\n  - The first time, the program asks the browser to keep the data for good (Firefox asks you: allow it); the bottom of the dialog says whether the browser agreed and how much space is used.\n  - "Export" downloads the whole project as a .zip; unzipped it is the same folders, which Chrome or Edge can also open as an ordinary project folder. Each project remembers when it was last exported.\n  - Saving into a project not exported for more than 7 days (or never) reminds you once to export it.\n- "Delete" needs a second press on "Delete for Good"; the project of the open assembly, drawing or part cannot be deleted.',
+
+  'help.browserProjects.keywords': 'browser projects browser project Firefox Safari export import zip backup storage OPFS',
+
+  'help.browserProjects.see': 'open save-as new-assembly',
   'help.exportStep.summary': 'Writes the part or assembly as a STEP file, which other CAD programs can open.',
 
   'help.exportStep.body':

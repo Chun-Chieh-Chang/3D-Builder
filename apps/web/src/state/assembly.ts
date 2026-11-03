@@ -2373,6 +2373,11 @@ export class AssemblyStore {
     }
   }
 
+  /** The project folder this document reads its files from (null until one is chosen). */
+  projectHandle(): FileSystemDirectoryHandle | null {
+    return this.project;
+  }
+
   /** The assembly's own file, when it has one: where 「返回組合件」 comes back to. */
   file(): FileSystemFileHandle | null {
     return this.handle;

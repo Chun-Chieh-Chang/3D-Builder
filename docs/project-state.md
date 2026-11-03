@@ -6,7 +6,7 @@
 
 Phase 0–7範圍已有開發成果；原Phase 0–2閘門按當時較低範圍通過，3a–7仍是有條件通過。2026-10-23已有公開STEP樣本、FreeCAD匯入與DXF／PDF外部應用程式探針，不能再說完全沒有真實檔案驗證；也不能因此宣稱SolidWorks特徵歷史相容或製造認證。FreeCAD同樣使用OCCT，並非獨立幾何核心基準。
 
-目前Web版與Windows Tauri殼共用同一前端建置及文件模型。Linux雲端可驗Web與原生WASM；本輪未建置或操作Windows桌面安裝檔，未宣稱macOS／Linux桌面版認證。`.sldprt`／原生SolidWorks特徵樹不在目前讀取範圍。
+目前Web版與Windows Tauri殼共用同一前端建置及文件模型。Web版可由[GitHub Pages workflow](../.github/workflows/pages.yml)發布為靜態網站；Firefox、Safari不能存取電腦上的資料夾，組合件與工程圖改用「瀏覽器內專案」（存在瀏覽器的儲存空間，可匯出／匯入.zip備份），Chrome、Edge兩種都能用；這兩種瀏覽器本身尚未實機驗證，僅以Chrome移除對應API模擬（[ADR0233](adr/0233-browser-projects-and-pages.md)）。Linux雲端可驗Web與原生WASM；本輪未建置或操作Windows桌面安裝檔，未宣稱macOS／Linux桌面版認證。`.sldprt`／原生SolidWorks特徵樹不在目前讀取範圍。
 
 ## 已交付功能與仍有的邊界
 

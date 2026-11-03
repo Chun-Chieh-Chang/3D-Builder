@@ -1727,6 +1727,11 @@ export class DrawingStore {
     }
   }
 
+  /** The project folder this document reads its files from (null until one is chosen). */
+  projectHandle(): FileSystemDirectoryHandle | null {
+    return this.project;
+  }
+
   private moveTo(from: string, to: string): void {
     if (from === to) return;
     this.folder = to;

@@ -522,6 +522,7 @@
     "return-assembly": "open",
     "save": "save",
     "save-as": "save",
+    "browser-projects": "list",
     "export-step": "export",
     "export-iges": "export",
     "export-stl": "export",

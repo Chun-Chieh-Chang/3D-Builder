@@ -860,3 +860,23 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .sw-panel [data-sketch-candidates] .selection-box li button { visibility: visible; color: var(--text); width: 100%; text-align: start; overflow-wrap: anywhere; padding: 4px 6px; }
 .sw-panel [data-sketch-candidates] .selection-box li button[data-preview="true"] { outline: 1px solid var(--accent); background: var(--accent-faint); }
 .sw-panel [data-sketch-candidates] .selection-box li button[aria-pressed="true"] { font-weight: 600; }
+
+/* Browser projects (ADR 0233) */
+.browser-projects-heading { margin: 12px 0 4px; font-size: 12px; }
+.browser-project-list, .project-file-list { list-style: none; margin: 6px 0; padding: 0; max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 4px; }
+.browser-project-list li { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.browser-project-list li:last-child, .project-file-list li:last-child { border-bottom: 0; }
+.browser-project-name { flex: 1; min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; }
+.browser-project-name .hint { margin: 0; }
+.browser-project-confirm { color: var(--error); font-size: 12px; }
+.browser-project-list button, .browser-project-new button { padding: 2px 10px; border: 1px solid var(--line); background: var(--card); border-radius: 4px; }
+.browser-project-list button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.browser-project-list button.danger { color: var(--error); border-color: var(--error-line); }
+.browser-project-new { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.browser-project-new input { flex: 1; min-width: 140px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--card); color: inherit; }
+.project-file-list li { border-bottom: 1px solid var(--line); }
+.project-file-list button { display: block; width: 100%; text-align: left; padding: 4px 8px; border: 0; background: none; color: inherit; overflow-wrap: anywhere; }
+.project-file-list button:hover { background: var(--accent-soft, rgba(0, 0, 0, 0.05)); }
+.project-file-name { display: flex; flex-direction: column; gap: 4px; }
+.project-file-name input { padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--card); color: inherit; }
+.project-file-backdrop { z-index: 31; }

@@ -2,6 +2,8 @@ import { t } from '@3db/i18n';
 import { ASSEMBLY_FILE_EXTENSION, DRAWING_FILE_EXTENSION, isIgesData, isStepData, PART_FILE_EXTENSION } from '@3db/io';
 import { isStlData } from '@3db/model';
 import type { Recovery } from './autosave';
+import { browserProject, browserProjectName, writeBrowserFile } from './browserProjects';
+import { askProjectFile } from './projectFileDialog';
 
 /**
  * Local files (F7.1). Chrome and Edge have the File System Access API: a part is opened and saved
@@ -10,6 +12,9 @@ import type { Recovery } from './autosave';
  * An assembly refers to its parts by path (B9.4), and a web page may only read files the user has
  * granted. So assemblies work inside a project folder the user picks once: the assembly and the
  * parts it uses are in that folder or below it.
+ *
+ * The project folder can also be one kept in the browser (ADR 0233), which every browser has: the
+ * dialogs then are the program's own (projectFileDialog), since the system's show only the computer.
  */
 
 interface PickerType {
@@ -120,13 +125,21 @@ export function pickFontFile(): Promise<OpenedFile | null> {
   return pick([font]);
 }
 
-/** 「插入零組件」→「瀏覽」: a part file or a STEP file, starting in the project folder. */
+/** 「插入零組件」→「瀏覽」: a part file or a STEP file, starting in the project folder; in one kept in the browser, a file of the computer is copied into it. */
 export function pickPartFile(startIn: FileSystemDirectoryHandle): Promise<OpenedFile | null> {
   const either: PickerType = { get description() { return t('picker.partOrStep'); }, accept: { ...PART_TYPE.accept, ...STEP_TYPE.accept } };
-  return pick([either, PART_TYPE, STEP_TYPE], startIn);
+  return pick([either, PART_TYPE, STEP_TYPE], startIn, 'copy');
 }
 
-async function pick(types: PickerType[], startIn: FileSystemDirectoryHandle | null = null): Promise<OpenedFile | null> {
+async function pick(types: PickerType[], startIn: FileSystemDirectoryHandle | null = null, outside: 'open' | 'copy' = 'open'): Promise<OpenedFile | null> {
+  const projectName = await browserProjectName(startIn);
+  if (startIn && projectName !== null) {
+    const extensions = [...new Set(types.flatMap((x) => Object.values(x.accept).flat()))].map((e) => e.toLowerCase());
+    const answer = await askProjectFile({ mode: 'open', folder: startIn, projectName, extensions, accept: acceptOf(types), outside });
+    if (!answer) return null;
+    const file = 'handle' in answer ? await answer.handle.getFile() : answer.file;
+    return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()), handle: 'handle' in answer ? answer.handle : null };
+  }
   if (window.showOpenFilePicker) {
     try {
       const [handle] = await window.showOpenFilePicker({ id: PICKER_ID, types, ...(startIn ? { startIn } : {}) });
@@ -142,7 +155,7 @@ async function pick(types: PickerType[], startIn: FileSystemDirectoryHandle | nu
   return file && { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()), handle: null };
 }
 
-function chooseFile(accept: string): Promise<File | null> {
+export function chooseFile(accept: string): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -153,8 +166,18 @@ function chooseFile(accept: string): Promise<File | null> {
   });
 }
 
-/** Asks where to save: a handle, null when the user cancels, or 'download' where files cannot be written. */
-export async function pickSaveTarget(suggestedName: string): Promise<FileSystemFileHandle | 'download' | null> {
+/** Where to save in a project kept in the browser (ADR 0233), or undefined when `folder` is not one. */
+async function saveInBrowserProject(folder: FileSystemDirectoryHandle | null, suggestedName: string, extension: string): Promise<FileSystemFileHandle | null | undefined> {
+  const projectName = await browserProjectName(folder);
+  if (!folder || projectName === null) return undefined;
+  const answer = await askProjectFile({ mode: 'save', folder, projectName, suggestedName, extension });
+  return answer && 'handle' in answer ? answer.handle : null;
+}
+
+/** Asks where to save: a handle, null when the user cancels, or 'download' where files cannot be written. In a project kept in the browser, into it. */
+export async function pickSaveTarget(suggestedName: string, project: FileSystemDirectoryHandle | null = null): Promise<FileSystemFileHandle | 'download' | null> {
+  const inProject = await saveInBrowserProject(project, suggestedName, PART_FILE_EXTENSION);
+  if (inProject !== undefined) return inProject;
   if (!window.showSaveFilePicker) return 'download';
   try {
     return await window.showSaveFilePicker({ id: PICKER_ID, suggestedName, types: [PART_TYPE] });
@@ -166,6 +189,8 @@ export async function pickSaveTarget(suggestedName: string): Promise<FileSystemF
 
 /** Where to save an assembly, starting in the project folder; null when the user cancels. */
 export async function pickAssemblySaveTarget(folder: FileSystemDirectoryHandle, suggestedName: string): Promise<FileSystemFileHandle | null> {
+  const inProject = await saveInBrowserProject(folder, suggestedName, ASSEMBLY_FILE_EXTENSION);
+  if (inProject !== undefined) return inProject;
   if (!window.showSaveFilePicker) throw new Error(foldersUnsupported());
   try {
     return await window.showSaveFilePicker({ id: PICKER_ID, suggestedName, types: [ASSEMBLY_TYPE], startIn: folder });
@@ -177,6 +202,8 @@ export async function pickAssemblySaveTarget(folder: FileSystemDirectoryHandle, 
 
 /** Where to save a drawing, starting in the project folder; null when the user cancels. */
 export async function pickDrawingSaveTarget(folder: FileSystemDirectoryHandle, suggestedName: string): Promise<FileSystemFileHandle | null> {
+  const inProject = await saveInBrowserProject(folder, suggestedName, DRAWING_FILE_EXTENSION);
+  if (inProject !== undefined) return inProject;
   if (!window.showSaveFilePicker) throw new Error(foldersUnsupported());
   try {
     return await window.showSaveFilePicker({ id: PICKER_ID, suggestedName, types: [DRAWING_TYPE], startIn: folder });
@@ -246,10 +273,11 @@ export async function dropRecovery(): Promise<void> {
   await handles('readwrite', (s) => s.delete('recovery'));
 }
 
-/** Remembers the project folder for the next session. */
+/** Remembers the project folder for the next session; one kept in the browser by its name (not every browser can keep a handle in IndexedDB). */
 export async function rememberFolder(folder: FileSystemDirectoryHandle): Promise<void> {
   try {
-    await handles('readwrite', (s) => s.put(folder, 'project'));
+    const name = await browserProjectName(folder);
+    await handles('readwrite', (s) => s.put(name !== null ? { browserProject: name } : folder, 'project'));
   } catch {
     // no IndexedDB (a private window): the folder is asked for again next time
   }
@@ -259,6 +287,8 @@ export async function rememberFolder(folder: FileSystemDirectoryHandle): Promise
 export async function rememberedFolder(): Promise<FileSystemDirectoryHandle | null> {
   try {
     const found: unknown = await handles('readonly', (s) => s.get('project'));
+    const kept = (found as { browserProject?: unknown } | undefined)?.browserProject;
+    if (typeof kept === 'string') return await browserProject(kept); // deleted since: NotFoundError, so none
     return found && typeof found === 'object' && (found as FileSystemHandle).kind === 'directory' ? (found as FileSystemDirectoryHandle) : null;
   } catch {
     return null;
@@ -329,6 +359,8 @@ export async function readBytes(file: FileSystemFileHandle): Promise<Uint8Array>
  * so a failed save leaves the previous file intact.
  */
 export async function writeFile(handle: FileSystemFileHandle, bytes: Uint8Array): Promise<void> {
+  // a file of the browser's storage where handles cannot be written from the page (older Safari): through a worker
+  if (typeof handle.createWritable !== 'function') return writeBrowserFile(handle, bytes, true);
   const h = handle as FileSystemFileHandle & PermissionMethods;
   if (h.queryPermission && h.requestPermission && (await h.queryPermission({ mode: 'readwrite' })) !== 'granted') {
     if ((await h.requestPermission({ mode: 'readwrite' })) !== 'granted') throw new Error(t('files.noWrite'));

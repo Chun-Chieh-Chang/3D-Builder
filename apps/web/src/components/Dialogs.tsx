@@ -5,6 +5,7 @@ import { deletion } from '@3db/regen/dag';
 import { store, useDocumentName, useStore } from '../state/store';
 import { featureLabel } from '../strings';
 import { componentInfo, mateProblem } from './AssemblyTree';
+import { BrowserProjectList } from './BrowserProjects';
 import { Icon } from './Icon';
 
 /**
@@ -172,22 +173,29 @@ export function FolderDialog() {
   const first = useRef<HTMLButtonElement>(null);
   useEffect(() => first.current?.focus(), [reason]);
   if (!reason) return null;
+  // Firefox and Safari have no folder picker: a project kept in the browser is the way there (ADR 0233)
+  const folders = typeof window.showDirectoryPicker === 'function';
   return (
     <div className="modal-backdrop" onPointerDown={() => store.cancelFolder()}>
-      <div className="modal" role="dialog" aria-label={t('folder.title')} onPointerDown={(e) => e.stopPropagation()}>
+      <div className="modal wide" role="dialog" aria-label={t('folder.title')} onPointerDown={(e) => e.stopPropagation()}>
         <h3>{t('folder.title')}</h3>
         <p>{reason}</p>
         {remembered && <p className="hint">{t('folder.remembered', { name: remembered })}</p>}
-        <p className="hint">{write ? t('stepasm.folderHint') : t('folder.hint')}</p>
+        {folders ? <p className="hint">{write ? t('stepasm.folderHint') : t('folder.hint')}</p> : <p className="warning-text">{t('bproj.noFolders')}</p>}
+        <h4 className="browser-projects-heading">{folders ? t('bproj.orBrowser') : t('bproj.title')}</h4>
+        <BrowserProjectList manage={false} />
+        <p className="hint">{t('bproj.risk')}</p>
         <div className="modal-actions">
           {remembered && (
             <button ref={first} className="primary" onClick={() => void store.useRememberedFolder()}>
               {t('folder.use', { name: remembered })}
             </button>
           )}
-          <button ref={remembered ? undefined : first} className={remembered ? '' : 'primary'} onClick={() => void store.chooseFolder()}>
-            {t('folder.choose')}
-          </button>
+          {folders && (
+            <button ref={remembered ? undefined : first} className={remembered ? '' : 'primary'} onClick={() => void store.chooseFolder()}>
+              {t('folder.choose')}
+            </button>
+          )}
           <button onClick={() => store.cancelFolder()}>{t('export.cancel')}</button>
         </div>
       </div>

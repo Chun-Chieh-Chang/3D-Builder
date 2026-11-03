@@ -169,6 +169,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'open', get label() { return t('act.open'); }, shortcut: 'Ctrl+O', group: 'file', enabled: idle, run: () => store.open() },
   { id: 'save', get label() { return t('act.save'); }, shortcut: 'Ctrl+S', group: 'file', enabled: idle, run: () => void store.save() },
   { id: 'save-as', get label() { return t('act.saveAs'); }, group: 'file', enabled: idle, run: () => void store.saveAs() },
+  // ADR 0233: projects kept in the browser, for Firefox and Safari, which give a page no folder of the computer
+  { id: 'browser-projects', get label() { return t('bproj.act'); }, group: 'file', enabled: idle, run: () => store.openDialog('browserProjects') },
   { id: 'export-step', get label() { return t('export.step'); }, group: 'file', enabled: (s) => (partIdle(s) || (assemblyIdle(s) && hasComponents(s))) && s.bootMs !== null, run: () => store.exportStep() },
   { id: 'export-iges', get label() { return t('export.iges'); }, group: 'file', enabled: (s) => partIdle(s) && hasBody(s) && s.bootMs !== null, run: () => store.exportIges() },
   { id: 'export-stl', get label() { return t('export.stl'); }, group: 'file', enabled: (s) => (hasBody(s) || (assemblyIdle(s) && hasComponents(s))) && s.bootMs !== null, run: () => store.exportStl() },

@@ -57,7 +57,7 @@ export const lowlevel = {
   'picker.assembly': '3D-Builder 組合件',
   'picker.any': '所有支援的檔案',
   'picker.partOrStep': '零件或 STEP 檔',
-  'files.foldersUnsupported': '組合件需要能存取資料夾的瀏覽器（Chrome 或 Edge）',
+  'files.foldersUnsupported': '這個瀏覽器不能存取電腦上的資料夾：組合件與工程圖請改用瀏覽器內專案（檔案 → 瀏覽器內專案…），或使用 Chrome、Edge',
   'files.outside': '不在專案資料夾內：{path}',
   'files.noWrite': '沒有寫入這個檔案的權限',
   'file.kindPart': '零件檔',

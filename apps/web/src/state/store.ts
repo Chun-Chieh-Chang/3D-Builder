@@ -87,6 +87,21 @@ import { measureTargetsOf, pickKey, type SelectionFacts } from './selectionFacts
 import { Autosaver, type Recovery } from '../autosave';
 import { loadOptions, parseOptions, saveOptions, type SystemOptions } from '../options';
 import {
+  browserProject,
+  browserProjectName,
+  browserProjectOf,
+  createBrowserProject,
+  deleteBrowserProject,
+  EXPORT_REMINDER_DAYS,
+  exportBrowserProject,
+  exportDue,
+  filesOf,
+  importBrowserProject,
+  keepStorage,
+  noteExport,
+} from '../browserProjects';
+import {
+  chooseFile,
   download,
   fileIn,
   folderAccess,
@@ -350,7 +365,7 @@ export interface UiState {
   /** 「錯誤為何？」 dialog (D7.1). */
   whatsWrong: boolean;
   /** The equations or file-properties dialog (B5.2, B8.3), when open. */
-  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | 'igesOptions' | 'stlOptions' | 'template' | 'shortcuts' | 'options' | 'bom' | 'physical' | 'viewOrientation' | null;
+  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | 'igesOptions' | 'stlOptions' | 'template' | 'shortcuts' | 'options' | 'bom' | 'physical' | 'viewOrientation' | 'browserProjects' | null;
   /** The file the part was opened from or last saved to (F7.1); null for a part never saved. */
   fileName: string | null;
   /** The document differs from what was last opened or saved (the title shows 「*」). */
@@ -377,6 +392,10 @@ export interface UiState {
   asm: AssemblyState | null;
   /** The project folder assemblies read their parts from (B9.4); null until one is chosen. */
   projectName: string | null;
+  /** The project folder is one kept in the browser (ADR 0233). */
+  projectInBrowser: boolean;
+  /** Bumped when browser projects are made, imported, exported or deleted: their dialogs read the list again. */
+  browserProjectsSerial: number;
   /** Why the project folder is asked for: the dialog is open. */
   folderRequest: string | null;
   /** The folder asked for will be written into (F2.8): it is picked with write access, and the remembered one is not offered. */
@@ -570,6 +589,10 @@ class AppStore {
   private folderAnswer: ((folder: FileSystemDirectoryHandle | null) => void) | null = null;
   /** The project folder of an earlier session: used once the browser allows it again. */
   private remembered: FileSystemDirectoryHandle | null = null;
+  /** The browser was asked to keep its storage this session (ADR 0233): once is enough. */
+  private storageAsked = false;
+  /** Browser projects already reminded of an export this session. */
+  private exportReminded = new Set<string>();
   /** 「開啟零件」: the part file to open (path in the project folder). */
   private partToOpen: string | null = null;
   private partFeatureToOpen: Id | null = null;
@@ -634,6 +657,8 @@ class AppStore {
       asm: null,
       drw: null,
       projectName: null,
+      projectInBrowser: false,
+      browserProjectsSerial: 0,
       folderRequest: null,
       folderWrite: false,
       rememberedProject: null,
@@ -3648,18 +3673,24 @@ class AppStore {
 
   /** 「儲存檔案」: into the file the document came from; one never saved asks for a name. True when saved. */
   async save(): Promise<boolean> {
-    if (this.drawing) return this.drawing.save();
-    if (this.assembly) return this.assembly.save();
-    return this.fileHandle ? this.write(this.fileHandle) : this.saveAs();
+    const saved = this.drawing ? await this.drawing.save() : this.assembly ? await this.assembly.save() : this.fileHandle ? await this.write(this.fileHandle) : await this.saveAs();
+    if (saved) void this.remindExport();
+    return saved;
   }
 
   /** 「另存新檔」. True when saved. */
   async saveAs(): Promise<boolean> {
+    const saved = await this.saveAsNow();
+    if (saved) void this.remindExport();
+    return saved;
+  }
+
+  private async saveAsNow(): Promise<boolean> {
     if (this.drawing) return this.drawing.saveAs();
     if (this.assembly) return this.assembly.saveAs();
     const name = partFileName(this.documentName());
     try {
-      const target = await pickSaveTarget(name);
+      const target = await pickSaveTarget(name, this.project ?? (await this.rememberedWithAccess()));
       if (target === null) return false;
       if (target !== 'download') return await this.write(target);
       // Without file access the part is downloaded; the next save downloads again.
@@ -3974,8 +4005,119 @@ class AppStore {
   private useProject(folder: FileSystemDirectoryHandle): void {
     this.project = folder;
     this.remembered = null;
-    this.set({ projectName: folder.name, rememberedProject: null });
+    this.set({ projectName: folder.name, rememberedProject: null, projectInBrowser: false });
     void rememberFolder(folder);
+    void browserProjectName(folder).then((name) => {
+      if (this.project !== folder) return;
+      this.set({ projectInBrowser: name !== null });
+      if (name !== null) void this.keepBrowserStorage();
+    });
+  }
+
+  // ---------------------------------------------------------------- projects kept in the browser (ADR 0233)
+
+  /** Asks the browser once a session to keep its storage; when it says no, the user is told to export. */
+  private async keepBrowserStorage(): Promise<void> {
+    if (this.storageAsked) return;
+    this.storageAsked = true;
+    if ((await keepStorage()) === false) setTimeout(() => this.notify(t('bproj.keepDenied'), 'error'), 1500);
+  }
+
+  /** After a save into a browser project not exported for a while (or ever): once a session, a reminder to export it. */
+  private async remindExport(): Promise<void> {
+    const name = await browserProjectName(this.project);
+    if (name === null || this.exportReminded.has(name) || !exportDue(name)) return;
+    this.exportReminded.add(name);
+    setTimeout(() => this.notify(t('bproj.remindExport', { name, days: EXPORT_REMINDER_DAYS })), 2500);
+  }
+
+  private browserProjectsChanged(): void {
+    this.set({ browserProjectsSerial: this.state.browserProjectsSerial + 1 });
+  }
+
+  /**
+   * 「使用」 a browser project: the answer of the project-folder dialog when it is open; otherwise the project of what is made or opened next (an open
+   * assembly keeps the project it has, as with 「更換資料夾…」).
+   */
+  async useBrowserProject(name: string): Promise<void> {
+    try {
+      const folder = await browserProject(name);
+      if (this.folderAnswer) return this.answerFolder(folder);
+      this.useProject(folder);
+      if (this.assembly?.canChangeProject()) await this.assembly.setProject(folder);
+      this.set({ dialog: null });
+      this.notify(t('bproj.using', { name }));
+    } catch (e) {
+      this.notify(t('bproj.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** A new, empty browser project, then used. */
+  async newBrowserProject(name: string): Promise<boolean> {
+    try {
+      await createBrowserProject(name);
+      this.browserProjectsChanged();
+      this.notify(t('bproj.created', { name }));
+      await this.useBrowserProject(name);
+      return true;
+    } catch (e) {
+      this.notify(t('bproj.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+      return false;
+    }
+  }
+
+  /** 「匯入專案（.zip）…」: a ZIP from the computer becomes a browser project, then used. */
+  async importBrowserProjectZip(): Promise<void> {
+    try {
+      const file = await chooseFile('.zip,application/zip');
+      if (!file) return;
+      const name = await importBrowserProject(file.name, new Uint8Array(await file.arrayBuffer()));
+      noteExport(name); // what was imported is on the computer already
+      this.browserProjectsChanged();
+      this.notify(t('bproj.importedDone', { name }));
+      await this.useBrowserProject(name);
+    } catch (e) {
+      this.notify(t('bproj.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** 「匯出」: the browser project as a ZIP, downloaded; the date is kept for the reminder. */
+  async exportBrowserProjectZip(name: string): Promise<void> {
+    try {
+      const folder = await browserProject(name);
+      const files = (await filesOf(folder)).length;
+      download(`${name}.zip`, (await exportBrowserProject(folder)) as Uint8Array<ArrayBuffer>, 'application/zip');
+      noteExport(name);
+      this.browserProjectsChanged();
+      this.notify(t('bproj.exported', { name, files }));
+    } catch (e) {
+      this.notify(t('bproj.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
+  /** 「永久刪除」 (confirmed in the dialog): not the project of the open assembly or drawing, nor the one the open part was saved in. */
+  async removeBrowserProject(name: string): Promise<void> {
+    try {
+      const inUse = async (h: FileSystemHandle | null | undefined) => !!h && (await browserProjectOf(h)) === name;
+      if ((this.assembly && (await inUse(this.assembly.projectHandle()))) || (this.drawing && (await inUse(this.drawing.projectHandle()))) || (await inUse(this.fileHandle))) {
+        return this.notify(t('bproj.inUse', { name }), 'error');
+      }
+      const current = await inUse(this.project);
+      const remembered = await inUse(this.remembered);
+      await deleteBrowserProject(name);
+      if (current) {
+        this.project = null;
+        this.set({ projectName: null, projectInBrowser: false });
+      }
+      if (remembered) {
+        this.remembered = null;
+        this.set({ rememberedProject: null });
+      }
+      this.browserProjectsChanged();
+      this.notify(t('bproj.deleted', { name }));
+    } catch (e) {
+      this.notify(t('bproj.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
   }
 
   /** 「使用上次的資料夾」 in the project-folder dialog: the browser asks to allow reading it again. */
