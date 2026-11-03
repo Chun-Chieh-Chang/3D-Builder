@@ -2,6 +2,12 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-11-03（三）：部署併入檢查 workflow（ADR 0233 修正）
+
+- 使用者看到每次推送有兩個 workflow（「GitHub Pages」與「Repository integrity」），要求解決重複。兩者工作不同，並非同一件事跑兩次；但確有兩個真缺陷：每次推送兩邊各 `npm ci`＋建置一次；**部署不等檢查**（a6c544c 的 Pages 41 秒就上線，三平台檢查還在跑——檢查失敗也照樣發布）。
+- 修正：刪除 `pages.yml`，部署改為 `repository-integrity.yml` 的 `deploy-pages` job（`needs: integrity`）；Linux 那一路的建置就是要發布的那份（`PAGES_BASE=/<repository>/`，其他系統為空字串，`vite.config.ts` 改用 `||` 讓空字串也回到 `/`），只在推送到 main 時上傳產物。結果：一次推送一個 workflow、網站只建置一次、檢查全過才上線。代價：上線要等最慢的 macOS 那一路（a6c544c 那輪約 6 分鐘，多半是排隊）。
+- 另一個重複：`push:` 不分分支，加上 `pull_request:`，PR 分支的每次推送跑兩輪；改為 `push` 只觸發 main。
+
 ## 2026-11-03（二）：瀏覽器內專案（Firefox、Safari 可用組合件與工程圖）與 GitHub Pages 部署（ADR 0233）
 
 ### 需求與根因

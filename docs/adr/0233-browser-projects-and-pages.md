@@ -41,7 +41,7 @@
 ### 4. GitHub Pages
 
 - `vite.config.ts` 的 `base` 取自 `PAGES_BASE`，未設定時仍是 `/`：dev server、`verify:ui`、本機建置不受影響。
-- `.github/workflows/pages.yml`：推送到 main 時以 `PAGES_BASE=/<repository>/` 建置並發布 `apps/web/dist`。
+- 部署併在 [`repository-integrity.yml`](../../.github/workflows/repository-integrity.yml) 裡：Linux 那一路的建置以 `PAGES_BASE=/<repository>/` 建置（其他系統為空，仍是 `/`），推送到 main 時上傳成 Pages 產物；`deploy-pages` job `needs: integrity`，**三個系統的所有檢查都通過才發布**，網站只建置一次。第一版另開 `pages.yml`，每次推送多一個 workflow、重複 `npm ci` 與建置，且部署不等檢查（41 秒就上線、檢查還在跑），故併入。同時 `push` 只觸發 main：分支由它的 pull request 檢查，推送分支不再讓同一份程式碼跑兩輪。
 - 不需要伺服器：OCCT 與 PlaneGCS 是頁面旁的 WebAssembly 檔，以單執行緒版本執行，不需要 `SharedArrayBuffer`，也就不需要 Pages 無法設定的 COOP／COEP 標頭。「關閉伺服器」按鈕在正式建置中本來就不出現。
 - 首次載入約 47 MB（OCCT 的 wasm 42.7 MB），之後由瀏覽器快取。
 
