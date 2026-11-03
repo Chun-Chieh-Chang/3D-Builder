@@ -2,6 +2,31 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-11-03：IGES 分支殘留清理與跨工作階段分支核對（opencode 工作階段，worktree jolly-wolf）
+
+本工作階段（opencode/GLM）在 2026-10-27～11-03 之間處理的多是一些跨工作階段的清理與核對，不涉應用程式碼變更，因此未跑測試套件；紀錄重點是三條可復用的查核方法與一個被救回的提交。
+
+### 1. 做了什麼
+- **`claude/iges-exchange` 殘留清理**：worktree `.claude/worktrees/iges-exchange`（PR #5 合併後已無任務）整批移除——Git 註銷 worktree、刪除本機分支、停止 6 個以該目錄為工作路徑的殘留 node 程序（2 個 Vite dev server＋1 輪 stale `verify:ui`＋3 個 npm 包裝層）。wm `node_modules` 經 `Get-Item ... | Select LinkType,Target` 確認是實體目錄（非 junction），遞迴刪除不會波及主資料夾。
+- **清理前的內容保全核對**：刪分支前先驗「內容是否已在 main」。`claude/iges-exchange` 相對 `origin/main` 唯一多出的提交是一顆 merge commit，其兩個父提交都在 main 歷史內、且 `git diff --stat origin/main <分支>` 為空（內容完全一致），故 `git branch -D` 安全（`branch -d` 那種祖譜判斷會誤報 not fully merged）。
+- **跨工作階段分支核對（唯讀抽查）**：另一工作階段宣稱「8 個待刪分支的內容都在 main」。以 `git cherry`（patch-id 比對，不看祖譜看內容）逐支核對，發現**對其中 3 支不成立**：
+  - `claude/keen-poitras-13df6d`：多出 `1aaae3b`（公差疊字）、`7e0bb4d`（網格淡出）、`3abb949`（相機深度）；
+  - `claude/sketch-silhouette-relations`：多出 `2d7b417`（草圖線連結曲面輪廓）；
+  - `backup/main-before-integrate-20261029`：多出 `1aaae3b`、`7e0bb4d`、`b24d60d`（欠界定草圖「哪些還會動」，**別處不存在**）。
+  這 3 支未刪除，先保持原狀待裁；`b24d60d` 若被刪即永久損失。laptop 遠端兩支（`claude/ecstatic-hertz-078773`、`claude/focused-feistel-eb6976`）經核對已完整在 `laptop/main` 內、`laptop/main` 亦為 `origin/main` 祖先，刪除安全。
+- **本 worktree 對齊**：`jolly-wolf` 由 `78faeda` 快進對齊 `origin/main`（12ca195 → 0e784833，橫跨 PR #5 與既有 74 個提交），全程 reset 前先確認無未提交變更、無 stash。
+
+### 2. 教訓（RCA）
+1. **宣告不等於事實，分支內容要用 patch-id 驗**：`merge-base --is-ancestor` 只驗祖譜，merge commit 型的分支會「祖譜未合併但內容已全在」；反之另有分支「大部分提交已在 main、但混著 2～3 顆實質未合併的 patch」。判斷刪除安全性的組合是 `git diff --stat origin/main <分支>`（內容差）＋ `git cherry origin/main <分支>`（patch-id 差）；`+` 的每一顆都要找到「它在 main 上的對應重做版」或親自裁定才准刪。
+2. **「檔案已刪」不等於「程序已停」**：worktree 的檔案刪掉大半後，以其 `node_modules` 為運行根的 Vite dev server 與 `verify:ui` 仍在跑（目錄因此鎖住、`rmdir` 失敗）。清理任何 worktree 前，先以 `Get-CimInstance Win32_Process` 逐一看 `CommandLine` 找出所有引用該路徑的行程，確認歸屬後停掉，再刪檔案；殘餘的空目錄殼若被已死程序的殼佔住，留待其自行釋放，不需要強殺不相關的系統程序。
+3. **頁面要求停止 dev server，先查機制來源再判故障**：「The page asked to stop」出現時，本次由 `apps/web/vite.config.ts` 的 `shutdown()` 插件（ADR 0135，UI 右上「關閉伺服器」按鈕）說明——那是使用者自己按的，不是自關或崩潰。判定這種「看似異常的行為」前先 grep 伺服器設定找行為來源。
+4. **中斷的 worktree 與分支屬共享狀態**：多工作階段並行時，刪除別的階段用過的分支／行程前，先取得其最新宣稱並以唯讀方式抽驗（本條與 AGENTS 2026-10-30「rebase 推送期協調」一致）；抽驗結果要回報協調者（使用者）裁定，不單方面擴權。
+
+### 3. 未確認／待辦
+- 3 個含未合併 patch 的分支尚待裁決：與 main 現行實作（如 `78faeda` 的疊字顯示）逐項比對後決定救回或確認已被取代。
+- 本工作階段未跑 `verify:ui`／單元測試（未改程式碼）；清理僅及Git註冊、檔案系統與行程，皆以 `Test-Path`／`Test-NetConnection` 事後驗證。
+- **追記（同日已解決）**：上述 3 支隨後由其他工作階段落實——內容全部以新提交重現進 main（`1aaae3b`→`b2cf591f`、`7e0bb4d`→`c8929050`、`3abb949`→`47a9bdf5`、`2d7b417`→`5c505dc4`、`b24d60d`→`12cb7383`，主題一一對應），分支與其 worktree 已刪、空目錄殼亦清。本條留存作「先驗後刪」流程的完結證據，非懸案。
+
 ## 2026-11-02（五）：視圖上的尺寸線補畫延伸線、滑出的文字補畫尺寸線（ADR 0227 修正）
 
 使用者回報：工程圖中的標註，特別是輪廓線內的標註，缺少延伸線與箭頭。

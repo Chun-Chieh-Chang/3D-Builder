@@ -269,6 +269,18 @@
 - **推送狀態**：`121f510`（手冊）、`998002f`（本檔交接）與 `841a8c0`（盤點檔重產）已於 2026-11-03 取得明文授權後推送。**盤點檔必須重產**：遠端帶進三個新的 ADR（0228–0230）與一支瀏覽器腳本，與本批同時改到 `docs/repository-inventory.md` 時會衝突；該檔由 `npm run docs:sync` 產生（`scripts/check-repository.mjs --write`），衝突時**重產**而不是手改，結果為 ADR 229、瀏覽器檔案／腳本／呼叫 217／213／265、實機清單項目 101。
 
 
+## 3t. 2026-11-03 跨工作階段清理與分支保全核對（opencode/GLM 工作階段，worktree `jolly-wolf`）
+
+> **狀態：應用程式碼零變更；清理與核對已完成。dev server 現已關閉、無殘留行程。未跑 `verify:ui`／測試套件（不涉及程式碼）。細部教訓已記入 [DEV_LOG](DEV_LOG.md) 2026-11-03 條目。**
+
+- **本 worktree（`jolly-wolf`，opencode 佔用）**：由 `78faeda` 快進對齊 `origin/main`（PR #5 merge `12ca195`，其後至 `0e784833`，橫跨 ADR 0231/0232 的 keep-inside 除料工作），全程 detached HEAD（`main` 名由主資料夾佔用）、reset 前確認乾淨無 stash。
+- **IGES 殘留清理（完成）**：`.claude/worktrees/iges-exchange` 已從 Git 註銷；本機分支 `claude/iges-exchange` 在驗證「與 `origin/main` 內容差為空、唯一多出的提交僅為合併 commit（兩父皆在 main 歷史）」後以 `-D` 刪除；6 個以該目錄為運行根的殘留 node 程序（2 個 Vite dev server、1 輪 stale `verify:ui`、3 個 npm 包裝）已停止。`node_modules` 先驗非 junction 才遞迴刪除。**殘餘：`iges-exchange` 的空目錄殼**被已死程序的殼鎖住，重開機後手動刪除即可，無功能影響。
+- **待刪分支的保全核對（修正另一工作階段的宣稱）**：該工作階段稱「8 個待刪分支的內容都在 main」；以 `git cherry`（patch-id）核對，**3 個不成立**，多出的 patch 為 `1aaae3b`（公差疊字）、`7e0bb4d`（網格淡出）、`3abb949`（相機深度）、`2d7b417`（草圖線連結曲面輪廓）、`b24d60d`（欠界定草圖列示，別處不存在）。**這 3 支分支（`claude/keen-poitras-13df6d`、`claude/sketch-silhouette-relations`、`backup/main-before-integrate-20261029`）保持未刪**，待與 main 現行實作逐項比對裁定；裁定前不得刪，必要時先把它們推到 `laptop` 保底。
+- **可安全刪除的分支（已驗證）**：`dazzling-stonebraker-38ca40`、`dreamy-taussig-bb0af0`、`ecstatic-hertz-078773`、`focused-feistel-eb6976`、`sleepy-dubinsky-29fe14` 皆為 `origin/main` 祖先（`git merge-base --is-ancestor` 通過）；laptop 遠端兩支（`ecstatic-hertz`、`focused-feistel`）已完整在 `laptop/main` 內、`laptop/main` 亦為 `origin/main` 祖先（只缺 PR #5 之後的提交，laptop 端 `git pull` 補齊即可）。
+- **dev server 生命週期**：確認「The page asked to stop」來自 ADR 0135 的 UI「關閉伺服器」按鈕（使用者手動關閉），與 `dev:auto` 的 `autoClose` 空閒自關不同；兩種關法都正常、無殘留程序。
+- **接續待辦**：① 另一工作階段整輪 `verify:ui` 跑完後，刪除上述 5 支已驗分支；② 裁決 3 支含未合併 patch 的分支（先保底 push 再裁）；③ laptop 端同步 main。
+- **2026-11-03 追記（已解決）**：上述 ①② 均已由其他工作階段完成。3 支含未合併 patch 的分支**已逐項以新提交重現於 main**（舊 hash → main 上新 hash）：`1aaae3b`→`b2cf591f`、`7e0bb4d`→`c8929050`、`3abb949`→`47a9bdf5`、`2d7b417`→`5c505dc4`、`b24d60d`→`12cb7383`——主題一一對應，patch-id 不同是因重放到已前進的 main 上（AABB/新程式碼脈絡下正常）。分支連同全部舊 worktree 已刪除，`iges-exchange` 空目錄殼也已清。**無任何工作遺失**；刪判依 DEV_LOG 2026-11-03 的 patch-id 方法成立。
+
 ## 3l. 2026-11-01 P4 完成後待裁項目裁決與後續執行進度
 
 > **狀態：A1、A2、B1 已完成並推送；其餘待做。額度不足時在此暫停，下個 session 依下表續做。**
