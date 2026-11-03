@@ -98,7 +98,6 @@ export const model = {
   'cmd.onlyExtrudeHasEnd': '只有伸長特徵有終止型態',
   'cmd.onlyExtrudeHasKeepInside': '只有伸長特徵有「保留輪廓內」',
   'cmd.keepInsideOnlyCut': '只有除料可以保留輪廓內',
-  'cmd.keepInsideNeedsThroughAll': '保留輪廓內時，終止型態必須是「全部貫穿」（給深度會把輪廓內、深度外的材料也刪掉）',
   'cmd.onlyRevolveHasAngle': '只有旋轉特徵有旋轉角度',
   'cmd.onlyRevolveHasAxis': '只有旋轉特徵有旋轉軸',
   'cmd.revolveSketchNotFound': '找不到旋轉特徵的草圖',

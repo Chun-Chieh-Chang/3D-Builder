@@ -94,7 +94,7 @@ import {
   modelRefOf,
 } from '@3db/model';
 import { bentPath, BendProblem, findOutlines, findProfiles, reversePath, ribbonOf, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
-import { KernelError, SURFACE_TOLERANCE, type KnurlSpec, type Region, type Segment, type SweepSpec, type ThreadSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
+import { KernelError, SURFACE_TOLERANCE, type Frame, type KnurlSpec, type Region, type Segment, type SweepSpec, type ThreadSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
 import { followReferences, NO_NAMES, NO_TOPOLOGY, ReferenceProblem, type DatumScope } from './references';
@@ -1415,8 +1415,6 @@ export class Regenerator {
     if (f.op === 'cut' && !body) throw new FeatureError(t('feature.cutNeedsBody'));
     if (f.keepInside) {
       if (f.op !== 'cut') throw new FeatureError(t('feature.keepInsideOnlyCut'));
-      // 「保留輪廓內」 keeps what the body shares with the swept region, so every direction has to go through all
-      if (f.dir1.type !== 'throughAll' || (f.dir2 && f.dir2.type !== 'throughAll')) throw new FeatureError(t('feature.keepInsideNeedsThroughAll'));
     }
     const n = s.frame.normal;
     // A boss grows along the sketch normal, a cut goes into the material (SolidWorks defaults); direction 2 goes the other way.
@@ -1443,7 +1441,126 @@ export class Regenerator {
     } else {
       tool = this.kernel.extrude(s.frame, s.profiles.regions, spec1.vector, spec1.offset ?? 0, spec1.until, spec1.draft);
     }
-    return this.apply(f.id, f.keepInside ? 'keep' : f.op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, f.merge !== false);
+    if (f.keepInside) return this.keepInside(f.id, f.sketch, tool, n, set.list);
+    return this.apply(f.id, f.op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, f.merge !== false);
+  }
+
+  /**
+   * 「保留輪廓內」 (ADR 0232): the material inside the contour is kept and the material outside it *within the stretch
+   * the sweep covers* is taken away. The stretch is the sweep's own — from the sketch plane to where the end condition
+   * ends it — so the material beyond it, the other side of the sketch plane included, is left as it is.
+   *
+   * The body therefore loses the part of the stretch that the tool does not reach: `body − ((body ∩ stretch) − tool)`.
+   * The names are inherited step by step (the body, then the stretch, then the tool), so the faces that survive keep the
+   * names they had and the new ones are named after the contour they came from.
+   */
+  private keepInside(featureId: Id, sketchId: Id, tool: OpResult, axis: Vec3, list: readonly BodyState[]): BodyState[] {
+    const k = this.kernel;
+    const made: ShapeId[] = [];
+    const temps: ShapeId[] = [];
+    const toolNames = nameElements(tool.faceOrigins, k.topology(tool.shape), { featureId, sketchId });
+    const extent = this.extentOf(featureId, tool.shape, axis, list);
+    made.push(extent.shape);
+    try {
+      const r = this.boolBodies(
+        featureId,
+        'cut',
+        list,
+        (b) => {
+          // the part of the body the sweep reaches, and what of it is outside the contour: what has to go
+          const within = k.boolean('common', b.shape, extent.shape);
+          const withinNames = nameElements(within.faceOrigins, k.topology(within.shape), { featureId, input: concatNames(b.names, extent.names) });
+          const gone = k.boolean('cut', within.shape, tool.shape);
+          const goneNames = nameElements(gone.faceOrigins, k.topology(gone.shape), { featureId, input: concatNames(withinNames, toolNames) });
+          k.release(within.shape);
+          temps.push(gone.shape);
+          return { shape: gone.shape, names: goneNames };
+        },
+        made,
+      );
+      // the stretch and the tool have served their purpose; the bodies that are left are the result
+      k.release(extent.shape);
+      k.release(tool.shape);
+      if (!r.changed) throw new FeatureError(t('feature.keepInsideNothing'));
+      if (r.out.length === 0) throw new FeatureError(t('regen.keepInsideAll'));
+      if (r.removed.length > 0) this.warnings.push(t('body.removedWhole', { names: r.removed.join(t('cmd.listSeparator')) }));
+      return r.out;
+    } catch (e) {
+      for (const s of made) k.release(s);
+      k.release(tool.shape);
+      throw e;
+    } finally {
+      for (const s of temps) k.release(s);
+    }
+  }
+
+  /**
+   * The stretch a sweep covers (ADR 0232): a slab along the sweep axis, from where the tool starts to where it ends,
+   * wide enough to hold every body. The material outside it is what 「保留輪廓內」 leaves alone.
+   */
+  private extentOf(featureId: Id, tool: ShapeId, axis: Vec3, list: readonly BodyState[]): { shape: ShapeId; names: ElementNames } {
+    const k = this.kernel;
+    const a: Vec3 = [axis[0], axis[1], axis[2]];
+    const length = Math.hypot(a[0], a[1], a[2]);
+    if (!(length > 0)) throw new FeatureError(t('feature.keepInsideNoAxis'));
+    const n: Vec3 = [a[0] / length, a[1] / length, a[2] / length];
+    const bounds = k.bounds(tool);
+    // the stretch along the axis is the tool's own reach
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const x of [bounds.min[0], bounds.max[0]])
+      for (const y of [bounds.min[1], bounds.max[1]])
+        for (const z of [bounds.min[2], bounds.max[2]]) {
+          const d = dot([x, y, z], n);
+          if (d < lo) lo = d;
+          if (d > hi) hi = d;
+        }
+    // the width is every body's, so that nothing is left out sideways
+    let min: Vec3 = [Infinity, Infinity, Infinity];
+    let max: Vec3 = [-Infinity, -Infinity, -Infinity];
+    for (const b of list) {
+      if (b.surface) continue;
+      const bb = k.bounds(b.shape);
+      min = [Math.min(min[0], bb.min[0]), Math.min(min[1], bb.min[1]), Math.min(min[2], bb.min[2])];
+      max = [Math.max(max[0], bb.max[0]), Math.max(max[1], bb.max[1]), Math.max(max[2], bb.max[2])];
+    }
+    if (!Number.isFinite(min[0])) throw new FeatureError(t('feature.keepInsideNoBody'));
+    // a frame about the axis: u across it, v along it, so that u × v is the axis
+    const helper: Vec3 = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const u = sub(helper, scale(n, dot(helper, n)));
+    const ul = Math.hypot(u[0], u[1], u[2]);
+    const ux: Vec3 = [u[0] / ul, u[1] / ul, u[2] / ul];
+    const v = cross(n, ux);
+    let u0 = Infinity;
+    let u1 = -Infinity;
+    let v0 = Infinity;
+    let v1 = -Infinity;
+    for (const x of [min[0], max[0]])
+      for (const y of [min[1], max[1]])
+        for (const z of [min[2], max[2]]) {
+          const p: Vec3 = [x, y, z];
+          const pu = dot(p, ux);
+          const pv = dot(p, v);
+          if (pu < u0) u0 = pu;
+          if (pu > u1) u1 = pu;
+          if (pv < v0) v0 = pv;
+          if (pv > v1) v1 = pv;
+        }
+    // a margin, so the sides of the slab lie strictly outside every body
+    const margin = 1 + 0.01 * Math.max(u1 - u0, v1 - v0);
+    const corner: [number, number][] = [
+      [u0 - margin, v0 - margin],
+      [u1 + margin, v0 - margin],
+      [u1 + margin, v1 + margin],
+      [u0 - margin, v1 + margin],
+    ];
+    const region: Region = {
+      outer: corner.map((p, i) => ({ kind: 'line' as const, a: p, b: corner[(i + 1) % 4]!, source: 'extent' })),
+      holes: [],
+    };
+    const frame: Frame = { origin: scale(n, lo), xDir: ux, yDir: v, normal: n };
+    const prism = k.extrude(frame, [region], scale(n, hi - lo), 0);
+    return { shape: prism.shape, names: nameElements(prism.faceOrigins, k.topology(prism.shape), { featureId }) };
   }
 
   private revolve(f: RevolveFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
@@ -2500,23 +2617,22 @@ export class Regenerator {
   /**
    * Names a new tool body by how it was swept, then adds it to the bodies (boss) or removes it from them (cut). A boss
    * merges with every body it touches (`merge`, the default) and is a body of its own when it touches none, or when it is
-   * not to merge; a cut works on every body it reaches. A keep (「保留輪廓內」, ADR 0231) works on every body it reaches too, but
-   * leaves what they share with the tool and takes the rest away. Faces of a result inherit the names of the faces they came from,
+   * not to merge; a cut works on every body it reaches. Faces of a result inherit the names of the faces they came from,
    * on either side. Returns the bodies after the feature; the shapes of those that were changed are new, the old ones are
    * the caller's to let go (`advance`).
    */
-  private apply(featureId: Id, op: 'boss' | 'cut' | 'keep', tool: OpResult, context: { featureId: Id; sketchId?: Id }, list: readonly BodyState[], merge: boolean, bodyId: Id = featureId, named?: ElementNames): BodyState[] {
+  private apply(featureId: Id, op: 'boss' | 'cut', tool: OpResult, context: { featureId: Id; sketchId?: Id }, list: readonly BodyState[], merge: boolean, bodyId: Id = featureId, named?: ElementNames): BodyState[] {
     const k = this.kernel;
     const toolTopology = k.topology(tool.shape);
     const toolNames = named ?? nameElements(tool.faceOrigins, toolTopology, context);
     const made: ShapeId[] = [];
     try {
-      if (op === 'cut' || op === 'keep') {
-        // a cut takes the tool away from the bodies; a keep (「保留輪廓內」) leaves what they share with it
-        const r = this.boolBodies(featureId, op === 'keep' ? 'common' : 'cut', list, tool.shape, toolNames, made);
+      if (op === 'cut') {
+        // a cut takes the tool away from the bodies
+        const r = this.boolBodies(featureId, 'cut', list, () => ({ shape: tool.shape, names: toolNames }), made);
         k.release(tool.shape);
-        if (!r.changed) throw new FeatureError(op === 'keep' ? t('feature.keepInsideNothing') : t('feature.cutRemovedNothing'));
-        if (r.out.length === 0) throw new FeatureError(op === 'keep' ? t('regen.keepInsideAll') : t('regen.cutRemovedAll'));
+        if (!r.changed) throw new FeatureError(t('feature.cutRemovedNothing'));
+        if (r.out.length === 0) throw new FeatureError(t('regen.cutRemovedAll'));
         if (r.removed.length > 0) this.warnings.push(t('body.removedWhole', { names: r.removed.join(t('cmd.listSeparator')) }));
         return r.out;
       }
@@ -2560,9 +2676,10 @@ export class Regenerator {
    * A boolean of every body in `list` with one tool shape, cut (what the tool takes away) or common (what it shares): a
    * body the tool does not change stays as it is, one it takes entirely is gone (named in `removed`), and one that comes
    * apart becomes several: the largest keeps the id, the others are `<feature>#2`, `#3` … in order of size. The shapes made
-   * are added to `made` so that a failure can let them go.
+   * are added to `made` so that a failure can let them go. The tool may be made per body (`toolFor`), for 「保留輪廓內」,
+   * where what each body loses depends on where that body is.
    */
-  private boolBodies(featureId: Id, op: 'cut' | 'common', list: readonly BodyState[], toolShape: ShapeId, toolNames: ElementNames, made: ShapeId[], next = { piece: 2 }): { out: BodyState[]; changed: boolean; removed: Id[] } {
+  private boolBodies(featureId: Id, op: 'cut' | 'common', list: readonly BodyState[], toolFor: (b: BodyState) => { shape: ShapeId; names: ElementNames }, made: ShapeId[], next = { piece: 2 }): { out: BodyState[]; changed: boolean; removed: Id[] } {
     const k = this.kernel;
     const out: BodyState[] = [];
     const removed: Id[] = [];
@@ -2572,7 +2689,8 @@ export class Regenerator {
         out.push(b); // a surface body is not cut
         continue;
       }
-      const r = k.boolean(op, b.shape, toolShape);
+      const tool = toolFor(b);
+      const r = k.boolean(op, b.shape, tool.shape);
       const before = k.massProps(b.shape).volume;
       const after = k.massProps(r.shape).volume;
       if (after <= 1e-9 * before) {
@@ -2587,7 +2705,7 @@ export class Regenerator {
         continue;
       }
       changed = true;
-      const context = { featureId, input: concatNames(b.names, toolNames) };
+      const context = { featureId, input: concatNames(b.names, tool.names) };
       if (k.solidCount(r.shape) <= 1) {
         made.push(r.shape);
         const topology = k.topology(r.shape);
@@ -2641,7 +2759,7 @@ export class Regenerator {
           drop(pieces, [joined]);
           pieces = [joined];
         } else {
-          const r = this.boolBodies(f.id, f.op === 'subtract' ? 'cut' : 'common', pieces, tool.shape, tool.names, made, next);
+          const r = this.boolBodies(f.id, f.op === 'subtract' ? 'cut' : 'common', pieces, () => ({ shape: tool.shape, names: tool.names }), made, next);
           if (!r.changed && f.op === 'subtract') throw new FeatureError(t('body.subtractNothing', { name: tool.id }));
           if (r.out.length === 0) throw new FeatureError(t(f.op === 'subtract' ? 'body.subtractAll' : 'body.noCommon', { name: tool.id }));
           drop(pieces, r.out);
@@ -4611,7 +4729,7 @@ export class Regenerator {
     const made: ShapeId[] = [];
     try {
       const toolNames = nameElements(tool.faceOrigins, k.topology(tool.shape), { featureId: f.id, role: 'cut', input: surface.names });
-      const r = this.boolBodies(f.id, f.keep === 'ahead' ? 'common' : 'cut', [target], tool.shape, toolNames, made);
+      const r = this.boolBodies(f.id, f.keep === 'ahead' ? 'common' : 'cut', [target], () => ({ shape: tool.shape, names: toolNames }), made);
       k.release(tool.shape);
       if (!r.changed) throw new FeatureError(t('feature.cutRemovedNothing'));
       if (r.out.length === 0) throw new FeatureError(t('regen.cutRemovedAll'));

@@ -1,13 +1,14 @@
-// ADR 0231: the extrude cut that keeps the material inside the contour, through the UI, in the app's page
+// ADR 0232: the extrude cut that keeps the material inside the contour, through the UI, in the app's page
 // (http://127.0.0.1:5391, 1280×720). Not a Vitest test; the store is only read.
 //
 //   await import('/@fs/<checkout>/tests/e2e/manual-keep-inside-extrude.js?' + Date.now());
 //   await __x.run();   // -> { name, steps: [{ name, volume, expected, pass }], pass }
 //
 // A 20 × 10 block 10 thick, mid-plane so the sketch plane runs through it (2000 mm³). Then a cut whose profile
-// is a 16 × 7 rectangle inside that cross-section, through all: an ordinary cut takes the 560 mm³ the profile
-// covers away (1440 left), 「保留輪廓內」 keeps exactly those 560 mm³ and takes the rest away. Then the two
-// refusals: a depth is not allowed while the option is on, and the option is not allowed with a depth.
+// is a 16 × 7 rectangle inside that cross-section, through all upwards: an ordinary cut takes the 560 mm³ the
+// profile covers away (1440 left). 「保留輪廓內」 keeps the 560 mm³ the profile covers and takes the rest of the
+// reach away, so 1560 is left: the 1000 mm³ below the sketch plane (beyond the reach) and the 560 mm³ inside the
+// profile. A depth is allowed with the option on: the reach is then the depth, and 1736 is left.
 
 const here = import.meta.url.slice(0, import.meta.url.lastIndexOf('/') + 1);
 await import(here + 'phase1-demo-parts.js?' + Date.now());
@@ -34,8 +35,7 @@ const pmInput = async (label, value) => {
   el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   await H.settle();
 };
-/** What the status bar says: the refusals are told to the user there. */
-const noticeText = () => document.querySelector('.status-bar .notice')?.textContent ?? state().notice?.text ?? '';
+/** The cut feature in the document. */
 const cut = () => state().doc.features.find((f) => f.type === 'extrude' && f.op === 'cut');
 
 X.run = async () => {
@@ -80,22 +80,18 @@ X.run = async () => {
   step('an ordinary through-all cut', 1440);
 
   await H.pmCheck('保留輪廓內', true);
-  step('the same cut, keeping what is inside the contour', 560);
+  step('the same cut, keeping what is inside the contour', 1560);
   const hints = [...pm().querySelectorAll('.hint')].map((h) => h.textContent ?? '');
-  steps.push({ name: 'the hint says the end condition has to be through all', pass: hints.some((h) => h.includes('全部貫穿')) });
+  steps.push({ name: 'the hint says the reach decides', pass: hints.some((h) => h.includes('範圍')) && !hints.some((h) => h.includes('全部貫穿')) });
 
-  // a depth is refused while the option is on: the document keeps the through-all end condition
-  await pmSelect('終止型態', 'blind');
-  const said = noticeText();
-  steps.push({ name: 'a depth is refused while the option is on', notice: said, pass: said.includes('全部貫穿') && cut()?.dir1.type === 'throughAll' && near(state().result.mass.volume, 560) });
-
-  // and the option is refused with a depth
-  await H.pmCheck('保留輪廓內', false);
+  // a depth is allowed with the option on: the reach is the depth
   await pmSelect('終止型態', 'blind');
   await pmInput('深度', '3');
-  await H.pmCheck('保留輪廓內', true);
-  const said2 = noticeText();
-  steps.push({ name: 'the option is refused with a depth', notice: said2, pass: said2.includes('全部貫穿') && cut()?.keepInside !== true });
+  step('the same cut, keeping what is inside the contour, 3 deep', 1736);
+  steps.push({ name: 'the document keeps the depth and the option', pass: cut()?.keepInside === true && cut()?.dir1.type === 'blind' });
+
+  // and the option is refused on a boss, not with a depth: a cut with a depth and the option off is an ordinary cut
+  await H.pmCheck('保留輪廓內', false);
   step('an ordinary cut 3 deep', 1664);
 
   await H.pmOk();

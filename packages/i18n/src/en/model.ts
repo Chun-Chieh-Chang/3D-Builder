@@ -100,7 +100,6 @@ export const model: Translation = {
   'cmd.onlyExtrudeHasEnd': 'Only an Extrude feature has an end condition',
   'cmd.onlyExtrudeHasKeepInside': 'Only an Extrude feature can keep the material inside the contour',
   'cmd.keepInsideOnlyCut': 'Only a cut can keep the material inside the contour',
-  'cmd.keepInsideNeedsThroughAll': 'Keeping the material inside the contour needs a Through All end condition (a depth would take away the material inside the contour beyond it)',
   'cmd.onlyRevolveHasAngle': 'Only a Revolve feature has an angle',
   'cmd.onlyRevolveHasAxis': 'Only a Revolve feature has an axis',
   'cmd.revolveSketchNotFound': 'The sketch of the Revolve feature was not found',

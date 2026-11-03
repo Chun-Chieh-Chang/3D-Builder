@@ -333,13 +333,6 @@ function refuseMid2(f: { dir1: EndCondition; dir2?: EndCondition | null }): void
   if (f.dir2 && (f.dir1.type === 'midPlane' || f.dir2.type === 'midPlane')) throw new CommandError(t('feature.mid2'));
 }
 
-/** 「保留輪廓內」 keeps what the body shares with the swept region, so every direction has to be 貫穿全部: a depth would take away the material
- * inside the contour beyond it (the engine refuses it at rebuild), as `refuseMid2` does. */
-function refuseKeepInside(f: { dir1: EndCondition; dir2?: EndCondition | null; keepInside?: boolean }): void {
-  if (!f.keepInside) return;
-  if (f.dir1.type !== 'throughAll' || (f.dir2 && f.dir2.type !== 'throughAll')) throw new CommandError(t('cmd.keepInsideNeedsThroughAll'));
-}
-
 /** The feature's sketch must come earlier in the history. */
 function sketchBefore(doc: PartDoc, sketchId: Id, index: number, label: string): SketchFeature {
   const at = doc.features.findIndex((x) => x.id === sketchId);
@@ -1011,7 +1004,6 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (cmd.second) f.dir2 = cmd.second;
       else { delete f.dir2; delete f.draft2; }
       refuseMid2(f);
-      refuseKeepInside(f);
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }
@@ -1027,7 +1019,6 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       endCondition(cmd.value);
       f[cmd.dir] = cmd.value;
       refuseMid2(f);
-      refuseKeepInside(f);
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }
@@ -1570,7 +1561,6 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
         return;
       }
       if (f.op !== 'cut') throw new CommandError(t('cmd.keepInsideOnlyCut'));
-      refuseKeepInside({ ...f, keepInside: true });
       f.keepInside = true;
       return;
     }

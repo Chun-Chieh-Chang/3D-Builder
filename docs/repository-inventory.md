@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 88／7／38 |
-| ADR 文件 | 230 |
+| ADR 文件 | 231 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 218／214／266 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -460,6 +460,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0229: 草圖交叉/分岔子區域探針 (G11, D3)](<adr/0229-sketch-subregion-probe.md>)
 - [ADR 0230: 草圖樣條 G2/節點權重探針 (G17, D4)](<adr/0230-sketch-spline-g2-probe.md>)
 - [ADR 0231：伸長除料可「保留輪廓內」](<adr/0231-keep-inside-extrude-cut.md>)
+- [ADR 0232：「保留輪廓內」改為範圍受限](<adr/0232-keep-inside-reach.md>)
 
 ### 歷史驗證
 

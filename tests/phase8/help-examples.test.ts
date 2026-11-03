@@ -51,6 +51,15 @@ describe('the worked examples in the help texts', () => {
     expect(volume(r)).toBeCloseTo(10 * 10 * 10, 6);
   });
 
+  it('extruded cut that keeps the material inside the contour with a depth of 4: 7600 of the 12000 is left', () => {
+    const keep = { id: 'c1', type: 'extrude', name: 'c1', suppressed: false, sketch: 's2', op: 'cut', dir1: { type: 'blind', depth: '4' }, keepInside: true } satisfies Feature;
+    const r = rebuild(build(...block(), sketch('s2', face('e1:cap:end'), rectangle('b', 0, 0, 10, 10)), keep));
+    ok(r);
+    // the 6 mm below the depth is left as it is, and 10 × 10 × 4 of the 4 mm above it is kept
+    // the cut reaches a face, so the boolean leaves a sliver of its confusion tolerance (1e-7 mm) behind
+    expect(Math.abs(volume(r) - (6 * 40 * 30 + 4 * 10 * 10))).toBeLessThan(1e-3);
+  });
+
   it('revolve: 10 wide and 20 high on the axis is a cylinder, 6283.19, and 1570.80 for a quarter turn', () => {
     const full = rebuild(build(turned('s1', 10, 20), revolve('r1', 's1', 'boss', '360')));
     ok(full);
