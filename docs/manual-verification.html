@@ -85,7 +85,7 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <nav><ol><li><a href="#prep">0. 開始之前（只做一次）<span class="cnt" data-sec="prep"></span></a></li><li><a href="#desktop">A. 桌面版安裝<span class="cnt" data-sec="desktop"></span></a></li><li><a href="#basic">B. 基礎功能殘留<span class="cnt" data-sec="basic"></span></a></li><li><a href="#p3a">C. 零件建模（Phase 3a）<span class="cnt" data-sec="p3a"></span></a></li><li><a href="#p3b">D. 組合件（Phase 3b）<span class="cnt" data-sec="p3b"></span></a></li><li><a href="#p4a">E. 夾治具（Phase 4a）<span class="cnt" data-sec="p4a"></span></a></li><li><a href="#p5">F. 工程圖（Phase 5）<span class="cnt" data-sec="p5"></span></a></li><li><a href="#p4b">G. 檢具型面塊（Phase 4b）<span class="cnt" data-sec="p4b"></span></a></li><li><a href="#p6">H. 塑膠件（Phase 6）<span class="cnt" data-sec="p6"></span></a></li><li><a href="#p7">I. 鈑金（Phase 7）<span class="cnt" data-sec="p7"></span></a></li><li><a href="#samples">J. 需要真實樣本的驗證<span class="cnt" data-sec="samples"></span></a></li><li><a href="#standards">K. 對照你的標準<span class="cnt" data-sec="standards"></span></a></li><li><a href="#cleanup">L. 清理與收尾<span class="cnt" data-sec="cleanup"></span></a></li></ol></nav>
 <main>
 <div class="lead">
-<p><b>這份清單是什麼：</b><code>npm run check</code> 通過 364 個測試檔、4339 個測試（另有 4 檔／26 項略過）。截至 2026-11-02，無頭 Chromium 的 <code>npm run verify:ui</code> 有 <b>264/264 個 UI 重播通過</b>，並在指定資料夾保留逐步截圖；自動腳本使用合成指標事件，因此不等同實體滑鼠或其他裝置驗證。部分截圖已檢視，逐項覆蓋見 <code>docs/verification-coverage.md</code>。另外 <b>14 項是你自己確認過的</b>（P1–P3、A1、B1、C1–C5、C17、D3、D8、H9，寫在各項最上面的藍框），也預設隱藏、算已處理，換電腦或換瀏覽器不會再顯示成「未做」。留下來的是<b>尚需實體操作、外部軟體、真實參考數據或你決定</b>的項目：每一項最上面的綠／黃框說明已驗與待驗範圍。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。<b>現在還剩（2026-11-02）：</b>① <b>C27</b> 用滑鼠看草圖移動／複製／旋轉／縮放與陣列的預覽；② <b>D9、D10</b> 用實體滑鼠試量測標籤、抓點與組合件的座標軸把手；③ <b>F7</b> 用實體滑鼠試標註、剖面線與把尺寸線拖進視圖；④ <b>F6</b> 用 Chrome 開 PDF；⑤ <b>F4</b> 孔標註用語合不合公司習慣；⑥ <b>G5、I9</b> 在外部 CAD／雷射軟體驗證（I9 已在 eDrawings 開過，沒有其他 CAD 可選「略過」）；⑦ <b>I10</b> 真人走一遍鈑金支架；⑧ <b>J 章</b>公開 CAD 樣本已取得並通過匯入測試，仍待用外部 CAD 及 SolidWorks 對照；⑨ <b>K 章</b>要你決定；⑩ <b>C28、C29</b> 用滑鼠看從設計樹刪除特徵（含子特徵與被吸收的草圖）、草圖的刪除圖元與選擇鏈；⑪ <b>D11、D12、D13</b> 用滑鼠看從組合件開啟零件再回來、刪除零組件、重新指定零件檔；⑫ <b>F8、F9、F10</b> 用滑鼠看從工程圖開啟零件再回來、基準符號與幾何公差框、表面粗糙度符號；⑬ <b>C30</b> 用別的軟體讀輸出的 IGES。另 D9 的 375／390／768 viewport 尚未驗（本機頁面的瀏覽器權限設定阻擋直接開啟）；L 章尚有需許可的資料夾清理與選做收尾。</p>
+<p><b>這份清單是什麼：</b><code>npm run check</code> 通過 364 個測試檔、4339 個測試（另有 4 檔／26 項略過）。截至 2026-11-02，無頭 Chromium 的 <code>npm run verify:ui</code> 有 <b>264/264 個 UI 重播通過</b>，並在指定資料夾保留逐步截圖；自動腳本使用合成指標事件，因此不等同實體滑鼠或其他裝置驗證。部分截圖已檢視，逐項覆蓋見 <code>docs/verification-coverage.md</code>。另外 <b>17 項是確認完成、不用再做的</b>（P1–P3、A1、B1、C1–C5、C17、D3、D8、H9、L1–L3，寫在各項最上面的藍框），也預設隱藏、算已處理，換電腦或換瀏覽器不會再顯示成「未做」。留下來的是<b>尚需實體操作、外部軟體、真實參考數據或你決定</b>的項目：每一項最上面的綠／黃框說明已驗與待驗範圍。每一項都寫了「為什麼要做、先準備什麼、怎麼做、應該看到什麼、有問題時回報什麼」。第一次用請先讀下面的「先看這裡」（畫面怎麼認、共用做法、名詞）；步驟裡每個動作下面以「→」開頭的小字，是做完那個動作你應該看到的畫面。<b>現在還剩（2026-11-03）：</b>① <b>C27</b> 用滑鼠看草圖移動／複製／旋轉／縮放與陣列的預覽；② <b>D9、D10</b> 用實體滑鼠試量測標籤、抓點與組合件的座標軸把手；③ <b>F7</b> 用實體滑鼠試標註、剖面線與把尺寸線拖進視圖；④ <b>F6</b> 用 Chrome 開 PDF；⑤ <b>F4</b> 孔標註用語合不合公司習慣；⑥ <b>G5、I9</b> 在外部 CAD／雷射軟體驗證（I9 已在 eDrawings 開過，沒有其他 CAD 可選「略過」）；⑦ <b>I10</b> 真人走一遍鈑金支架；⑧ <b>J 章</b>公開 CAD 樣本已取得並通過匯入測試，仍待用外部 CAD 及 SolidWorks 對照；⑨ <b>K 章</b>要你決定；⑩ <b>C28、C29</b> 用滑鼠看從設計樹刪除特徵（含子特徵與被吸收的草圖）、草圖的刪除圖元與選擇鏈；⑪ <b>D11、D12、D13</b> 用滑鼠看從組合件開啟零件再回來、刪除零組件、重新指定零件檔；⑫ <b>F8、F9、F10</b> 用滑鼠看從工程圖開啟零件再回來、基準符號與幾何公差框、表面粗糙度符號；⑬ <b>C30</b> 用別的軟體讀輸出的 IGES。另 D9 的 375／390／768 viewport 尚未驗（本機頁面的瀏覽器權限設定阻擋直接開啟）；L 章的清理已於 2026-11-03 完成（桌面版殘留資料夾已刪、瀏覽器沒有殘留的復原副本、spike 分支與 Docker 虛擬磁碟都清掉了）。</p>
 <p><b>怎麼用：</b>點項目標題展開；做完在右邊的下拉選單選「通過」「有問題」「略過」，並在備註寫下觀察。進度會自動存在這個瀏覽器裡。全部做完（或做到一個段落）按上方的「複製結果」把整份貼給我。</p>
 <p><b>建議順序：</b>先做 0（準備）→ C（零件，每項十分鐘內）→ D、E（組合件與夾具）→ F（工程圖）→ H、I（塑膠與鈑金），標「必做」的優先；標「需樣本」「需你決定」的是等你提供資料或下決定，不用現在做。</p>
 <p class="stat">產生日期 2026-10-04，2026-10-06、2026-10-08、2026-10-09、2026-11-02 更新（本次 UI 264/264、測試 4339 通過／26 略過、正式建置通過）；對應的程式版本：提交 187e325 之後，零件格式 Schema 87、組合件格式 Schema 7、工程圖格式 Schema 38（工程圖的視圖可以用滑鼠拖曳改位置、拖右下角的方塊改比例，「最適比例」連標註一起算；線性尺寸的尺寸線可以畫在視圖上，見 F7）。下文的「驗證資料夾」指 P2 用 KIT_OUT 做出來的那個資料夾（本文的例子寫 D:\3DB實機確認，你的在哪裡就用哪裡）。</p>
@@ -1578,31 +1578,34 @@ code{background:var(--chip);padding:0 4px;border-radius:4px}
 <h4>應該看到</h4><ul><li>功能均已交付或在排程中。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details></section><section id="cleanup" class="sec"><h2>L. 清理與收尾</h2><p class="intro">這些不是功能驗證，是整理這台電腦與專案。</p><details class="item" id="item-L1" data-id="L1" data-sec="cleanup" data-tag="decide">
+</div></details></section><section id="cleanup" class="sec"><h2>L. 清理與收尾</h2><p class="intro">這些不是功能驗證，是整理這台電腦與專案。</p><details class="item" id="item-L1" data-id="L1" data-auto="user" data-sec="cleanup" data-tag="decide">
 <summary><span class="iid">L1</span><span class="ttl">刪除桌面版殘留的資料夾</span><span class="tag t-done">已完成</span>
-<select class="st" aria-label="L1 狀態"><option value="ok" selected>通過</option><option value="bad">有問題</option><option value="skip">略过</option></select></summary>
+<select class="st" aria-label="L1 狀態"><option value="ok" selected>通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>已確認完成（2026-11-03，依你的指示清理）。</b>桌面版已經解除安裝，沒有程式或行程佔用這個資料夾，已經刪掉。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>先前測試桌面版時留下的快取。</p>
-<h4>怎麼做</h4><ol><li>資料夾：%LOCALAPPDATA%\app.3dbuilder.desktop（內含網頁暫存、自動存檔的還原副本）。</li><li>已完成：於 2026-10-04 經許可後已刪除該暫存資料夾。</li></ol>
+<h4>怎麼做</h4><ol><li>資料夾：%LOCALAPPDATA%\app.3dbuilder.desktop（內含網頁暫存、自動存檔的還原副本）。</li><li>2026-10-04 經許可後刪除過一次；2026-10-19 再跑桌面版（<code>tests/e2e/desktop-probe.mjs</code>）又產生了 110 MB。</li><li>2026-11-03：確認桌面版已解除安裝（沒有解除安裝項目、沒有程式資料夾）、也沒有 WebView2 行程佔用它之後刪除（110 MB／293 個檔案）。</li><li>之後再執行桌面版，這個資料夾會重新產生，那是設計如此：解除安裝預設保留 WebView2 的使用者資料（自動存檔的還原副本、記住的專案資料夾）。</li></ol>
 <h4>應該看到</h4><ul><li>已清理完畢。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-L2" data-id="L2" data-sec="cleanup" data-tag="opt">
-<summary><span class="iid">L2</span><span class="ttl">瀏覽器裡殘留的「找到沒有儲存的零件」</span><span class="tag t-opt">可選</span>
-<select class="st" aria-label="L2 狀態"><option value="">未做</option><option value="ok">通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+</div></details><details class="item" id="item-L2" data-id="L2" data-auto="user" data-sec="cleanup" data-tag="opt">
+<summary><span class="iid">L2</span><span class="ttl">瀏覽器裡殘留的「找到沒有儲存的零件」</span><span class="tag t-done">已完成</span>
+<select class="st" aria-label="L2 狀態"><option value="ok" selected>通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>已確認沒有殘留（2026-11-03）。</b>在自己的 Chrome 開 <code>http://127.0.0.1:5391</code>，沒有跳出「找到沒有儲存的零件」，畫面直接是新零件。桌面版的那一份已隨 L1 一起刪掉。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>舊測試的副本。</p>
-<h4>怎麼做</h4><ol><li>開程式時若跳出這個視窗，按「捨棄」。之後的自動測試腳本會自己收尾。</li></ol>
+<h4>怎麼做</h4><ol><li>復原副本放在瀏覽器的 IndexedDB（資料庫 <code>3d-builder</code>、項目 <code>recovery</code>），每個網址各一份：網頁版是 <code>127.0.0.1:5391</code>，桌面版是 <code>tauri.localhost</code>。</li><li>2026-11-03 在自己的 Chrome 開 <code>http://127.0.0.1:5391</code>：沒有跳出「找到沒有儲存的零件」，也沒有復原提示，等於沒有殘留。</li><li>桌面版那一份在 %LOCALAPPDATA%\app.3dbuilder.desktop 裡，已隨 L1 刪除。</li><li>之後的自動測試腳本會自己收尾：<code>scripts/verify-ui.mjs</code> 每一支都從空的瀏覽器儲存開始跑。</li><li>若日後又跳出這個視窗，按「捨棄」即可——那是你自己留下來、還沒存檔的零件。</li></ol>
 <h4>應該看到</h4><ul><li>不再跳出。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
-</div></details><details class="item" id="item-L3" data-id="L3" data-sec="cleanup" data-tag="opt">
+</div></details><details class="item" id="item-L3" data-id="L3" data-auto="user" data-sec="cleanup" data-tag="opt">
 <summary><span class="iid">L3</span><span class="ttl">其他整理（spike 分支與 Docker）</span><span class="tag t-done">已完成/已裁</span>
 <select class="st" aria-label="L3 狀態"><option value="ok" selected>通過</option><option value="bad">有問題</option><option value="skip">略過</option></select></summary>
+<p class="auto user"><b>已確認完成（2026-11-03）。</b>spike 分支確實已經不在；Docker 的虛擬磁碟也已經沒有佔空間。</p>
 <div class="inner">
 <p class="why"><b>為什麼要做：</b>維護版本庫乾淨。</p>
-<h4>怎麼做</h4><ol><li>已合併的 spike/occt-gaps 分支已於 2026-10-07 刪除。</li><li>Docker 虛擬磁碟：依 2026-10-10 裁決暫不壓縮。</li></ol>
-<h4>應該看到</h4><ul><li>分支已清理完畢。</li></ul>
+<h4>怎麼做</h4><ol><li>已合併的 spike/occt-gaps 分支已於 2026-10-07 刪除；2026-11-03 再查一次，仍然沒有這個分支。</li><li>Docker 虛擬磁碟：先前 <code>docker_data.vhdx</code> 佔 25 GB，2026-10-10 的裁決是暫不壓縮。2026-11-03 查：這台機器沒有安裝 Docker、沒有 WSL、也找不到那個 vhdx 檔，磁碟已隨解除安裝清掉（C 槽目前空 727 GB），那個決定已沒有對象。</li><li>還留著的其他分支（<code>codex/socket-set-screw</code>、<code>codex/drawing-annotations</code>、<code>codex/drawing-release</code>，以及遠端的 <code>claude/*</code> 三個）多半已併入 main，但屬於其他工作階段，2026-11-03 沒有刪。</li></ol>
+<h4>應該看到</h4><ul><li>spike 分支與 Docker 虛擬磁碟都清掉了；其他工作階段的分支保持原樣。</li></ul>
 
 <label class="note">備註<textarea rows="2" placeholder="做到哪一步、畫面訊息原文、和預期的差別…"></textarea></label>
 </div></details></section>
