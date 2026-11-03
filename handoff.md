@@ -1,6 +1,6 @@
 # 交接與接續工作 (Handoff for Claude Code)
 
-更新日期：2026-11-02。接手請優先閱讀本檔、[產品現況](docs/project-state.md)、[AGENTS.md](AGENTS.md) 與 [草圖互動改善方案](docs/design/sketch-interaction/plan.md)。  
+更新日期：2026-11-03。接手請優先閱讀本檔、[產品現況](docs/project-state.md)、[AGENTS.md](AGENTS.md) 與 [草圖互動改善方案](docs/design/sketch-interaction/plan.md)。  
 在進行任何操作前，請先執行 `git status --short --branch` 與 `git log -5 --oneline` 掌握最新狀況。
 
 ---
@@ -8,10 +8,10 @@
 ## 1. 接續入口與當前代碼基準 (Current Baseline)
 
 - **目前分支**：`main`
-- **最新 Commit**：`40eeec8`（`docs(manual): add nine verification items (C28-C30, D11-D13, F8-F10)`，手冊新增九項，見 §3r）；其上是 `7aebded`、`c23f22e`、`ea0b510`（交接提交）、`e577a18`、`4b867f0`（手冊待辦盤點，見 §3q）。
-- **遠端狀態**：本地 `main` 比 `origin/main`（`7aebded`）多出「手冊新增九項」與本檔的交接提交（`40eeec8` 起），**尚未推送（未取得授權）**。
-- **CI 狀態**：GitHub Actions integrity 三平台（`ubuntu-latest`, `windows-latest`, `macos-latest`）**全數綠燈**（`e171790`：Run `41407308974`，三平台 job 皆 `success`；`d37c4a7`：Run `41392524538`；`510f55c`：Run `41391653913`／`41391657225`／`41392269791`；`full-suite` 為夜間排程另計，`e171790` 一輪為 `skipped`；`a8e30b8` 起每次推送另跑 large-sketch solver 測試，皆通過）。**本次推送的 Repository integrity 全數綠燈（Run `104`：`ea0b510`，即手冊盤點三個提交；Run `105`：`c23f22e`，三平台 job 皆 `success`）。`40eeec8` 與本檔的交接提交尚未推送，因此還沒有它們的 CI 結果。**
-- **工作區狀態**：**乾淨，無在途檔**（手冊新增九項已於 `40eeec8` 提交、本檔交接於同一批提交，見 §3r；手冊盤點的 6 個檔已於 `4b867f0` 提交，交接更新是 `e577a18`、`ea0b510`，見 §3q）。注意：worktree 一律放在專案資料夾內（`.claude/worktrees/` 慣例），`wt-gizmo` 已用畢移除。
+- **最新 Commit**：`fc3f5b0`（`docs(manual): finish the L chapter cleanup (L1-L3)`，手冊 L 章清理與收尾完成，見 §3s）；其上是 `34e4a22`（交接提交）、`40eeec8`（手冊新增九項，見 §3r），再上是 `7aebded`、`c23f22e`、`ea0b510`（交接提交）、`e577a18`、`4b867f0`（手冊待辦盤點，見 §3q）。
+- **遠端狀態**：本地 `main` 比 `origin/main`（`7aebded`）多出三個提交（`40eeec8` 手冊新增九項、`34e4a22` 交接提交、`fc3f5b0` 手冊 L 章完成）與本檔的交接提交，**尚未推送（未取得授權）**。
+- **CI 狀態**：GitHub Actions integrity 三平台（`ubuntu-latest`, `windows-latest`, `macos-latest`）**全數綠燈**（`e171790`：Run `41407308974`，三平台 job 皆 `success`；`d37c4a7`：Run `41392524538`；`510f55c`：Run `41391653913`／`41391657225`／`41392269791`；`full-suite` 為夜間排程另計，`e171790` 一輪為 `skipped`；`a8e30b8` 起每次推送另跑 large-sketch solver 測試，皆通過）。**本次推送的 Repository integrity 全數綠燈（Run `104`：`ea0b510`，即手冊盤點三個提交；Run `105`：`c23f22e`，三平台 job 皆 `success`）。`40eeec8`、`34e4a22`、`fc3f5b0` 與本檔的交接提交尚未推送，因此還沒有它們的 CI 結果。**
+- **工作區狀態**：**乾淨，無在途檔**（手冊 L 章清理已於 `fc3f5b0` 提交、本檔交接另行提交，見 §3s；手冊新增九項已於 `40eeec8` 提交、交接於 `34e4a22`，見 §3r；手冊盤點的 6 個檔已於 `4b867f0` 提交，交接更新是 `e577a18`、`ea0b510`，見 §3q）。注意：worktree 一律放在專案資料夾內（`.claude/worktrees/` 慣例），`wt-gizmo` 已用畢移除。
 
 ---
 
@@ -253,6 +253,20 @@
 - **驗證**：說明守門 `help.test.ts` 40 + `help-manual.test.ts` 2 + `help-examples.test.ts` 5 = 47/47 通過；全量 `npx vitest run` 364 檔／4339 通過／26 略過／0 失敗；`tsc` 0 錯；`lint:rules`／`lint:deps`／`lint:i18n`／`lint:repo` 全過；`npm run docs:sync` 把實機清單項目數由 92 改為 101；瀏覽器實查手冊頁：101 項、META 101、進度 70/101（56 full + 14 user + 31 待做）、導覽計數 C 26/30、D 8/13、F 4/10；中文以與 HEAD 基線差測掃描，新增字元中簡體字命中 0。
 - **未跑完整 `verify:ui`**：本批只改 `docs/` 下的獨立 HTML 與說明對照檔，未觸及應用程式的檢視／繪圖／點選層，故未跑整輪瀏覽器驗證。
 - **尚未推送**：`40eeec8` 與本檔的交接提交都在本地 `main`（比 `origin/main` 的 `7aebded` 多出這兩個），未取得當次明文授權前不推送。
+
+
+## 3s. 2026-11-03 手冊 L 章清理與收尾（L1–L3，已提交 `fc3f5b0`）
+
+> **狀態：L1–L3 三項都已實際清理／查核完成並寫入手冊（`fc3f5b0`）；說明守門 47/47 通過、瀏覽器實查手冊頁 101 項、進度 73/101、cleanup 3/3、「還沒做」28 項且不含 L。尚未推送（未取得當次明文授權）。**
+
+- **起因**：使用者指示「先做 L. 清理與收尾」。L 章（`data-sec="cleanup"`）三項都是要人手或要授權的收尾工作：L1 桌面版殘留資料夾、L2 瀏覽器裡殘留的「找到沒有儲存的零件」、L3 其他整理（spike 分支與 Docker）。
+- **L1 桌面版殘留資料夾（已刪除）**：目標是 `%LOCALAPPDATA%\app.3dbuilder.desktop`（WebView2 使用者資料，見 `apps/desktop/README.md`，解除安裝時刻意保留）。手冊原本寫 2026-10-04 已刪除，但 2026-11-03 檢查時**又存在**：110 MB／293 個檔案，其中 IndexedDB 的修改時間是 2026-10-19（`tests/e2e/desktop-probe.mjs` 跑桌面版時重新建立）。刪除前做了三項可驗證的檢查：① 沒有解除安裝項目、沒有程式資料夾 → 桌面版已解除安裝；② 沒有任何 WebView2 行程使用該路徑；③ 沒有行程持有該資料夾。確認後刪除。**之後只要再跑桌面版就會重新建立該資料夾，這是設計使然，不是殘留。**
+- **L2 瀏覽器裡殘留的「找到沒有儲存的零件」（已確認沒有殘留）**：復原副本存在 IndexedDB（`apps/web/src/files.ts`：資料庫 `3d-builder` → object store `handles` → key `recovery`），**依 origin 分開存放**，所以網頁版與桌面版各有一份。2026-11-03 的查法是**行為式的**：在自己的 Chrome 開 `http://127.0.0.1:5391`（web dev server 的埠），畫面上**沒有**跳出「找到沒有儲存的零件」對話框，代表沒有待丟棄的殘留（證據截圖 `out/screen-l2b.png`，該檔在 gitignore 內）。桌面版那一份已隨 L1 一起刪掉。e2e 不會留下殘留：`scripts/verify-ui.mjs` 每支腳本都以**空的瀏覽器儲存空間**開跑。以後若真的跳出那個對話框，代表是你自己未儲存的零件，按「捨棄」即可。
+- **L3 其他整理（spike 分支與 Docker）（已確認無事可做）**：`git branch -a` 確認 **spike 分支確實已不存在**；Docker 未安裝、WSL 未安裝、使用者目錄下找不到任何 `*.vhdx`（2026-10-10 記錄的 25 GB `docker_data.vhdx` 已不在），C: 目前空出約 727 GB，故 2026-10-10「暫不壓縮」的決定已無對象。**其他工作階段的分支刻意不動**（`codex/socket-set-screw`、`codex/drawing-annotations`、`codex/drawing-release`、遠端 `claude/*` 三個）——刪別人的分支屬影響共享狀態，只在手冊裡列明。
+- **手冊改動（`docs/manual-verification.html`）**：① L1／L2／L3 三項的 `data-auto` 由 `part` 改為 `user`（已確認完成 → 在「需人工」篩選下預設隱藏，也不再出現在「複製結果」的「還沒做」清單），各補一段 `<p class="auto user">` 寫清查核過程與日期，狀態下拉預設選「通過」；② L1 狀態選項原本用的是簡體字，已改為繁體的「略過」（那原本是全檔唯一的簡體字）；③ 開頭「14 項是你自己確認過的」改為「17 項是確認完成、不用再做的」（補上 L1–L3），日期由 2026-11-02 改為 2026-11-03，尾句由「L 章尚有需許可的資料夾清理與選做收尾」改為已完成的事實；④ L3 的「應該看到」改寫成實際結果（spike 分支與 Docker 虛擬磁碟都清掉了；其他工作階段的分支保持原樣）。
+- **驗證**：瀏覽器實查手冊頁——101 項；`data-auto` 分佈為 56 full／17 user／17 part／11 項沒有 `data-auto`（I10、J1–J6、K1–K4 這類需要外部樣本的項目，本來就留在「還沒做」）；進度 73/101（56 full + 17 user）；cleanup 導覽 3/3；「還沒做」28 項且不含 L1–L3。說明守門 `help.test.ts` 40 + `help-manual.test.ts` 2 + `help-examples.test.ts` 5 = 47/47 通過；`npm run lint:repo` 通過；`npm run docs:sync` 無變更；中文以與 HEAD 基線差測掃描，新增字元中簡體字命中 0。
+- **未跑完整 `verify:ui`**：本批只改 `docs/` 下的獨立 HTML，另加上刪掉桌面版的殘留資料夾（不涉及應用程式的檢視／繪圖／點選層），故未跑整輪瀏覽器驗證。
+- **尚未推送**：`fc3f5b0` 與本檔的交接提交都在本地 `main`（比 `origin/main` 的 `7aebded` 多出這幾個），未取得當次明文授權前不推送。
 
 
 ## 3l. 2026-11-01 P4 完成後待裁項目裁決與後續執行進度
