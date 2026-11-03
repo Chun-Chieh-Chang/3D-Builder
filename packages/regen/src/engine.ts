@@ -1413,6 +1413,11 @@ export class Regenerator {
     const s = this.profileOf(sketches, f.sketch, f.contours, f.thin);
     const body = set.view;
     if (f.op === 'cut' && !body) throw new FeatureError(t('feature.cutNeedsBody'));
+    if (f.keepInside) {
+      if (f.op !== 'cut') throw new FeatureError(t('feature.keepInsideOnlyCut'));
+      // 「保留輪廓內」 keeps what the body shares with the swept region, so every direction has to go through all
+      if (f.dir1.type !== 'throughAll' || (f.dir2 && f.dir2.type !== 'throughAll')) throw new FeatureError(t('feature.keepInsideNeedsThroughAll'));
+    }
     const n = s.frame.normal;
     // A boss grows along the sketch normal, a cut goes into the material (SolidWorks defaults); direction 2 goes the other way.
     const grow = f.op === 'cut' ? -1 : 1;
@@ -1438,7 +1443,7 @@ export class Regenerator {
     } else {
       tool = this.kernel.extrude(s.frame, s.profiles.regions, spec1.vector, spec1.offset ?? 0, spec1.until, spec1.draft);
     }
-    return this.apply(f.id, f.op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, f.merge !== false);
+    return this.apply(f.id, f.keepInside ? 'keep' : f.op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, f.merge !== false);
   }
 
   private revolve(f: RevolveFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
@@ -2495,21 +2500,23 @@ export class Regenerator {
   /**
    * Names a new tool body by how it was swept, then adds it to the bodies (boss) or removes it from them (cut). A boss
    * merges with every body it touches (`merge`, the default) and is a body of its own when it touches none, or when it is
-   * not to merge; a cut works on every body it reaches. Faces of a result inherit the names of the faces they came from,
+   * not to merge; a cut works on every body it reaches. A keep (「保留輪廓內」, ADR 0231) works on every body it reaches too, but
+   * leaves what they share with the tool and takes the rest away. Faces of a result inherit the names of the faces they came from,
    * on either side. Returns the bodies after the feature; the shapes of those that were changed are new, the old ones are
    * the caller's to let go (`advance`).
    */
-  private apply(featureId: Id, op: 'boss' | 'cut', tool: OpResult, context: { featureId: Id; sketchId?: Id }, list: readonly BodyState[], merge: boolean, bodyId: Id = featureId, named?: ElementNames): BodyState[] {
+  private apply(featureId: Id, op: 'boss' | 'cut' | 'keep', tool: OpResult, context: { featureId: Id; sketchId?: Id }, list: readonly BodyState[], merge: boolean, bodyId: Id = featureId, named?: ElementNames): BodyState[] {
     const k = this.kernel;
     const toolTopology = k.topology(tool.shape);
     const toolNames = named ?? nameElements(tool.faceOrigins, toolTopology, context);
     const made: ShapeId[] = [];
     try {
-      if (op === 'cut') {
-        const r = this.boolBodies(featureId, 'cut', list, tool.shape, toolNames, made);
+      if (op === 'cut' || op === 'keep') {
+        // a cut takes the tool away from the bodies; a keep (「保留輪廓內」) leaves what they share with it
+        const r = this.boolBodies(featureId, op === 'keep' ? 'common' : 'cut', list, tool.shape, toolNames, made);
         k.release(tool.shape);
-        if (!r.changed) throw new FeatureError(t('feature.cutRemovedNothing'));
-        if (r.out.length === 0) throw new FeatureError(t('regen.cutRemovedAll'));
+        if (!r.changed) throw new FeatureError(op === 'keep' ? t('feature.keepInsideNothing') : t('feature.cutRemovedNothing'));
+        if (r.out.length === 0) throw new FeatureError(op === 'keep' ? t('regen.keepInsideAll') : t('regen.cutRemovedAll'));
         if (r.removed.length > 0) this.warnings.push(t('body.removedWhole', { names: r.removed.join(t('cmd.listSeparator')) }));
         return r.out;
       }

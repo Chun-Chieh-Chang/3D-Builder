@@ -248,6 +248,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   85: (doc) => doc,
   // v87: an STL file may be imported as a reference mesh (`importedMesh`, a blob of kind stl, F2.3). Nothing to convert; an older program refuses the file.
   86: (doc) => doc,
+  // v88: a cut may keep the material inside the contour (`keepInside`, ADR 0231). Absent is an ordinary cut; nothing to convert.
+  87: (doc) => doc,
 };
 
 export class FormatError extends Error {

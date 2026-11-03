@@ -173,6 +173,8 @@ ull). */
   | { type: 'setMerge'; featureId: Id; merge: boolean }
   /** The contours of its sketch a boss or cut uses (C1.34): each is the ids of the entities bounding one region; `null` is all of them. */
   | { type: 'setContours'; featureId: Id; contours: Id[][] | null }
+  /** A cut keeps the material inside the contour and takes away what is outside it (ADR 0231). */
+  | { type: 'setKeepInside'; featureId: Id; keepInside: boolean }
   /** What a Combine feature does to which bodies (C7.2). */
   | { type: 'setCombine'; featureId: Id; op: CombineFeature['op']; main: Ref; tools: Ref[] }
   /** The cutting tool and target bodies of a Split feature (C7.4, v59). */
@@ -329,6 +331,13 @@ function endCondition(value: EndCondition): void {
  * keep the right to carry the combination so its failure stays visible in the tree, hence this is not part of `validateNewFeature`. */
 function refuseMid2(f: { dir1: EndCondition; dir2?: EndCondition | null }): void {
   if (f.dir2 && (f.dir1.type === 'midPlane' || f.dir2.type === 'midPlane')) throw new CommandError(t('feature.mid2'));
+}
+
+/** 「保留輪廓內」 keeps what the body shares with the swept region, so every direction has to be 貫穿全部: a depth would take away the material
+ * inside the contour beyond it (the engine refuses it at rebuild), as `refuseMid2` does. */
+function refuseKeepInside(f: { dir1: EndCondition; dir2?: EndCondition | null; keepInside?: boolean }): void {
+  if (!f.keepInside) return;
+  if (f.dir1.type !== 'throughAll' || (f.dir2 && f.dir2.type !== 'throughAll')) throw new CommandError(t('cmd.keepInsideNeedsThroughAll'));
 }
 
 /** The feature's sketch must come earlier in the history. */
@@ -1002,6 +1011,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (cmd.second) f.dir2 = cmd.second;
       else { delete f.dir2; delete f.draft2; }
       refuseMid2(f);
+      refuseKeepInside(f);
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }
@@ -1017,6 +1027,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       endCondition(cmd.value);
       f[cmd.dir] = cmd.value;
       refuseMid2(f);
+      refuseKeepInside(f);
       checkExprs(draft as PartDoc, f as Feature);
       return;
     }
@@ -1549,6 +1560,18 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       }
       if (cmd.contours.length === 0 || cmd.contours.some((c) => c.length === 0 || c.some((id) => typeof id !== 'string' || id === ''))) throw new CommandError(t('cmd.contoursEmpty'));
       f.contours = cmd.contours.map((c) => [...c]);
+      return;
+    }
+    case 'setKeepInside': {
+      const f = feature(draft, cmd.featureId);
+      if (f.type !== 'extrude') throw new CommandError(t('cmd.onlyExtrudeHasKeepInside'));
+      if (!cmd.keepInside) {
+        delete f.keepInside;
+        return;
+      }
+      if (f.op !== 'cut') throw new CommandError(t('cmd.keepInsideOnlyCut'));
+      refuseKeepInside({ ...f, keepInside: true });
+      f.keepInside = true;
       return;
     }
     case 'setCombine': {

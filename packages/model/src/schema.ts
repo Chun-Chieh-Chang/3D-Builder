@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 87;
+export const SCHEMA_VERSION = 88;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -254,6 +254,12 @@ export interface ExtrudeFeature extends FeatureBase {
   draft1?: Draft;
   draft2?: Draft;
   thin?: Thin;
+  /**
+   * A cut only (ADR 0231): keeps the material inside the contour and takes away what is outside it.
+   * The result is what the body shares with the swept region, so every direction has to be 貫穿全部 (through all);
+   * a depth would take away the material inside the contour beyond it.
+   */
+  keepInside?: boolean;
 }
 
 /** Revolve end conditions (C4.3): an angle in one direction, or split evenly about the sketch plane. */

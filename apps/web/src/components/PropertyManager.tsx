@@ -1248,6 +1248,20 @@ function MergeBox({ f }: { f: ExtrudeFeature | RevolveFeature | SweepFeature | L
   );
 }
 
+/** 「保留輪廓內」 (ADR 0231): a cut that keeps the material inside the contour and takes away what is outside it. */
+function KeepInsideBox({ f }: { f: ExtrudeFeature }) {
+  const keep = !!f.keepInside;
+  return (
+    <section className="pm-group">
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={keep} onChange={(e) => store.execute({ type: 'setKeepInside', featureId: f.id, keepInside: e.target.checked })} />
+        <span>{t('pm.keepInside')}</span>
+      </label>
+      {keep && <p className="hint">{t('pm.keepInside.hint')}</p>}
+    </section>
+  );
+}
+
 /** Extrude (C4.1, C4.2): one or two directions with their end conditions and drafts, thin walls, contours and merging. */
 function ExtrudePanel({ f }: { f: ExtrudeFeature }) {
   const doc = useStore((s) => s.doc);
@@ -1262,6 +1276,7 @@ function ExtrudePanel({ f }: { f: ExtrudeFeature }) {
       <section className="pm-group"><h4>{t('pm.directionMode')}</h4><div className="parameter-segments" role="group" aria-label={t('pm.directionMode')}>{(['one','symmetric','two'] as const).map(m=><button type="button" key={m} data-direction-mode={m} aria-pressed={mode===m} onClick={()=>direction(m)}>{t(m==='one'?'pm.directionOne':m==='symmetric'?'pm.directionSymmetric':'pm.directionTwo')}</button>)}</div></section>
       <DirectionBox f={f} which="dir1" />
       {f.dir2 && <DirectionBox f={f} which="dir2" />}
+      {f.op === 'cut' && <KeepInsideBox f={f} />}
       <ThinBox f={f} />
       <section className="pm-group">
         <p className="hint">

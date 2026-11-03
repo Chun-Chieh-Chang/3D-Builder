@@ -20,6 +20,7 @@ export const core = {
   'regen.axisGone': '旋轉軸不存在，請重新選擇',
   'regen.crossesAxis': '輪廓跨過旋轉軸',
   'regen.cutRemovedAll': '除料移除了整個本體',
+  'regen.keepInsideAll': '保留輪廓內：輪廓內沒有材料，整個本體都被刪掉了',
   'regen.importMissing': '輸入的資料不存在',
   'regen.derivedNoSources': '這個零件衍生自另一個檔案，但沒有提供讀取該檔案的方式',
   'regen.derivedSourceMissing': '找不到主模型檔案：{path}',

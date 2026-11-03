@@ -22,6 +22,7 @@ export const core: Translation = {
   'regen.axisGone': 'The axis of revolution does not exist; pick it again',
   'regen.crossesAxis': 'The profile crosses the axis of revolution',
   'regen.cutRemovedAll': 'The cut removed the whole body',
+  'regen.keepInsideAll': 'Keeping the material inside the contour: there is no material inside the contour, so the whole body was taken away',
   'regen.importMissing': 'The imported data does not exist',
   'regen.derivedNoSources': 'This part is derived from another file, and no way to read that file was given',
   'regen.derivedSourceMissing': 'The master file was not found: {path}',

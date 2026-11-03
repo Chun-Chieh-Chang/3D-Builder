@@ -44,6 +44,13 @@ describe('the worked examples in the help texts', () => {
     expect(volume(through)).toBeCloseTo(12000 - 1000, 6);
   });
 
+  it('extruded cut that keeps the material inside the contour: 1000 of the 12000 is left', () => {
+    const keep = { id: 'c1', type: 'extrude', name: 'c1', suppressed: false, sketch: 's2', op: 'cut', dir1: { type: 'throughAll' }, keepInside: true } satisfies Feature;
+    const r = rebuild(build(...block(), sketch('s2', face('e1:cap:end'), rectangle('b', 0, 0, 10, 10)), keep));
+    ok(r);
+    expect(volume(r)).toBeCloseTo(10 * 10 * 10, 6);
+  });
+
   it('revolve: 10 wide and 20 high on the axis is a cylinder, 6283.19, and 1570.80 for a quarter turn', () => {
     const full = rebuild(build(turned('s1', 10, 20), revolve('r1', 's1', 'boss', '360')));
     ok(full);
