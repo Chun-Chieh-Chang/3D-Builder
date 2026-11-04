@@ -2,7 +2,7 @@ import { isShown, bodyKey } from '@3db/model';
 import { t } from '@3db/i18n';
 import type { Id, SketchFeature } from '@3db/model';
 import { SNAP_ITEMS } from '@3db/sketch/snaps';
-import { ACTIONS } from './actions';
+import { ACTIONS, matingBody } from './actions';
 import { relationsOffered } from './sketcher/relationsOffered';
 import type { TriadPart } from '@3db/render';
 import { TRANSFORM_TOOLS, type SketchController, type ToolId } from './sketcher/controller';
@@ -77,9 +77,11 @@ export function partMenu(s: UiState, at: PartTarget, selection: MenuEntry[] = []
     store.measurePick(at.kind, at.index, null);
   });
   const feature = [command(s, 'edit-feature'), ...(at.kind === 'vertex' ? [] : [command(s, 'edit-feature-sketch')])];
+  // 「設計配合件…」 (ADR 0236) on a face of a solid body that is not locked yet (the face under the pointer is chosen before the menu is built)
+  const mating: MenuEntry[] = at.kind === 'face' && matingBody(s) !== null ? [SEPARATOR, command(s, 'design-mating')] : [];
   const items: MenuEntry[] =
     at.kind === 'face'
-      ? [...feature, command(s, 'sketch'), SEPARATOR, command(s, 'toggle-visibility'), command(s, 'appearance'), command(s, 'suppress-feature'), SEPARATOR, measure]
+      ? [...feature, command(s, 'sketch'), ...mating, SEPARATOR, command(s, 'toggle-visibility'), command(s, 'appearance'), command(s, 'suppress-feature'), SEPARATOR, measure]
       : at.kind === 'edge'
         ? [...feature, SEPARATOR, command(s, 'fillet'), command(s, 'chamfer'), SEPARATOR, command(s, 'toggle-visibility'), command(s, 'suppress-feature'), SEPARATOR, measure]
         : [...feature, SEPARATOR, measure];

@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 89;
+export const SCHEMA_VERSION = 90;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -1307,6 +1307,11 @@ export interface BodyProps {
   name?: string;
   /** A reference body (the workpiece of a fixture): not counted in the mass or written to the part's STEP, not in a bill of materials. */
   reference?: boolean;
+  /**
+   * Locked (v90, ADR 0236, 「設計配合件…」): no feature changes the body. A boss next to it is not joined to it, a cut or a modifying feature
+   * leaves it as it is, and it cannot be the main body of a combine (it may be a tool that is subtracted). It stays pickable as a reference.
+   */
+  locked?: boolean;
 }
 
 /**

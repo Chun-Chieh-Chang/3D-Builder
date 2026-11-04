@@ -246,6 +246,14 @@ export const help = {
   'help.generateAssembly.keywords': '產生組合件 衍生零件 本體 夾具 主模型',
 
   'help.generateAssembly.see': 'new-assembly insert-component bom',
+  'help.designMating.summary': '把一個實體（例如匯入的 STEP）鎖定成參考件，在同一個零件檔裡畫與它配合的零件，最後拆成組合件。',
+
+  'help.designMating.body':
+    '在設計樹的本體上，或在 3D 視窗的實體面上按右鍵，選「設計配合件…」。\n\n- 零件還沒存過或有未存的修改時，先問存檔；取消就什麼都不做。\n- 所選本體變成**參考且鎖定**（設計樹標「（參考）（鎖定）」），這是一個步驟，按一次「復原」就回到原樣。\n- 鎖定的本體不會被任何特徵改到：旁邊的填料不會和它合併，而是長成新本體「配合件1」（之後依序「配合件2」…）；除料、組合時穿過它也不會切到它；要直接修改它的特徵（圓角、移動面、刪除本體、組合的主要本體…）會失敗並說明原因。它仍可拿來「轉換實體引用」、量測、干涉檢查，也可以當「組合」相減的工具本體（做凹槽座）。\n- 畫法：點參考件的平面開草圖，按「轉換實體引用」再點那個面，面的外框與孔一次轉進草圖，伸長即成配合件。\n- 3D 視窗左上會顯示「設計配合件：參考件「…」已鎖定」與「產生組合件」按鈕；做好時按它，有未存的修改會先存檔，然後每個本體各成一個零組件，參考件不進零件表。\n- 不想再鎖定時，在設計樹的本體上按右鍵「解除鎖定」。',
+
+  'help.designMating.keywords': '設計配合件 配合件 參考件 鎖定 STEP 匯入 轉換實體引用 產生組合件 治具 凹槽座',
+
+  'help.designMating.see': 'generate-assembly import-step combine',
   'help.importStepAssembly.summary': '把 STEP 組合件讀進來，拆成零件檔與組合件。',
 
   'help.importStepAssembly.body':

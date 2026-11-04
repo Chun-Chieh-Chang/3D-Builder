@@ -108,7 +108,14 @@ describe('the part menu', () => {
 
   it('on a face: the feature, its sketch, a sketch on the face, hiding the body, its appearance, suppressing, measuring', () => {
     const s = part({ selectedFace: face('extrude1:a') });
-    expect(ids(s, { kind: 'face', index: 2 })).toEqual(['edit-feature', 'edit-feature-sketch', 'sketch', 'toggle-visibility', 'appearance', 'suppress-feature', 'measure-part']);
+    // 「設計配合件…」 (ADR 0236) on a face of a solid that is not locked yet
+    expect(ids(s, { kind: 'face', index: 2 })).toEqual(['edit-feature', 'edit-feature-sketch', 'sketch', 'design-mating', 'toggle-visibility', 'appearance', 'suppress-feature', 'measure-part']);
+    // not on a face of a locked body (it is the reference already), nor on a surface body
+    const bodies = s.result!.bodies;
+    const locked = part({ selectedFace: face('extrude1:a'), result: { ...s.result!, bodies: [{ ...bodies[0]!, locked: true }, bodies[1]!] } });
+    expect(ids(locked, { kind: 'face', index: 2 })).not.toContain('design-mating');
+    const surface = part({ selectedFace: face('extrude1:a'), result: { ...s.result!, bodies: [{ ...bodies[0]!, surface: true }, bodies[1]!] } });
+    expect(ids(surface, { kind: 'face', index: 2 })).not.toContain('design-mating');
     const sketchOn = menus.partMenu(s, { kind: 'face', index: 2 }).find((e) => e.kind === 'command' && e.id === 'sketch');
     expect(sketchOn).toMatchObject({ disabled: false });
     // a face that is not flat takes no sketch: the line is there, greyed

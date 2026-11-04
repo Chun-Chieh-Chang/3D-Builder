@@ -597,6 +597,7 @@
     "move-component": "move",
     "move-with-triad": "move",
     "delete-keep-body": "delete",
+    "design-mating": "body",
     "delete-feature": "delete",
     "delete-component": "delete",
     "sketch-delete": "delete",

@@ -571,6 +571,7 @@ export function Viewport() {
       <div ref={host} className="viewport-canvas" data-help={sketching ? 'concept.sketch-snaps' : 'concept.selection'} />
       <ViewCube />
       <ViewOptions />
+      {!sketching && !editing && <MatingBar />}
       {!sketching && <InstantDepthHandle />}
       {!sketching && <ExtrudePreviewHandle />}
       <div ref={barRef} className="heads-up">
@@ -917,6 +918,24 @@ function SectionValue({ value, onCommit }: { value: number; onCommit: (at: numbe
 }
 
 const DISPLAY_MODES: DisplayMode[] = ['shadedEdges', 'transparent', 'shaded', 'hiddenRemoved', 'hiddenVisible', 'wireframe'];
+/**
+ * 「設計配合件…」 (ADR 0236): while the part has a locked body, which body is the reference, and the 「產生組合件」 that turns the mating parts and the
+ * reference into an assembly when the user is ready (Q4: a button, not done by itself).
+ */
+function MatingBar() {
+  // a string, not a new array, so the store's snapshot stays the same between renders
+  const names = useStore((s) => s.result?.bodies.filter((b) => b.locked).map((b) => b.name).join(t('cmd.listSeparator')) ?? '');
+  if (!names) return null;
+  return (
+    <div className="mating-bar" data-help="design-mating">
+      <span title={t('mating.bar', { name: names })}>{t('mating.bar', { name: names })}</span>
+      <button type="button" data-action="generate-mating-assembly" onClick={() => void store.generateMatingAssembly()}>
+        {t('mating.generate')}
+      </button>
+    </div>
+  );
+}
+
 /** The components of an assembly have no dashed hidden edges (yet): the other modes. */
 const ASSEMBLY_DISPLAY_MODES = DISPLAY_MODES.filter((m) => m !== 'hiddenVisible');
 

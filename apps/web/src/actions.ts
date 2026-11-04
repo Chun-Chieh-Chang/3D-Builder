@@ -1,6 +1,6 @@
 import { activeSheetUnfold } from '@3db/model';
 import { initialLoftSections } from './state/loftSections';
-import { absorbedSketches, bodyKey, bodyFeature, canBeSeed, explosionSteps, isDatumPlaneName, isHideable, isShown, page, type DatumPlaneName, type Feature, type PlaneFrame, type Ref } from '@3db/model';
+import { absorbedSketches, bodyKey, bodyFeature, canBeSeed, explosionSteps, isDatumPlaneName, isHideable, isShown, page, type DatumPlaneName, type Feature, type Id, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { topologyOf } from './state/selectionSets';
 import { OPPOSITE_VIEW } from '@3db/render';
@@ -41,6 +41,15 @@ const assemblyFree = (s: UiState) => !s.asm?.insert && !s.asm?.mate && !s.asm?.m
 const idle = (s: UiState) => (s.active === 'assembly' ? assemblyFree(s) : s.editing === null && !s.measure);
 /** A part is open and nothing is being edited in it. */
 const partIdle = (s: UiState) => s.active === 'part' && s.editing === null && !s.measure;
+
+/** The body 「設計配合件…」 would lock (ADR 0236): the one chosen in the tree or whose face is chosen, when it is a solid that is not locked yet. */
+export function matingBody(s: UiState): Id | null {
+  const r = s.result;
+  if (!r) return null;
+  const face = s.selectedFace ? r.faceNames.indexOf(s.selectedFace.name) : -1;
+  const body = s.selected?.startsWith('body:') ? r.bodies.find((b) => bodyKey(b.id) === s.selected) : face >= 0 ? r.bodies.find((b) => face >= b.face0 && face < b.face0 + b.faces) : undefined;
+  return body && !body.surface && !body.curve && !body.locked ? body.id : null;
+}
 /** The measure tool can be turned on (or off, when it is on): nothing else is going on in the open document. */
 const canMeasure = (s: UiState) => s.measure !== null || (s.bootMs !== null && (s.active === 'assembly' ? assemblyFree(s) && hasComponents(s) : partIdle(s) && !!s.result?.mesh));
 const toggleMeasure = () => (store.getState().measure ? store.stopMeasure() : store.startMeasure());
@@ -249,6 +258,8 @@ export const ACTIONS: UiAction[] = [
   { id: 'cut-with-surface', get label() { return t('feature.cutWithSurface'); }, group: 'feature', enabled: (s) => hasBody(s) && !!s.result?.bodies.some((b) => b.surface && !b.curve) && !!s.result?.bodies.some((b) => !b.surface), run: () => store.newCutWithSurface() },
   { id: 'lip-groove', get label() { return t('feature.lipGroove'); }, group: 'feature', enabled: hasBody, run: () => store.newLipGroove() },
   { id: 'combine', get label() { return t('feature.combine'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) > 1, run: () => store.newCombine() },
+  // ADR 0236: only in the right-click menus of a solid body (Q2), never on a tab; registered so the help has a topic for it
+  { id: 'design-mating', get label() { return t('tree.designMating'); }, group: 'feature', enabled: (s) => partIdle(s) && matingBody(s) !== null, run: () => { const b = matingBody(store.getState()); if (b) void store.designMatingPart(b); } },
   { id: 'split', get label() { return t('feature.split'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) >= 1, run: () => store.newSplit() },
   { id: 'move-copy-body', get label() { return t('feature.moveCopyBody'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) >= 1, run: () => store.newMoveCopyBody() },
   { id: 'delete-keep-body', get label() { return t('feature.deleteKeepBody'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) >= 1, run: () => store.newDeleteKeepBody() },

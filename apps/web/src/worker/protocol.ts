@@ -86,6 +86,8 @@ export interface BodyPayload {
   id: Id;
   name: string;
   reference: boolean;
+  /** No feature changes it (ADR 0236). */
+  locked?: boolean;
   /** A surface body (4b): no solid, not a part. */
   surface: boolean;
   /** A curve body (C8.3 helix): edges and no faces. */

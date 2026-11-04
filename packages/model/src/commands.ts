@@ -184,8 +184,8 @@ ull). */
   | { type: 'setMoveCopyBody'; featureId: Id; targets: Ref[]; dx?: Expr; dy?: Expr; dz?: Expr; rotationAxis?: Ref | 'x' | 'y' | 'z'; rotationAngle?: Expr; copy?: boolean }
   /** The operation mode and target bodies of a Delete/Keep Body feature (C7.3, v64). */
   | { type: 'setDeleteKeepBody'; featureId: Id; mode: 'delete' | 'keep'; targets: Ref[] }
-  /** The name and the reference flag of a body (C7.1); an empty name or `false` takes the choice back. */
-  | { type: 'setBody'; bodyId: Id; name?: string; reference?: boolean }
+  /** The name and the reference and locked flags of a body (C7.1, ADR 0236); an empty name or `false` takes the choice back. */
+  | { type: 'setBody'; bodyId: Id; name?: string; reference?: boolean; locked?: boolean }
   /** The face and the distance of a Move Face feature (C10.1). */
   | { type: 'setMoveFace'; featureId: Id; face: Ref; distance: Expr; target?: Ref | null }
   | { type: 'setRefPlane'; featureId: Id; def: PlaneDefinition }
@@ -1681,6 +1681,10 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       if (cmd.reference !== undefined) {
         if (cmd.reference) props.reference = true;
         else delete props.reference;
+      }
+      if (cmd.locked !== undefined) {
+        if (cmd.locked) props.locked = true;
+        else delete props.locked;
       }
       if (Object.keys(props).length === 0) delete draft.bodies[cmd.bodyId];
       else draft.bodies[cmd.bodyId] = props;

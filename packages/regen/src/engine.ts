@@ -131,6 +131,8 @@ export interface BodyInfo {
   /** The name the document gave it, else the name of the feature that made it (伸長1, 除料1#2). */
   name: string;
   reference: boolean;
+  /** No feature changes it (ADR 0236, 「設計配合件…」). */
+  locked?: boolean;
   /** A surface body (4b): no solid, not a part (see `BodyState.surface`). */
   surface: boolean;
   /** A curve body (C8.3 helix): edges and no faces. */
@@ -578,6 +580,8 @@ export class Regenerator {
   private mastersUsed = new Set<string>();
   /** What a derived body takes from its master and the document does not say: its name and whether it is a reference body. */
   private inherited = new Map<Id, { name: string; reference: boolean }>();
+  /** The bodies no feature may change (`BodyProps.locked`, ADR 0236), for the rebuild under way, with the name a message calls each by. */
+  private locked = new Map<Id, string>();
   private cosmeticThreads: CosmeticThreadInfo[] = [];
   /** STL files read (F2.3), by content and unit: a rebuild reads each once. A file no feature reads any more is dropped. */
   private stls = new Map<string, StlMesh | { error: string }>();
@@ -627,6 +631,7 @@ export class Regenerator {
     this.releasePatterns();
     this.statuses = new Map();
     this.inherited = new Map();
+    this.locked = new Map(Object.entries(doc.bodies).flatMap(([id, p]) => (p.locked ? [[id, p.name ?? doc.features.find((f) => f.id === bodyFeature(id))?.name ?? id] as const] : [])));
     this.mastersUsed = new Set();
     this.cosmeticThreads = [];
     this.meshes = [];
@@ -945,15 +950,24 @@ export class Regenerator {
     const compound = set.keep();
     if (compound !== null) this.owned.push(compound);
     for (const b of set.list) this.owned.push(b.shape);
+    // 「設計配合件…」 (ADR 0236): in a part with a locked body, a solid without a name of its own that a feature after the locked body's made is
+    // a mating part, 「配合件1」, 「配合件2」 … in the order of the bodies.
+    const featureIndex = (id: Id) => resolved.features.findIndex((x) => x.id === bodyFeature(id));
+    const lockedFrom = Math.min(...[...this.locked.keys()].map(featureIndex).filter((i) => i >= 0));
+    let mating = 0;
     const bodies: BodyInfo[] = view
       ? view.parts.map((p, i) => {
           const b = set.list[i]!;
           const make = resolved.features.find((x) => x.id === bodyFeature(b.id));
           const piece = b.id.includes('#') ? `#${b.id.split('#')[1]}` : '';
+          const reference = doc.bodies[b.id]?.reference ?? this.inherited.get(b.id)?.reference ?? false;
+          const isMating = !b.surface && !this.locked.has(b.id) && !reference && featureIndex(b.id) > lockedFrom;
+          const own = doc.bodies[b.id]?.name ?? this.inherited.get(b.id)?.name;
           return {
             id: b.id,
-            name: doc.bodies[b.id]?.name ?? this.inherited.get(b.id)?.name ?? `${make?.name ?? bodyFeature(b.id)}${piece}`,
-            reference: doc.bodies[b.id]?.reference ?? this.inherited.get(b.id)?.reference ?? false,
+            name: own ?? (isMating ? t('body.matingName', { n: ++mating }) : `${make?.name ?? bodyFeature(b.id)}${piece}`),
+            reference,
+            ...(this.locked.has(b.id) ? { locked: true } : {}),
             surface: !!b.surface,
             ...(b.curve ? { curve: true } : {}),
             shape: b.shape,
@@ -974,6 +988,15 @@ export class Regenerator {
    * and says which it did away with by leaving them out), and so is the old view of them all.
    */
   private advance(old: Bodies, next: BodyState[]): Bodies {
+    // A locked body (ADR 0236) leaves a feature as it came in, or the feature fails and keeps nothing it made. Joining and cutting
+    // already pass locked bodies by (`apply`, `boolBodies`); this catches every other way a feature may change or remove one.
+    for (const b of old.list) {
+      if (!this.locked.has(b.id)) continue;
+      if (next.find((x) => x.id === b.id)?.shape === b.shape) continue;
+      const before = new Set(old.list.map((x) => x.shape));
+      for (const x of next) if (!before.has(x.shape)) this.kernel.release(x.shape);
+      throw new FeatureError(t('body.lockedChanged', { name: this.locked.get(b.id)! }));
+    }
     if (this.sheet?.unfolding && this.current && !SHEET_FEATURES.has(this.current.type) && next.length === 1) {
       const current = this.kernel.copy(next[0]!.shape);
       this.owned.push(current);
@@ -2670,8 +2693,8 @@ export class Regenerator {
       const out: BodyState[] = [];
       let slot = -1;
       for (const b of list) {
-        if (b.surface) {
-          out.push(b); // a surface body is not joined to
+        if (b.surface || this.locked.has(b.id)) {
+          out.push(b); // a surface body is not joined to, nor is a locked one (ADR 0236): a boss beside it is a body of its own
           continue;
         }
         const r = k.boolean('fuse', b.shape, acc.shape);
@@ -2714,8 +2737,8 @@ export class Regenerator {
     const removed: Id[] = [];
     let changed = false;
     for (const b of list) {
-      if (b.surface) {
-        out.push(b); // a surface body is not cut
+      if (b.surface || this.locked.has(b.id)) {
+        out.push(b); // a surface body is not cut, nor is a locked one (ADR 0236)
         continue;
       }
       const tool = toolFor(b);
@@ -2764,8 +2787,12 @@ export class Regenerator {
       return b;
     };
     const main = find(f.main, t('body.main'));
+    // ADR 0236: a locked body is never the one a combine changes; as a tool it may be subtracted or intersected and stays, but not added (that would use it up)
+    if (this.locked.has(main.id)) throw new FeatureError(t('body.lockedChanged', { name: this.locked.get(main.id)! }));
     if (f.tools.length === 0) throw new FeatureError(t('body.pickTools'));
     const tools = f.tools.map((r) => find(r, t('body.tool')));
+    const lockedTool = f.op === 'add' ? tools.find((x) => this.locked.has(x.id)) : undefined;
+    if (lockedTool) throw new FeatureError(t('body.lockedChanged', { name: this.locked.get(lockedTool.id)! }));
     const made: ShapeId[] = [];
     let pieces: BodyState[] = [main];
     const next = { piece: 2 };
@@ -2799,8 +2826,8 @@ export class Regenerator {
       for (const s of made) k.release(s);
       throw e;
     }
-    // the result takes the place of the main body; the tools are used up
-    const used = new Set(tools.map((x) => x.id));
+    // the result takes the place of the main body; the tools are used up, except a locked one, which is kept as it is (ADR 0236)
+    const used = new Set(tools.filter((x) => !this.locked.has(x.id)).map((x) => x.id));
     return set.list.flatMap((b) => (b === main ? pieces : used.has(b.id) ? [] : [b]));
   }
 

@@ -215,7 +215,8 @@ C.part = async () => {
     await closeMenus(H);
     // 選取其他 (D5.6) stays at the end when there are faces behind this one (the bottom of the block is)
     const own = ids.filter((x) => !x.startsWith('select-other'));
-    return { pass: what === 'face' && same(own, ['edit-feature', 'edit-feature-sketch', 'sketch', 'toggle-visibility', 'appearance', 'suppress-feature', 'measure-part', 'toggle-grid']) && ids.at(-2) === 'select-other' && ids.at(-1) === 'toggle-grid' && chosen === result().faceNames[top], what, ids, chosen };
+    // 「設計配合件…」 (ADR 0236) on a face of a solid that is not locked
+    return { pass: what === 'face' && same(own, ['edit-feature', 'edit-feature-sketch', 'sketch', 'design-mating', 'toggle-visibility', 'appearance', 'suppress-feature', 'measure-part', 'toggle-grid']) && ids.at(-2) === 'select-other' && ids.at(-1) === 'toggle-grid' && chosen === result().faceNames[top], what, ids, chosen };
   });
 
   await step('6b 外觀 on the face opens the appearance dialog on that face (not on the whole part)', async () => {

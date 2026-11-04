@@ -2624,8 +2624,33 @@ class AppStore {
   }
 
   /** What the user says of a body (C7.1): its name, whether it is a reference body. */
-  setBody(bodyId: Id, patch: { name?: string; reference?: boolean }): void {
+  setBody(bodyId: Id, patch: { name?: string; reference?: boolean; locked?: boolean }): void {
     this.execute({ type: 'setBody', bodyId, ...patch });
+  }
+
+  /**
+   * 「設計配合件…」 (ADR 0236): the body is made the reference the mating part is modelled against. A part never saved, or with changes, is saved first (a
+   * cancel leaves everything as it was); then the body is marked reference and locked in one step, so one undo takes it back. No feature changes a locked
+   * body; the first boss beside it is 「配合件1」.
+   */
+  async designMatingPart(bodyId: Id): Promise<void> {
+    if (this.assembly || this.drawing || this.state.editing) return;
+    const body = this.state.result?.bodies.find((b) => b.id === bodyId);
+    if (!body) return this.notify(t('mating.noBody', { name: bodyId }), 'error');
+    if (body.surface || body.curve) return this.notify(t('mating.notSolid', { name: body.name }), 'error');
+    if (body.locked) return this.notify(t('mating.alreadyLocked', { name: body.name }), 'error');
+    if (!this.fileHandle || this.state.dirty) {
+      if (!(await this.save())) return;
+    }
+    if (this.execute({ type: 'setBody', bodyId, reference: true, locked: true })) this.notify(t('mating.started', { name: body.name }), 'info');
+  }
+
+  /** The 「產生組合件」 of a part with a locked body (ADR 0236 Q4): saved first when it has changes, then the mating parts and the reference become an assembly. */
+  async generateMatingAssembly(): Promise<void> {
+    if (!this.fileHandle || this.state.dirty) {
+      if (!(await this.save())) return;
+    }
+    await this.generateAssembly();
   }
 
   /** Face list of a Delete Face (D2.1): clicking a face toggles it, as with the edges of a fillet. */

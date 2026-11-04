@@ -251,6 +251,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   // v88: a cut may keep the material inside the contour (`keepInside`, ADR 0231). Absent is an ordinary cut; nothing to convert.
   87: (doc) => doc,
   88: (doc) => doc,
+  // v90: a body may be locked (`bodies[id].locked`, ADR 0236): no feature changes it. Absent is the old behaviour; nothing to convert.
+  89: (doc) => doc,
 };
 
 export class FormatError extends Error {

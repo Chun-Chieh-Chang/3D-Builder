@@ -406,6 +406,7 @@ export function FeatureTree() {
             <li
               key={key}
               className={cls}
+              data-body={b.id}
               title={b.reference ? `${tip}\n${t('tree.referenceTip')}` : tip}
               onClick={() => store.select(key)}
               onDoubleClick={() => !editing && setRenaming(b.id)}
@@ -442,6 +443,7 @@ export function FeatureTree() {
                 <span className="name">
                   {b.name}
                   {b.reference && t('tree.reference')}
+                  {b.locked && <span title={t('tree.lockedTip')}>{t('tree.locked')}</span>}
                   {b.curve ? t('tree.curve') : b.surface && t('tree.surface')}
                 </span>
               )}
@@ -605,6 +607,11 @@ export function FeatureTree() {
               <MenuEntries items={[command(store.getState(), 'toggle-visibility')]} onClose={() => setBodyMenu(null)} />
               <li onClick={done(() => setRenaming(b.id))}>{t('tree.rename')}</li>
               <li onClick={done(() => store.setBody(b.id, { reference: !b.reference }))}>{t(b.reference ? 'tree.unmakeReference' : 'tree.makeReference')}</li>
+              {b.locked ? (
+                <li onClick={done(() => store.setBody(b.id, { locked: false }))}>{t('tree.unlock')}</li>
+              ) : (
+                !b.surface && !b.curve && <li data-action="design-mating" onClick={done(() => void store.designMatingPart(b.id))}>{t('tree.designMating')}</li>
+              )}
             </ContextMenu>
           );
         })()}
