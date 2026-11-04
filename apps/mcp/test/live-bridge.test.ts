@@ -56,3 +56,21 @@ it('refuses while the user is editing, and a wrong code', async () => {
   expect(bad.statuses.at(-1)).toMatchObject({ state: 'error', reason: 'refused' });
   expect(bad.server.connected).toBe(false);
 });
+
+it('follows a history the store put in place: the next batch goes to the part now open', async () => {
+  server = new LiveBridge({});
+  await server.start();
+  let history = new DocHistory(createEmptyPart());
+  const statuses: AiBridgeStatus[] = [];
+  const app = new AiBridge({ get history() { return history; }, blobs: () => new Map(), isPart: () => true, onStatus: (s) => statuses.push(s) });
+  app.connect(server.code);
+  await wait(() => statuses.some((x) => x.state === 'on'));
+  server.takePending();
+  const old = history;
+  history = new DocHistory(createEmptyPart());
+  app.historyReplaced();
+  await wait(() => server!.takePending() !== null);
+  expect((await server.request({ kind: 'apply', commands: [addVar('v1', 'A')], label: 'AI' })).ok).toBe(true);
+  expect(history.doc.variables.map((v) => v.name)).toEqual(['A']);
+  expect(old.doc.variables).toEqual([]);
+});

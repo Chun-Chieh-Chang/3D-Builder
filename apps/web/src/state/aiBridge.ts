@@ -71,6 +71,23 @@ export class AiBridge {
     });
   }
 
+  /**
+   * The store put a new history in place (it does so when a part is opened, store.ts `load`): listen to that one, and send its part now, so that the
+   * agent's next batch is checked against the part on the screen. `host.history` must already return the new one.
+   */
+  historyReplaced(): void {
+    if (!this.ws) return;
+    this.unsubscribe?.();
+    this.version++;
+    this.agentVersion = -1;
+    this.unsubscribe = this.host.history.subscribe(() => {
+      this.version++;
+      if (!this.applying) this.scheduleSync();
+    });
+    this.timer ??= setTimeout(() => undefined, 0);
+    this.flush();
+  }
+
   disconnect(): void {
     const ws = this.ws;
     this.stop();
