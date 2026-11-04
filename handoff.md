@@ -30,7 +30,7 @@
   - **待做（依序）**：
     1. ~~`History.applyBatch` 單元測試~~ 已完成（`packages/model/test/history-batch.test.ts`，3 項通過）。
     2. （已寫並測試：`apps/mcp/test/live-bridge.test.ts` 3 項通過，兩端真實 WebSocket；尚未接到 store）app 端 `apps/web/src/state/aiBridge.ts`（注入 history／blobs／isPart，可在 Node 測）：連線碼解析、版本計數、`doc` 節流 300 ms、`apply` 前檢查 base 版本／`inTransaction`／是否零件；`undo` 只在版本等於 AI 上一批之後才做。
-    3. store 接線、對話框 `AiControlDialog`（`UiState.dialog` 加 `'aiControl'`）、狀態列「AI 已連線」、action `ai-control`（tools 群組；`icons/solidcraft/manifest.json` 加圖示對應）、中英文字、`help.*` 主題、`docs/help-links.json` 的 `_untied`。
+    3. **注意（2026-11-04 發現）**：`store.ts:3893` 開啟零件時會 `this.history = new DocHistory(doc)` 換掉整個 history；`AiBridge` 只在 `connect` 時訂閱一次，換掉後會聽舊的 history、把 AI 的批次套到不在畫面上的零件。接線時必須：`AiBridgeHost.history` 用 getter 取 `store.history`，並在 store 換 history 的地方通知 bridge 重新訂閱並立刻送出新零件（`doc` 訊息），加一個測試鎖住「開另一個零件後，AI 的批次套在新零件上」。之後才做：store 接線、對話框 `AiControlDialog`（`UiState.dialog` 加 `'aiControl'`）、狀態列「AI 已連線」、action `ai-control`（tools 群組；`icons/solidcraft/manifest.json` 加圖示對應）、中英文字、`help.*` 主題、`docs/help-links.json` 的 `_untied`。
     4. 測試：真實 WebSocket 兩端（伺服器 `LiveBridge` ＋ app `AiBridge` ＋ 真 `History`）；錯碼、Origin、第二個 app、版本衝突、使用者編輯中、逾時關閉。
     5. `scripts/verify-live.mjs`（Playwright：AI 加特徵 → 特徵樹出現 → 一次復原撤回）。
     6. ADR 0238、DEV_LOG、`npm run check`、推送。
