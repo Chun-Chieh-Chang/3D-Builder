@@ -62,7 +62,7 @@
 
 ## 鎖定依賴（含跨平台可選套件）
 
-npm lock條目：211，其中production標記104、development標記107。此處按lockfile記錄，不等同本機安裝數或實際bundle包含數。
+npm lock條目：213，其中production標記105、development標記108。此處按lockfile記錄，不等同本機安裝數或實際bundle包含數。
 
 Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提供，不能套用舊人工掃描結論。
 
@@ -114,6 +114,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 | @types/stats.js | 0.17.4 | MIT | development |
 | @types/three | 0.186.0 | MIT | development |
 | @types/webxr | 0.5.24 | MIT | development |
+| @types/ws | 8.18.1 | MIT | development |
 | @typescript/typescript-aix-ppc64 | 7.0.2 | Apache-2.0 | development／optional |
 | @typescript/typescript-darwin-arm64 | 7.0.2 | Apache-2.0 | development／optional |
 | @typescript/typescript-darwin-x64 | 7.0.2 | Apache-2.0 | development／optional |
@@ -277,6 +278,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 | which | 2.0.2 | ISC | production |
 | why-is-node-running | 3.2.2 | MIT | development |
 | wrappy | 1.0.2 | ISC | production |
+| ws | 8.18.3 | MIT | production |
 | zod | 4.6.7 | MIT | production |
 | zod-to-json-schema | 3.25.2 | ISC | production |
 
