@@ -1,9 +1,10 @@
 /**
- * The server as Claude Code uses it (ADR 0237): the built `dist/server.mjs` started as a child process, spoken to over stdio by the official MCP client.
- * Nothing of the server is imported: what passes is what a real client sees.
+ * The server as Claude Code uses it (ADR 0237): the built `dist/server.mjs` started as a child process, spoken to over stdio by the official MCP client,
+ * and the built `dist/cli.mjs` run as a user runs it. Nothing of either is imported: what passes is what a real client sees. Both are in this one file
+ * so that `vite build` (which empties `dist`) runs once: two files building at once would delete each other's output while it is in use.
  */
-import { afterAll, beforeAll, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -70,3 +71,36 @@ it('builds, previews, checks, looks at and writes a part', async () => {
   expect(logs.length).toBeGreaterThanOrEqual(2);
   expect(json(await call('session_status')).heapBytes).toBeGreaterThan(0);
 }, 120_000);
+
+/** As in script.test.ts: a disc with a hole and an equal-distance chamfer on its top rim (Pappus for the chamfer). */
+const discVolume = (r: number, t: number, h: number, c: number) => Math.PI * r * r * t - Math.PI * h * h * t - Math.PI * (r - c / 3) * c * c;
+
+describe('the CLI', () => {
+  it('runs the disc script without a window and exits 0', () => {
+    const out = mkdtempSync(join(tmpdir(), '3db-cli-'));
+    try {
+      const r = spawnSync('node', [join(here, 'dist', 'cli.mjs'), 'run', join(here, 'examples', 'disc.json'), '--set', 'T=12', '--out', out], { encoding: 'utf8' });
+      expect(r.status, r.stderr).toBe(0);
+      const report = JSON.parse(r.stdout);
+      expect(report.committed).toBe(true);
+      expect(report.summary.mass.volume).toBeCloseTo(discVolume(30, 12, 5, 1), 3);
+      expect(existsSync(join(out, 'disc.3mf'))).toBe(true);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it('exits 1 for a script it refuses and 2 for a wrong command line', () => {
+    const out = mkdtempSync(join(tmpdir(), '3db-cli-'));
+    try {
+      const refused = spawnSync('node', [join(here, 'dist', 'cli.mjs'), 'run', join(here, 'examples', 'disc.json'), '--set', 'NOPE=1', '--out', out], { encoding: 'utf8' });
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toMatch(/no variable NOPE/);
+      const wrong = spawnSync('node', [join(here, 'dist', 'cli.mjs'), 'build'], { encoding: 'utf8' });
+      expect(wrong.status).toBe(2);
+      expect(wrong.stderr).toMatch(/usage/);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  }, 60_000);
+});

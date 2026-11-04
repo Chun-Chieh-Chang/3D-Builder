@@ -1,9 +1,8 @@
 /**
- * The headless mode and the 3MF file (ADR 0237): the disc script is run in the process (`runScript`) and as the CLI a user runs, and its outputs are
+ * The headless mode and the 3MF file (ADR 0237): the disc script is run in the process (`runScript`; the CLI binary is run in e2e.test.ts), and its outputs are
  * checked against the geometry worked out by hand — the volume of a disc with a hole and a 45° chamfer on its top rim, and a 3MF mesh that is closed.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -85,38 +84,4 @@ describe('the 3MF file', () => {
     }
     expect(Math.abs(vol / discVolume(30, 10, 5, 1) - 1)).toBeLessThan(2e-3);
   });
-});
-
-describe('the CLI', () => {
-  beforeAll(() => {
-    execFileSync('npx', ['vite', 'build'], { cwd: here, stdio: 'ignore' });
-  }, 120_000);
-
-  it('runs the disc script without a window and exits 0', () => {
-    const out = mkdtempSync(join(tmpdir(), '3db-cli-'));
-    try {
-      const r = spawnSync('node', [join(here, 'dist', 'cli.mjs'), 'run', join(here, 'examples', 'disc.json'), '--set', 'T=12', '--out', out], { encoding: 'utf8' });
-      expect(r.status, r.stderr).toBe(0);
-      const report = JSON.parse(r.stdout);
-      expect(report.committed).toBe(true);
-      expect(report.summary.mass.volume).toBeCloseTo(discVolume(30, 12, 5, 1), 3);
-      expect(existsSync(join(out, 'disc.3mf'))).toBe(true);
-    } finally {
-      rmSync(out, { recursive: true, force: true });
-    }
-  }, 60_000);
-
-  it('exits 1 for a script it refuses and 2 for a wrong command line', () => {
-    const out = mkdtempSync(join(tmpdir(), '3db-cli-'));
-    try {
-      const refused = spawnSync('node', [join(here, 'dist', 'cli.mjs'), 'run', join(here, 'examples', 'disc.json'), '--set', 'NOPE=1', '--out', out], { encoding: 'utf8' });
-      expect(refused.status).toBe(1);
-      expect(refused.stderr).toMatch(/no variable NOPE/);
-      const wrong = spawnSync('node', [join(here, 'dist', 'cli.mjs'), 'build'], { encoding: 'utf8' });
-      expect(wrong.status).toBe(2);
-      expect(wrong.stderr).toMatch(/usage/);
-    } finally {
-      rmSync(out, { recursive: true, force: true });
-    }
-  }, 60_000);
 });
