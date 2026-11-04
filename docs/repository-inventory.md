@@ -483,6 +483,10 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [STEP 樣本](<../tests/fixtures/step/README.md>)
 - [金樣零件（Phase 1 驗收 ①②）](<../tests/golden/README.md>)
 
+### 版本履歷
+
+- [桌面版版本履歷（desktop.exe／NSIS 安裝檔）](<desktop-release-history.md>)
+
 ### 產品現況
 
 - [產品現況與能力邊界](<project-state.md>)

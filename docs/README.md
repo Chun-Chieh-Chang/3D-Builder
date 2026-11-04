@@ -13,6 +13,7 @@
 | 交付與失敗分析 | [DEV_LOG](../DEV_LOG.md) | 按日期新增，不維護第二份現況表 |
 | 手工清單／說明連結 | [驗證手冊](manual-verification.html)、[help-links.json](help-links.json) | 使用既有同步測試，不複製help內文 |
 | 外部應用程式驗收方式 | [自動驗收](automated-acceptance.md) | 證據與未驗目標分開 |
+| 桌面版各版本內容、建置與升版SOP | [桌面版版本履歷](desktop-release-history.md) | 每次升版或重建安裝檔時補上 |
 | 授權義務 | [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md) | 歷史審閱與目前lock資料分開 |
 | 清理處置與保留理由 | [清理紀錄](cleanup-candidates.md) | 先證明引用／初始化／授權責任，再移除 |
 

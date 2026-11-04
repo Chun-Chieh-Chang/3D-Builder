@@ -22,6 +22,7 @@ export function documentRole(file) {
     'docs/blueprint.md': '範圍規格', 'docs/automated-acceptance.md': '驗證操作', 'docs/verification-coverage.md': '歷史驗證',
     'docs/implementation-sequence.md': '交付歷史', 'docs/sketch-constraint-expansion.md': '能力規格',
     'docs/fillet-picking-impact.md': '設計歷史', 'docs/ui-interaction-audit.md': '設計歷史', 'docs/handoff-history.md': '交接歷史',
+    'docs/desktop-release-history.md': '版本履歷',
   };
   if (named[file]) return named[file];
   if (/^docs\/adr\/[^/]+\.md$/.test(file)) return '架構決策';
