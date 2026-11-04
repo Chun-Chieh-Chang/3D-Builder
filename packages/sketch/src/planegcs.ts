@@ -190,6 +190,11 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
     if(byId.get(c.a)?.type==='arc'&&byId.get(c.b)?.type==='arc'&&!linkedArcs.has(c.b))linkedArcs.set(c.b,c.a);
   }
   for(const id of [...linkedArcs.keys()]) {const seen=new Set<Id>();let at=id;while(linkedArcs.has(at)&&!seen.has(at)){seen.add(at);at=linkedArcs.get(at)!;}if(seen.has(at))linkedArcs.delete(id);}
+  // An arc that follows a model edge with its center, start and end all fixed (followReferences): the points already lie on the circle (they are the
+  // edge's), so the arc's own rule would repeat one equation. Its radius and two angles are taken from the points instead. Only such arcs: a drawn arc
+  // whose three points are fixed by hand may not have them on one circle, and that must still be reported.
+  const fixedPoints=new Set(sketch.constraints.flatMap((c)=>(c.type==='fix'?[c.point]:[])));
+  const heldArcs=new Set(sketch.entities.flatMap((e)=>(e.type==='arc'&&e.ref&&!linkedArcs.has(e.id)&&[e.center,e.start,e.end].every((p)=>fixedPoints.has(p))?[e.id]:[])));
   const prims: Prim[] = [{ id: SKETCH_ORIGIN, type: 'point', x: 0, y: 0, fixed: true }];
   for (const axis of axes) {
     const [x, y] = sketchAxisDir(axis)!;
@@ -225,7 +230,11 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
           end_angle: Math.atan2(ey - cy, ex - cx),
           radius: Math.hypot(sx - cx, sy - cy),
         });
-        if(!linkedArcs.has(e.id))prims.push({ id: `${e.id}#rules`, type: 'arc_rules', a_id: e.id });
+        if(heldArcs.has(e.id))prims.push(
+          { id: `${e.id}#radius`, type: 'p2p_distance', p1_id: e.center, p2_id: e.start, distance: { o_id: e.id, prop: 'radius' } },
+          { id: `${e.id}#start`, type: 'p2p_angle', p1_id: e.center, p2_id: e.start, angle: { o_id: e.id, prop: 'start_angle' } },
+          { id: `${e.id}#end`, type: 'p2p_angle', p1_id: e.center, p2_id: e.end, angle: { o_id: e.id, prop: 'end_angle' } });
+        else if(!linkedArcs.has(e.id))prims.push({ id: `${e.id}#rules`, type: 'arc_rules', a_id: e.id });
         break;
       }
       case 'ellipse': {

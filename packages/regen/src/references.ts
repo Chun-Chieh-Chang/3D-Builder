@@ -288,7 +288,7 @@ export function followReferences(sketch: SketchFeature, scope: ReferenceScope): 
     held.add(point);
     constraints.push({ id: `ref:${owner}:${n}`, type: 'fix', point });
   };
-  /** An entity put where its projection is and held there: the ends of a line, the center (and radius) of a circle, the center, ends (and chord) of an arc. */
+  /** An entity put where its projection is and held there: the ends of a line, the center (and radius) of a circle, the center and both ends of an arc. */
   const followProjected = (e: SketchEntity, p: Projected): SketchEntity => {
     if (e.type === 'line' && p.kind === 'line') {
       move.set(e.p1, p.a);
@@ -304,9 +304,11 @@ export function followReferences(sketch: SketchFeature, scope: ReferenceScope): 
       move.set(e.center, p.c);
       move.set(e.start, p.start);
       move.set(e.end, p.end);
+      // all three points held, the end too: a chord placing the end was singular for a half circle (chord = diameter) and redundant where the end is a
+      // corner another converted entity holds; the solver takes the arc's radius and angles from the three held points (planegcs.ts, `heldArcs`)
       hold(e.id, 1, e.center);
       hold(e.id, 2, e.start);
-      constraints.push({ id: `ref:${e.id}:chord`, type: 'distance', a: e.start, b: e.end, value: String(Math.hypot(p.end[0] - p.start[0], p.end[1] - p.start[1])) });
+      hold(e.id, 3, e.end);
     } else if (e.type === 'spline' && p.kind === 'spline') {
       if(e.points.length!==p.points.length || !!e.closed!==!!p.closed)throw new ReferenceProblem(t('reference.changedKind',{id:e.id}));
       p.points.forEach((pt, idx) => {
