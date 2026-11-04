@@ -16,10 +16,11 @@
   - 3MF 輸出、重建事件通知、試跑預覽圖、無頭 CLI（`npm run mcp:run -- <script.json> --set R=40 --out <folder>`）、圓盤範例（`apps/mcp/examples/disc.json`）。
   - `.mcp.json`（Claude Code 自動登記 `3d-builder`；先 `npm run mcp:build`）、ADR 0237、DEV_LOG、`apps/mcp/README.md`。
   - `apps/mcp` 4 檔 41 項全過；突變測試 2 種都會轉紅。
-- **推送受阻**：GitHub 對本分支回應 403（Claude GitHub App 沒有存取權）。提交保留在本機分支 `claude/eager-ramanujan-n20v0i`；權限修好後執行 `git push -u origin claude/eager-ramanujan-n20v0i`。
+- **已推送**到 `origin/claude/eager-ramanujan-n20v0i`（尚未開 PR）。
+- **既有問題**：雲端 4 核心容器上，`tests/phase7/sequential-bends.test.ts` 與 `sheet-unfold-refold.test.ts` 在整批中逾時；乾淨基準也一樣（詳 DEV_LOG 2026-11-04 ADR 0237）。
 - **進度頁**：https://claude.ai/artifact/NVyEoWMcUva3EPvJ56Koqt（db 集合 `tasks`、文件 `meta/run`）。
 - **待做**：
-  1. 推送分支（權限修好後）；使用者在 Claude Code 實際連線試用一次。
+  1. 使用者在 Claude Code 實際連線試用一次（先 `npm install`、`npm run mcp:build`）。
   2. S3：連到執行中的 GUI（本機 WebSocket 橋、授權開關、整批一次復原）。
   3. 依參考物件產生外殼、2D 工程圖轉 3D、經 MCP 操作組合件。
 - **已知陷阱**：

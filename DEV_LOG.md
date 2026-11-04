@@ -36,7 +36,9 @@
   - 拿掉「有特徵壞掉就不保留」：1 項轉紅。
   - 拿掉命令白名單：2 項轉紅。
   - 兩者皆已還原。
-- 推送受阻：GitHub 回應 403（Claude GitHub App 沒有存取權）。提交保留在本機分支。
+- `npm run check`：4458／4485 通過。2 項鈑金測試在整批中逾時（`tests/phase7/sequential-bends.test.ts`、`sheet-unfold-refold.test.ts`，71 s、75 s），單獨跑通過（45.7 s）。在**不含本次變更的乾淨 worktree**（`6994150`）跑整批，這兩項同樣逾時（119 s、138 s），另有 4 項逾時。結論：這是本機 4 核心容器的既有效能問題，不是本次造成；本次未放寬任何時間限制（§3.3）。
+- 推送一度受阻（GitHub 403）；使用者重新連結 GitHub 後推送成功。
+- 自查發現：`e2e.test.ts` 與 `script.test.ts` 各自 `vite build`（會清空 `dist`），平行時可能刪掉對方正在用的檔案。已把 CLI 測試併入 `e2e.test.ts`，一次建置；`apps/mcp` 與 `packages/io` 90 項全過。
 
 ## 2026-11-04：「設計配合件…」——鎖定參考件，在同一零件檔建配合件（ADR 0236，Schema 90）
 
