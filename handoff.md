@@ -29,7 +29,7 @@
   - **重要（已修的死結）**：app 送來的零件只記為 pending（`bridge.takePending()`），在下一個工具呼叫開頭、於同一佇列內載入；不可在訊息處理中等待工具佇列。
   - **待做（依序）**：
     1. ~~`History.applyBatch` 單元測試~~ 已完成（`packages/model/test/history-batch.test.ts`，3 項通過）。
-    2. （程式已寫、tsc 通過、**尚未測試**、尚未接到 store）app 端 `apps/web/src/state/aiBridge.ts`（注入 history／blobs／isPart，可在 Node 測）：連線碼解析、版本計數、`doc` 節流 300 ms、`apply` 前檢查 base 版本／`inTransaction`／是否零件；`undo` 只在版本等於 AI 上一批之後才做。
+    2. （已寫並測試：`apps/mcp/test/live-bridge.test.ts` 3 項通過，兩端真實 WebSocket；尚未接到 store）app 端 `apps/web/src/state/aiBridge.ts`（注入 history／blobs／isPart，可在 Node 測）：連線碼解析、版本計數、`doc` 節流 300 ms、`apply` 前檢查 base 版本／`inTransaction`／是否零件；`undo` 只在版本等於 AI 上一批之後才做。
     3. store 接線、對話框 `AiControlDialog`（`UiState.dialog` 加 `'aiControl'`）、狀態列「AI 已連線」、action `ai-control`（tools 群組；`icons/solidcraft/manifest.json` 加圖示對應）、中英文字、`help.*` 主題、`docs/help-links.json` 的 `_untied`。
     4. 測試：真實 WebSocket 兩端（伺服器 `LiveBridge` ＋ app `AiBridge` ＋ 真 `History`）；錯碼、Origin、第二個 app、版本衝突、使用者編輯中、逾時關閉。
     5. `scripts/verify-live.mjs`（Playwright：AI 加特徵 → 特徵樹出現 → 一次復原撤回）。
