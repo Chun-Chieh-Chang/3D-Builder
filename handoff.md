@@ -5,9 +5,24 @@
 
 ---
 
-## 0. 進行中：AI 透過 MCP 操作 3D-Builder（ADR 0237，分支 `claude/eager-ramanujan-n20v0i`）
+## 0. 進行中：AI 透過 MCP 操作 3D-Builder（ADR 0237／0238）
 
 接手者先讀本節。本節在每個里程碑更新。
+
+**最新狀態（2026-11-04 收工）**
+- S0–S2 與 S3 的伺服器端、app 端連線（`AiBridge`）、store 接線都已**合併到 `main`**（PR [Chun-Chieh-Chang/3D-Builder#9](https://github.com/Chun-Chieh-Chang/3D-Builder/pull/9)，合併提交 `264a7fb`，CI 三平台綠）。
+- 本次交接更新推送在分支 `claude/eager-ramanujan-n20v0i`（從 `main` 快轉後只多這一個提交）；接續工作請開**新的 PR**（#9 已合併，不可再用）。
+- 進度頁：https://claude.ai/artifact/NVyEoWMcUva3EPvJ56Koqt（db 集合 `tasks`、文件 `meta/run`；新的工作階段可以 ArtifactData 更新）。
+
+**待辦（依序，S3 剩餘）**
+1. 「AI 控制」對話框：`UiState.dialog` 加 `'aiControl'`；輸入連線碼、連線／中斷、顯示狀態（`store.getState().ai`：off／connecting／on（批次數）／error（format／port／refused／closed））。呼叫 `store.connectAi(code)`／`store.disconnectAi()`。
+2. 狀態列「AI 已連線（N 批）」標示（`apps/web/src/components/StatusBar.tsx`），讓使用者隨時知道 AI 可以改零件。
+3. action `ai-control`（`apps/web/src/actions.ts` 的 tools 群組）；圖示對應（`apps/web/src/icons/solidcraft/manifest.json`）；中英文字（`packages/i18n/src/{zh-TW,en}`）；`help.*` 主題與 `docs/help-links.json` 的 `_untied`（`tests/phase8/help.test.ts` 會檢查）。
+4. `scripts/verify-live.mjs`（Playwright）：啟動 dev server 與 `apps/mcp/dist/server.mjs`，在 GUI 輸入 `live_status` 給的連線碼 → AI `apply_commands` 加特徵 → 特徵樹出現 → GUI 一次復原撤回 → 使用者在 GUI 的修改出現在 `part_summary`。改到 UI，提交前跑完整 `npm run verify:ui`（AGENTS §4）。
+5. ADR 0238、DEV_LOG 紅隊四問、`npm run docs:sync`（忘了會讓 CI 的 `lint:repo` 失敗，#9 就發生過）、`npm run check`、推送、開 PR。
+
+---
+
 
 - **目標**：讓 Claude Code 等 AI 代理以 `Command`（JSON）建模、量測、看圖、存檔。參考 FreeCAD MCP 與 SolidCraft 的做法，但全部用本專案的 kernel 與命令層實作；**不**執行任意程式碼。
 - **位置**：`apps/mcp`（`session.ts` 交易與量測、`server.ts` MCP 工具、`render.ts` 不開瀏覽器的 PNG、`reference.ts` 命令參考取自原始碼、`commandTypes.ts` 命令種類白名單由編譯器檢查完整性、`examples.ts`）；3MF 寫出在 `packages/io/src/threeMf.ts`。
