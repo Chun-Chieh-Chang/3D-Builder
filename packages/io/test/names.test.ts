@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDemoPart, createEmptyPart } from '@3db/model';
-import { partFileName, partName, stepFileName } from '../src';
+import { partFileName, partName, stepFileName, windowTitle } from '../src';
 
 describe('part name (as SolidWorks names a part)', () => {
   const demo = createDemoPart(); // has the part-name property 「行走骨架示範件」
@@ -17,6 +17,13 @@ describe('part name (as SolidWorks names a part)', () => {
     expect(partName(empty, null)).toBe('零件1');
     expect(partName(empty, null, '零件3')).toBe('零件3');
     expect(partName({ ...empty, properties: { 零件名稱: '  ' } }, null, '零件2')).toBe('零件2');
+  });
+
+  it('leaves an untouched new document out of the browser tab title', () => {
+    expect(windowTitle(null, false, '零件1')).toBe('3D-Builder');
+    expect(windowTitle(null, true, '零件1 *')).toBe('零件1 * - 3D-Builder');
+    expect(windowTitle('定位板.3dbx', false, '定位板.3dbx')).toBe('定位板.3dbx - 3D-Builder');
+    expect(windowTitle('定位板.3dbx', true, '定位板.3dbx *')).toBe('定位板.3dbx * - 3D-Builder');
   });
 
   it('names files after it, safely', () => {

@@ -67,7 +67,7 @@ import {
   isShown,
   bodyKey,
 } from '@3db/model';
-import { readAnyDocumentFile, collectPackage, compareWithFolder, isPackageData, PACKAGE_FILE_EXTENSION, readPackage, writePackage, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, igesFileName, isStepData, safeFileName, stepAssemblyFiles, stepFileName, stlEntryNames, stlFileName, writePartFile, writeZip } from '@3db/io';
+import { readAnyDocumentFile, collectPackage, compareWithFolder, isPackageData, PACKAGE_FILE_EXTENSION, readPackage, writePackage, ASSEMBLY_FILE_EXTENSION, assemblyName, derivedAssemblyFiles, PART_FILE_EXTENSION, partFileName, partName, readDocumentFile, sha256Hex, imageFileName, igesFileName, isStepData, safeFileName, stepAssemblyFiles, stepFileName, stlEntryNames, stlFileName, windowTitle, writePartFile, writeZip } from '@3db/io';
 import { gatherSources } from './sources';
 import { DrawingStore, type DrawingSource, type DrawingState } from './drawing';
 import { dxfText, flatPatternDxf, importDxf, surveyDxf, type DxfImport, type DxfSurvey } from '@3db/drawing';
@@ -4296,6 +4296,17 @@ export function useDocumentTitle(): string {
   const name = useDocumentName();
   const [fileName, dirty] = drw ? [drw.fileName, drw.dirty] : asm ? [asm.fileName, asm.dirty] : [partFile, partDirty];
   return `${fileName ?? name}${dirty ? ' *' : ''}`;
+}
+
+/** The browser tab's title: 「3D-Builder」 for a new document still untouched, else the document title first. */
+export function useWindowTitle(): string {
+  const partFile = useStore((s) => s.fileName);
+  const partDirty = useStore((s) => s.dirty);
+  const asm = useStore((s) => s.asm);
+  const drw = useStore((s) => s.drw);
+  const title = useDocumentTitle();
+  const [fileName, dirty] = drw ? [drw.fileName, drw.dirty] : asm ? [asm.fileName, asm.dirty] : [partFile, partDirty];
+  return windowTitle(fileName, dirty, title);
 }
 
 const noSubscription = () => () => {};

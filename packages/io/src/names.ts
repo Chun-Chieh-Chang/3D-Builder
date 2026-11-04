@@ -20,6 +20,14 @@ export function assemblyName(fileName: string | null, untitled = '組合件1'): 
   return fileName?.replace(ASSEMBLY_FILE, '').trim() || untitled;
 }
 
+/**
+ * The browser tab's title. A new document nobody has touched yet (never saved or opened, no changes)
+ * is just 「3D-Builder」; once it is opened, saved or edited, the document comes first: 「零件1 * - 3D-Builder」.
+ */
+export function windowTitle(fileName: string | null, dirty: boolean, documentTitle: string): string {
+  return fileName === null && !dirty ? '3D-Builder' : `${documentTitle} - 3D-Builder`;
+}
+
 /** The part in a file, by the file's name: 「零件/削邊銷.3dbx」 → 「削邊銷」. */
 export function partNameOf(path: string): string {
   return baseName(path).replace(PART_FILE, '');

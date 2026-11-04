@@ -1,7 +1,7 @@
 import { getLocale, subscribeLocale } from '@3db/i18n';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { installShortcuts } from './actions';
-import { useDocumentTitle, useStore } from './state/store';
+import { useStore, useWindowTitle } from './state/store';
 import { AssemblyTree } from './components/AssemblyTree';
 import { AssemblyViewport } from './components/AssemblyViewport';
 import { CommandBar } from './components/CommandBar';
@@ -47,7 +47,7 @@ export function App() {
   const forming = useStore((s) => !!s.asm?.formSub);
   const partEditing = useStore((s) => s.editing);
   const editing = assembly ? inserting || mating || moving || patterning || exploding || forming : !!partEditing;
-  const title = useDocumentTitle();
+  const title = useWindowTitle();
   // The part and assembly panels get the same two tabs as a drawing (ADR 0133). A session opens the PropertyManager tab by itself; the FeatureManager tab
   // stays available, so the tree can be looked at without leaving the session (this relaxes ADR 0034 決定 9, which hid the tree for the whole session).
   const [panel, setPanel] = useState<'tree' | 'properties'>('tree');
@@ -79,7 +79,7 @@ export function App() {
   useEffect(() => installShortcuts(), []);
   useEffect(() => installHelp({ currentTopic: currentTopicId, hasTopic: (id) => topicOf(id) !== null }), []);
   useEffect(() => {
-    document.title = `${title} - 3D-Builder`;
+    document.title = title;
   }, [title]);
   return (
     <div className="app">
