@@ -1,0 +1,24 @@
+{
+  "name": "@3db/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server that lets an AI agent build and check 3D-Builder parts through the same commands the app uses (ADR 0237).",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@3db/drawing": "*",
+    "@3db/i18n": "*",
+    "@3db/io": "*",
+    "@3db/kernel": "*",
+    "@3db/model": "*",
+    "@3db/naming": "*",
+    "@3db/regen": "*",
+    "@3db/sketch": "*",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@salusoft89/planegcs": "^1.2.0",
+    "libcascade": "3.0.2",
+    "ws": "8.18.3"
+  }
+}

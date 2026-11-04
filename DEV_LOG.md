@@ -2,6 +2,44 @@
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
+## 2026-11-04：AI 代理以 MCP 操作 3D-Builder（ADR 0237，`apps/mcp`）
+
+### 需求與裁決
+- 使用者以兩部影片（AI 透過 MCP 操作 FreeCAD；SolidCraft 內建 MCP）與兩份提示詞要求「AI 驅動的參數化建模」。裁決：
+  - 先做 S0–S2，用戶端是 Claude Code。
+  - FreeCAD 與 SolidCraft 轉換為本系統：不執行 Python 或任意程式碼，只送 `Command`。
+
+### 實作
+- `CadSession`：整批交易、試跑與預覽、`undo`、量測摘要、幾何查詢、工作資料夾沙箱、heap 高水位重新載入（ADR 0126）。
+- MCP 伺服器：12 個工具與 log 通知。
+- 截圖：隱藏線投影加塗彩，輸出 PNG，不需要瀏覽器。
+- `packages/io` 新增 3MF 寫出。
+- 無頭 CLI 與圓盤範例；`.mcp.json`；`npm run mcp:build`／`mcp:run`。
+
+### 發現與 RCA
+1. **`mutate` 沒有 `default`**：未知的命令種類會被靜默忽略。MCP 層因此加上由編譯器雙向檢查的白名單。第一版漏了 `editSketch`，由 `satisfies` 抓出。
+2. **範例除料切空氣**：第一版圓孔掛在基準面上，沒有 `reverse`，結果「沒有移除任何材料」。這與 11-02 的教訓相同。交易機制正確拒絕了整批，範例改加 `reverse: true`。
+3. **圓柱接縫是直線**：查詢「沿 +y 的直線邊」得到 5 條（4 個角加孔的接縫）。幾何本身正確，所以改為以 `seam: true` 標示，並在測試中斷言。
+4. **重新載入 kernel 的測試首版失敗**：外部直接 `wasmMemory.grow()` 會讓 Emscripten 的記憶體視圖失效，舊 kernel 出現 `Cannot use deleted val`。確認兩個 kernel 可以並存之後，改用 kernel 自己的 `___libc_malloc` 撐大 heap。另外，128 MiB 的配置只撐大 34 MiB（既有餘裕吸收了其餘部分，同 §3.5 的量測陷阱），所以改為 256 MiB，並斷言成長大於門檻。
+5. **命令參考擷取器在註解的句號處截斷**：括號與分號計數改為略過註解。測試斷言參考內含所有命令種類，並以分號結尾。
+
+### 紅隊四問
+見 ADR 0237。所有不合法的值都在命令層或 MCP 層明確拒絕，沒有任何 `Math.round`。
+
+### 驗證
+- `apps/mcp` 4 檔、41 項全過：
+  - session 27 項。
+  - script／3MF／CLI 6 項。
+  - 端到端 2 項：建好的伺服器加官方 SDK Client。
+  - fuzz：200 組，分 4 群各 50 組。
+- 突變測試：
+  - 拿掉「有特徵壞掉就不保留」：1 項轉紅。
+  - 拿掉命令白名單：2 項轉紅。
+  - 兩者皆已還原。
+- `npm run check`：4458／4485 通過。2 項鈑金測試在整批中逾時（`tests/phase7/sequential-bends.test.ts`、`sheet-unfold-refold.test.ts`，71 s、75 s），單獨跑通過（45.7 s）。在**不含本次變更的乾淨 worktree**（`6994150`）跑整批，這兩項同樣逾時（119 s、138 s），另有 4 項逾時。結論：這是本機 4 核心容器的既有效能問題，不是本次造成；本次未放寬任何時間限制（§3.3）。
+- 推送一度受阻（GitHub 403）；使用者重新連結 GitHub 後推送成功。
+- 自查發現：`e2e.test.ts` 與 `script.test.ts` 各自 `vite build`（會清空 `dist`），平行時可能刪掉對方正在用的檔案。已把 CLI 測試併入 `e2e.test.ts`，一次建置；`apps/mcp` 與 `packages/io` 90 項全過。
+
 ## 2026-11-04：「設計配合件…」——鎖定參考件，在同一零件檔建配合件（ADR 0236，Schema 90）
 
 ### 需求與裁決

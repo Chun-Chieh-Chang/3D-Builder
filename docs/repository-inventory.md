@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 90／7／38 |
-| ADR 文件 | 235 |
+| ADR 文件 | 236 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 222／218／270 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -17,6 +17,7 @@
 | 套件 | 設定來源 |
 |---|---|
 | @3db/desktop | [apps/desktop/package.json](../apps/desktop/package.json) |
+| @3db/mcp | [apps/mcp/package.json](../apps/mcp/package.json) |
 | @3db/web | [apps/web/package.json](../apps/web/package.json) |
 | @3db/assembly | [packages/assembly/package.json](../packages/assembly/package.json) |
 | @3db/drawing | [packages/drawing/package.json](../packages/drawing/package.json) |
@@ -37,6 +38,8 @@
 | `dev` | `npm run dev -w @3db/web -- --open` |
 | `dev:auto` | `npm run dev:auto -w @3db/web -- --open` |
 | `build` | `npm run build -w @3db/web` |
+| `mcp:build` | `npm run build -w @3db/mcp` |
+| `mcp:run` | `node apps/mcp/dist/cli.mjs run` |
 | `typecheck` | `tsc -p tsconfig.json` |
 | `test` | `vitest run` |
 | `test:watch` | `vitest` |
@@ -59,16 +62,18 @@
 
 ## 鎖定依賴（含跨平台可選套件）
 
-npm lock條目：116，其中production標記9、development標記107。此處按lockfile記錄，不等同本機安裝數或實際bundle包含數。
+npm lock條目：213，其中production標記105、development標記108。此處按lockfile記錄，不等同本機安裝數或實際bundle包含數。
 
 Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提供，不能套用舊人工掃描結論。
 
 | npm套件 | 鎖定版本 | lockfile授權欄 | 分類 |
 |---|---|---|---|
 | @dimforge/rapier3d-compat | 0.12.0 | Apache-2.0 | development |
+| @hono/node-server | 2.1.6 | MIT | production |
 | @jridgewell/resolve-uri | 3.1.2 | MIT | development |
 | @jridgewell/sourcemap-codec | 1.6.0 | MIT | development |
 | @jridgewell/trace-mapping | 0.3.31 | MIT | development |
+| @modelcontextprotocol/sdk | 1.32.2 | MIT | production |
 | @oxc-project/types | 0.151.0 | MIT | development |
 | @rolldown/binding-android-arm-eabi | 1.2.11 | MIT | development／optional |
 | @rolldown/binding-android-arm64 | 1.2.11 | MIT | development／optional |
@@ -109,6 +114,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 | @types/stats.js | 0.17.4 | MIT | development |
 | @types/three | 0.186.0 | MIT | development |
 | @types/webxr | 0.5.24 | MIT | development |
+| @types/ws | 8.18.1 | MIT | development |
 | @typescript/typescript-aix-ppc64 | 7.0.2 | Apache-2.0 | development／optional |
 | @typescript/typescript-darwin-arm64 | 7.0.2 | Apache-2.0 | development／optional |
 | @typescript/typescript-darwin-x64 | 7.0.2 | Apache-2.0 | development／optional |
@@ -132,18 +138,69 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 | @vitejs/plugin-react | 6.1.1 | MIT | development |
 | @vitest/mocker | 5.0.2 | MIT | development |
 | @vitest/spy | 5.0.2 | MIT | development |
+| accepts | 2.0.0 | MIT | production |
+| ajv | 8.20.0 | MIT | production |
+| ajv-formats | 3.0.1 | MIT | production |
 | assertion-error | 2.0.1 | MIT | development |
+| body-parser | 2.4.0 | MIT | production |
+| content-type | 2.1.0 | MIT | production |
+| bytes | 3.1.2 | MIT | production |
+| call-bind-apply-helpers | 1.0.2 | MIT | production |
+| call-bound | 1.0.4 | MIT | production |
 | chai | 6.2.2 | MIT | development |
 | comlink | 4.4.2 | Apache-2.0 | production |
+| content-disposition | 2.0.1 | MIT | production |
+| content-type | 1.0.5 | MIT | production |
+| cookie | 0.7.2 | MIT | production |
+| cookie-signature | 1.2.2 | MIT | production |
+| cors | 2.8.6 | MIT | production |
+| cross-spawn | 7.0.6 | MIT | production |
 | csstype | 3.2.3 | MIT | development |
+| debug | 4.4.3 | MIT | production |
+| depd | 2.0.0 | MIT | production |
 | detect-libc | 2.1.2 | Apache-2.0 | development |
+| dunder-proto | 1.0.1 | MIT | production |
+| ee-first | 1.1.1 | MIT | production |
+| encodeurl | 2.0.1 | MIT | production |
+| es-define-property | 1.0.1 | MIT | production |
+| es-errors | 1.3.0 | MIT | production |
 | es-module-lexer | 2.3.2 | MIT | development |
+| es-object-atoms | 1.1.2 | MIT | production |
+| escape-html | 1.0.3 | MIT | production |
 | estree-walker | 3.0.3 | MIT | development |
+| etag | 1.8.1 | MIT | production |
+| eventsource | 3.0.7 | MIT | production |
+| eventsource-parser | 3.1.1 | MIT | production |
 | expect-type | 1.4.0 | Apache-2.0 | development |
+| express | 5.3.0 | MIT | production |
+| express-rate-limit | 8.7.3 | MIT | production |
+| content-type | 2.1.0 | MIT | production |
+| fast-deep-equal | 3.1.3 | MIT | production |
+| fast-uri | 3.1.9 | BSD-3-Clause | production |
 | fdir | 6.5.0 | MIT | development |
 | fflate | 0.8.3 | MIT | development |
+| finalhandler | 2.1.1 | MIT | production |
+| forwarded | 0.2.0 | MIT | production |
+| fresh | 2.0.0 | MIT | production |
 | fsevents | 2.3.3 | MIT | development／optional |
+| function-bind | 1.1.2 | MIT | production |
+| get-intrinsic | 1.3.0 | MIT | production |
+| get-proto | 1.0.1 | MIT | production |
+| gopd | 1.2.0 | MIT | production |
+| has-symbols | 1.1.0 | MIT | production |
+| hasown | 2.0.4 | MIT | production |
+| hono | 4.13.16 | MIT | production |
+| http-errors | 2.0.1 | MIT | production |
+| iconv-lite | 0.7.3 | MIT | production |
 | immer | 11.1.18 | MIT | production |
+| inherits | 2.0.4 | ISC | production |
+| ip-address | 10.7.6 | MIT | production |
+| ipaddr.js | 1.9.1 | MIT | production |
+| is-promise | 4.0.0 | MIT | production |
+| isexe | 2.0.0 | ISC | production |
+| jose | 6.2.15 | MIT | production |
+| json-schema-traverse | 1.0.0 | MIT | production |
+| json-schema-typed | 8.0.2 | BSD-2-Clause | production |
 | libcascade | 3.0.2 | LGPL-2.1-only WITH Open-CASCADE-Exception-1.0 | production |
 | lightningcss | 1.33.0 | MPL-2.0 | development |
 | lightningcss-android-arm64 | 1.33.0 | MPL-2.0 | development／optional |
@@ -158,29 +215,72 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 | lightningcss-win32-arm64-msvc | 1.33.0 | MPL-2.0 | development／optional |
 | lightningcss-win32-x64-msvc | 1.33.0 | MPL-2.0 | development／optional |
 | magic-string | 1.4.2 | MIT | development |
+| math-intrinsics | 1.1.0 | MIT | production |
+| media-typer | 1.1.1 | MIT | production |
+| merge-descriptors | 2.0.0 | MIT | production |
 | meshoptimizer | 1.1.1 | MIT | development |
+| mime-db | 1.54.0 | MIT | production |
+| mime-types | 3.0.2 | MIT | production |
+| ms | 2.1.3 | MIT | production |
 | nanoid | 3.3.19 | MIT | development |
+| negotiator | 1.1.0 | MIT | production |
+| content-type | 2.1.0 | MIT | production |
+| object-assign | 4.1.1 | MIT | production |
+| object-inspect | 1.13.4 | MIT | production |
 | obug | 2.2.1 | MIT | development |
+| on-finished | 2.4.2 | MIT | production |
+| once | 1.4.0 | ISC | production |
+| parseurl | 1.3.3 | MIT | production |
+| path-key | 3.1.1 | MIT | production |
+| path-to-regexp | 8.4.2 | MIT | production |
 | picocolors | 1.1.1 | ISC | development |
 | picomatch | 4.0.7 | MIT | development |
+| pkce-challenge | 5.0.1 | MIT | production |
 | postcss | 8.5.28 | MIT | development |
+| proxy-addr | 2.0.8 | MIT | production |
+| qs | 6.17.1 | BSD-3-Clause | production |
+| range-parser | 1.3.0 | MIT | production |
+| raw-body | 3.0.2 | MIT | production |
 | react | 19.3.0 | MIT | production |
 | react-dom | 19.3.0 | MIT | production |
 | replicad-opencascadejs | 1.1.0 | LGPL-2.1-only | development |
+| require-from-string | 2.0.2 | MIT | production |
 | rolldown | 1.2.11 | MIT | development |
+| router | 2.2.0 | MIT | production |
+| safer-buffer | 2.1.2 | MIT | production |
 | scheduler | 0.28.0 | MIT | production |
+| send | 1.2.1 | MIT | production |
+| serve-static | 2.2.1 | MIT | production |
+| setprototypeof | 1.2.0 | ISC | production |
+| shebang-command | 2.0.0 | MIT | production |
+| shebang-regex | 3.0.0 | MIT | production |
+| side-channel | 1.1.1 | MIT | production |
+| side-channel-list | 1.0.1 | MIT | production |
+| side-channel-map | 1.0.1 | MIT | production |
+| side-channel-weakmap | 1.0.2 | MIT | production |
 | source-map-js | 1.2.1 | BSD-3-Clause | development |
+| statuses | 2.0.2 | MIT | production |
 | std-env | 4.2.0 | MIT | development |
 | three | 0.186.1 | MIT | production |
 | three-mesh-bvh | 0.9.15 | MIT | production |
 | tinybench | 6.2.0 | MIT | development |
 | tinyexec | 1.3.1 | MIT | development |
 | tinyglobby | 0.2.17 | MIT | development |
+| toidentifier | 1.0.1 | MIT | production |
+| type-is | 2.1.0 | MIT | production |
+| content-type | 2.1.0 | MIT | production |
 | typescript | 7.0.2 | Apache-2.0 | development |
 | undici-types | 8.9.0 | MIT | development |
+| unpipe | 1.0.0 | MIT | production |
+| vary | 1.1.2 | MIT | production |
 | vite | 8.3.1 | MIT | development |
 | vitest | 5.0.2 | MIT | development |
+| which | 2.0.2 | ISC | production |
 | why-is-node-running | 3.2.2 | MIT | development |
+| wrappy | 1.0.2 | ISC | production |
+| ws | 8.18.3 | MIT | production |
+| zod | 4.6.7 | MIT | production |
+| zod-to-json-schema | 3.25.2 | ISC | production |
 
 ## 文件分類（每份只有一個主要角色）
 
@@ -219,6 +319,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 ### 平台操作
 
 - [3D-Builder 桌面版（Tauri 2）](<../apps/desktop/README.md>)
+- [@3db/mcp — 讓 AI 代理操作 3D-Builder（ADR 0237）](<../apps/mcp/README.md>)
 
 ### 授權
 
@@ -465,6 +566,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0234：單一打包檔（.3dbp，Pack and Go）與解開時更新既有檔案](<adr/0234-pack-and-go.md>)
 - [ADR 0235：異型孔整合裝飾螺紋及孔位建立](<adr/0235-integrated-tapped-holes.md>)
 - [ADR 0236：「設計配合件…」入口——以匯入的實體為參考，在同一零件檔建模並拆成組合件](<adr/0236-mating-part-entry.md>)
+- [ADR 0237：AI 代理以 MCP 操作 3D-Builder（無頭建模、量測、截圖、輸出）](<adr/0237-ai-agent-mcp-server.md>)
 
 ### 歷史驗證
 

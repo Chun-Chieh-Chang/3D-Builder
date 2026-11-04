@@ -113,6 +113,29 @@ export class History<D, C extends { type: string }> {
     this.emit();
   }
 
+  /**
+   * Applies `cmds` in order as one undo step (ADR 0238: a batch an AI agent sends to the open part). All or nothing: when any command throws, the
+   * document is as it was and the error is thrown on. Refused inside an edit session, whose own steps it would mix with: the user is in the middle of
+   * something. An empty list, or one that changes nothing, adds no step. The listeners hear of it once, with the document as the whole batch leaves it.
+   */
+  applyBatch(cmds: readonly C[], label: string): void {
+    if (this.tx) throw new Error(t('history.busy'));
+    let doc = this.current;
+    const patches: Patch[] = [];
+    const inverse: Patch[] = [];
+    for (const cmd of cmds) {
+      const [next, p, inv] = produceWithPatches(doc, (d: Draft<D>) => this.recipe(d, cmd));
+      doc = next as D;
+      patches.push(...p);
+      inverse.unshift(...inv); // the last command is undone first
+    }
+    if (patches.length === 0) return;
+    this.current = doc;
+    this.undoStack.push({ label, patches, inverse });
+    this.redoStack = [];
+    this.emit();
+  }
+
   begin(label: string): void {
     if (this.tx) throw new Error(t('history.busy'));
     this.tx = { label, steps: [], redo: [], base: 0 };

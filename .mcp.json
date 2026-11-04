@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "3d-builder": {
+      "command": "node",
+      "args": ["apps/mcp/dist/server.mjs"],
+      "env": { "THREEDB_WORKSPACE": "out/agent", "THREEDB_LOCALE": "zh-TW" }
+    }
+  }
+}
