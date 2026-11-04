@@ -325,6 +325,10 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 - [第三方授權清單（THIRD_PARTY_NOTICES）](<../THIRD_PARTY_NOTICES.md>)
 
+### 接手指令
+
+- [接手指令：3D-Builder S3（AI 連到執行中的 GUI）](<handoff-s3-prompt.md>)
+
 ### 文件導覽
 
 - [開發文件導覽與單一來源](<README.md>)

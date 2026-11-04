@@ -12,6 +12,7 @@
 **最新狀態（2026-11-04 收工）**
 - S0–S2 與 S3 的伺服器端、app 端連線（`AiBridge`）、store 接線都已**合併到 `main`**（PR [Chun-Chieh-Chang/3D-Builder#9](https://github.com/Chun-Chieh-Chang/3D-Builder/pull/9)，合併提交 `264a7fb`，CI 三平台綠）。
 - 本次交接更新推送在分支 `claude/eager-ramanujan-n20v0i`（從 `main` 快轉後只多這一個提交）；接續工作請開**新的 PR**（#9 已合併，不可再用）。
+- 換電腦接手：把 [`docs/handoff-s3-prompt.md`](docs/handoff-s3-prompt.md) 整段貼給 Claude Code。
 - 進度頁：https://claude.ai/artifact/NVyEoWMcUva3EPvJ56Koqt（db 集合 `tasks`、文件 `meta/run`；新的工作階段可以 ArtifactData 更新）。
 
 **待辦（依序，S3 剩餘）**
