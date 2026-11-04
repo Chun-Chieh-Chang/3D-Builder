@@ -130,6 +130,7 @@ import {
 } from '../files';
 import type { DraftReport, GeometryReport, MeshData, ThicknessReport, UndercutReport } from '@3db/kernel';
 import { AssemblyStore, type AssemblySource, type AssemblyState } from './assembly';
+import { AiBridge, type AiBridgeStatus } from './aiBridge';
 import { groupOverlaps, pairKey, shownPairs, stepPair, type InterferenceOthers, type InterferencePair } from './interferenceView';
 
 export interface EditSession {
@@ -373,6 +374,8 @@ export interface UiState {
   confirmDelete: Id | null;
   /** 「錯誤為何？」 dialog (D7.1). */
   whatsWrong: boolean;
+ /** The live link to an AI agent's MCP server (ADR 0238): off, connecting, on (with the number of batches it applied) or why it ended. */
+  ai: AiBridgeStatus;
   /** The equations or file-properties dialog (B5.2, B8.3), when open. */
   dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | 'igesOptions' | 'stlOptions' | 'template' | 'shortcuts' | 'options' | 'bom' | 'physical' | 'viewOrientation' | 'browserProjects' | null;
   /** The file the part was opened from or last saved to (F7.1); null for a part never saved. */
@@ -562,6 +565,16 @@ function readMeasureOptions(): MeasureOptions {
 class AppStore {
   // Like SolidWorks the program starts on an empty part; the demo part is 「新示範件」 in the file menu.
   private history = new DocHistory(createEmptyPart());
+  /** The live link to an AI agent (ADR 0238). It always reads the history and the blobs of now, which `load` replaces. */
+  readonly ai = ((self: AppStore) =>
+    new AiBridge({
+      get history() {
+        return self.history;
+      },
+      blobs: () => self.blobs,
+      isPart: () => !self.assembly && !self.drawing,
+      onStatus: (status) => self.set({ ai: status }),
+    }))(this);
   /** What the rest of the program calls: always the current worker, which is replaced when a rebuild stalls (`restartWorker`). */
   private api: Comlink.Remote<KernelApi>;
   private worker!: Worker;
@@ -653,6 +666,7 @@ class AppStore {
       stlImport: null,
       confirmDelete: null,
       whatsWrong: false,
+      ai: { state: 'off' },
       dialog: null,
       fileName: null,
       dirty: false,
@@ -1418,6 +1432,15 @@ class AppStore {
     // Inside a sketch only the sketch changes: solve it, and leave the model before it as it is.
     if (this.state.editing?.kind === 'sketch') this.requestSketchSolve();
     else if (!(prev && onlyVisibilityChanged(prev, doc))) this.requestRebuild();
+  }
+
+  /** Connects the live link to an AI agent with the code the user typed (ADR 0238); `disconnectAi` ends it. */
+  connectAi(code: string): void {
+    this.ai.connect(code);
+  }
+
+  disconnectAi(): void {
+    this.ai.disconnect();
   }
 
   notify(text: string, kind: Notice['kind'] = 'info'): void {
@@ -3895,6 +3918,8 @@ class AppStore {
     this.lastDoc = null; // a new document is always rebuilt
     this.fileHandle = handle;
     this.blobs = blobs;
+    // the AI's link listens to the new history and sends the part now open (ADR 0238): after the blobs, which it sends with it
+    this.ai.historyReplaced();
     void this.api.setBlobs(blobs); // posted before the rebuild request, so the worker has them first
     this.savedText = serializePart(doc);
     this.retainedMeasures = [];
