@@ -23,6 +23,17 @@
   1. 使用者在 Claude Code 實際連線試用一次（先 `npm install`、`npm run mcp:build`）。
   2. S3：連到執行中的 GUI（本機 WebSocket 橋、授權開關、整批一次復原）。
   3. 依參考物件產生外殼、2D 工程圖轉 3D、經 MCP 操作組合件。
+- **S3 進行中（2026-11-04，WIP 已推送）：讓 AI 連到執行中的 GUI（ADR 0238，尚未寫）**
+  - 設計：MCP 伺服器另開 WebSocket（只綁 127.0.0.1、16 字元連線碼、Origin 檢查、5 次錯碼鎖 1 分鐘、一次一個 app）。app 連上時送 hello（零件＋blobs）。AI 的批次先在伺服器驗證重建，成功才推送給 app；app 以 `History.applyBatch` 套為一個復原步驟，或回 `conflict`／`busy`／`notPart`／`invalid` 拒絕，伺服器跟著還原。使用者在 GUI 的修改以 `doc` 訊息同步回來。
+  - **已完成**：`History.applyBatch`（`packages/model/src/history.ts`）；協定 `packages/io/src/liveBridge.ts`；伺服器端 `apps/mcp/src/bridge.ts`；`session.load`／`apply` 的 `gate`／`undo(gate)`；`server.ts` 的 `live_status` 工具、即時模式下拒絕 `part_new`／`part_open`；`main.ts` 啟動連線橋（`THREEDB_LIVE_PORT`、`THREEDB_LIVE=off`、`THREEDB_LIVE_ORIGINS`）。`tsc` 通過；**尚未有任何 S3 測試**。
+  - **重要（已修的死結）**：app 送來的零件只記為 pending（`bridge.takePending()`），在下一個工具呼叫開頭、於同一佇列內載入；不可在訊息處理中等待工具佇列。
+  - **待做（依序）**：
+    1. `History.applyBatch` 單元測試（全有或全無、一個復原步驟、編輯中拒絕、只通知一次）。
+    2. app 端 `apps/web/src/state/aiBridge.ts`（注入 history／blobs／isPart，可在 Node 測）：連線碼解析、版本計數、`doc` 節流 300 ms、`apply` 前檢查 base 版本／`inTransaction`／是否零件；`undo` 只在版本等於 AI 上一批之後才做。
+    3. store 接線、對話框 `AiControlDialog`（`UiState.dialog` 加 `'aiControl'`）、狀態列「AI 已連線」、action `ai-control`（tools 群組；`icons/solidcraft/manifest.json` 加圖示對應）、中英文字、`help.*` 主題、`docs/help-links.json` 的 `_untied`。
+    4. 測試：真實 WebSocket 兩端（伺服器 `LiveBridge` ＋ app `AiBridge` ＋ 真 `History`）；錯碼、Origin、第二個 app、版本衝突、使用者編輯中、逾時關閉。
+    5. `scripts/verify-live.mjs`（Playwright：AI 加特徵 → 特徵樹出現 → 一次復原撤回）。
+    6. ADR 0238、DEV_LOG、`npm run check`、推送。
 - **已知陷阱**：
   - `mutate` 沒有 default，未知命令會被默默忽略：一律先經 `isCommandType`。
   - 在基準面上的除料要 `reverse: true` 才切進材料。

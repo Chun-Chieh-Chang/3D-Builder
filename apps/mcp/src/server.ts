@@ -7,6 +7,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, typ
 import { AgentError, EXPORT_FORMATS, messageOf, type CadSession, type ElementQuery, type ExportFormat } from './session';
 import { RENDER_VIEWS, renderView, type RenderOptions } from './render';
 import { commandReference, exampleReference, INSTRUCTIONS, typeReference } from './reference';
+import type { LiveBridge } from './bridge';
 
 const vec3 = { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 } as const;
 const path = { type: 'string', description: 'A file path relative to the workspace folder.' } as const;
@@ -49,6 +50,12 @@ export const TOOLS: Tool[] = [
     description: 'The last rebuilds of the part (newest last): what caused each, whether it was kept, which features failed, the volume. Each is also sent as a log notification when it happens.',
     inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 50 } } },
   },
+  {
+    name: 'live_status',
+    description:
+      "The live link to the open 3D-Builder app (ADR 0238). Not connected: give the user the connection code to type into the app (AI 控制…, in the 工具 menu). Connected: your batches are applied to the part on the user's screen as one undo step each, and the user's own changes come back to you.",
+    inputSchema: { type: 'object', properties: {} },
+  },
   { name: 'session_status', description: 'The kernel heap (bytes), the shapes the session holds, and how many times the kernel was loaded again because its heap grew.', inputSchema: { type: 'object', properties: {} } },
 ];
 
@@ -65,16 +72,35 @@ function argsOf(tool: Tool, raw: unknown): Record<string, unknown> {
   return args as Record<string, unknown>;
 }
 
-/** Calls one tool. Exported so that tests drive it the same way the transport does. */
-export async function callTool(session: CadSession, name: string, raw: unknown): Promise<CallToolResult> {
+const label = (n: number) => `AI: ${n} command${n === 1 ? '' : 's'}`;
+
+/** What a refusal of the app means for the agent. */
+function appRefusal(r: { reason: string; message: string }): string {
+  const why: Record<string, string> = {
+    conflict: 'the user changed the part in the meantime; read part_summary again and send the batch again if it still fits',
+    busy: 'the user is editing a sketch or a feature; wait until they finish, then send it again',
+    notPart: 'the app shows an assembly or a drawing, not the part',
+    invalid: 'a command failed in the app',
+  };
+  return `${why[r.reason] ?? r.reason} (${r.message})`;
+}
+
+/** Calls one tool. Exported so that tests drive it the same way the transport does. `live`: the link to the open app, when there is one (ADR 0238). */
+export async function callTool(session: CadSession, name: string, raw: unknown, live: LiveBridge | null = null): Promise<CallToolResult> {
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) return refused(`no tool ${name}`);
   try {
     const a = argsOf(tool, raw);
+    // what the app sent before this call is in the part first
+    const pending = live?.takePending();
+    if (pending) await session.load(pending.doc, pending.blobs);
+    const linked = live?.connected === true;
     switch (name) {
       case 'part_new':
+        if (linked) throw new AgentError('the app is connected: you work on the part open in it. The user opens another part there, or ends the link.');
         return json(await session.newPart());
       case 'part_open':
+        if (linked) throw new AgentError('the app is connected: you work on the part open in it. The user opens another part there, or ends the link.');
         return json(await session.open(a.path as string));
       case 'part_save':
         return json(await session.save(a.path as string | undefined));
@@ -94,14 +120,35 @@ export async function callTool(session: CadSession, name: string, raw: unknown):
         if (a.dry_run !== undefined && typeof a.dry_run !== 'boolean') throw new AgentError('dry_run must be true or false');
         if (a.preview !== undefined && (typeof a.preview !== 'object' || a.preview === null || Array.isArray(a.preview))) throw new AgentError('preview must be an object of render_view options ({} for the isometric view)');
         const options = a.preview as RenderOptions | undefined;
-        const report = await session.apply(a.commands, { dryRun: a.dry_run === true, ...(options ? { preview: () => renderView(session, options) } : {}) });
+        const gate = linked
+          ? async (commands: unknown[]) => {
+              const r = await live!.request({ kind: 'apply', commands: commands as never, label: label(commands.length) });
+              if (!r.ok) throw new AgentError(appRefusal(r));
+            }
+          : undefined;
+        const report = await session.apply(a.commands, { dryRun: a.dry_run === true, ...(options ? { preview: () => renderView(session, options) } : {}), ...(gate ? { gate } : {}) });
         const { preview, ...rest } = report;
         const content: CallToolResult['content'] = [{ type: 'text', text: JSON.stringify(preview && 'error' in preview ? { ...rest, preview } : rest, null, 1) }];
         if (preview && !('error' in preview)) content.push({ type: 'image', data: Buffer.from(preview.png).toString('base64'), mimeType: 'image/png' });
         return { content, ...(report.error && !report.dryRun ? { isError: true } : {}) };
       }
       case 'undo':
-        return json(await session.undo());
+        return json(
+          await session.undo(
+            linked
+              ? async () => {
+                  const r = await live!.request({ kind: 'undo' });
+                  if (!r.ok) throw new AgentError(appRefusal(r));
+                }
+              : undefined,
+          ),
+        );
+      case 'live_status':
+        return json(
+          live
+            ? { listening: true, connected: linked, code: live.code, ...(linked ? { appVersion: live.version } : { tell: 'In 3D-Builder: 工具 → AI 控制…, type this code, then 連線.' }) }
+            : { listening: false, why: 'the live link is off (THREEDB_LIVE=off)' },
+        );
       case 'query_elements':
         return json(session.elements(a as unknown as ElementQuery));
       case 'render_view': {
@@ -130,7 +177,17 @@ export async function callTool(session: CadSession, name: string, raw: unknown):
   }
 }
 
-export function createServer(session: CadSession, version: string): Server {
+/** Runs jobs one at a time, in order: the tool calls and what the app sends share one part and one kernel. */
+export function serial(): <T>(job: () => Promise<T>) => Promise<T> {
+  let queue: Promise<unknown> = Promise.resolve();
+  return (job) => {
+    const run = queue.then(job);
+    queue = run.catch(() => undefined);
+    return run;
+  };
+}
+
+export function createServer(session: CadSession, version: string, live: LiveBridge | null = null, run = serial()): Server {
   const server = new Server({ name: '3d-builder', version }, { capabilities: { tools: {}, logging: {} }, instructions: INSTRUCTIONS });
   // every rebuild as it happens (a notification; the client may show it or not): rebuild_events has the same, to ask for
   session.onEvent = (event) => {
@@ -138,11 +195,6 @@ export function createServer(session: CadSession, version: string): Server {
   };
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
   // one call at a time: the session has one part and one kernel, and a batch must not see another half done
-  let queue: Promise<unknown> = Promise.resolve();
-  server.setRequestHandler(CallToolRequestSchema, (request) => {
-    const run = queue.then(() => callTool(session, request.params.name, request.params.arguments));
-    queue = run.catch(() => undefined);
-    return run;
-  });
+  server.setRequestHandler(CallToolRequestSchema, (request) => run(() => callTool(session, request.params.name, request.params.arguments, live)));
   return server;
 }

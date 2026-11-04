@@ -7,7 +7,7 @@
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { setLocale, type Locale } from '@3db/i18n';
-import { applyCommand, createEmptyPart, type Command, type PartDoc, type Ref } from '@3db/model';
+import { applyCommand, createEmptyPart, parsePart, type Command, type PartDoc, type Ref } from '@3db/model';
 import { Kernel, type MassProps, type ShapeId } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { exportFaces, Regenerator, type FeatureResult, type RebuildResult } from '@3db/regen';
@@ -105,7 +105,8 @@ export interface ElementRow {
 export interface RebuildEvent {
   seq: number;
   at: string;
-  cause: 'new' | 'open' | 'apply' | 'undo';
+  /** `sync`: the open app sent its part (ADR 0238). */
+  cause: 'new' | 'open' | 'apply' | 'undo' | 'sync';
   committed: boolean;
   dryRun?: boolean;
   features: number;
@@ -236,6 +237,28 @@ export class CadSession {
     return summary;
   }
 
+  /**
+   * Takes the part the open app has (ADR 0238): checked and brought up to date as a file would be (`parsePart`), with its imported data. The agent's
+   * undo history starts again: the app's own history is the one that counts.
+   */
+  async load(doc: unknown, blobs: ReadonlyMap<string, Uint8Array>): Promise<PartSummary> {
+    const checked = parsePart(JSON.stringify(doc));
+    this.undoStack.length = 0;
+    this.blobs.clear();
+    for (const [k, v] of blobs) this.blobs.set(k, v);
+    this.doc = checked;
+    this.path = null;
+    await this.rebuild(this.doc);
+    const summary = this.summary();
+    this.record('sync', true, summary);
+    return summary;
+  }
+
+  /** Adds imported data the app sent after the part (ADR 0238). */
+  addBlobs(blobs: ReadonlyMap<string, Uint8Array>): void {
+    for (const [k, v] of blobs) this.blobs.set(k, v);
+  }
+
   async open(path: string): Promise<PartSummary & { warnings: string[] }> {
     const full = await this.inside(path);
     const file = await readPartFile(new Uint8Array(await readFile(full)));
@@ -296,7 +319,7 @@ export class CadSession {
    * (`mutate` would ignore an unknown type and say nothing). The batch is kept only when every command applies and no feature that was ok before
    * (or is new) fails to rebuild; a dry run is never kept. When it is not kept, the part is as it was.
    */
-  async apply<P = never>(commands: unknown, options: { dryRun?: boolean; preview?: () => Promise<P> } = {}): Promise<ApplyReport & { preview?: P | { error: string } }> {
+  async apply<P = never>(commands: unknown, options: { dryRun?: boolean; preview?: () => Promise<P>; gate?: (commands: Command[]) => Promise<void> } = {}): Promise<ApplyReport & { preview?: P | { error: string } }> {
     const dryRun = options.dryRun === true;
     if (!Array.isArray(commands) || commands.length === 0) throw new AgentError('commands must be a non-empty array of command objects');
     if (commands.length > MAX_COMMANDS) throw new AgentError(`at most ${MAX_COMMANDS} commands in one batch, not ${commands.length}`);
@@ -339,7 +362,17 @@ export class CadSession {
         preview = { error: messageOf(e) };
       }
     }
-    const keep = !dryRun && broken.length === 0;
+    let keep = !dryRun && broken.length === 0;
+    // the open app has the last word (ADR 0238): a batch it refuses is not kept here either
+    let refused: string | undefined;
+    if (keep && options.gate) {
+      try {
+        await options.gate(commands as Command[]);
+      } catch (e) {
+        keep = false;
+        refused = messageOf(e);
+      }
+    }
     this.record('apply', keep, after, dryRun);
     if (keep) {
       this.undoStack.push(before);
@@ -350,7 +383,7 @@ export class CadSession {
     return {
       committed: keep,
       dryRun,
-      ...(broken.length ? { error: { message: `${broken.length} feature(s) fail to rebuild: ${broken.map((b) => `${b.name}: ${b.message ?? b.status}`).join('; ')}` } } : {}),
+      ...(broken.length ? { error: { message: `${broken.length} feature(s) fail to rebuild: ${broken.map((b) => `${b.name}: ${b.message ?? b.status}`).join('; ')}` } } : refused ? { error: { message: `the app refused the batch: ${refused}` } } : {}),
       broken,
       after,
       volumeChange,
@@ -359,9 +392,11 @@ export class CadSession {
   }
 
   /** Takes back the last batch that was kept. */
-  async undo(): Promise<PartSummary> {
-    const prev = this.undoStack.pop();
+  async undo(gate?: () => Promise<void>): Promise<PartSummary> {
+    const prev = this.undoStack.at(-1);
     if (!prev) throw new AgentError('nothing to undo');
+    if (gate) await gate(); // the app takes it back first (ADR 0238); a refusal leaves both as they are
+    this.undoStack.pop();
     this.doc = prev;
     await this.rebuild(prev);
     const summary = this.summary();
