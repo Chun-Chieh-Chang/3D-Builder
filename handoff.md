@@ -28,7 +28,7 @@
   - **已完成**：`History.applyBatch`（`packages/model/src/history.ts`）；協定 `packages/io/src/liveBridge.ts`；伺服器端 `apps/mcp/src/bridge.ts`；`session.load`／`apply` 的 `gate`／`undo(gate)`；`server.ts` 的 `live_status` 工具、即時模式下拒絕 `part_new`／`part_open`；`main.ts` 啟動連線橋（`THREEDB_LIVE_PORT`、`THREEDB_LIVE=off`、`THREEDB_LIVE_ORIGINS`）。`tsc` 通過；**尚未有任何 S3 測試**。
   - **重要（已修的死結）**：app 送來的零件只記為 pending（`bridge.takePending()`），在下一個工具呼叫開頭、於同一佇列內載入；不可在訊息處理中等待工具佇列。
   - **待做（依序）**：
-    1. `History.applyBatch` 單元測試（全有或全無、一個復原步驟、編輯中拒絕、只通知一次）。
+    1. ~~`History.applyBatch` 單元測試~~ 已完成（`packages/model/test/history-batch.test.ts`，3 項通過）。
     2. app 端 `apps/web/src/state/aiBridge.ts`（注入 history／blobs／isPart，可在 Node 測）：連線碼解析、版本計數、`doc` 節流 300 ms、`apply` 前檢查 base 版本／`inTransaction`／是否零件；`undo` 只在版本等於 AI 上一批之後才做。
     3. store 接線、對話框 `AiControlDialog`（`UiState.dialog` 加 `'aiControl'`）、狀態列「AI 已連線」、action `ai-control`（tools 群組；`icons/solidcraft/manifest.json` 加圖示對應）、中英文字、`help.*` 主題、`docs/help-links.json` 的 `_untied`。
     4. 測試：真實 WebSocket 兩端（伺服器 `LiveBridge` ＋ app `AiBridge` ＋ 真 `History`）；錯碼、Origin、第二個 app、版本衝突、使用者編輯中、逾時關閉。
