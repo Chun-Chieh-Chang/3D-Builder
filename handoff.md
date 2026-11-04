@@ -5,6 +5,29 @@
 
 ---
 
+## 0. 進行中：AI 透過 MCP 操作 3D-Builder（ADR 0237，分支 `claude/eager-ramanujan-n20v0i`）
+
+接手者先讀本節。本節在每個里程碑更新。
+
+- **目標**：讓 Claude Code 等 AI 代理以 `Command`（JSON）建模、量測、看圖、存檔。參考 FreeCAD MCP 與 SolidCraft 的做法，但全部用本專案的 kernel 與命令層實作；**不**執行任意程式碼。
+- **位置**：`apps/mcp`（`session.ts` 交易與量測、`server.ts` MCP 工具、`render.ts` 不開瀏覽器的 PNG、`reference.ts` 命令參考取自原始碼、`commandTypes.ts` 命令種類白名單由編譯器檢查完整性、`examples.ts`）；3MF 寫出在 `packages/io/src/threeMf.ts`。
+- **已完成**：S0 交易式套用（全過才保留）、S1 MCP 工具 12 個、S2 render_view、3MF、重建事件通知、試跑預覽圖。測試 `apps/mcp/test/session.test.ts` 27 項全過。
+- **待做（依序）**：
+  1. 3MF 測試（流形：每條邊恰被兩個三角形共用；體積比對解析值）。
+  2. 無頭 CLI（`src/cli.ts`：執行 JSON 腳本、`--set 變數=值`、輸出量測／截圖／STL／STEP／3MF）。
+  3. 圓盤範例（貫穿孔＋倒角，體積比對 π(R−d/3)d² 公式）。
+  4. 端到端測試：以官方 MCP SDK Client 經 stdio 連建好的 `dist/server.mjs`。
+  5. Fuzz 200 組（heap 以 `wasmMemory.buffer.byteLength` 量測並先斷言 > 0；每種變體至少成功一次）。
+  6. `.mcp.json`、根目錄 `mcp:build` 指令、`apps/mcp/README.md`、ADR 0237、DEV_LOG 紅隊四問、`npm run docs:sync`、`npm run check`。
+- **已知陷阱**：
+  - `mutate` 沒有 default，未知命令會被默默忽略：一律先經 `isCommandType`。
+  - 在基準面上的除料要 `reverse: true` 才切進材料。
+  - 圓柱的接縫邊也是直線，`query_elements` 以 `seam: true` 標示。
+  - 測 heap 成長要用 `oc.___libc_malloc`；直接 `wasmMemory.grow()` 會讓 Emscripten 的記憶體視圖失效。
+- **之後（S3 起）**：連到執行中的 GUI、依參考物件產生外殼、2D 工程圖轉 3D、經 MCP 操作組合件。
+
+---
+
 ## 1. 接續入口與當前代碼基準 (Current Baseline)
 
 - **目前分支**：`main`
