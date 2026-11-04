@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 89／7／38 |
-| ADR 文件 | 234 |
+| ADR 文件 | 235 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 221／217／269 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -464,6 +464,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0233：瀏覽器內專案（Firefox、Safari 可用組合件與工程圖）與 GitHub Pages 部署](<adr/0233-browser-projects-and-pages.md>)
 - [ADR 0234：單一打包檔（.3dbp，Pack and Go）與解開時更新既有檔案](<adr/0234-pack-and-go.md>)
 - [ADR 0235：異型孔整合裝飾螺紋及孔位建立](<adr/0235-integrated-tapped-holes.md>)
+- [ADR 0236：「設計配合件…」入口——以匯入的實體為參考，在同一零件檔建模並拆成組合件](<adr/0236-mating-part-entry.md>)
 
 ### 歷史驗證
 
