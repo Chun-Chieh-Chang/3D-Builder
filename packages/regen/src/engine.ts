@@ -88,6 +88,7 @@ import {
   type RadiatedSurfaceFeature,
   type ReplaceFaceFeature,
   lookupThread,
+  holeSize,
   validThreadTolerance,
   generateStandardThreadProfile,
   sketchAxisDir,
@@ -682,6 +683,7 @@ export class Regenerator {
           case 'sheetRefold': {
             const next = this.sheetState(feature, set);
             set = this.advance(set, next);
+
             return done({ status: 'ok' });
           }
           case 'sketch': {
@@ -892,6 +894,33 @@ export class Regenerator {
                                 ? this.mirror(feature, set)
                                 : this.importedBody(feature, doc, set);
             set = this.advance(set, next);
+            if (feature.type === 'hole' && feature.cosmeticThread) {
+              if (feature.kind !== 'tapped' || !feature.size || !lookupThread(feature.size)) throw new FeatureError(t('feature.cosmeticThreadBadDimensions'));
+              const frame = sketches.get(feature.sketch)!.frame;
+              const direction = scale(frame.normal, feature.reverse ? 1 : -1);
+              const before = this.cosmeticThreads.length;
+              try {
+                for (const body of set.list) {
+                  for (let i = 0; i < body.names.faces.length; i++) {
+                    const name = body.names.faces[i]!;
+                    if (!name.startsWith(`${feature.id}:side:`) || !name.endsWith('.wall')) continue;
+                    const geometry = body.topology.faces[i]?.geometry;
+                    if (geometry?.type !== 'cylinder') throw new FeatureError(t('feature.cosmeticThreadNotCylinder'));
+                    this.cosmeticThread({ id: feature.id, type: 'cosmeticThread', name: feature.name, suppressed: false,
+                      targetFace: { kind: 'face', name }, threadType: 'internal', standardMode: 'standard',
+                      standardDesignation: feature.size, toleranceClass: feature.toleranceClass,
+                      majorDiameter: '1', minorDiameter: '1', pitch: '1',
+                      endCondition: feature.threadDepth === undefined ? 'through' : 'blind', depth: feature.threadDepth ?? '1',
+                      reverse: dot(direction, geometry.axis) < 0,
+                    }, set);
+                  }
+                }
+                if (this.cosmeticThreads.length === before) throw new FeatureError(t('feature.cosmeticThreadNotCylinder'));
+              } catch (error) {
+                this.cosmeticThreads.length = before;
+                throw error;
+              }
+            }
             for (const pattern of lastSeeds.get(feature.id) ?? []) this.captureDelta(pattern, set);
             return done({ status: 'ok' });
           }
@@ -2057,7 +2086,7 @@ export class Regenerator {
       if (!(depth > 0) || !Number.isFinite(depth)) {
         throw new FeatureError(t('feature.cosmeticThreadBadDepth'));
       }
-      depth = Math.min(depth, cylinderLength);
+      if (depth > cylinderLength + 1e-7) throw new FeatureError(t('feature.cosmeticThreadBadDepth'));
     }
 
     // Evaluate diameters & pitch
@@ -3231,6 +3260,7 @@ export class Regenerator {
    * `.cbfloor`, `.cone`, `.bottom`), so every face of every hole has a name of its own.
    */
   private hole(f: HoleFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
+    if ((f.cosmeticThread || f.threadDepth !== undefined) && (f.kind !== 'tapped' || !f.size || !lookupThread(f.size))) throw new FeatureError(t('feature.cosmeticThreadBadDimensions'));
     if (!validThreadTolerance(f.toleranceClass, f.kind === 'tapped' ? f.size : undefined, 'internal')) throw new FeatureError(t('cmd.badThreadTolerance'));
     const s = sketches.get(f.sketch);
     if (!s) throw new FeatureError(t('feature.sketchGone'));
@@ -3242,7 +3272,16 @@ export class Regenerator {
     const n = s.frame.normal;
     const down: Vec3 = f.reverse ? n : [-n[0], -n[1], -n[2]];
     const R = evalLength(f.diameter) / 2;
+    const standardHole = holeSize(f.size ?? '');
+    if (f.cosmeticThread && (!standardHole || !Number.isFinite(R) || Math.abs(R * 2 - standardHole.tapDrill) > 1e-7)) throw new FeatureError(t('feature.cosmeticThreadBadDimensions'));
     const depth = f.end.type === 'blind' ? evalLength(f.end.depth) : this.reach(body, s.frame.origin, down) + 1;
+    if (f.threadDepth !== undefined && (!(evalLength(f.threadDepth) > 0) || !Number.isFinite(evalLength(f.threadDepth)) || evalLength(f.threadDepth) > depth + 1e-7)) throw new FeatureError(t('feature.cosmeticThreadBadDepth'));
+    if (f.cosmeticThread) {
+      for (let i = 0; i < points.length; i++) for (let j = 0; j < i; j++) {
+        const a = points[i]!.at, b = points[j]!.at;
+        if (Math.hypot(a[0] - b[0], a[1] - b[1]) <= 2 * R + 1e-7) throw new FeatureError(t('feature.cosmeticThreadBadDimensions'));
+      }
+    }
     if (depth <= 1e-9) throw new FeatureError(t('feature.nothingThatWay'));
     const lead = 1; // the tool starts this far above the surface so that the cut is clean
     const ring: [number, number][] = [[0, -lead]];

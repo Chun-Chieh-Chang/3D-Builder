@@ -1,5 +1,6 @@
 import { t } from '@3db/i18n';
 import { validThreadTolerance } from './threadTolerance';
+import { holeSize } from './holes';
 import { current, produce, type Draft } from 'immer';
 import { countersFor, type Id } from './ids';
 import type { SpurGearFeature, RackFeature, SheetGauge, AppearanceTarget, DocSettings, MaterialRef, Variable, BlobRef, ChamferFeature, FilletKind, FilletVariablePoint, CombineFeature, JogFeature, HoleFeature, ScrewBossFeature, BaseFlangeFeature, MidBendFeature, EdgeFlangeFeature, HemFeature, BreakCornerFeature, SnapHookFeature, SnapCatchFeature, VentFeature, LoftFeature, RibFeature, SweepFeature, Draft as WallDraft, EndCondition, Thin, Expr, Feature, ImportedBodyFeature, ImportedMeshFeature, AxisDefinition, CoordSysFeature, MirrorFeature, PartDoc, PatternDefinition, PatternFeature, PlaneDefinition, PointDefinition, Ref, RevolveCondition, SketchConstraint, SketchEntity, SketchFeature, SketchPicture, CutWithSurfaceFeature, ThreadFeature, KnurlFeature, CosmeticThreadFeature, HelixFeature, ProjectedCurveFeature, RuledSurfaceFeature, RadiatedSurfaceFeature, ReplaceFaceFeature, SketchAttach } from './schema';
@@ -303,6 +304,11 @@ const positive = (p: Parameters, expr: Expr) => {
  */
 function checkExprs(doc: PartDoc, f: Feature, only?: Set<Id>): void {
   const p = new Parameters(doc);
+  if (f.type === 'hole' && f.cosmeticThread) {
+    const standard = holeSize(f.size ?? '');
+    if (!standard || Math.abs(valueOf(p, f.diameter, 'length') - standard.tapDrill) > 1e-7) throw new CommandError(t('feature.cosmeticThreadBadDimensions'));
+    if (f.threadDepth !== undefined && f.end.type === 'blind' && valueOf(p, f.threadDepth, 'length') > valueOf(p, f.end.depth, 'length') + 1e-7) throw new CommandError(t('feature.cosmeticThreadBadDepth'));
+  }
   switch (f.type) {
     case 'sketch':
       for (const c of f.constraints) {
@@ -712,6 +718,7 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       if (f.unit !== undefined && f.unit !== 'mm' && f.unit !== 'inch') throw new CommandError(t('cmd.importMeshUnit', { unit: String(f.unit) }));
       return;
     case 'hole':
+      if ((f.cosmeticThread || f.threadDepth !== undefined) && (f.kind !== 'tapped' || !holeSize(f.size ?? ''))) throw new CommandError(t('feature.cosmeticThreadBadDimensions'));
       if (!validThreadTolerance(f.toleranceClass, f.kind === 'tapped' ? f.size : undefined, 'internal')) throw new CommandError(t('cmd.badThreadTolerance'));
       checkDowel(f);
       return;
@@ -1220,6 +1227,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const keep = { id: f.id, type: f.type, name: f.name, suppressed: f.suppressed, sketch: f.sketch } as const;
       for (const k of Object.keys(f)) delete (f as unknown as Record<string, unknown>)[k];
       Object.assign(f, keep, cmd.hole);
+      if ((f.cosmeticThread || f.threadDepth !== undefined) && (f.kind !== 'tapped' || !holeSize(f.size ?? ''))) throw new CommandError(t('feature.cosmeticThreadBadDimensions'));
       if (!validThreadTolerance(f.toleranceClass, f.kind === 'tapped' ? f.size : undefined, 'internal')) throw new CommandError(t('cmd.badThreadTolerance'));
       checkDowel(f as HoleFeature);
       checkExprs(draft as PartDoc, f as Feature);

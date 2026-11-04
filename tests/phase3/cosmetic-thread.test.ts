@@ -209,6 +209,19 @@ describe('Cosmetic Thread Feature (ADR 0156 / C4.9)', () => {
       expect(info.axis[1]).toBeCloseTo(1, 3); // along Y axis
     });
 
+    it('rejects a requested depth beyond the actual cylindrical wall instead of silently shortening it', () => {
+      const ct: CosmeticThreadFeature = {
+        id: 'ct1', type: 'cosmeticThread', name: 'ct1', suppressed: false,
+        targetFace: { kind: 'face', name: 'rv_cyl:side:sk_cyl.l2' },
+        threadType: 'external', majorDiameter: '12', minorDiameter: '10.106', pitch: '1.75',
+        endCondition: 'blind', depth: '26',
+      };
+      const res = rebuild(cylinderDoc('cyl', 6, 25, ct));
+      expect(failures(res).length).toBeGreaterThan(0);
+      expect(res.features.find(f => f.id === 'ct1')?.message).toBe(t('feature.cosmeticThreadBadDepth'));
+      expect(res.cosmeticThreads).toEqual([]);
+    });
+
     it('handles through condition clamping to cylinder length', () => {
       const ct: CosmeticThreadFeature = {
         id: 'ct1',

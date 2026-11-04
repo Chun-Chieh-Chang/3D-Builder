@@ -250,6 +250,7 @@ const migrations: Record<number, (doc: Json) => Json> = {
   86: (doc) => doc,
   // v88: a cut may keep the material inside the contour (`keepInside`, ADR 0231). Absent is an ordinary cut; nothing to convert.
   87: (doc) => doc,
+  88: (doc) => doc,
 };
 
 export class FormatError extends Error {

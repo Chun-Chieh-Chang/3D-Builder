@@ -2515,6 +2515,7 @@ function HolePanel({ f }: { f: HoleFeature }) {
   void [_sketch, _id, _type, _name, _suppressed];
   const run = (patch: Partial<typeof settings>) => {
     const next = { ...settings, ...patch };
+    if (next.kind !== 'tapped' || !next.size) { delete next.cosmeticThread; delete next.threadDepth; }
     if (!validThreadTolerance(next.toleranceClass, next.kind === 'tapped' ? next.size : undefined, 'internal')) delete next.toleranceClass;
     store.execute({ type: 'setHole', featureId: f.id, hole: next });
   };
@@ -2573,9 +2574,27 @@ function HolePanel({ f }: { f: HoleFeature }) {
       )}
       <label className="pm-row">
         <span>{t('pm.hole.diameter')}</span>
-        <ValueInput value={f.diameter} toCommand={(diameter) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, diameter, size: undefined, toleranceClass: undefined } })} />
+        <ValueInput value={f.diameter} toCommand={(diameter) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, diameter, size: undefined, toleranceClass: undefined, cosmeticThread: undefined, threadDepth: undefined } })} />
       </label>
       {f.kind === 'tapped' && f.size && (
+        <>
+        <label className="pm-row checkbox">
+          <input type="checkbox" checked={f.cosmeticThread ?? false} onChange={e => run({ cosmeticThread: e.target.checked })} />
+          <span>{t('feature.cosmeticThread')}</span>
+        </label>
+        {f.cosmeticThread && <>
+          <label className="pm-row">
+            <span>{t('pm.hole.threadLength')}</span>
+            <select value={f.threadDepth === undefined ? 'through' : 'blind'} onChange={e => run({ threadDepth: e.target.value === 'through' ? undefined : f.end.type === 'blind' ? f.end.depth : '5' })}>
+              <option value="through">{t('pm.hole.fullThread')}</option>
+              <option value="blind">{t('pm.cosmeticThread.blind')}</option>
+            </select>
+          </label>
+          {f.threadDepth !== undefined && <label className="pm-row">
+            <span>{t('pm.hole.threadLength')}</span>
+            <ValueInput value={f.threadDepth} toCommand={threadDepth => ({ type: 'setHole', featureId: f.id, hole: { ...settings, threadDepth } })} />
+          </label>}
+        </>}
         <label className="pm-row">
           <span>{t('pm.threadTolerance')}</span>
           <select data-field="holeToleranceClass" value={f.toleranceClass ?? ''} onChange={e => run({ toleranceClass: e.target.value || undefined })}>
@@ -2583,6 +2602,7 @@ function HolePanel({ f }: { f: HoleFeature }) {
             {threadToleranceClasses(f.size, 'internal').map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </label>
+        </>
       )}
       {f.kind === 'dowel' && (
         <>

@@ -6,9 +6,9 @@
 
 | 項目 | 程式來源值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 88／7／38 |
-| ADR 文件 | 233 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 220／216／268 |
+| 零件／組合件／工程圖 Schema | 89／7／38 |
+| ADR 文件 | 234 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 221／217／269 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -463,6 +463,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0232：「保留輪廓內」改為範圍受限](<adr/0232-keep-inside-reach.md>)
 - [ADR 0233：瀏覽器內專案（Firefox、Safari 可用組合件與工程圖）與 GitHub Pages 部署](<adr/0233-browser-projects-and-pages.md>)
 - [ADR 0234：單一打包檔（.3dbp，Pack and Go）與解開時更新既有檔案](<adr/0234-pack-and-go.md>)
+- [ADR 0235：異型孔整合裝飾螺紋及孔位建立](<adr/0235-integrated-tapped-holes.md>)
 
 ### 歷史驗證
 
@@ -538,6 +539,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [草圖吸附與推斷計畫（參照 SolidWorks；已實作並提交）](<sketch-snapping-plan.md>)
 - [曲面互相修剪（P-3）：小驗證與計畫](<surface-trim-plan.md>)
 - [螺牙（真實螺紋實體）：計畫與驗證方案](<thread-plan.md>)
+- [牙孔流程整合與驗證計畫](<threaded-hole-workflow-plan.md>)
 
 ### 驗證操作
 

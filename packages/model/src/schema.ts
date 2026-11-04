@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 88;
+export const SCHEMA_VERSION = 89;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -273,6 +273,10 @@ everse the other way). size is only the label of the standard size the diameters
  */
 export interface HoleFeature extends FeatureBase {
   type: 'hole';
+  /** Integrated standard thread annotation; absent preserves legacy holes. */
+  cosmeticThread?: boolean;
+  /** Absent means the full available bore wall. */
+  threadDepth?: Expr;
   sketch: Id;
   kind: 'straight' | 'counterbore' | 'countersink' | 'tapped' | 'dowel';
   /** The standard size the diameters came from, e.g. M6 (a label; custom or absent when typed). */

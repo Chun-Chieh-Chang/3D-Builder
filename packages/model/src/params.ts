@@ -169,6 +169,11 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
     }
     case 'hole': {
       const f = feature;
+      if (f.threadDepth !== undefined) {
+        const threadDepth = fn(f.threadDepth, 'length', 'positive');
+        const { threadDepth: _depth, ...rest } = f;
+        return { ...mapExprs(rest, fn), threadDepth } as typeof f;
+      }
       const one = (v: string | undefined, kind: ExprKind, role: ExprRole): string | undefined => (v === undefined ? v : fn(v, kind, role));
       const diameter = fn(f.diameter, 'length', 'positive');
       const end = f.end.type === 'blind' ? { ...f.end, depth: fn(f.end.depth, 'length', 'positive') } : f.end;

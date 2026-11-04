@@ -1813,6 +1813,16 @@ class AppStore {
   }
 
   /** 「異型孔」: holes at the selected sketch's free points. */
+  private holePositionSketch: string | null = null;
+
+  newHolePositions(plane: DatumPlaneName | Ref): void {
+    this.newSketch(plane);
+    if (this.state.editing?.kind === 'sketch') {
+      this.holePositionSketch = this.state.editing.featureId;
+      this.sketcher?.setTool('point');
+    }
+  }
+
   newHole(): void {
     const sketch = this.selectedSketch();
     if (!sketch) return;
@@ -2658,6 +2668,27 @@ class AppStore {
   commitEdit(): void {
     const e = this.state.editing;
     if (!e) return;
+    if (this.holePositionSketch === e.featureId) {
+      const sketch = findFeature(this.history.doc, e.featureId);
+      if (sketch?.type !== 'sketch' || !sketch.entities.some(entity => entity.type === 'point' && !entity.construction)) {
+        this.notify(t('feature.holeNoPoints'), 'error');
+        return;
+      }
+      const name = t('feature.hole');
+      const id = this.allocator().take('hole');
+      try {
+        this.history.execute({ type: 'insertFeature', feature: { id, type: 'hole', name: nextName(this.history.doc, name), suppressed: false, sketch: e.featureId, kind: 'straight', diameter: '6', end: { type: 'blind', depth: '10' } }, index: this.history.doc.features.findIndex(f => f.id === e.featureId) + 1 });
+      } catch (error) {
+        this.notify(error instanceof Error ? error.message : String(error), 'error');
+        return;
+      }
+      this.holePositionSketch = null;
+      this.history.markSessionBase();
+      this.leaveSession();
+      this.set({ editing: { kind: 'feature', featureId: id }, selected: id, selectedFace: null, selectedElements: [] });
+      this.requestRebuild();
+      return;
+    }
     const pending = findFeature(this.history.doc, e.featureId);
     if (pending?.type === 'moveFace' && (!pending.face.name || (pending.target && !pending.target.name))) {
       this.notify(t('edit.moveFacePickPlane'), 'error');
@@ -2678,6 +2709,7 @@ class AppStore {
 
   cancelEdit(): void {
     if (!this.state.editing) return;
+    this.holePositionSketch = null;
     this.history.rollback();
     this.leaveSession();
   }

@@ -28,6 +28,20 @@ const hole = (extra: Partial<HoleFeature>): Feature => ({ id: 'h1', type: 'hole'
 const make = (extra: Partial<HoleFeature>, ...pts: [number, number][]) => build(...plate(), at(...(pts.length > 0 ? pts : [[0, 0] as [number, number]])), hole(extra));
 
 describe('the hole wizard (C4.8)', () => {
+  it('shares the hole specification with every integrated thread and evaluates its own depth', () => {
+    for (const size of ['M6', 'M8']) {
+      const r = rebuild(make({ kind: 'tapped', size, diameter: String(holeSize(size)!.tapDrill), cosmeticThread: true, threadDepth: '3', end: { type: 'blind', depth: '8' } }, [-10, 0], [10, 0]));
+      expect(failures(r)).toEqual([]);
+      expect(r.cosmeticThreads).toHaveLength(2);
+      for (const ct of r.cosmeticThreads) {
+        expect(ct.standardDesignation).toBe(size);
+        expect(ct.depth).toBe(3);
+        expect(ct.cylinderLength).toBeCloseTo(8, 6);
+        expect(ct.radius * 2).toBeCloseTo(holeSize(size)!.tapDrill, 6);
+        expect(r.body!.names.faces).toContain(ct.targetFace.name);
+      }
+    }
+  });
   it('a straight blind hole: the plate loses a cylinder of Ø6 and 5 deep; through all, one 10 deep', () => {
     const blind = rebuild(make({}));
     expect(failures(blind)).toEqual([]);

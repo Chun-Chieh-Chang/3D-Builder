@@ -219,7 +219,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'chamfer', get label() { return t('act.chamfer'); }, group: 'feature', enabled: hasBody, run: () => store.newChamfer() },
   { id: 'delete-face', get label() { return t('feature.deleteFace'); }, group: 'feature', enabled: hasBody, run: () => store.newDeleteFace() },
   { id: 'thread-entrance', get label() { return t('entrance.title'); }, group: 'feature', enabled: (s) => hasBody(s) && (!!s.selectedFace || s.selectedElements.some(r => r.kind === 'edge' || r.kind === 'face')), run: () => void store.newEntrance() },
-  { id: 'hole', get label() { return t('feature.hole'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newHole() },
+  { id: 'hole', get label() { return t('feature.hole'); }, group: 'feature', enabled: (s) => !!s.result?.mesh && (sketchSelected(s) || (partIdle(s) && sketchPlane(s) !== null)), run: () => { const s = store.getState(); if (sketchSelected(s)) store.newHole(); else { const plane = sketchPlane(s); if (plane) store.newHolePositions(plane); } } },
   { id: 'screw-boss', get label() { return t('feature.screwBoss'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newScrewBoss() },
   { id: 'base-flange', get label() { return t('feature.baseFlange'); }, group: 'sheet', enabled: sketchSelected, run: () => store.newBaseFlange() },
   { id: 'sheet-unfold', get label() { return t('feature.sheetUnfold'); }, group: 'sheet', enabled: s => hasBody(s) && s.doc.features.some(f => f.type === 'baseFlange' && !f.suppressed) && !activeSheetUnfold(s.doc.features), run: () => store.newSheetState('sheetUnfold') },
