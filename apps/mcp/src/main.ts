@@ -3,6 +3,8 @@
  * folder the server was started in. `THREEDB_LOCALE` is `zh-TW` (the default) or `en`: the language of the program's own messages.
  * Nothing but MCP messages may go to stdout, so the log goes to stderr.
  */
+import { mkdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CadSession } from './session';
 import { createServer } from './server';
@@ -12,7 +14,8 @@ const VERSION = '0.1.0';
 async function main(): Promise<void> {
   const locale = process.env.THREEDB_LOCALE ?? 'zh-TW';
   if (locale !== 'zh-TW' && locale !== 'en') throw new Error(`THREEDB_LOCALE must be zh-TW or en, not ${locale}`);
-  const root = process.env.THREEDB_WORKSPACE ?? process.cwd();
+  const root = resolve(process.env.THREEDB_WORKSPACE ?? process.cwd());
+  await mkdir(root, { recursive: true });
   const began = Date.now();
   const session = await CadSession.create({ root, locale });
   const server = createServer(session, VERSION);

@@ -1,0 +1,27 @@
+{
+ "variables": { "R": "30", "T": "10", "HOLE": "5", "C": "1" },
+ "commands": [
+  { "type": "insertFeature", "index": 0, "feature": {
+   "id": "d1", "type": "sketch", "name": "Disc sketch", "suppressed": false,
+   "plane": { "kind": "datum", "name": "plane:top" },
+   "entities": [ { "id": "dc", "type": "point", "x": 0, "y": 0 }, { "id": "rim", "type": "circle", "center": "dc", "radius": 30 } ],
+   "constraints": [ { "id": "dr", "type": "radius", "circle": "rim", "value": "R" }, { "id": "do", "type": "coincident", "a": "dc", "b": "@origin" } ] } },
+  { "type": "insertFeature", "index": 1, "feature": { "id": "e1", "type": "extrude", "name": "Disc", "suppressed": false, "sketch": "d1", "op": "boss", "dir1": { "type": "blind", "depth": "T" } } },
+  { "type": "insertFeature", "index": 2, "feature": {
+   "id": "h1", "type": "sketch", "name": "Hole sketch", "suppressed": false,
+   "plane": { "kind": "datum", "name": "plane:top" },
+   "entities": [ { "id": "hc", "type": "point", "x": 0, "y": 0 }, { "id": "hole", "type": "circle", "center": "hc", "radius": 5 } ],
+   "constraints": [ { "id": "hr", "type": "radius", "circle": "hole", "value": "HOLE" }, { "id": "ho", "type": "coincident", "a": "hc", "b": "@origin" } ] } },
+  { "type": "insertFeature", "index": 3, "feature": { "id": "c1", "type": "extrude", "name": "Through hole", "suppressed": false, "sketch": "h1", "op": "cut", "dir1": { "type": "throughAll", "reverse": true } } },
+  { "type": "insertFeature", "index": 4, "feature": {
+   "id": "ch1", "type": "chamfer", "name": "Top chamfer", "suppressed": false,
+   "edges": [ { "kind": "edge", "name": "{e1:cap:end|e1:side:d1.rim}" } ],
+   "mode": "distanceDistance", "distance": "C", "second": "C" } }
+ ],
+ "outputs": {
+  "report": "disc-report.json",
+  "views": [ { "view": "isometric", "size": 600, "path": "disc-iso.png" }, { "view": "top", "size": 400, "path": "disc-top.png" } ],
+  "exports": [ { "format": "stl", "path": "disc.stl" }, { "format": "3mf", "path": "disc.3mf" }, { "format": "step", "path": "disc.step" } ],
+  "save": "disc.3dbx"
+ }
+}

@@ -10,6 +10,8 @@
     "dev": "npm run dev -w @3db/web -- --open",
     "dev:auto": "npm run dev:auto -w @3db/web -- --open",
     "build": "npm run build -w @3db/web",
+    "mcp:build": "npm run build -w @3db/mcp",
+    "mcp:run": "node apps/mcp/dist/cli.mjs run",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
