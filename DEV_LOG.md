@@ -10,6 +10,7 @@
 - **第一次 `verify:ui` 被執行端的 1 小時上限中止**：日誌停在 240/240 通過、0 失敗，最後一項是 `phase5-assembly.js`。沒有把「240 項都過」當成整輪結果，改以無上限背景重跑取得單一完整結果（`out/verify-ui-s3-2.log`）。分段結果與完整結果分開記錄。
 - 同一輪修掉兩個**既有的 Windows 測試可攜性缺陷**（與 S3 無關，但會讓整輪 `npm test` 在本機失敗）：`apps/mcp/test/e2e.test.ts` 的 `execFileSync('npx')` 改以 `process.execPath` 執行 Vite；`apps/mcp/test/session.test.ts` 的 `symlinkSync` 改為 `'junction'`（一般使用者無權限建立符號連結）。兩者只改呼叫方式，斷言與門檻未動。
 - 限制照實寫：使用者尚未以 Claude Code 手動連線試用；未宣稱 OCCT Heap 零洩漏（見 AGENTS.md §3.5）。全量驗收與審查由接手的工作階段執行，模型與實作者不同；原規劃的 GPT-6 Astra 未實際參與，不宣稱它做過審查。
+- CI（PR #10，`37d26c6`）：`integrity` 的 ubuntu／macos／windows 三平台全部 success，GitGuardian success；`full-suite`、`deploy-pages` 在 PR 階段 skipped。此結論只涵蓋該提交，之後的提交需各自重看。
 
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
