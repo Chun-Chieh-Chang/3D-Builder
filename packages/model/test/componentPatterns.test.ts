@@ -9,6 +9,8 @@ import {
   componentPatternInstances,
   componentPatternLabels,
   componentPatternProblem,
+  patternAxisSkew,
+  PATTERN_SKEW_DEGREES,
   createEmptyAssembly,
   leavesOf,
   mirrorKey,
@@ -263,5 +265,49 @@ describe('the parts patterns and mirrors add (C15.13)', () => {
     // a hand-edited file with a bad count is reported, not drawn wrongly
     const bad: AssemblyDoc = { ...withPattern(linear()), patterns: [linear({ count1: 1 })] };
     expect(patternLeavesOf(bad, base(bad), axes).problems.get('pattern1')).toMatch(/2 以上/);
+  });
+});
+describe('patternAxisSkew: a turned seed patterned along an assembly axis (hint only)', () => {
+  const deg = Math.PI / 180;
+  it('is null when the seed is lined up, or turned onto another assembly axis', () => {
+    expect(patternAxisSkew({ kind: 'axis', axis: 'y' }, [0, 0, 0, 1])).toBeNull();
+    expect(patternAxisSkew({ kind: 'axis', axis: 'y' }, axisAngle([0, 0, 1], 90 * deg))).toBeNull();
+    // Turned about the pattern direction itself: the seed's own Y still lies along it.
+    expect(patternAxisSkew({ kind: 'axis', axis: 'y' }, axisAngle([0, 1, 0], 23 * deg))).toBeNull();
+    expect(patternAxisSkew({ kind: 'axis', axis: 'x' }, axisAngle([0, 0, 1], (PATTERN_SKEW_DEGREES - 0.1) * deg))).toBeNull();
+  });
+  it('reports the angle of the case that was reported: a jig turned about 23 degrees, direction the assembly Y axis', () => {
+    expect(patternAxisSkew({ kind: 'axis', axis: 'y' }, axisAngle([0, 0, 1], 23 * deg))).toBeCloseTo(23, 9);
+    expect(patternAxisSkew({ kind: 'axis', axis: 'z' }, axisAngle([1, 0, 0], -10 * deg))).toBeCloseTo(10, 9);
+    // Turned 60 degrees: the nearest seed axis is 30 degrees away, which is what the copies will look like.
+    expect(patternAxisSkew({ kind: 'axis', axis: 'x' }, axisAngle([0, 0, 1], 60 * deg))).toBeCloseTo(30, 9);
+  });
+  it('is null for a direction picked on a part, which already turns with that part', () => {
+    const ref = { kind: 'ref' as const, ref: { component: 'c1', ref: { kind: 'edge', name: 'e' } } } as never;
+    // Turned about X so that every assembly axis but X would report 23 degrees.
+    expect(patternAxisSkew(ref, axisAngle([1, 0, 0], 23 * deg))).toBeNull();
+    expect(patternAxisSkew(undefined, axisAngle([1, 0, 0], 23 * deg))).toBeNull();
+  });
+  it('refuses a rotation that is not a unit quaternion instead of guessing', () => {
+    for (const q of [[0, 0, 0, 2], [NaN, 0, 0, 1], [0, 0, 0, 0]] as [number, number, number, number][])
+      expect(() => patternAxisSkew({ kind: 'axis', axis: 'y' }, q)).toThrow('unit rotation');
+  });
+  it('fuzzes 200 random turns against the angle measured independently from the turned axes', () => {
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    for (let n = 0; n < 200; n++) {
+      const ax: [number, number, number] = [rnd() - 0.5, rnd() - 0.5, rnd() - 0.5], len = Math.hypot(...ax);
+      const q = axisAngle([ax[0] / len, ax[1] / len, ax[2] / len], (rnd() * 2 - 1) * Math.PI), axis = (['x', 'y', 'z'] as const)[n % 3]!;
+      const d = axis === 'x' ? [1, 0, 0] : axis === 'y' ? [0, 1, 0] : [0, 0, 1];
+      // Rotate each unit axis by q directly (q v q*), independent of the rows the function reads.
+      const [x, y, z, w] = q, rot = (v: number[]) => {
+        const tx = 2 * (y * v[2]! - z * v[1]!), ty = 2 * (z * v[0]! - x * v[2]!), tz = 2 * (x * v[1]! - y * v[0]!);
+        return [v[0]! + w * tx + y * tz - z * ty, v[1]! + w * ty + z * tx - x * tz, v[2]! + w * tz + x * ty - y * tx];
+      };
+      const best = Math.max(...[[1, 0, 0], [0, 1, 0], [0, 0, 1]].map((e) => Math.abs(rot(e).reduce((s, c, i) => s + c * d[i]!, 0))));
+      const expected = (Math.acos(Math.min(1, best)) * 180) / Math.PI, got = patternAxisSkew({ kind: 'axis', axis }, q);
+      if (expected > PATTERN_SKEW_DEGREES + 1e-9) expect(got).toBeCloseTo(expected, 9);
+      else if (expected < PATTERN_SKEW_DEGREES - 1e-9) expect(got).toBeNull();
+    }
   });
 });

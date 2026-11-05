@@ -39,6 +39,7 @@ export const patterns = {
   'pattern.axisZ': '組合件的 Z 軸',
   'pattern.axisElement': '選取的元素：{name}',
   'pattern.pickInView': '在圖面選取…',
+  'pattern.skewHint': '方向是組合件的 {axis} 軸，但種子零件轉了約 {degrees}°，排出來可能是斜的。要沿著零件排列，請按「在圖面選取…」改選零件上的邊。',
   'pattern.picking': '在圖面中點選直線邊線、圓柱面或圓形邊線、平面（Esc 取消）',
   'pattern.compCount': '實例數（含種子）',
   'pattern.spacing': '間距',

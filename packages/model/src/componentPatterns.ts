@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { evalAngle, evalLength, ExprError } from './expr';
 import { axisAngle, quatFromRows, rotationRows } from './pose';
-import type { ComponentPattern, MirrorPlane, Pose, Vec3 } from './schema';
+import type { ComponentPattern, MirrorPlane, PatternAxis, Pose, Quat, Vec3 } from './schema';
 
 /**
  * Component patterns and mirrors (C15.13). Only the arithmetic lives here: given what a pattern's axes are (found by whoever can
@@ -65,6 +65,23 @@ export function componentPatternLabels(p: ComponentPattern): string[] {
     return out;
   }
   return Array.from({ length: Math.max(0, n1 - 1) }, (_, k) => String(k + 2));
+}
+
+/** Below this angle (degrees) a seed counts as lined up with an assembly axis; above it a linear pattern along that axis may run askew. */
+export const PATTERN_SKEW_DEGREES = 0.5;
+
+/**
+ * How far (degrees) the seed is turned away from an assembly axis a linear pattern runs along: the angle between that axis and the
+ * nearest of the seed's own axes. Null when the direction is an element (it turns with its component), or the seed is lined up.
+ * A hint only: nothing is blocked or changed, a turned seed may be meant to be copied along the assembly's axis.
+ */
+export function patternAxisSkew(axis: PatternAxis | undefined, seedRotation: Quat): number | null {
+  if (axis?.kind !== 'axis') return null;
+  if (!seedRotation.every(Number.isFinite) || Math.abs(Math.hypot(...seedRotation) - 1) > 1e-6) throw new Error('patternAxisSkew needs a unit rotation');
+  const m = rotationRows(seedRotation), row = axis.axis === 'x' ? 0 : axis.axis === 'y' ? 1 : 2;
+  const best = Math.max(Math.abs(m[row * 3]!), Math.abs(m[row * 3 + 1]!), Math.abs(m[row * 3 + 2]!));
+  const degrees = (Math.acos(Math.min(1, best)) * 180) / Math.PI;
+  return degrees > PATTERN_SKEW_DEGREES ? degrees : null;
 }
 
 /** Why a pattern's definition cannot be used (its numbers and labels, not its geometry); null when it can. */

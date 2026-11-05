@@ -41,6 +41,7 @@ export const patterns: Translation = {
   'pattern.axisZ': "The assembly's Z axis",
   'pattern.axisElement': 'Selected element: {name}',
   'pattern.pickInView': 'Select in the view…',
+  'pattern.skewHint': 'The direction is the assembly\'s {axis} axis, but the seed is turned about {degrees}° from it, so the copies may run askew. To follow the part, use "Select in the view…" and pick an edge of the part.',
   'pattern.picking': 'Click a straight edge, a cylindrical face or circular edge, or a plane in the view (Esc cancels)',
   'pattern.compCount': 'Instances (seed included)',
   'pattern.spacing': 'Spacing',

@@ -5472,3 +5472,31 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 `section-offset-certificate.test.ts` **14/14、85.4 秒**（2 核 VM）。另外 typecheck、四項 lint、docs:sync 通過。未跑全量 npm test 或 verify:ui，產品程式未改。
 
 仍未解：偵測到違反之後的處理（拒絕並指出位置，或修正）、`MakeOffset` 失敗的原因、截面平滑誤差、孔洞與多區域、內縮、自相交前置攔截、Worker 成本限制與產品語意。
+
+## 2026-11-05 組合件線性排列：種子轉了角度時的方向提示（原 #6）
+
+- **起因**：使用者回報陣列複製品沒對齊。讀檔確認是設定問題：治具被手動轉了約 23°，方向卻選組合件 Y 軸（見 11-04 一節）。使用者同意列為後續改善，條件是提示不阻擋、不自動改方向。
+- **偵測條件**：只針對線性排列，而且方向選的是組合件的 X／Y／Z 軸。計算該軸與種子三個自身軸中最接近者的夾角，超過 0.5°（`PATTERN_SKEW_DEGREES`）就提示。
+  - 方向若是在圖面選的元素，它本來就跟著零件轉，所以不提示。
+  - 繞著排列方向本身轉，或轉 90° 剛好換到另一軸，也不提示。
+  - 轉 60° 時，最近的軸是 30°，回報 30°，這就是複製品看起來會歪的角度。
+- **實作**：
+  - `patternAxisSkew()`（`packages/model/src/componentPatterns.ts`）：純函式，非單位四元數或非有限值明確拋錯。
+  - `PatternPanel` 的方向欄位下方以 `p.hint` 顯示 `pattern.skewHint`（中英），帶 `data-pattern-skew`。種子位姿取 `poseOf()`，也就是拖曳中、求解後或初始放置。✓ 不受影響。
+  - 未改 Schema、命令或文件格式。
+
+### 紅隊四問與驗證
+
+1. 輸入：非單位、NaN、零四元數明確拋錯；未定義方向回 null；角度不取整，只在顯示時取一位小數。
+2. 相交：不涉及幾何運算。
+3. 依賴：model → `@3db/model` 匯出 → `PatternPanel`（i18n 兩語）。不寫入文件，也就沒有 schema、序列化、DAG 的問題；圓形排列與鏡射不提示。
+4. 真值：單元測試以獨立的 q·v·q* 旋轉計算夾角，比對 200 組隨機旋轉，不重用函式內部的旋轉矩陣列。
+
+突變（各自還原後重跑）：
+1. 讀矩陣的行而不是列：fuzz 轉紅。
+2. 拿掉 0.5° 門檻：「已對齊時不提示」轉紅。
+3. 不分方向種類：第一版測試抓不到（參照情況剛好用繞 Z 轉），改成繞 X 轉後轉紅。
+
+`componentPatterns.test.ts` 23 項，其中新增 5 項；`packages/model`＋`packages/i18n` 185 項、`apps/web` 373 項通過。typecheck、四項 lint 通過。
+
+`tests/e2e/phase3-component-pattern.js` 已加步驟 `pat.skew`：未轉的種子不提示；轉 23° 時，Y 方向提示含「Y」與「23.0」且 ✓ 仍可按；改 Z 方向提示消失；最後復原。Linux VM 沒有 Chrome，所以由使用者在 Windows 執行 `npm run verify:ui -- --only component-pattern`：**`phase3-component-pattern.js __pat.run` PASS（17.9 s），1／1**（2026-11-05 21:10，未提交的工作樹，基準 `41a0259`）。完整 `verify:ui` 那一輪在第 2 支腳本後被中斷（`^C`），沒有整輪結果。未跑全量 npm test。

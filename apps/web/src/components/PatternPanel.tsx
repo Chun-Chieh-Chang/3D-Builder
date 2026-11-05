@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { t } from '@3db/i18n';
-import { componentPatternLabels, componentPatternProblem, type ComponentPattern, type MirrorPlane, type PatternAxis } from '@3db/model';
+import { componentPatternLabels, componentPatternProblem, patternAxisSkew, type ComponentPattern, type MirrorPlane, type PatternAxis } from '@3db/model';
 import { store, useStore } from '../state/store';
 import { PREVIEW_PATTERN } from '../state/assembly';
 import { componentInfo } from './AssemblyTree';
@@ -42,6 +42,8 @@ function TextBox({ value, onCommit, label, width }: { value: string; onCommit: (
 function AxisField({ slot, axis, title }: { slot: 'axis1' | 'axis2'; axis: PatternAxis | undefined; title: string }) {
   const draft = useStore((s) => s.asm?.pattern)!;
   const a = store.assembly!;
+  const seedPose = draft.pattern.kind === 'linear' ? a.poseOf(draft.pattern.seed) : null;
+  const skew = seedPose ? patternAxisSkew(axis, seedPose.rotation) : null;
   const value = axis?.kind === 'axis' ? axis.axis : 'ref';
   const set = (v: string) => (v === 'ref' ? a.pickPatternAxis(slot) : a.setPatternDraft({ [slot]: { kind: 'axis', axis: v as 'x' | 'y' | 'z' } }));
   const picking = draft.picking === slot;
@@ -60,6 +62,11 @@ function AxisField({ slot, axis, title }: { slot: 'axis1' | 'axis2'; axis: Patte
         </button>
       </div>
       {picking && <p className="hint">{t('pattern.picking')}</p>}
+      {skew !== null && axis?.kind === 'axis' && (
+        <p className="hint" data-pattern-skew={slot}>
+          {t('pattern.skewHint', { axis: axis.axis.toUpperCase(), degrees: skew.toFixed(1) })}
+        </p>
+      )}
     </div>
   );
 }

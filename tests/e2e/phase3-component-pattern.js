@@ -40,6 +40,7 @@ pat.linear = async () => {
   a.select('comp1');
   await start('線性複製排列');
   H.check(H.asm().pattern.pattern.seed === 'comp1' && H.asm().pattern.pattern.kind === 'linear', 'the selected component is the seed');
+  H.check(!document.querySelector('[data-pattern-skew]'), 'no skew hint: the seed is lined up with the assembly axes');
   H.check(store.viewer.instances.size === 6 + 6, `the preview shows 2 instances × 3 parts: ${store.viewer.instances.size}`);
   a.setPatternDraft({ count1: 4, spacing1: '40', flip1: false });
   await H.wait(300);
@@ -59,8 +60,33 @@ pat.linear = async () => {
   return { rows: H.tree().length };
 };
 
+/** A seed turned 23° about z, patterned along the assembly's Y axis: a hint names the angle; nothing is blocked or changed. */
+pat.skew = async () => {
+  const a = store.assembly;
+  const c2 = H.asm().doc.components.find((c) => c.id === 'comp2');
+  const h = (23 * Math.PI) / 360;
+  H.check(a.execute({ type: 'setPlacements', placements: [{ componentId: 'comp2', placement: { position: c2.placement.position, rotation: [0, 0, Math.sin(h), Math.cos(h)] } }] }), 'comp2 turned 23° about z');
+  await H.wait(500);
+  a.select('comp2');
+  await start('線性複製排列');
+  a.setPatternDraft({ axis1: { kind: 'axis', axis: 'y' } });
+  await H.waitFor(() => document.querySelector('[data-pattern-skew="axis1"]'), 3000, 'the skew hint');
+  const text = document.querySelector('[data-pattern-skew="axis1"]').textContent;
+  H.check(text.includes('Y') && text.includes('23.0'), `the hint names the axis and the angle: ${text}`);
+  H.check(!document.querySelector('.property-manager .pm-ok').disabled, 'a hint only: ✓ is still enabled');
+  a.setPatternDraft({ axis1: { kind: 'axis', axis: 'z' } });
+  await H.wait(300);
+  H.check(!document.querySelector('[data-pattern-skew]'), 'turned about z, so along z the seed is lined up: no hint');
+  a.cancelPattern();
+  await H.wait(300);
+  a.undo();
+  await H.wait(500);
+  H.check(JSON.stringify(H.asm().doc.components.find((c) => c.id === 'comp2').placement) === JSON.stringify(c2.placement), 'the turn is undone');
+};
+
 pat.circular = async () => {
   await pat.linear();
+  await pat.skew();
   const a = store.assembly;
   a.select('comp1');
   await start('環狀複製排列');
