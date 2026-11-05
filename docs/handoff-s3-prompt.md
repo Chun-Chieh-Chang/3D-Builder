@@ -47,7 +47,7 @@ npm run mcp:build
 
 ## 3. 你要做：使用者端 Claude Code 實測
 
-1. 啟動：dev server（`npm run dev` 或專案既有腳本）與 MCP 伺服器（`npm run mcp:run` 或 `node apps/mcp/dist/server.mjs`，依 README）。
+1. 啟動 dev server（`npm run dev` 或專案既有腳本）。在專案根目錄開啟 Claude Code，由 `.mcp.json` 啟動 `3d-builder` MCP 伺服器（實際指令為 `node apps/mcp/dist/server.mjs`），並核准該伺服器。`npm run mcp:run` 是執行 JSON 腳本的無頭 CLI，不是 MCP 伺服器；不要另外啟動第二個伺服器取得不同的連線碼。
 2. 在 GUI 的「工具 → AI 控制」貼上 `live_status` 印出的連線碼，確認狀態列顯示連線中。
 3. 讓 Claude Code 透過 MCP 批次建立一個圓柱（`apply_commands`），確認特徵樹出現該特徵、`part_summary` 的體積對得上 π·r²·h。
 4. 在 GUI 復原一次，確認整批撤回。

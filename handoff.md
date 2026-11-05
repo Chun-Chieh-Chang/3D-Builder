@@ -24,12 +24,13 @@
 
 ### 下一步（本工作線）
 
-1. **使用者以 Claude Code 實際連線試用**：`npm run mcp:run` 啟動 MCP 伺服器，GUI 的「工具 → AI 控制」輸入連線碼，確認批次建模、單步復原、改名回傳正常。取得確認前不宣稱使用者端已驗收。
+1. **使用者以 Claude Code 實際連線試用**：在專案根目錄由 Claude Code 的 `.mcp.json` 啟動 MCP 伺服器（`node apps/mcp/dist/server.mjs`），GUI 的「工具 → AI 控制」輸入該伺服器 `live_status` 回傳的連線碼，確認批次建模、單步復原、改名回傳正常。`npm run mcp:run` 是無頭 CLI，不是 MCP 伺服器。取得確認前不宣稱使用者端已驗收。
 2. 取得試用確認後，再考慮「AI 操作組合件／工程圖」（現行一律拒絕，需另立 ADR 與設計，不是本輪遺漏）。
 3. 本工作線無待提交變更；主線待辦見 §1b 的 T1／T2。
 
 ### 驗證範圍與已知限制
 
+- 2026-11-05 本機接手複驗（基準 `164d4b3`）：`npm run mcp:build` 與 `node scripts/verify-live.mjs` 通過；涵蓋真實 MCP／GUI 連線、圓柱體積與樹、單步復原、改名同步、換文件、編輯中／組合件／工程圖拒絕及斷線。這是代理自動化實測，使用者端手動試用仍未確認。
 - 2026-11-05 全量：`npm test` 372 檔／4,475 通過／26 既有略過／0 失敗；`verify:ui` 270/270；`scripts/verify-live.mjs` 通過。
 - 第一次 `verify:ui` 被執行端 1 小時上限中止（240/240 通過、0 失敗），之後整輪重跑取得單一完整結果；分段結果不當整輪證據。
 - 同輪修掉兩個既有 Windows 測試可攜性缺陷（`e2e.test.ts` 改 `process.execPath`、`session.test.ts` 改 junction），斷言與門檻未放寬。

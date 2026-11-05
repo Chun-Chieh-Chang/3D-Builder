@@ -5369,3 +5369,9 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 ### 兩項差異最終驗收（2026-11-04）
 
 工具選單入口與鎖定歷史生效位置修正完成。新鎖定以 lockedAfter 記錄既有加工終點（Schema 91）；舊 Schema 90 無邊界鎖定保留原語意。修前新增除料歷史案例確實轉紅，修後包含既有圓角、序列化、後續除料阻擋、解除／重複設定與舊檔相容驗證。npm run check 全過：366 個測試檔通過、4 個既有略過；4,423 項通過、26 項既有略過。完整 verify:ui 270/270 PASS（out/mating-history-full-ui.json），期間未修改原始碼。工具選單啟動的完整配合件流程已納入本輪 UI。尚未提交或推送。
+
+## 2026-11-05 S3 本機接手複驗與啟動說明修正
+
+基準 `164d4b3`。`npm run mcp:build` 與 `node scripts/verify-live.mjs` 通過：真實 stdio MCP、GUI 連線、圓柱體積與特徵樹、整批單次復原、改名回傳、換零件、編輯交易／組合件／工程圖拒絕及斷線。已檢視 `out/live/connected.png`，連線對話框與狀態列均顯示已連線。隔離日誌位於本機暫存目錄 `3db-live-RgUmV4`。
+
+修正 handoff 與接手指令誤把 `npm run mcp:run` 當伺服器的說明：該指令實際是 JSON 無頭 CLI；Claude Code 應依 `.mcp.json` 啟動 `node apps/mcp/dist/server.mjs`，並使用同一伺服器的連線碼。本輪只改文件，未修改 UI 或核心，未重跑全套測試。使用者手動試用仍未確認。
