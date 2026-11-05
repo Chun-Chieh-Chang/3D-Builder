@@ -1,14 +1,14 @@
-# 接手指令：3D-Builder S3（AI 連到執行中的 GUI）
+# 接手指令：3D-Builder S3 收尾（使用者端 Claude Code 實測）
 
 把本檔整段貼給另一台電腦上的 Claude Code，作為第一則訊息。
 
 ---
 
-你要接手 3D-Builder 專案的 S3：讓 AI 代理經 MCP 連到執行中的 GUI。請用 ASD-STE100 的方式回覆：句子短、一句一件事、主動語態、用詞一致，大約做到 80% 就好，以繁體中文回答。
+你要接手 3D-Builder 專案的 S3 **收尾**：讓使用者在執行中的 GUI 用 Claude Code 實際試一次 AI 連線建模。S3 的功能與驗收都已合併到 `main`，你負責的是「使用者端實測」這一段。請用 ASD-STE100 的方式回覆：句子短、一句一件事、主動語態、用詞一致，大約做到 80% 就好，以繁體中文回答。
 
 ## 1. 先做這些，再動手
 
-1. 從最新 main 接續；舊的 `claude/eager-ramanujan-n20v0i` 已整合，請勿再 checkout 該分支：
+1. 從最新 main 接續；S3 的功能分支 `codex/s3-live-ui` 已刪除，不要再 checkout：
 
 ```bash
 git status --short --branch
@@ -18,68 +18,50 @@ git pull --ff-only
 git log -8 --oneline
 ```
 
-   工作區有在途變更時，先確認歸屬並保留，不直接切換或覆寫。依專案規則決定是否需要獨立 worktree；新功能分支使用 `codex/` 前綴。最新基準以 `origin/main` 為準，不把 `ba879af` 當成固定起點。
+    工作區有在途變更時，先確認歸屬並保留，不直接切換或覆寫。
 
 2. 安裝並建置：
 
 ```bash
 npm install
-```
-
-```bash
 npm run mcp:build
 ```
 
 3. 依序閱讀：
-   - `handoff.md` §0：S3 的設計、已完成項目、待辦、陷阱。
+   - `handoff.md` §0：S3 已完成項目與剩餘待辦。
    - `AGENTS.md`：強制規則，必須遵守。
-   - `docs/adr/0237-ai-agent-mcp-server.md`：S0–S2 的設計。
-   - `apps/mcp/README.md`。
+   - `docs/adr/0238-ai-live-gui.md`：S3 的設計與驗收紀錄。
+   - `apps/mcp/README.md`：MCP 伺服器如何跑。
 
 ## 2. 已完成（都在 `main`）
 
-- `apps/mcp`：MCP 伺服器，有 13 個工具。其中 `live_status` 是 S3 新增的。
+- `apps/mcp`：MCP 伺服器與 13 個工具（`live_status` 是 S3 新增）。
 - 無頭 CLI、3MF 輸出、命令白名單、整批交易。
-- S3 已完成的部分：
-  - `History.applyBatch`（`packages/model/src/history.ts`）：整批命令只算一個復原步驟，全有或全無。
-  - 協定（`packages/io/src/liveBridge.ts`）。
-  - 伺服器端連線橋（`apps/mcp/src/bridge.ts`）：只綁 127.0.0.1、需要連線碼、檢查 Origin、5 次錯碼鎖定、一次只接一個 app。
-  - app 端 `AiBridge`（`apps/web/src/state/aiBridge.ts`）：開啟零件時會跟著換掉的 history。
-  - store 接線：`store.ai`、`connectAi`、`disconnectAi`、`UiState.ai`。
-- 測試：`apps/mcp` 與 `packages/io` 共 90 項，S3 的既有橋接／交易測試共 7 項（`apps/mcp/test/live-bridge.test.ts`、`packages/model/test/history-batch.test.ts`），歷史紀錄為通過；本機 2026-11-05 重跑橋接／交易 7 項通過，不代表 GUI 全部完成。
+- S3 全部實作與驗收（PR #10，`aecf1a1` 合併）：
+  - `History.applyBatch`（`packages/model/src/history.ts`）：整批一個復原步驟，全有或全無。
+  - 協定（`packages/io/src/liveBridge.ts`）、伺服器端連線橋（`apps/mcp/src/bridge.ts`：127.0.0.1、連線碼、Origin 檢查、5 次錯碼鎖定、單一 app）。
+  - app 端 `AiBridge`（`apps/web/src/state/aiBridge.ts`）與 store 接線（`store.ai`、`connectAi`／`disconnectAi`、`UiState.ai`）。
+  - 使用者介面 `apps/web/src/components/AiControlDialog.tsx`：工具選單「AI 控制」、狀態列連線狀態、中英說明。
+  - GUI 整合腳本 `scripts/verify-live.mjs`（真實 MCP stdio＋Vite＋headless Chrome，非 Playwright）。
+- 驗收：`npm test` 372 檔、4,475 通過、26 既有略過、0 失敗；`npm run verify:ui` 270/270；CI 三平台 `integrity` 全 success。
 
-## 3. 待辦（依序）
+## 3. 你要做：使用者端 Claude Code 實測
 
-1. **「AI 控制」對話框**
-   - `UiState.dialog` 加入 `'aiControl'`。
-   - 對話框內容：連線碼輸入欄、「連線」與「中斷」按鈕，以及狀態文字。
-   - 狀態取自 `store.getState().ai`，有四種：`off`、`connecting`、`on`（含批次數）、`error`（`format`、`port`、`refused`、`closed`）。
-   - 參考 `apps/web/src/components/PhysicalDialog.tsx` 的寫法。
-2. **狀態列標示**：在 `apps/web/src/components/StatusBar.tsx` 顯示「AI 已連線（N 批）」，讓使用者隨時知道 AI 可以改零件。
-3. **登記新功能**：
-   - action `ai-control`：放在 `apps/web/src/actions.ts` 的 tools 群組。
-   - 圖示對應：`apps/web/src/icons/solidcraft/manifest.json`。
-   - 中英文字：`packages/i18n/src/zh-TW` 與 `packages/i18n/src/en`。
-   - 說明：`help.*` 主題，以及 `docs/help-links.json` 的 `_untied`。`tests/phase8/help.test.ts` 會檢查這兩項。
-4. **GUI 實機驗證**：寫 `scripts/verify-live.mjs`（Playwright）：
-   1. 啟動 dev server 與 `apps/mcp/dist/server.mjs`。
-   2. 在 GUI 輸入 `live_status` 給的連線碼。
-   3. AI 用 `apply_commands` 加一個特徵，確認特徵樹出現它。
-   4. 在 GUI 復原一次，確認整批撤回。
-   5. 在 GUI 修改零件，確認 `part_summary` 看得到這個修改。
-5. **收尾**：
-   1. 撰寫 ADR 0238，以及 DEV_LOG 的紅隊四問。
-   2. 執行 `npm run docs:sync`。
-   3. 執行 `npm run check`，再推送並開**新的 PR**。#9 已合併，不可再用。
+1. 啟動：dev server（`npm run dev` 或專案既有腳本）與 MCP 伺服器（`npm run mcp:run` 或 `node apps/mcp/dist/server.mjs`，依 README）。
+2. 在 GUI 的「工具 → AI 控制」貼上 `live_status` 印出的連線碼，確認狀態列顯示連線中。
+3. 讓 Claude Code 透過 MCP 批次建立一個圓柱（`apply_commands`），確認特徵樹出現該特徵、`part_summary` 的體積對得上 π·r²·h。
+4. 在 GUI 復原一次，確認整批撤回。
+5. 在 GUI 改名該特徵，確認 Claude Code 端的 `part_summary` 同步到新名字。
+6. 拒絕路徑各試一次：切換到組合件／工程圖、編輯交易進行中，確認 AI 修改被拒。
+7. 完成後把結果（哪些通過、哪些失敗、截圖路徑）回報給使用者，**不要自己把「使用者端已驗收」寫成既成事實**；取得使用者確認前，`handoff.md` §1b 的 S3 行維持「使用者手動試用未確認」。
 
-## 4. 已知陷阱
+## 4. 已知陷阱（沿用）
 
-- **不要讓 app 的訊息等待工具佇列。** app 送來的零件只記為待載入（`bridge.takePending()`），在下一個工具呼叫開頭才載入。改回直接載入會造成死結。
-- **`mutate` 沒有 `default` 分支**：未知命令會被默默忽略，所以一律先經 `isCommandType` 檢查。
-- **新增檔案後要執行 `npm run docs:sync`**，否則 CI 的 `lint:repo` 會失敗。PR #9 就發生過一次。
-- **改到 UI 時，提交前要跑完整的 `npm run verify:ui`**，而且執行期間不可修改原始碼（AGENTS §4）。
-- **在雲端的 4 核心容器上**，兩項鈑金測試（`tests/phase7/sequential-bends.test.ts`、`sheet-unfold-refold.test.ts`）在整批執行時會逾時。乾淨的基準版本也一樣，所以不是新變更造成的。不可放寬時間限制（AGENTS §3.3）。
-- **額度不知道還剩多少**：每完成一個里程碑，就更新 `handoff.md` §0、提交並推送。
+- **不要讓 app 的訊息等待工具佇列**：app 送來的零件記為待載入（`bridge.takePending()`），下一個工具呼叫開頭才載入；改回直接載入會死結。
+- `mutate` 沒有 `default` 分支：未知命令會被默默忽略，一律先經 `isCommandType` 檢查。
+- 改 UI 後提交前跑完整 `npm run verify:ui`，執行期間不可修改原始碼（AGENTS §4）。
+- 雲端 4 核心容器上兩項鈑金測試整批逾時為既有現象，不可放寬期限（AGENTS §3.3）。
+- 新增檔案後執行 `npm run docs:sync`，否則 `lint:repo` 會紅。
 
 ## 5. 歷史外部進度頁
 
