@@ -10,6 +10,10 @@
  * (docs/help-links.json says which topics an item is about).
  */
 export const help = {
+  'help.aiControl.summary': '讓本機 AI 代理經 MCP 修改目前開啟的零件。',
+  'help.aiControl.body': '先啟動本機 MCP 伺服器，呼叫 live_status 取得連線碼。選「工具 → AI 控制」，貼上連線碼並按「連線」。狀態列會顯示連線狀態與已套用批次數，點它可重新開啟控制視窗。每批命令只佔一個復原步驟。開啟另一零件後，連線改為追蹤新零件。編輯中、文件版本不符、組合件或工程圖會拒絕 AI 修改。按「中斷連線」才會結束連線；單純關閉視窗會保留連線。',
+  'help.aiControl.keywords': 'AI MCP 連線 代理 控制 復原',
+  'help.aiControl.see': 'undo',
   'help.sheetUnfoldSelected.see': "sheet-unfold sheet-refold flat-pattern",
   'help.sheetUnfoldSelected.keywords': "鈑金 部分 展開 折彎 加工 partial unfold",
   'help.sheetUnfoldSelected.body': "按「鈑金 → 部分展開」，在屬性面板勾選要展開的折彎，再確認。凸折兩道彎作為一組；勾選「全部折彎」可改成完整展開。加工後按「摺回」。加工碰到尚未展開的彎曲帶時，請把該折彎加入清單。",

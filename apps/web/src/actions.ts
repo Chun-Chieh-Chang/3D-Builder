@@ -203,6 +203,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'thickness-analysis', get label() { return t('thicknessAnalysis.act'); }, group: 'tools', enabled: (s) => s.active === 'part' && hasBody(s) && s.bootMs !== null, run: () => (store.getState().thickness ? store.stopThickness() : store.startThickness()), active: () => store.getState().thickness !== null },
   { id: 'check-part', get label() { return t('check.act'); }, group: 'tools', enabled: (s) => hasBody(s) && s.bootMs !== null, run: () => void store.startCheck() },
   { id: 'physical-part', get label() { return t('physical.act'); }, group: 'tools', enabled: hasBody, run: () => store.openDialog('physical') },
+  { id: 'ai-control', get label() { return t('ai.title'); }, group: 'tools', enabled: () => true, run: () => store.openDialog('aiControl') },
   { id: 'properties', get label() { return t('action.properties'); }, group: 'tools', enabled: partIdle, run: () => store.openDialog('properties') },
 
   { id: 'extrude', get label() { return t('act.extrude'); }, group: 'feature', enabled: sketchSelected, run: () => store.newExtrude('boss') },

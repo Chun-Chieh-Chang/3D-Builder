@@ -31,7 +31,13 @@ npm run mcp:build
 5. 要選面或邊時，用 `query_elements` 查詢，再把 `ref` 原樣放進命令。
 6. 用 `render_view` 看結果。用 `part_save` 存成 `.3dbx`，或用 `export_file` 輸出 STEP、STL、3MF。
 
-## 無頭 CLI
+## 連到開啟中的零件（S3）
+
+建置並啟動本機 MCP 伺服器後，呼叫 `live_status` 取得連線碼。在本機 3D-Builder 選「工具 → AI 控制」，貼上連線碼並按「連線」。狀態列會顯示連線與批次數。每批可一次復原，開啟另一零件後改為追蹤新文件。編輯中、版本不符或非零件狀態會拒絕修改。關閉對話框不會斷線；請按「中斷連線」。
+
+GUI 整合檢查：`npm run mcp:build` 後執行 `node scripts/verify-live.mjs`。另需完整 `npm run check` 與 `npm run verify:ui`；局部腳本不能代替全量驗收。
+
+## 無頭 CLI 使用
 
 ```bash
 npm run mcp:run -- apps/mcp/examples/disc.json --set R=40 --out out/disc

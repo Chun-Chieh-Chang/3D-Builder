@@ -5,6 +5,7 @@ import { loadingText, useLoadingParts } from './LoadProgress';
 import { useStore, store } from '../state/store';
 import { SKETCH_STATUS_LABEL } from '../strings';
 import { AUTHOR_CREDIT } from '../credit';
+import { AiConnectionStatus } from './AiControlDialog';
 
 /** Status bar: notices, 「錯誤為何？」 (D7.1), sketch status (C1.31), rebuild time, volume, unit system. */
 export function StatusBar() {
@@ -30,6 +31,7 @@ export function StatusBar() {
     const definition = !asm.solution || asm.doc.components.length === 0 ? null : states.includes('over') ? { text: t('sketchStatus.over'), cls: 'over' } : states.includes('under') ? { text: t('sketchStatus.under'), cls: 'under' } : { text: t('sketchStatus.fully'), cls: 'fully' };
     return (
       <footer className="status-bar">
+        <AiConnectionStatus />
         <span className={`notice ${notice?.kind ?? ''}`} onClick={() => store.dismissNotice()}>
           {notice?.text ?? t('status.ready')}
         </span>
@@ -69,6 +71,7 @@ export function StatusBar() {
 
   return (
     <footer className="status-bar">
+      <AiConnectionStatus />
       <span className={`notice ${notice?.kind ?? ''}`} onClick={() => store.dismissNotice()}>
         {notice?.text ?? (editingName ? t('status.editing', { name: editingName }) : t('status.ready'))}
       </span>

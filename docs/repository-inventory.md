@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 91／7／38 |
-| ADR 文件 | 236 |
+| ADR 文件 | 237 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 222／218／270 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -571,6 +571,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0235：異型孔整合裝飾螺紋及孔位建立](<adr/0235-integrated-tapped-holes.md>)
 - [ADR 0236：「設計配合件…」入口——以匯入的實體為參考，在同一零件檔建模並拆成組合件](<adr/0236-mating-part-entry.md>)
 - [ADR 0237：AI 代理以 MCP 操作 3D-Builder（無頭建模、量測、截圖、輸出）](<adr/0237-ai-agent-mcp-server.md>)
+- [ADR 0238：AI／MCP 連到執行中的 GUI](<adr/0238-ai-live-gui.md>)
 
 ### 歷史驗證
 

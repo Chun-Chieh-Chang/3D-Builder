@@ -2,6 +2,20 @@ import type { Translation } from '../index';
 
 /** evaluate: measuring, mass properties, geometry check and interference (E1, E2, E3). */
 export const evaluate: Translation = {
+  'ai.title': 'AI Control',
+  'ai.code': 'Connection code',
+  'ai.instructions': 'Call live_status on the local MCP server and paste its connection code here. Once connected, AI can change the open part.',
+  'ai.scope': 'Parts only. AI changes are refused while editing a sketch or feature. Undo reverses one batch. Closing this dialog keeps the connection active.',
+  'ai.connect': 'Connect',
+  'ai.disconnect': 'Disconnect',
+  'ai.close': 'Close',
+  'ai.off': 'AI disconnected',
+  'ai.connecting': 'AI connecting…',
+  'ai.on': 'AI connected ({n} batches)',
+  'ai.error.format': 'Invalid code format. Paste the complete connection code.',
+  'ai.error.port': 'Invalid port in the code. Request a new connection code.',
+  'ai.error.refused': 'Connection refused. Check the code, origin and whether another window is connected.',
+  'ai.error.closed': 'Connection closed or could not be established. Check that the local MCP server is running.',
   'measure.noElement': 'The element to measure is not there',
   'measure.noDistance': 'The distance between these two elements cannot be worked out',
   'physical.act': 'Mass Properties…',

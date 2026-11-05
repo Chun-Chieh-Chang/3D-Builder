@@ -1,5 +1,16 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-05：S3 連線介面（ADR 0238，全量驗收完成）
+
+- 新增 AI 控制對話框、工具入口、狀態列、圖示與中英說明。補連線等待期限、舊 socket 事件隔離、握手期間文件更新防護及每次連線批次歸零。
+- 已通過型別檢查、橋接／History／help 共 5 檔 60 項，以及真實 MCP＋GUI 圓柱建模、體積、單步復原、改名回傳、換文件、編輯中拒絕、組合件／工程圖拒絕、斷線。已檢視連線對話框截圖。
+- GUI 腳本初版將 renameFeature 的 featureId 誤寫成 id、CDP expression 使用裸 await；已修正測試程式並完整重跑該腳本通過，沒有放寬期限。
+- 紅隊四問：①輸入沿用連線碼 parser；錯碼、外站 Origin、第二個 app 及未回應連線有真實 socket 測試。②不新增幾何運算；以真實圓柱體積驗證既有建模路徑。③換 History 後新批次只修改新文件，舊文件改名保留；非零件拒絕在橋接層與 GUI 層各測一次——組合件走產品「新組合件」路徑，工程圖以真實 `DrawingStore`＋空白圖紙經 `S.showDrawing(...)` 進入，兩者都由同一 `isPart()` 閘門擋下。④使用真實 MCP、瀏覽器 Worker、OCCT 與 WebSocket；沒有以假幾何或 handle 計數宣稱驗收。
+- 全量驗收（本工作階段執行）：`npm test` 372 檔、4,475 通過、26 既有略過、0 失敗；`npm run verify:ui` **270/270 pass、0 known defect、0 fail**；`typecheck`／`lint:rules`／`lint:deps`／`lint:i18n`／`lint:repo` 全過。
+- **第一次 `verify:ui` 被執行端的 1 小時上限中止**：日誌停在 240/240 通過、0 失敗，最後一項是 `phase5-assembly.js`。沒有把「240 項都過」當成整輪結果，改以無上限背景重跑取得單一完整結果（`out/verify-ui-s3-2.log`）。分段結果與完整結果分開記錄。
+- 同一輪修掉兩個**既有的 Windows 測試可攜性缺陷**（與 S3 無關，但會讓整輪 `npm test` 在本機失敗）：`apps/mcp/test/e2e.test.ts` 的 `execFileSync('npx')` 改以 `process.execPath` 執行 Vite；`apps/mcp/test/session.test.ts` 的 `symlinkSync` 改為 `'junction'`（一般使用者無權限建立符號連結）。兩者只改呼叫方式，斷言與門檻未動。
+- 限制照實寫：使用者尚未以 Claude Code 手動連線試用；未宣稱 OCCT Heap 零洩漏（見 AGENTS.md §3.5）。全量驗收與審查由接手的工作階段執行，模型與實作者不同；原規劃的 GPT-6 Astra 未實際參與，不宣稱它做過審查。
+
 > 本檔是依日期追加的交付與RCA歷史；舊Schema、限制與測試數不代表目前版本。現況只維護於[產品現況](docs/project-state.md)，可重算數量見[儲存庫盤點](docs/repository-inventory.md)。
 
 ## 2026-11-04：AI 代理以 MCP 操作 3D-Builder（ADR 0237，`apps/mcp`）

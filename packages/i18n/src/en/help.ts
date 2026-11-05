@@ -2,6 +2,10 @@ import type { Translation } from '../index';
 
 /** help: English of `zh-TW/help.ts` (docs/help-plan.md). The ids a topic points to (`see`) are not translated. */
 export const help: Translation = {
+  'help.aiControl.summary': 'Connect a local AI agent through MCP to change the open part.',
+  'help.aiControl.body': 'Start the local MCP server and call live_status for a connection code. Choose Tools → AI Control, paste the code and Connect. The status bar shows the connection and applied batch count; click it to reopen the dialog. Each batch is one undo step. Opening another part makes the connection follow that part. Changes are refused during editing, on a version conflict, or in an assembly or drawing. Disconnect ends the connection; closing the dialog keeps it active.',
+  'help.aiControl.keywords': 'AI MCP connection agent control undo',
+  'help.aiControl.see': 'undo',
   'help.sheetUnfoldSelected.see': "sheet-unfold sheet-refold flat-pattern",
   'help.sheetUnfoldSelected.keywords': "sheet metal partial unfold machining bends",
   'help.sheetUnfoldSelected.body': "Choose Sheet Metal → Partial unfold, select bend features in the property panel and confirm. A jog selects both bends together. All bends switches to full unfolding. Machine the unfolded material, then Refold. Add any curved bend touched by machining to the selection.",

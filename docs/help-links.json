@@ -1,6 +1,7 @@
 {
   "_about": "Which help topics (docs/help-plan.md) each item of docs/manual-verification.html is about. When an item is marked 有問題 and fixed, correct these topics in packages/i18n/src/zh-TW/help.ts too. tests/phase8/help.test.ts checks that the items and the topics exist.",
   "_untied": {
+    "ai-control": "AI live connection (ADR 0238): verified separately by the live integration harness",
     "concept.overview": "general, not one item",
     "rebuild": "no item of the manual forces a rebuild yet",
     "sketch-dxf": "DXF import into a sketch (F2.6, ADR 0219): no item of the manual imports a DXF yet",

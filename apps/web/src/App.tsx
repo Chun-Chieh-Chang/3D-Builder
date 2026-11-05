@@ -18,6 +18,7 @@ import { MovePanel } from './components/MovePanel';
 import { PatternPanel } from './components/PatternPanel';
 import { BomDialog } from './components/BomDialog';
 import { PhysicalDialog } from './components/PhysicalDialog';
+import { AiControlDialog } from './components/AiControlDialog';
 import { CheckDialog } from './components/CheckDialog';
 import { DrawingPanel, DrawingTaskPane } from './components/DrawingPanel';
 import { DrawingViewport } from './components/DrawingViewport';
@@ -153,6 +154,7 @@ export function App() {
       <PropertiesDialog />
       <BomDialog />
       <PhysicalDialog />
+      <AiControlDialog />
       <CheckDialog />
       <AppearanceDialog />
       <StepOptionsDialog />

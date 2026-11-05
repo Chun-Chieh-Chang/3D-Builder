@@ -548,6 +548,7 @@
     "check-assembly": "inspect",
     "drw-detail": "inspect",
     "physical-part": "center_of_mass",
+    "ai-control": "sheet_rules",
     "physical-assembly": "center_of_mass",
     "properties": "list",
     "bom": "list",
