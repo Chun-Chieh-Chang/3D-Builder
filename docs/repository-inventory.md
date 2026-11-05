@@ -327,7 +327,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 ### 接手指令
 
-- [接手指令：3D-Builder S3（AI 連到執行中的 GUI）](<handoff-s3-prompt.md>)
+- [接手指令：3D-Builder S3 收尾（使用者端 Claude Code 實測）](<handoff-s3-prompt.md>)
 
 ### 文件導覽
 
