@@ -259,7 +259,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'lip-groove', get label() { return t('feature.lipGroove'); }, group: 'feature', enabled: hasBody, run: () => store.newLipGroove() },
   { id: 'combine', get label() { return t('feature.combine'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) > 1, run: () => store.newCombine() },
   // ADR 0236: only in the right-click menus of a solid body (Q2), never on a tab; registered so the help has a topic for it
-  { id: 'design-mating', get label() { return t('tree.designMating'); }, group: 'feature', enabled: (s) => partIdle(s) && matingBody(s) !== null, run: () => { const b = matingBody(store.getState()); if (b) void store.designMatingPart(b); } },
+  { id: 'design-mating', get label() { return t('tree.designMating'); }, group: 'tools', enabled: (s) => partIdle(s) && matingBody(s) !== null, run: () => { const b = matingBody(store.getState()); if (b) void store.designMatingPart(b); } },
   { id: 'split', get label() { return t('feature.split'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) >= 1, run: () => store.newSplit() },
   { id: 'move-copy-body', get label() { return t('feature.moveCopyBody'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) >= 1, run: () => store.newMoveCopyBody() },
   { id: 'delete-keep-body', get label() { return t('feature.deleteKeepBody'); }, group: 'feature', enabled: (s) => hasBody(s) && (s.result?.bodies.length ?? 0) >= 1, run: () => store.newDeleteKeepBody() },

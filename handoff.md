@@ -508,3 +508,13 @@ npm test -- tests/phase5/repository-maintenance.test.ts tests/phase5/verify-ui-a
 # 建置生產版本
 npm run build
 ```
+
+
+### 2026-11-04 本聊天裁決調和（驗證中）
+
+Q2 為右鍵＋工具選單，補齊工具入口。先加工再鎖定的重建缺陷已重現並修正：新鎖定記錄 lockedAfter（Schema 91），舊 Schema 90 無邊界鎖定保留原語意。測試與完整回歸結果見 DEV_LOG；尚未提交。
+
+
+### 兩項差異最終驗收（2026-11-04）
+
+工具選單入口與鎖定歷史生效位置修正完成。新鎖定以 lockedAfter 記錄既有加工終點（Schema 91）；舊 Schema 90 無邊界鎖定保留原語意。修前新增除料歷史案例確實轉紅，修後包含既有圓角、序列化、後續除料阻擋、解除／重複設定與舊檔相容驗證。npm run check 全過：366 個測試檔通過、4 個既有略過；4,423 項通過、26 項既有略過。完整 verify:ui 270/270 PASS（out/mating-history-full-ui.json），期間未修改原始碼。工具選單啟動的完整配合件流程已納入本輪 UI。尚未提交或推送。

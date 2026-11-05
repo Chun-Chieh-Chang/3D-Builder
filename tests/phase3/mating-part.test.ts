@@ -43,6 +43,52 @@ const slot = (n: number, x0: number, x1: number): Feature[] => [
 const reference = () => lock(build(...block(1, 0, 30)), 'e1');
 const unchanged = (v: number, expected: number) => expect(Math.abs(v - expected) / expected).toBeLessThan(1e-9);
 
+describe('locking an already machined body', () => {
+  it('keeps v90 locks unchanged and clears the boundary when unlocked', () => {
+    const legacy = build(...block(1, 0, 30));
+    const raw = JSON.parse(serializePart(legacy));
+    raw.schemaVersion = 90;
+    raw.bodies.e1 = { locked: true, reference: true };
+    const migrated = parsePart(JSON.stringify(raw));
+    expect(migrated.bodies.e1).toEqual({ locked: true, reference: true });
+    expect(failed(rebuild(add(migrated, ...slot(1, 5, 10))))).not.toEqual([]);
+    const locked = lock(legacy, 'e1');
+    const renamed = applyCommand(locked, { type: 'setBody', bodyId: 'e1', name: 'reference', locked: true });
+    expect(renamed.bodies.e1!.lockedAfter).toBe('e1');
+    const unlocked = applyCommand(renamed, { type: 'setBody', bodyId: 'e1', locked: false });
+    expect(unlocked.bodies.e1).not.toHaveProperty('lockedAfter');
+    expect(failed(rebuild(add(unlocked, ...slot(1, 5, 10))))).toEqual([]);
+  });
+  it('preserves an existing fillet and serializes its protection boundary', () => {
+    const base = build(...block(1, 0, 30));
+    const original = rebuild(base);
+    const edge: Ref = { kind: 'edge', name: original.body!.names.edges[0]! };
+    const rounded = add(base, fillet('f0', [edge], '1'));
+    const before = rebuild(rounded);
+    expect(failed(before)).toEqual([]);
+    const locked = parsePart(serializePart(lock(rounded, 'e1')));
+    expect(locked.bodies.e1!.lockedAfter).toBe('f0');
+    const after = rebuild(locked);
+    expect(failed(after)).toEqual([]);
+    unchanged(volumeOf(after, 'e1'), volumeOf(before, 'e1'));
+  });
+
+  it('preserves cuts made before locking and rejects cuts added after locking', () => {
+    const machined = build(...block(1, 0, 30), ...slot(1, 5, 10));
+    const before = rebuild(machined);
+    expect(failed(before)).toEqual([]);
+    const volume = volumeOf(before, 'e1');
+    expect(volume).toBeLessThan(3000);
+    const locked = lock(machined, 'e1');
+    const after = rebuild(locked);
+    expect(failed(after)).toEqual([]);
+    unchanged(volumeOf(after, 'e1'), volume);
+    const later = rebuild(add(locked, ...slot(2, 15, 20)));
+    expect(later.features.find(f => f.id === 'c2')?.status).toBe('error');
+    unchanged(volumeOf(later, 'e1'), volume);
+  });
+});
+
 describe('AC4: a boss beside a locked body is a body of its own', () => {
   it('is 「配合件1」, the locked body keeps its volume, and a second boss joins the mating part', () => {
     const r1 = rebuild(add(reference(), ...block(2, 20, 40)));
@@ -173,7 +219,7 @@ describe('the file', () => {
     const doc = add(reference(), ...block(2, 20, 40));
     const text = serializePart(doc);
     const back = parsePart(text);
-    expect(back.bodies.e1).toEqual({ reference: true, locked: true });
+    expect(back.bodies.e1).toEqual({ reference: true, locked: true, lockedAfter: 'e1' });
     expect(JSON.parse(text).schemaVersion).toBe(SCHEMA_VERSION);
     expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(90);
   });

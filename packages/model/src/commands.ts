@@ -1683,8 +1683,17 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
         else delete props.reference;
       }
       if (cmd.locked !== undefined) {
-        if (cmd.locked) props.locked = true;
-        else delete props.locked;
+        if (cmd.locked) {
+          if (!props.locked) {
+            const last = draft.features[(draft.rollbackIndex ?? draft.features.length) - 1];
+            if (!last) throw new CommandError(t('cmd.bodyIdEmpty'));
+            props.lockedAfter = last.id;
+          }
+          props.locked = true;
+        } else {
+          delete props.locked;
+          delete props.lockedAfter;
+        }
       }
       if (Object.keys(props).length === 0) delete draft.bodies[cmd.bodyId];
       else draft.bodies[cmd.bodyId] = props;

@@ -253,6 +253,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   88: (doc) => doc,
   // v90: a body may be locked (`bodies[id].locked`, ADR 0236): no feature changes it. Absent is the old behaviour; nothing to convert.
   89: (doc) => doc,
+  // v91: newly locked bodies retain their existing machining history. Legacy locks remain unchanged.
+  90: (doc) => doc,
 };
 
 export class FormatError extends Error {

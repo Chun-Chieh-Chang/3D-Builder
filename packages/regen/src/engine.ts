@@ -632,6 +632,8 @@ export class Regenerator {
     this.statuses = new Map();
     this.inherited = new Map();
     this.locked = new Map(Object.entries(doc.bodies).flatMap(([id, p]) => (p.locked ? [[id, p.name ?? doc.features.find((f) => f.id === bodyFeature(id))?.name ?? id] as const] : [])));
+    const allLocked = this.locked;
+    const lockPositions = new Map(Object.entries(doc.bodies).filter(([, p]) => p.lockedAfter).map(([id, p]) => [id, doc.features.findIndex(f => f.id === p.lockedAfter)]));
     this.mastersUsed = new Set();
     this.cosmeticThreads = [];
     this.meshes = [];
@@ -657,6 +659,7 @@ export class Regenerator {
     this.sheet = null;
     this.current = null;
     resolved.features.forEach((feature, index) => {
+      this.locked = new Map([...allLocked].filter(([id]) => (lockPositions.get(id) ?? -1) < index));
       const started = performance.now();
       this.warnings = [];
       this.diagnostics = null;
@@ -937,6 +940,7 @@ export class Regenerator {
       }
     });
 
+    this.locked = allLocked;
     this.releasePatterns();
     // masters no derived body used this time are let go
     for (const [key, m] of this.masters) {

@@ -110,7 +110,7 @@ M.run = async () => {
     await clickTree('ex1', 'design-mating');
     const cancelled = JSON.stringify(state().doc) === before && !body('ex1').locked;
     H.next.save = '配合件測試.3dbx';
-    await clickTree('ex1', 'design-mating');
+    await H.action('工具', '設計配合件…');
     const saved = H.dialogs.some((d) => d[0] === 'save' && d[1] === '配合件測試.3dbx');
     return { pass: cancelled && saved && body('ex1').locked === true && state().fileName === '配合件測試.3dbx', cancelled, saved, locked: body('ex1').locked };
   });
@@ -122,7 +122,7 @@ M.run = async () => {
     const undone = state().doc.bodies.ex1 === undefined && !body('ex1').locked;
     store.redo();
     await H.settle();
-    return { pass: undone && JSON.stringify(state().doc.bodies.ex1) === after && after === JSON.stringify({ reference: true, locked: true }), after, undone };
+    return { pass: undone && JSON.stringify(state().doc.bodies.ex1) === after && state().doc.bodies.ex1.reference === true && state().doc.bodies.ex1.locked === true && state().doc.bodies.ex1.lockedAfter === state().doc.features.at(-1).id, after, undone };
   });
 
   await step('AC10: locking it again is refused', async () => {
