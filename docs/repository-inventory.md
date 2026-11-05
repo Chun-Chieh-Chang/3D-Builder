@@ -620,6 +620,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 - [3D-Builder 選單與工具圖示重新規劃](<design/menu-redesign/plan.md>)
 - [樣條間隙：明示圓弧近似與表示誤差包絡](<design/section-clearance/bounded-offset.md>)
+- [樣條間隙：偏移結果的逐邊間隙證明](<design/section-clearance/clearance-certificate.md>)
 - [輪廓／截面＋間隙：可行性探針](<design/section-clearance/plan.md>)
 - [樣條截面：表示、積分與偏移隔離](<design/section-clearance/spline-isolation.md>)
 - [草圖互動方案：執行驗收表](<design/sketch-interaction/acceptance.md>)
