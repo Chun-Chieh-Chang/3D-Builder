@@ -1,100 +1,69 @@
-# 交接與接續工作 (Handoff for Claude Code)
+# 交接與接續工作
 
-更新日期：2026-11-04。接手請優先閱讀本檔（**先看 §1b 的待辦與後續步驟**）、[產品現況](docs/project-state.md)、[AGENTS.md](AGENTS.md) 與 [草圖互動改善方案](docs/design/sketch-interaction/plan.md)。  
-在進行任何操作前，請先執行 `git status --short --branch` 與 `git log -5 --oneline` 掌握最新狀況。
+更新日期：2026-11-05。**目前狀態以本檔 §0–§1b 為準；§2 起為歷史紀錄，裡面的「下一步」「未提交」「目前版本」只代表當時狀態，不可直接拿來開工。**
 
----
+先讀本檔、[產品現況](docs/project-state.md)、[AGENTS.md](AGENTS.md) 與 [草圖互動方案](docs/design/sketch-interaction/plan.md)。開始前執行 `git status --short --branch`、`git fetch origin`、`git log -8 --oneline`；工作區不乾淨時先辨識在途變更，不直接 pull 或覆寫。
 
-## 0. 進行中：AI 透過 MCP 操作 3D-Builder（ADR 0237，分支 `claude/eager-ramanujan-n20v0i`）
+## 0. 目前進行中：AI／MCP 的 GUI 即時連線
 
-接手者先讀本節。本節在每個里程碑更新。
+### 已完成，勿重做
 
-- **目標**：讓 Claude Code 等 AI 代理以 `Command`（JSON）建模、量測、看圖、存檔。參考 FreeCAD MCP 與 SolidCraft 的做法，但全部用本專案的 kernel 與命令層實作；**不**執行任意程式碼。
-- **位置**：`apps/mcp`（`session.ts` 交易與量測、`server.ts` MCP 工具、`render.ts` 不開瀏覽器的 PNG、`reference.ts` 命令參考取自原始碼、`commandTypes.ts` 命令種類白名單由編譯器檢查完整性、`examples.ts`）；3MF 寫出在 `packages/io/src/threeMf.ts`。
-- **已完成（2026-11-04）**：
-  - S0 交易式套用（全過才保留）、S1 MCP 工具 12 個、S2 render_view。
-  - 3MF 輸出、重建事件通知、試跑預覽圖、無頭 CLI（`npm run mcp:run -- <script.json> --set R=40 --out <folder>`）、圓盤範例（`apps/mcp/examples/disc.json`）。
-  - `.mcp.json`（Claude Code 自動登記 `3d-builder`；先 `npm run mcp:build`）、ADR 0237、DEV_LOG、`apps/mcp/README.md`。
-  - `apps/mcp` 4 檔 41 項全過；突變測試 2 種都會轉紅。
-- **已推送**到 `origin/claude/eager-ramanujan-n20v0i`（尚未開 PR）。
-- **既有問題**：雲端 4 核心容器上，`tests/phase7/sequential-bends.test.ts` 與 `sheet-unfold-refold.test.ts` 在整批中逾時；乾淨基準也一樣（詳 DEV_LOG 2026-11-04 ADR 0237）。
-- **進度頁**：https://claude.ai/artifact/NVyEoWMcUva3EPvJ56Koqt（db 集合 `tasks`、文件 `meta/run`）。
-- **待做**：
-  1. 使用者在 Claude Code 實際連線試用一次（先 `npm install`、`npm run mcp:build`）。
-  2. S3：連到執行中的 GUI（本機 WebSocket 橋、授權開關、整批一次復原）。
-  3. 依參考物件產生外殼、2D 工程圖轉 3D、經 MCP 操作組合件。
-- **S3 進行中（2026-11-04，WIP 已推送）：讓 AI 連到執行中的 GUI（ADR 0238，尚未寫）**
-  - 設計：MCP 伺服器另開 WebSocket（只綁 127.0.0.1、16 字元連線碼、Origin 檢查、5 次錯碼鎖 1 分鐘、一次一個 app）。app 連上時送 hello（零件＋blobs）。AI 的批次先在伺服器驗證重建，成功才推送給 app；app 以 `History.applyBatch` 套為一個復原步驟，或回 `conflict`／`busy`／`notPart`／`invalid` 拒絕，伺服器跟著還原。使用者在 GUI 的修改以 `doc` 訊息同步回來。
-  - **已完成**：`History.applyBatch`（`packages/model/src/history.ts`）；協定 `packages/io/src/liveBridge.ts`；伺服器端 `apps/mcp/src/bridge.ts`；`session.load`／`apply` 的 `gate`／`undo(gate)`；`server.ts` 的 `live_status` 工具、即時模式下拒絕 `part_new`／`part_open`；`main.ts` 啟動連線橋（`THREEDB_LIVE_PORT`、`THREEDB_LIVE=off`、`THREEDB_LIVE_ORIGINS`）。`tsc` 通過；**尚未有任何 S3 測試**。
-  - **重要（已修的死結）**：app 送來的零件只記為 pending（`bridge.takePending()`），在下一個工具呼叫開頭、於同一佇列內載入；不可在訊息處理中等待工具佇列。
-  - **待做（依序）**：
-    1. ~~`History.applyBatch` 單元測試~~ 已完成（`packages/model/test/history-batch.test.ts`，3 項通過）。
-    2. （已寫並測試：`apps/mcp/test/live-bridge.test.ts` 3 項通過，兩端真實 WebSocket；尚未接到 store）app 端 `apps/web/src/state/aiBridge.ts`（注入 history／blobs／isPart，可在 Node 測）：連線碼解析、版本計數、`doc` 節流 300 ms、`apply` 前檢查 base 版本／`inTransaction`／是否零件；`undo` 只在版本等於 AI 上一批之後才做。
-    3. **（bridge 端已完成：`AiBridge.historyReplaced()`，測試 4/4；store 端尚未呼叫它）注意（2026-11-04 發現）**：`store.ts:3893` 開啟零件時會 `this.history = new DocHistory(doc)` 換掉整個 history；`AiBridge` 只在 `connect` 時訂閱一次，換掉後會聽舊的 history、把 AI 的批次套到不在畫面上的零件。接線時必須：`AiBridgeHost.history` 用 getter 取 `store.history`，並在 store 換 history 的地方通知 bridge 重新訂閱並立刻送出新零件（`doc` 訊息），加一個測試鎖住「開另一個零件後，AI 的批次套在新零件上」。之後才做：store 接線、對話框 `AiControlDialog`（`UiState.dialog` 加 `'aiControl'`）、狀態列「AI 已連線」、action `ai-control`（tools 群組；`icons/solidcraft/manifest.json` 加圖示對應）、中英文字、`help.*` 主題、`docs/help-links.json` 的 `_untied`。
-    4. 測試：真實 WebSocket 兩端（伺服器 `LiveBridge` ＋ app `AiBridge` ＋ 真 `History`）；錯碼、Origin、第二個 app、版本衝突、使用者編輯中、逾時關閉。
-    5. `scripts/verify-live.mjs`（Playwright：AI 加特徵 → 特徵樹出現 → 一次復原撤回）。
-    6. ADR 0238、DEV_LOG、`npm run check`、推送。
-- **已知陷阱**：
-  - `mutate` 沒有 default，未知命令會被默默忽略：一律先經 `isCommandType`。
-  - 在基準面上的除料要 `reverse: true` 才切進材料。
-  - 圓柱的接縫邊也是直線，`query_elements` 以 `seam: true` 標示。
-  - 測 heap 成長要用 `oc.___libc_malloc`；直接 `wasmMemory.grow()` 會讓 Emscripten 的記憶體視圖失效。
-- **之後（S3 起）**：連到執行中的 GUI、依參考物件產生外殼、2D 工程圖轉 3D、經 MCP 操作組合件。
-
----
-
-## 1. 接續入口與當前代碼基準 (Current Baseline)
-
-- **目前分支**：`main`
-- **最新 Commit（2026-11-04）**：「feat(body): design a mating part against a locked reference (ADR 0236)」（設計配合件，見 §1b 下一個任務），其下為 `92eb61f`、`afe0d93`（docs(handoff)：更新基準並記錄下一個任務，AGENTS ADR 0227 教訓），再下依序為 `cb31ca0`（AGENTS ADR 0227 紅隊教訓）、`f711505c`（桌面版版本履歷）、`1842f186`（檢視工具列窄視窗修正）、`01852567`（另一工作階段：異型孔整合螺紋標註）、`f4eeaf73`（桌面版 0.2.3）、`eb1646cd`（轉換含圓弧的面不再過多定義）、`c391724d`（新文件分頁標題）。詳見 §1b。
-- **遠端狀態**：本地 `main` 與 `origin/main` **同步**；本檔這次的交接提交隨後一併推送。
-- **CI 狀態（2026-11-04）**：Repository integrity 對 `eb1646cd`、`f4eeaf73`、`01852567`、`1842f186`、`f711505c` 五次推送**全數 success**。完整 `npm run verify:ui` 本日兩輪皆 **268／268**（`eb1646cd` 之後一輪、工具列修正一輪）。以下為 11-03 以前的紀錄：
-- **CI 狀態（11-03 以前）**：GitHub Actions integrity 三平台（`ubuntu-latest`, `windows-latest`, `macos-latest`）**全數綠燈**（`e171790`：Run `41407308974`，三平台 job 皆 `success`；`d37c4a7`：Run `41392524538`；`510f55c`：Run `41391653913`／`41391657225`／`41392269791`；`full-suite` 為夜間排程另計，`e171790` 一輪為 `skipped`；`a8e30b8` 起每次推送另跑 large-sketch solver 測試，皆通過）。**先前推送的 Repository integrity 全數綠燈（Run `104`：`ea0b510`，即手冊盤點三個提交；Run `105`：`c23f22e`，三平台 job 皆 `success`）。本批（`5c29b01` 起五個提交）2026-11-03 推送，CI 尚未跑完，結果待下一次交接補記。**
-- **工作區狀態**：**乾淨，無在途檔**（2026-11-04 收工時確認）。注意：worktree 一律放在專案資料夾內（`.claude/worktrees/` 慣例）。
-- **桌面版**：0.2.3，`desktop.exe` 與 `3D-Builder_0.2.3_x64-setup.exe` 於 11-04 13:08 以 `1842f186` 建置；舊版安裝檔已依使用者同意刪除。履歷與升版 SOP 見 [桌面版版本履歷](docs/desktop-release-history.md)。
-
----
-
-## 1b. 2026-11-04 交付與待辦清單（接手先看這裡）
-
-### 本日已完成（皆已推送，CI 綠）
-
-| 提交 | 內容 | 驗證 |
+| 項目 | 核對依據 | 狀態 |
 |---|---|---|
-| `c391724d` | 新建且未動過的文件，分頁標題只顯示「3D-Builder」；開啟、存檔或編輯後才帶文件名稱（`windowTitle()`，`packages/io/src/names.ts`） | 單元測試 4 項、瀏覽器實測 |
-| `eb1646cd` | 「轉換實體引用」點含圓弧的面不再被判過多定義：引用圓弧三點固定，PlaneGCS 對這種圓弧以三點決定半徑與角度（`heldArcs`），180° 不再奇異 | `tests/phase1/convert-face-arcs.test.ts` 4 項（修前全紅、突變全紅）；使用者的 SW STEP 頂面一次轉入 14 條、伸長面積吻合；verify:ui 268／268 |
-| `f4eeaf73` | 桌面版升 0.2.3（`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`） | exe 版本 0.2.3、啟動 10 秒存活 |
-| `1842f186` | 檢視工具列（`.heads-up`）在窄視窗不再被擠壓：固定自然寬度、不換行，過窄時橫向捲動 | 1024–2560 px 五種寬度量測；verify:ui 268／268 |
-| `f711505c` | [桌面版版本履歷](docs/desktop-release-history.md)：0.1.0–0.2.3 的來源提交、建置、修訂說明與升版 SOP | `lint:repo` 通過 |
+| S0–S2：交易建模、量測、查詢、PNG、3MF、CLI 與 MCP 工具 | `apps/mcp`、`packages/io/src/threeMf.ts`、[ADR 0237](docs/adr/0237-ai-agent-mcp-server.md) | 已隨 PR #9 合併到 main（`264a7fb`），不再是「未開 PR」 |
+| 整批一次復原與原子失敗 | `History.applyBatch`、`packages/model/test/history-batch.test.ts` | 已實作；本次重跑 3/3 通過 |
+| 本機 WebSocket 伺服器及 app 端橋接 | `apps/mcp/src/bridge.ts`、`packages/io/src/liveBridge.ts`、`apps/web/src/state/aiBridge.ts` | 已實作；本次真實 WebSocket 測試 4/4 通過 |
+| 開啟另一份文件後重新追蹤 History | `AiBridge.historyReplaced()`；store 在 `load()` 換 history 後呼叫 | 已接線（`bcbf99b`），勿重做；橋接層有換文件測試，GUI 層尚待驗 |
+| store 持有連線及狀態 | `store.ai`、`UiState.ai`、`connectAi()`／`disconnectAi()` | 已接線（`d0b9e48`）；尚無供一般使用者操作的對話框 |
 
-另：使用者回報「組合件陣列複製品沒對齊、不能調高度」——經讀檔確認是**操作設定**，不是缺陷：治具被手動轉了約 23°，排列方向卻選組合件的 Y 軸。已告知改選治具上的板邊作方向；複製品跟著種子、本身不能調整是設計行為。
+### 下一步（本工作線）
 
-### 待辦清單（依建議優先順序）
+1. **接續使用者可操作的連線介面**：控制對話框、連線碼輸入／解除、狀態顯示、工具選單 action、圖示、中英文字與 `help.*`／`docs/help-links.json`。目前未找到 `AiControlDialog`、`ai-control` action，不要把 store 方法存在當成 UI 已交付。
+2. **補 GUI 整合驗證**：AI 批次成功後特徵樹更新、一次復原撤回；切換到另一零件後只操作新文件；使用者編輯中、組合件／工程圖狀態要正確拒絕。`scripts/verify-live.mjs` 尚不存在。
+3. **補保護邊界測試**：已測基本錯碼、版本衝突、編輯中與換 history；Origin、第二個 app、連線逾時等是否完整覆蓋須逐項核對，不能以目前 4 項宣稱全覆蓋。
+4. **補設計與驗收紀錄**：程式與提交訊息使用「ADR 0238」，但 `docs/adr/` 目前沒有該文件；先查最新遠端是否已占號，再完成設計、說明與驗收。不要重做已合併的協定或連線橋。
+5. 靜態／相關測試通過後，依改動執行完整回歸；`verify:ui` 執行期間不可修改原始碼。
 
-| # | 類別 | 項目 | 狀態／前提 |
-|---|---|---|---|
-| 1 | 使用者實機 | 安裝 `3D-Builder_0.2.3_x64-setup.exe` 並開啟（最好在另一台電腦：ADR 0052 驗收第 3、7 項至今未做） | 只做過「exe 啟動 10 秒」，安裝檔未實際安裝 |
-| 2 | 使用者實機 | 在 UI 手動操作：匯入 SW STEP → 頂面開草圖 →「轉換實體引用」點面 → 伸長為新本體 | 自動化已驗；手點流程未由使用者確認 |
-| 3 | 新功能（已提案、未開工） | **「設計配合件…」入口**（右鍵匯入實體）：未存先存檔、匯入件鎖成參考本體、之後特徵預設長成新本體、完成時一鍵「產生組合件」 | **✅ 已完成（[ADR 0236](docs/adr/0236-mating-part-entry.md)，Schema 90）**：裁決 A2／只放右鍵／配合件1／按鈕；AC1–AC13 全過，完整 verify:ui 270／270。待使用者在 UI 實際操作一次 |
-| 4 | 新功能（已提案） | 點面自動轉輪廓＋間隙偏移（一次填間隙）；並支援**截面取輪廓**（相交曲線，例如產品內齒形） | 相交曲線在該 STEP 上**未實測**；先做探針 |
-| 5 | 新功能（已提案） | 「一鍵做凹槽座」：自動包覆毛胚、外擴量、減去參考件 | 依使用者常做的配合件類型決定與 #4 的先後 |
-| 6 | UX（可選） | 組合件排列方向選了組合件軸、而種子結合在被旋轉的零組件上時，提示「方向可能與零件不一致」 | 需使用者決定要不要做 |
-| 7 | 他人進行中 | 牙孔流程整合（[計畫](docs/threaded-hole-workflow-plan.md)；`01852567` 為第一部分） | **不要重複開工**；動相關檔案前先 `git log origin/main` 看最新進度 |
-| 8 | 既有候選 | §3m 的 D2（自由曲線 offset）、D3（交叉／分岔子區域）、D4（樣條 G2／權重）；B2 manual-asm 逾時 | 維持候選，探針證實可行才核定 |
+### 驗證範圍與已知限制
 
-### 下一個任務（Next Task）
+- 2026-11-05 本次僅重跑 `apps/mcp/test/live-bridge.test.ts` 與 `packages/model/test/history-batch.test.ts`：**2 檔 7 項全過**，不是 S3 的完整 GUI 驗收。
+- `DEV_LOG.md` 記錄 S0–S2 的 41 項及突變測試；雲端 4 核心整批鈑金測試曾逾時，乾淨 `6994150` 也重現。這是該環境的歷史證據，不代表目前所有環境仍失敗，亦不可放寬門檻。
+- S3 伺服器設計含 127.0.0.1、連線碼、Origin 檢查與單一 app 限制；完整產品驗收尚未完成。
+- 使用者以 Claude Code 實際連線試用尚未取得確認。外部進度頁不是完成證據，接手以 repo 與測試結果為準。
 
-**任務 #3「設計配合件…」入口：✅ 已完成（2026-11-04，[ADR 0236](docs/adr/0236-mating-part-entry.md)，Schema 90）——不要重做。**
-- 使用者裁決 Q1＝A2（`BodyProps.locked`）、Q2＝只放右鍵、Q3＝「配合件1」、Q4＝「產生組合件」按鈕；AC1–AC13 全過（`npm run check` 4421 項、完整 verify:ui 270／270）。細節見 `DEV_LOG.md`「設計配合件…」一節。
-- **待使用者**：在 UI 實際操作一次（匯入 STEP → 右鍵「設計配合件…」→ 頂面「轉換實體引用」→ 伸長 → 「產生組合件」）；桌面版要含此功能需升版 0.2.4 重建。
+## 1. 接續基準與發行狀態
 
-**下一個任務**：先請使用者完成 #1（安裝 0.2.3）與 #2（上述 UI 操作）；之後是 **#4 探針**（截面取輪廓，例如產品內齒形：用使用者 STEP 在齒形高度建基準面，量「相交曲線」能否封閉、偏移與伸長，結果寫 ADR 再決定做法）。
+- **核對基準**：`main`，`4f39618`（工具選單入口＋鎖定加工歷史修正）；其下 `264a7fb`（PR #9，MCP／即時橋接）、`6994150`（舊安裝檔紀錄）、`77fd349`（桌面 0.2.4）、`252555f`（配合件入口）。此為本文件整理前基準，不把文件整理提交本身預先填成基準。
+- **遠端**：2026-11-05 已 fetch，整理前 HEAD＝origin/main＝`4f39618`；整理前工作區乾淨。本次文件修改尚未提交／推送，不把此狀態寫成永遠同步。
+- **Schema**：目前零件 91。新鎖定有 `lockedAfter` 生效位置，保留鎖定前除料／圓角；Schema 90 無邊界的舊鎖定維持原語意。
+- **驗證**：`4f39618` 整合 MCP 前的完整檢查為 4,423 項通過、26 既有略過，UI 270/270；rebase 到 PR #9 後，本機型別、文件與 82 項相關測試通過。不得將前述全量數字冒充最新合併版的完整全量結果。
+- **CI**：本次未查詢 `4f39618` 的 GitHub Actions 結果，不沿用舊提交的「CI 綠」宣稱。
+- **桌面**：版本設定為 **0.2.4**；[版本履歷](docs/desktop-release-history.md)記錄 11-04 16:42 建置來源 `252555f`，0.2.3 安裝檔已刪除。該建置早於 `4f39618`，不包含工具選單與鎖定歷史修正，也不包含 MCP 合併。若要打包最新程式，依版本履歷 SOP 升版重建；本次不建置。
 
-**接手第一步**：`git pull` → `git log -8 --oneline` 確認基準在「feat(body): design a mating part against a locked reference (ADR 0236)」之後；讀本節與 `DEV_LOG.md` 11-04 各節。
+## 1b. 已交付與待辦（接手先看）
 
-### 後續執行步驟
+| 項目 | 目前狀態 | 接續方式 |
+|---|---|---|
+| 牙孔整合、直接孔位與資料同步 | 已提交推送 `0185256`，ADR 0235 | 勿重做；歷史計畫的完成／待辦以其後驗收紀錄判讀 |
+| 設計配合件入口 | 已提交推送 `252555f`；後續修正 `4f39618`，ADR 0236 | A2、**右鍵＋工具選單**、配合件1、手動產生組合件；勿再以「只放右鍵」開工 |
+| 新鎖定保留既有加工歷史 | 已提交推送 `4f39618`，Schema 91 | 已驗既有除料／圓角、舊檔相容、序列化、解除／重複設定；勿套回暫存草稿中的舊方案 |
+| MCP S3 使用者介面／GUI 驗收 | 未完成 | 依 §0 接續，保留現有 store 與橋接接線 |
+| T1 安裝實測 | 使用者尚未測試 | 應測要交付的實際安裝檔；0.2.3 已刪除，不再要求安裝不存在的檔案；0.2.4 也未取得安裝成功確認 |
+| T2 手動 STEP 配合件流程 | 使用者尚未手動確認 | 取自動化通過作參考，不冒充使用者實測；由使用者實際操作匯入→轉輪廓→建配合件→產生組合件 |
+| 輪廓／截面＋間隙（原 #4） | 使用者選擇下一步先探針，尚未完成 | 使用者 STEP 齒形高度截面，驗封閉、偏移與伸長，記錄可行性後再核定完整功能；不是自動列為本輪開發 |
+| 一鍵凹槽座（原 #5） | 後續候選 | 依前項探針及實際案例排程，未核定完整實作 |
+| 組合件陣列方向提示（原 #6） | 使用者同意列後續改善 | 先確認偵測條件；提示不阻擋且不自動改方向 |
+| 自由曲線 offset、交叉／分岔區域、樣條 G2／權重 | 保留候選 | 使用者選擇入口完成後再評估，不因下方舊「下一刀」文字直接開工 |
+
+### 接手守則
+
+- 多電腦同時工作時先 fetch；ADR／Schema 在動手與提交前各確認一次。不要為已完成的同一功能另占 ADR。
+- 本機曾保留 `codex: preserve local mating-part draft before remote 252555f integration` stash，供追溯用，**不可直接 pop 回目前 main**；遠端成果及 `4f39618` 已取代其實作。
+- 有未提交變更時先核對歸屬；平行改程式用各自 worktree。同一資料夾一次只有一個工作階段修改。
 
 ---
+
+以下 §2–§6 是歷史驗收、RCA 與工作紀錄。原日期、提交與測試數保留；其當時待辦與目前狀態不一致時，以 §0–§1b 和較新的 Git／DEV_LOG 證據為準。
 
 ## 2. CI 異常診斷與根治紀錄 (CI Failure RCA & Solution)
 
@@ -508,13 +477,3 @@ npm test -- tests/phase5/repository-maintenance.test.ts tests/phase5/verify-ui-a
 # 建置生產版本
 npm run build
 ```
-
-
-### 2026-11-04 本聊天裁決調和（驗證中）
-
-Q2 為右鍵＋工具選單，補齊工具入口。先加工再鎖定的重建缺陷已重現並修正：新鎖定記錄 lockedAfter（Schema 91），舊 Schema 90 無邊界鎖定保留原語意。測試與完整回歸結果見 DEV_LOG；尚未提交。
-
-
-### 兩項差異最終驗收（2026-11-04）
-
-工具選單入口與鎖定歷史生效位置修正完成。新鎖定以 lockedAfter 記錄既有加工終點（Schema 91）；舊 Schema 90 無邊界鎖定保留原語意。修前新增除料歷史案例確實轉紅，修後包含既有圓角、序列化、後續除料阻擋、解除／重複設定與舊檔相容驗證。npm run check 全過：366 個測試檔通過、4 個既有略過；4,423 項通過、26 項既有略過。完整 verify:ui 270/270 PASS（out/mating-history-full-ui.json），期間未修改原始碼。工具選單啟動的完整配合件流程已納入本輪 UI。尚未提交或推送。
