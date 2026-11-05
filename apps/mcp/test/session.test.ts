@@ -197,7 +197,8 @@ describe('files stay inside the workspace folder', () => {
     refusedWith(await callTool(s, 'part_save', { path: '../escape.3dbx' }), /outside the workspace/);
     refusedWith(await callTool(s, 'part_save', { path: '/tmp/escape.3dbx' }), /outside the workspace/);
     const outside = mkdtempSync(join(tmpdir(), '3db-outside-'));
-    symlinkSync(outside, join(root, 'link'));
+    // a junction on Windows: a plain symlink needs a privilege the test machine may not have, and both are links to the same folder
+    symlinkSync(outside, join(root, 'link'), 'junction');
     refusedWith(await callTool(s, 'part_save', { path: 'link/escape.3dbx' }), /outside the workspace/);
     expect(existsSync(join(outside, 'escape.3dbx'))).toBe(false);
     rmSync(outside, { recursive: true, force: true });
