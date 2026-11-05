@@ -43,6 +43,7 @@ export class AiBridge {
   private sent = new Set<string>();
   private unsubscribe: (() => void) | null = null;
   private batches = 0;
+  private deadline: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly host: AiBridgeHost) {}
 
@@ -54,12 +55,30 @@ export class AiBridge {
     const Ws = this.host.WebSocket ?? WebSocket;
     const ws = new Ws(`ws://127.0.0.1:${parsed.port}`);
     this.ws = ws;
+    this.batches = 0;
+    this.agentVersion = -1;
     this.host.onStatus({ state: 'connecting' });
+    this.deadline = setTimeout(() => {
+      if (this.ws !== ws) return;
+      this.stop();
+      ws.close();
+      this.host.onStatus({ state: 'error', reason: 'closed' });
+    }, 10_000);
     ws.onopen = () => {
+      if (this.ws !== ws) return;
       this.sent.clear();
       this.send({ type: 'hello', protocol: LIVE_PROTOCOL, token: parsed.token, version: this.version, doc: this.host.history.doc, blobs: this.newBlobs() });
     };
-    ws.onmessage = (e) => this.receive(JSON.parse(String(e.data)) as ServerMessage);
+    ws.onmessage = (e) => {
+      if (this.ws !== ws) return;
+      try {
+        this.receive(JSON.parse(String(e.data)) as ServerMessage);
+      } catch {
+        this.stop();
+        ws.close();
+        this.host.onStatus({ state: 'error', reason: 'closed' });
+      }
+    };
     ws.onclose = (e) => {
       if (this.ws !== ws) return;
       this.stop();
@@ -96,6 +115,8 @@ export class AiBridge {
   }
 
   private stop(): void {
+    if (this.deadline) clearTimeout(this.deadline);
+    this.deadline = null;
     this.ws = null;
     this.unsubscribe?.();
     this.unsubscribe = null;
@@ -104,7 +125,8 @@ export class AiBridge {
   }
 
   private send(msg: AppMessage): void {
-    this.ws?.send(JSON.stringify(msg));
+    // Edits during the handshake are included in hello when the socket opens.
+    if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(msg));
   }
 
   private newBlobs(): LiveBlobs {
@@ -137,7 +159,11 @@ export class AiBridge {
   }
 
   private receive(msg: ServerMessage): void {
-    if (msg.type === 'welcome') return this.host.onStatus({ state: 'on', batches: this.batches });
+    if (msg.type === 'welcome') {
+      if (this.deadline) clearTimeout(this.deadline);
+      this.deadline = null;
+      return this.host.onStatus({ state: 'on', batches: this.batches });
+    }
     const h = this.host.history;
     if (!this.host.isPart()) return this.refuse(msg.id, 'notPart', 'no part is open');
     if (h.inTransaction) return this.refuse(msg.id, 'busy', 'the user is editing');

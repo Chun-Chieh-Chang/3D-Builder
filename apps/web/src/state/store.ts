@@ -377,7 +377,7 @@ export interface UiState {
  /** The live link to an AI agent's MCP server (ADR 0238): off, connecting, on (with the number of batches it applied) or why it ended. */
   ai: AiBridgeStatus;
   /** The equations or file-properties dialog (B5.2, B8.3), when open. */
-  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | 'igesOptions' | 'stlOptions' | 'template' | 'shortcuts' | 'options' | 'bom' | 'physical' | 'viewOrientation' | 'browserProjects' | null;
+  dialog: 'equations' | 'properties' | 'appearance' | 'stepOptions' | 'igesOptions' | 'stlOptions' | 'template' | 'shortcuts' | 'options' | 'bom' | 'physical' | 'viewOrientation' | 'browserProjects' | 'aiControl' | null;
   /** The file the part was opened from or last saved to (F7.1); null for a part never saved. */
   fileName: string | null;
   /** The document differs from what was last opened or saved (the title shows 「*」). */

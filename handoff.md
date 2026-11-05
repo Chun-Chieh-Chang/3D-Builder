@@ -6,39 +6,42 @@
 
 ## 0. 目前進行中：AI／MCP 的 GUI 即時連線
 
+**2026-11-05 完成（`codex/s3-live-ui`，尚未提交）**：AI 控制介面、狀態列、中英說明與 ADR 0238 已完成，全量驗收與獨立審查（本工作階段執行）已結束：`npm test` 372 檔、4,475 通過、26 既有略過、0 失敗；`npm run verify:ui` **270/270**；typecheck 與五項 lint 全過。剩下的是使用者以 Claude Code 手動連線試用（尚未取得確認）。下列「下一步」保留作歷史對照，項目均已完成。
+
 ### 已完成，勿重做
 
 | 項目 | 核對依據 | 狀態 |
 |---|---|---|
 | S0–S2：交易建模、量測、查詢、PNG、3MF、CLI 與 MCP 工具 | `apps/mcp`、`packages/io/src/threeMf.ts`、[ADR 0237](docs/adr/0237-ai-agent-mcp-server.md) | 已隨 PR #9 合併到 main（`264a7fb`），不再是「未開 PR」 |
-| 整批一次復原與原子失敗 | `History.applyBatch`、`packages/model/test/history-batch.test.ts` | 已實作；本次重跑 3/3 通過 |
-| 本機 WebSocket 伺服器及 app 端橋接 | `apps/mcp/src/bridge.ts`、`packages/io/src/liveBridge.ts`、`apps/web/src/state/aiBridge.ts` | 已實作；本次真實 WebSocket 測試 4/4 通過 |
-| 開啟另一份文件後重新追蹤 History | `AiBridge.historyReplaced()`；store 在 `load()` 換 history 後呼叫 | 已接線（`bcbf99b`），勿重做；橋接層有換文件測試，GUI 層尚待驗 |
-| store 持有連線及狀態 | `store.ai`、`UiState.ai`、`connectAi()`／`disconnectAi()` | 已接線（`d0b9e48`）；尚無供一般使用者操作的對話框 |
+| 整批一次復原與原子失敗 | `History.applyBatch`、`packages/model/test/history-batch.test.ts` | 已實作；全量重跑通過 |
+| 本機 WebSocket 伺服器及 app 端橋接 | `apps/mcp/src/bridge.ts`、`packages/io/src/liveBridge.ts`、`apps/web/src/state/aiBridge.ts` | 已實作；含 Origin、第二個 app、回應逾時、非零件拒絕 |
+| 開啟另一份文件後重新追蹤 History | `AiBridge.historyReplaced()`；store 在 `load()` 換 history 後呼叫 | 已接線（`bcbf99b`）；橋接層與 GUI 層（`verify-live.mjs`）都已驗 |
+| store 持有連線及狀態 | `store.ai`、`UiState.ai`、`connectAi()`／`disconnectAi()` | 已接線；對話框 `AiControlDialog.tsx` 已交付 |
+| S3 使用者介面 | 工具選單「AI 控制」、狀態列連線狀態、`AiControlDialog.tsx`、中英說明與 `help.*` | 已完成，見 [ADR 0238](docs/adr/0238-ai-live-gui.md) |
+| GUI 整合驗證 | `scripts/verify-live.mjs`：真實 MCP stdio＋Vite＋headless Chrome | 圓柱建模、體積、單步復原、改名回傳、換文件、編輯中／組合件／工程圖拒絕、斷線 |
 
 換電腦接手可使用 [S3 接手指令](docs/handoff-s3-prompt.md)。該文件已改從最新 main 接續；原 claude/eager-ramanujan-n20v0i 的兩項交接提交隨本次合併保留，後續不再使用該分支。
 
 ### 下一步（本工作線）
 
-1. **接續使用者可操作的連線介面**：控制對話框、連線碼輸入／解除、狀態顯示、工具選單 action、圖示、中英文字與 `help.*`／`docs/help-links.json`。目前未找到 `AiControlDialog`、`ai-control` action，不要把 store 方法存在當成 UI 已交付。
-2. **補 GUI 整合驗證**：AI 批次成功後特徵樹更新、一次復原撤回；切換到另一零件後只操作新文件；使用者編輯中、組合件／工程圖狀態要正確拒絕。`scripts/verify-live.mjs` 尚不存在。
-3. **補保護邊界測試**：已測基本錯碼、版本衝突、編輯中與換 history；Origin、第二個 app、連線逾時等是否完整覆蓋須逐項核對，不能以目前 4 項宣稱全覆蓋。
-4. **補設計與驗收紀錄**：程式與提交訊息使用「ADR 0238」，但 `docs/adr/` 目前沒有該文件；先查最新遠端是否已占號，再完成設計、說明與驗收。不要重做已合併的協定或連線橋。
-5. 靜態／相關測試通過後，依改動執行完整回歸；`verify:ui` 執行期間不可修改原始碼。
+1. 提交並推送 `codex/s3-live-ui`（提交前需先向使用者確認，尚未執行）。
+2. 使用者以 Claude Code 實際連線試用；在取得確認前，不宣稱使用者端已驗收。
+3. 後續若要擴充，僅剩「AI 操作組合件／工程圖」不在目前範圍（現行一律拒絕），需另立 ADR 與設計，不是本輪遺漏。
 
 ### 驗證範圍與已知限制
 
-- 2026-11-05 本次僅重跑 `apps/mcp/test/live-bridge.test.ts` 與 `packages/model/test/history-batch.test.ts`：**2 檔 7 項全過**，不是 S3 的完整 GUI 驗收。
-- `DEV_LOG.md` 記錄 S0–S2 的 41 項及突變測試；雲端 4 核心整批鈑金測試曾逾時，乾淨 `6994150` 也重現。這是該環境的歷史證據，不代表目前所有環境仍失敗，亦不可放寬門檻。
-- S3 伺服器設計含 127.0.0.1、連線碼、Origin 檢查與單一 app 限制；完整產品驗收尚未完成。
-- 使用者以 Claude Code 實際連線試用尚未取得確認。外部進度頁不是完成證據，接手以 repo 與測試結果為準。
+- 2026-11-05 全量：`npm test` 372 檔／4,475 通過／26 既有略過／0 失敗；`verify:ui` 270/270；`scripts/verify-live.mjs` 通過。
+- 第一次 `verify:ui` 被執行端 1 小時上限中止（240/240 通過、0 失敗），之後整輪重跑取得單一完整結果；分段結果不當整輪證據。
+- 同輪修掉兩個既有 Windows 測試可攜性缺陷（`e2e.test.ts` 改 `process.execPath`、`session.test.ts` 改 junction），斷言與門檻未放寬。
+- S3 伺服器限制：只連 127.0.0.1、需連線碼、檢查 Origin 與單一 app；只操作零件。
+- 未宣稱 OCCT Heap 零洩漏（[AGENTS](AGENTS.md) §3.5）。
 
 ## 1. 接續基準與發行狀態
 
-- **核對基準**：`main`，`4f39618`（工具選單入口＋鎖定加工歷史修正）；其下 `264a7fb`（PR #9，MCP／即時橋接）、`6994150`（舊安裝檔紀錄）、`77fd349`（桌面 0.2.4）、`252555f`（配合件入口）。此為本文件整理前基準，不把文件整理提交本身預先填成基準。
-- **遠端**：2026-11-05 已 fetch，整理前 HEAD＝origin/main＝`4f39618`；整理前工作區乾淨。本次文件修改尚未提交／推送，不把此狀態寫成永遠同步。
+- **核對基準**：`codex/s3-live-ui`，HEAD＝origin/main＝`26a1553`（S3 交接文件併入 main）；其下 `4f39618`（工具選單入口＋鎖定加工歷史修正）、`264a7fb`（PR #9，MCP／即時橋接）、`6994150`（舊安裝檔紀錄）、`77fd349`（桌面 0.2.4）、`252555f`（配合件入口）。S3 的程式與文件變更仍在此分支工作樹，尚未提交。
+- **遠端**：2026-11-05 已 fetch，HEAD＝origin/main＝`26a1553`。本次 S3 變更尚未提交／推送，不把此狀態寫成永遠同步。
 - **Schema**：目前零件 91。新鎖定有 `lockedAfter` 生效位置，保留鎖定前除料／圓角；Schema 90 無邊界的舊鎖定維持原語意。
-- **驗證**：`4f39618` 整合 MCP 前的完整檢查為 4,423 項通過、26 既有略過，UI 270/270；rebase 到 PR #9 後，本機型別、文件與 82 項相關測試通過。不得將前述全量數字冒充最新合併版的完整全量結果。
+- **驗證**：`4f39618` 整合 MCP 前的完整檢查為 4,423 項通過、26 既有略過，UI 270/270；rebase 到 PR #9 後，本機型別、文件與 82 項相關測試通過。**2026-11-05 S3 工作樹（HEAD `26a1553`＋未提交變更）全量重跑**：`npm test` 372 檔、4,475 通過、26 既有略過、0 失敗；`verify:ui` 270/270。此數字屬於含 S3 未提交變更的工作樹，提交後若 CI 結果不同，以該次 run 為準。
 - **CI**：本次未查詢 `4f39618` 的 GitHub Actions 結果，不沿用舊提交的「CI 綠」宣稱。
 - **桌面**：版本設定為 **0.2.4**；[版本履歷](docs/desktop-release-history.md)記錄 11-04 16:42 建置來源 `252555f`，0.2.3 安裝檔已刪除。該建置早於 `4f39618`，不包含工具選單與鎖定歷史修正，也不包含 MCP 合併。若要打包最新程式，依版本履歷 SOP 升版重建；本次不建置。
 
@@ -49,7 +52,7 @@
 | 牙孔整合、直接孔位與資料同步 | 已提交推送 `0185256`，ADR 0235 | 勿重做；歷史計畫的完成／待辦以其後驗收紀錄判讀 |
 | 設計配合件入口 | 已提交推送 `252555f`；後續修正 `4f39618`，ADR 0236 | A2、**右鍵＋工具選單**、配合件1、手動產生組合件；勿再以「只放右鍵」開工 |
 | 新鎖定保留既有加工歷史 | 已提交推送 `4f39618`，Schema 91 | 已驗既有除料／圓角、舊檔相容、序列化、解除／重複設定；勿套回暫存草稿中的舊方案 |
-| MCP S3 使用者介面／GUI 驗收 | 未完成 | 依 §0 接續，保留現有 store 與橋接接線 |
+| MCP S3 使用者介面／GUI 驗收 | 已完成，全量 270/270 與 `npm test` 0 失敗；尚未提交，使用者手動試用未確認 | 見 [ADR 0238](docs/adr/0238-ai-live-gui.md) 與 §0；提交前先徵詢使用者 |
 | T1 安裝實測 | 使用者尚未測試 | 應測要交付的實際安裝檔；0.2.3 已刪除，不再要求安裝不存在的檔案；0.2.4 也未取得安裝成功確認 |
 | T2 手動 STEP 配合件流程 | 使用者尚未手動確認 | 取自動化通過作參考，不冒充使用者實測；由使用者實際操作匯入→轉輪廓→建配合件→產生組合件 |
 | 輪廓／截面＋間隙（原 #4） | 使用者選擇下一步先探針，尚未完成 | 使用者 STEP 齒形高度截面，驗封閉、偏移與伸長，記錄可行性後再核定完整功能；不是自動列為本輪開發 |

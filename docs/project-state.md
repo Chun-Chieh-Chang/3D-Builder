@@ -1,6 +1,6 @@
 # 產品現況與能力邊界
 
-更新日期：2026-11-03。現況以本檔維護；版本與可重算數量見[自動盤點](repository-inventory.md)，每次交付的證據見[DEV_LOG](../DEV_LOG.md)。此處不將舊階段文件的測試數冒充本版全量結果。
+更新日期：2026-11-05。現況以本檔維護；版本與可重算數量見[自動盤點](repository-inventory.md)，每次交付的證據見[DEV_LOG](../DEV_LOG.md)。此處不將舊階段文件的測試數冒充本版全量結果。
 
 ## 交付與驗收分開
 
@@ -27,6 +27,7 @@ Phase 0–7範圍已有開發成果；原Phase 0–2閘門按當時較低範圍�
 | 鈑金 | 多道與局部展開、相容的展開加工／摺回、原生展平尺寸與折彎表 | 封閉基材與單一本體；未展開曲面／變截面斜向加工／加料拒絕；任意STEP轉鈑金未開放；[ADR0199](adr/0199-sheet-manufacturing-workflow.md)、[ADR0200](adr/0200-sheet-partial-unfold-curved-machining.md) |
 | 圖示與選單 | SolidCraft授權圖示＋完整文字、現有CommandBar | 新Ribbon分組／搜尋仍是[獨立設計稿](design/menu-redesign/plan.md)，不能當正式介面；[ADR0201](adr/0201-solidcraft-icons-and-menu-design.md) |
 | 輸出與驗證 | STEP、IGES（零件，輸入與輸出）、SVG、DXF、PDF；公開樣本與外部應用程式探針 | AutoCAD／SHX、使用者製造基準與實體列印未認證；IGES 只以本程式寫出的檔與模糊測試驗證，尚無他牌 CAD 樣本，使用者已在 eDrawings 確認產品輸出（含切半與顏色）正確（[ADR0220](adr/0220-iges-exchange.md)）；[自動驗收](automated-acceptance.md) |
+| AI 代理（MCP） | 本機 MCP 伺服器以命令白名單建立／修改零件、量測、查詢、輸出 PNG／3MF；「工具 → AI 控制」輸入連線碼即可讓 AI 連到執行中的 GUI，批次為一次復原步驟，使用者改名會回傳 | 只連本機 127.0.0.1，需連線碼並檢查 Origin 與單一 app；只操作零件，組合件、工程圖、編輯交易中與版本不一致一律拒絕；不執行任意程式碼，不新增 Schema；使用者尚未以 Claude Code 手動試用；[ADR0237](adr/0237-ai-agent-mcp-server.md)、[ADR0238](adr/0238-ai-live-gui.md) |
 
 ## 待辦與已知問題
 
