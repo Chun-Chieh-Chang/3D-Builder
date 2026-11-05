@@ -16,6 +16,8 @@
 | 開啟另一份文件後重新追蹤 History | `AiBridge.historyReplaced()`；store 在 `load()` 換 history 後呼叫 | 已接線（`bcbf99b`），勿重做；橋接層有換文件測試，GUI 層尚待驗 |
 | store 持有連線及狀態 | `store.ai`、`UiState.ai`、`connectAi()`／`disconnectAi()` | 已接線（`d0b9e48`）；尚無供一般使用者操作的對話框 |
 
+換電腦接手可使用 [S3 接手指令](docs/handoff-s3-prompt.md)。該文件已改從最新 main 接續；原 claude/eager-ramanujan-n20v0i 的兩項交接提交隨本次合併保留，後續不再使用該分支。
+
 ### 下一步（本工作線）
 
 1. **接續使用者可操作的連線介面**：控制對話框、連線碼輸入／解除、狀態顯示、工具選單 action、圖示、中英文字與 `help.*`／`docs/help-links.json`。目前未找到 `AiControlDialog`、`ai-control` action，不要把 store 方法存在當成 UI 已交付。

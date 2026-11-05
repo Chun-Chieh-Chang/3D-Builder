@@ -23,6 +23,7 @@ export function documentRole(file) {
     'docs/implementation-sequence.md': '交付歷史', 'docs/sketch-constraint-expansion.md': '能力規格',
     'docs/fillet-picking-impact.md': '設計歷史', 'docs/ui-interaction-audit.md': '設計歷史', 'docs/handoff-history.md': '交接歷史',
     'docs/desktop-release-history.md': '版本履歷',
+    'docs/handoff-s3-prompt.md': '接手指令',
   };
   if (named[file]) return named[file];
   if (/^docs\/adr\/[^/]+\.md$/.test(file)) return '架構決策';
