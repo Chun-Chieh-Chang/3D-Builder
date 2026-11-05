@@ -5375,3 +5375,13 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 基準 `164d4b3`。`npm run mcp:build` 與 `node scripts/verify-live.mjs` 通過：真實 stdio MCP、GUI 連線、圓柱體積與特徵樹、整批單次復原、改名回傳、換零件、編輯交易／組合件／工程圖拒絕及斷線。已檢視 `out/live/connected.png`，連線對話框與狀態列均顯示已連線。隔離日誌位於本機暫存目錄 `3db-live-RgUmV4`。
 
 修正 handoff 與接手指令誤把 `npm run mcp:run` 當伺服器的說明：該指令實際是 JSON 無頭 CLI；Claude Code 應依 `.mcp.json` 啟動 `node apps/mcp/dist/server.mjs`，並使用同一伺服器的連線碼。本輪只改文件，未修改 UI 或核心，未重跑全套測試。使用者手動試用仍未確認。
+
+## 2026-11-05 輪廓／截面＋間隙探針
+
+使用者選定 handoff §1b 的探針，並同意建立合成檔案，不要求特定私有 STEP。新增 `tests/phase6/section-clearance-probe.test.ts` 與 `docs/design/section-clearance/plan.md`；原生建模→輸出 STEP→重新匯入→指定高度截面→接線→偏移→伸長。未新增產品功能、Schema 或 UI。
+
+解析圓柱四種間隙、環形兩圈辨識、8 齒齒條三個高度及 100 組固定種子圓柱通過量測；24 齒漸開線 STEP 的無間隙伸長在面積／體積一致性被拒，0.05／0.2 mm 偏移兩個符號皆 `IsDone=false`。測試明確把這三個樣條情境記為不支援，測試通過僅表示重現限制，並非樣條能力通過。正確的材料區域尚需外圈／孔洞包含關係與相撞處理；目前不能交付任意齒形的一鍵工具。
+
+紅隊四問：①負／非有限 gap 在 OCCT 前拒絕，空截面明確報錯；②只接受單圈封閉偏移，不默默挑選分裂結果，一般孔消失／多圈相撞仍未解；③僅探針，未宣稱特徵參照與 DAG 接線；④原生距離、每邊五點、真實體積、解析面積與 STEP 往返交叉驗證，無 mock。暫把實際偏移改成兩倍時，原生間隙斷言確實失敗，已還原。Heap 由 `wasmMemory.buffer.byteLength` 量測且起點 > 0，有真實成長，不宣稱零洩漏；`liveShapes=0` 只驗本專案釋放責任。數字與限制見報告及 `out/section-clearance/probe.json`。
+
+最終驗證：探針 7/7（含三項預期拒絕）通過、100 組解析 STEP 壓力案例通過；typecheck、四項 lint 與 `lint:repo` 全過，`docs:sync` 已同步。未修改產品程式，未重跑全套單元測試或 UI；不沿用歷史數字冒稱本輪全量驗收。

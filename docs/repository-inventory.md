@@ -619,6 +619,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 ### 設計提案
 
 - [3D-Builder 選單與工具圖示重新規劃](<design/menu-redesign/plan.md>)
+- [輪廓／截面＋間隙：可行性探針](<design/section-clearance/plan.md>)
 - [草圖互動方案：執行驗收表](<design/sketch-interaction/acceptance.md>)
 - [草圖建構互動比較與改進計畫](<design/sketch-interaction/plan.md>)
 - [草圖互動改善方案 P0~P5 任務成果報告](<design/sketch-interaction/report.md>)
