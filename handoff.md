@@ -4,7 +4,31 @@
 
 先讀本檔、[產品現況](docs/project-state.md)、[AGENTS.md](AGENTS.md) 與 [草圖互動方案](docs/design/sketch-interaction/plan.md)。開始前執行 `git status --short --branch`、`git fetch origin`、`git log -8 --oneline`；工作區不乾淨時先辨識在途變更，不直接 pull 或覆寫。
 
-## 0. 目前進行中：AI／MCP 的 GUI 即時連線
+## 0. 目前進行中：輪廓／截面＋間隙（跨電腦接手入口）
+
+**目前程式／探針基準為 `8e696e3`**，前一筆 `2a1d707`，更前一筆 `343dbeb`。本次交接文件另有後續提交，請以 `git log -5 --oneline origin/main` 核對。已完成樣條隔離與明示圓弧近似候選，**不是完整產品功能**；S3 已交付，勿重做。
+
+### 另一台電腦的第一步
+
+1. 進入該電腦自己的 3D-Builder checkout，先執行 `git status --short --branch`、`git fetch origin`、`git log -5 --oneline origin/main`。有在途修改先辨識歸屬，不覆寫、不直接 pull；工作樹乾淨且沒有本機分歧提交時才 `git switch main`、`git pull --ff-only origin main`。確認已含 `8e696e3` 及這份交接更新。同一資料夾一次只有一個聊天修改，本聊天交接後停止改產品程式。
+2. 如為新 checkout 或依賴不同步，執行 `npm ci`；不要借用另一個 checkout 的整顆 node_modules junction。新 worktree 只能放專案內，WASM 與 workspace 路徑規則見 AGENTS。
+3. 先讀 [AGENTS](AGENTS.md)、本檔 §0–§1b、DEV_LOG **檔尾**最新三節，再依序讀[第一輪探針](docs/design/section-clearance/plan.md)、[積分隔離](docs/design/section-clearance/spline-isolation.md)、[圓弧候選及推導](docs/design/section-clearance/bounded-offset.md)。
+4. 複驗指令：`npm test -- tests/phase6/section-clearance-probe.test.ts tests/phase6/section-spline-isolation.test.ts tests/phase6/section-offset-distance.test.ts tests/phase6/section-offset-envelope.test.ts --maxWorkers 1`。本機交付結果為 **4 檔、20/20，103.15 秒**；最後新增來源面積／邊數守門後，齒輪檔另重跑 3/3（22.12 秒）。不是整套 npm test／verify:ui 的新結果。
+
+### 已完成與下一刀
+
+- `343dbeb`：真實合成 STEP→截面→偏移→伸長探針；解析圓柱／齒條可行，三個樣條情境是**預期拒絕**。
+- `2a1d707`：積分錯誤縮至不經 STEP 的 C0 樣條；平滑截面→伸長→精確 NURBS 轉換→自適應積分可通過體積一致性。沒有全域改 massProps。
+- `8e696e3`：研究輔助 `tests/phase6/section-offset-envelope.ts`；正權重有理 Bézier 的凸包／Bernstein 圓方程與角域條件，產生明示直線／圓弧近似。24 齒 STEP 的 0.05／0.2 mm 外擴、有效單一實體、面積／體積、原最短距離與取樣間隙門檻皆通過；模式必填，未接入產品。另有兩類各 100 組原生有理曲線、解析圓對照與兩項會轉紅的突變測試。
+- **先做：最終偏移的全域間隙驗證及更多 STEP／尺度與退化案例。** 現在有的是「截面到近似曲線」的表示包絡，不能將它冒充最終偏移全域上限；目前後者只有完整線框最短距離與一齒角域離散探針。截面自身的平滑近似誤差亦須分開處理。
+- 之後才做外圈／孔洞包含關係、外擴／內縮、相撞、孔消失及自相交前置攔截；補 Worker 成本限制，再決定明示近似選項與持久參照／UI。不要先做選面／間隙 UI，不預占 ADR／Schema。
+- 保留原三項拒絕與所有誤差／期限，不把候選測試當產品通過。所有 Heap 驗證只用 `wasmMemory.buffer.byteLength`，先斷言 >0；沒有零洩漏宣稱。詳細量測、失敗路徑與效能數據見候選報告。
+
+### 不隨 Git 傳到另一台電腦的東西
+
+`out/section-clearance/*.json`、合成 `.step` 是可再生輸出，不提交；上述測試會重產。`http://127.0.0.1:8794/` 只在原電腦，是聊天專用進度頁，服務與資料不在 repo，另一台不能用該網址取得本機進度。接手不依賴私有 STEP 或這個頁面。使用者偏好同一個 HTML／SVG 進度頁每 30 秒更新並呈現細項；如需延續，請在新電腦重新建立，依實際證據更新，不隨時間虛增完成數。
+
+### 已完成工作線：AI／MCP 的 GUI 即時連線
 
 **2026-11-05 完成並已合併到 main**：AI 控制介面、狀態列、中英說明與 ADR 0238 已交付，全量驗收與獨立審查完成：`npm test` 372 檔、4,475 通過、26 既有略過、0 失敗；`npm run verify:ui` **270/270**；typecheck 與五項 lint 全過；CI 三平台 `integrity` 全 success。PR #10（`codex/s3-live-ui` → main）已於 `aecf1a1` 合併，`codex/s3-live-ui` 遠端分支已刪。剩餘：使用者以 Claude Code 手動連線試用、T1 安裝實測、T2 STEP 配合件手動流程。下列「下一步」保留作歷史對照。
 
@@ -39,11 +63,11 @@
 
 ## 1. 接續基準與發行狀態
 
-- **核對基準**：`main`，HEAD＝origin/main＝`c2650bc`（PR #10 合併 S3 後再併入 docs 行）；其下 `aecf1a1`（PR #10 merge）、`37d26c6`（S3 介面）、`59f0502`（mcp 測試修正）、`26a1553`（S3 交接文件）、`4f39618`（工具選單入口＋鎖定加工歷史修正）、`264a7fb`（PR #9，MCP／即時橋接）。工作區乾淨。
-- **遠端**：2026-11-05 已 fetch，HEAD＝origin/main＝`c2650bc`。S3 已全部提交並推送，不把此狀態寫成永遠同步。
+- **核對基準**：`main` 的程式／探針基準 `8e696e3`，其前為 `2a1d707`、`343dbeb`；本交接文件的後續提交以 Git log 為準。S3 已在更早的 `aecf1a1` 合併，勿再依舊 `c2650bc` 基準開工。
+- **遠端核對**：交付目的地為 `origin/main`。接手機先 fetch，再以 `git rev-parse HEAD origin/main` 與 `git status --short --branch` 確認，文件不宣稱兩者永久相等。
 - **Schema**：目前零件 91。新鎖定有 `lockedAfter` 生效位置，保留鎖定前除料／圓角；Schema 90 無邊界的舊鎖定維持原語意。
 - **驗證**：`4f39618` 整合 MCP 前的完整檢查為 4,423 項通過、26 既有略過，UI 270/270；rebase 到 PR #9 後，本機型別、文件與 82 項相關測試通過。**2026-11-05 S3 全量**：`npm test` 372 檔、4,475 通過、26 既有略過、0 失敗；`verify:ui` 270/270。此數字屬含 S3 的提交，之後的 CI 以其 run 為準。
-- **CI**：PR #10（`37d26c6`）的三平台 `integrity` 全部 success（ubuntu／macos／windows，2026-11-05），GitGuardian success；`full-suite` 與 `deploy-pages` 在 PR 階段 skipped。`e765bf6` 只改兩行文件、未另跑 CI。
+- **CI**：PR #10（`37d26c6`）的三平台 `integrity` 全部 success 是歷史結果；本輪 `2a1d707`／`8e696e3` 及交接提交的雲端結果尚未核實，須看此次推送的實際 run，不沿用 S3 綠燈。最新本機證據見 §0。
 - **桌面**：版本設定為 **0.2.4**；[版本履歷](docs/desktop-release-history.md)記錄 11-04 16:42 建置來源 `252555f`，0.2.3 安裝檔已刪除。該建置早於 `4f39618`，不包含工具選單與鎖定歷史修正，也不包含 MCP 合併。若要打包最新程式，依版本履歷 SOP 升版重建；本次不建置。
 
 ## 1b. 已交付與待辦（接手先看）
