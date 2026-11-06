@@ -4,6 +4,34 @@
 
 先讀本檔、[產品現況](docs/project-state.md)、[AGENTS.md](AGENTS.md) 與 [草圖互動方案](docs/design/sketch-interaction/plan.md)。開始前執行 `git status --short --branch`、`git fetch origin`、`git log -8 --oneline`；工作區不乾淨時先辨識在途變更，不直接 pull 或覆寫。
 
+## 0b. 下一個 session 從這裡開始：兩條工作線合併後的 7 項（2026-11-06 使用者決定）
+
+特徵辨識（§0a，以下稱 A）與截面間隙（§0，以下稱 B）**合併成一條工作線，集中在一個 session**；同一資料夾一次只有一個 session 修改（兩邊同時寫 `DEV_LOG.md` 已互相覆寫過一次）。使用者選擇全部要做，依序：
+
+| # | 項目 | 範圍 | 備註 |
+|---|---|---|---|
+| 1 | **A+B 共用截面模組** | 見下方「切法」 | 先做；後面各項都用它 |
+| 2 | **A+B Worker 時間／記憶體上限與取消** | 辨識與間隙共用一套：超時停止、可按取消 | B 的成本上限（Bézier 段 1,000、近似邊 10,000）是本機實測，非證明 |
+| 3 | **A+B OCCT 崩潰後的復原** | 已知同心整圓環內縮會讓 WASM 模組崩潰；崩潰後換新 Worker 重算，畫面上的零件不壞 | 崩潰後模組是否仍可靠未驗證 |
+| 4 | **A 同層多個拔模角** | 一層拆成數個各自拔模角的伸長；現在遇到會拒絕（`recognize.mixedDraft`） | 真實件 MT17203 需要 |
+| 5 | **A 孔精靈加鑽尖角** | 升 Schema、開 ADR；辨識改用孔自己的鑽尖角，取代現在的「平底孔＋旋轉除料」 | ADR／Schema 編號開工時才取 |
+| 6 | **A 辨識樣條輪廓：明示近似，使用者勾選才用** | 用 B 的雙圓弧近似；預設關閉，結果標明誤差上界，不宣稱「完全相同」 | 使用者已決定：勾選才用 |
+| 7 | **B 截面間隙接進產品** | ADR、Schema、特徵與重算、持久參照、選面／間隙 UI；偏移只用雙圓弧（B 已決定） | 工作量最大，最後做 |
+
+### 第 1 項的切法（2026-11-06 已盤點，尚未動手）
+
+- 現況：A 在 `Kernel.sectionEdges`（核心取截面，回傳平面座標的直線／圓弧／圓，樣條回 `other`）＋ `packages/regen/src/recognize/loops.ts`（串接、合併、巢狀深度）。B 在 `tests/phase6/section-offset-envelope.ts`、`section-regions.ts`（直接操作 OCCT wire；以 `BRepAlgoAPI_Section` 取截面）。
+- B 檔案裡**純數學、可直接搬進產品**的：`split`、`chordDistance`、`arcEnvelope`、`flatten`、`splitAt`、`circleBound`、`arcLeaving`、`endTangents`、`biarcEnvelope`（輸入是有理 Bézier 齊次控制點 `[x·w, y·w, z·w, w]`），以及 `Seg2`、`span`、`pointTo`、`along`、`nearestField`、`certifyOffset`、`violationPlaces`、`inradiusBound`。
+- **需要 OCCT、先留在測試裡、第 7 項再搬**：`sectionEnvelope`（從 wire 讀控制點並組 wire）、`counterClockwiseLoop`、`planarSegments`、`checkedOffset`、`fallbackOffset`、`classifyLoops`、`regionFace`、`sideCheck`、`regionOffset`、`sourceCost`。
+- 做法：① `Kernel.sectionEdges` 遇到 B 樣條／Bézier 改回傳分段 Bézier 控制點（`GeomConvert_BSplineCurveToBezierCurve`），不再只是 `other`；② 新增 `packages/regen/src/section/`：`loops.ts`（由 `recognize/loops.ts` 移入）與 `envelope.ts`（上面列的純數學）；③ `recognize/*` 改用 `section/`；④ `tests/phase6/*` 改由 `@3db/regen` 匯入那些純函式，不保留兩份；⑤ 截面測試（約 83 項）與辨識測試全部不退步。
+
+### 開工前的狀態（2026-11-06）
+
+- 本機 `main` 比 `origin/main`（`77544ac9`）多 7 筆，最新 `1c41feb2`，可直接快轉推送；**GitHub 上尚未推送**，遠端分支 `claude/section-regions` 也還在（內容已併入 `main`，可刪）。使用者需在**這個資料夾**執行 `git push origin main`、`git push origin --delete claude/section-regions`，並在這個資料夾跑整批 `npm test`、`npm run verify:ui`（先前回報的「已推送、已跑」看起來是在另一個 checkout 做的，未涵蓋這 7 筆）。
+- 進度頁：`scratch/feature-recognition/progress.html`（每 30 秒重新整理；資料在同目錄 `progress.json`，`render.py` 產生），第 20–27 組對應本節。使用者要求細分子項、依實際證據更新。
+- 真實樣本：`scratch/feature-recognition/samples/MT17203.step`（客戶零件，不進 repo）。目前因 114 個自由曲面被拒；其餘 226／340 面已屬可處理種類。
+- 在使用者電腦的 Linux VM 跑測試：Windows 版 `node_modules` 不能用，要在 VM 另做一份副本（`rsync` 到 `~/work/3db`，排除 `node_modules`、`target`、`scratch`、`.git`），`npm ci --ignore-scripts`。VM 只有 4 GB，全量測試要逐檔各一個程序、單一 worker 跑；`verify:ui` 用 npm 套件 `@sparticuz/chromium` 的 Chromium（`CHROME_PATH`）。git 推送在 VM 內沒有憑證，要使用者在 Windows 推。
+
 ## 0a. 新工作線：STEP 特徵辨識與重建（F2.4，2026-11-06）
 
 使用者決定把 F2.4 由 X 改為要做。**已實作並通過核心測試**：見 [ADR 0239](docs/adr/0239-feature-recognition.md)、[設計](docs/design/feature-recognition/plan.md)、DEV_LOG 同日一節。程式：`packages/regen/src/recognize/`、`Kernel.sectionEdges`、Worker `recognizeFeatures`、`store.recognizeFeatures`、輸入本體屬性管理員的「辨識特徵」按鈕。測試：`tests/phase8/feature-recognition.test.ts`（20/20）、`feature-recognition-fuzz.test.ts`（120/120）。
