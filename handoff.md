@@ -1,6 +1,6 @@
 # 交接與接續工作
 
-更新日期：2026-11-05。**目前狀態以本檔 §0–§1b 為準；§2 起為歷史紀錄，裡面的「下一步」「未提交」「目前版本」只代表當時狀態，不可直接拿來開工。**
+更新日期：2026-11-06。**目前狀態以本檔 §0–§1b 為準；§2 起為歷史紀錄，裡面的「下一步」「未提交」「目前版本」只代表當時狀態，不可直接拿來開工。**
 
 先讀本檔、[產品現況](docs/project-state.md)、[AGENTS.md](AGENTS.md) 與 [草圖互動方案](docs/design/sketch-interaction/plan.md)。開始前執行 `git status --short --branch`、`git fetch origin`、`git log -8 --oneline`；工作區不乾淨時先辨識在途變更，不直接 pull 或覆寫。
 
@@ -30,8 +30,9 @@
 - **已定位（2026-11-06）**：違反的原因是我們的圓弧近似在相鄰圓弧之間留下約 1e-4 rad 的凹折，加上遠短於間隙的圓弧，`MakeOffset` 就沒有修剪那一段。見[原因報告](docs/design/section-clearance/offset-violation-cause.md)與 `tests/phase6/section-offset-kink.test.ts`（2/2）。逐段強制相切會累積到 0.71 mm 的誤差，不可行。
 - **已完成（2026-11-06）**：`checkedOffset`（偵測後拒絕並帶出位置）、`biarcEnvelope`（雙圓弧 G1 擬合），以及 `fallbackOffset`（先三點圓弧，被拒絕才改雙圓弧，都不行就拒絕）。六個案例都不交出違反結果，且都通過逐邊證明。見[報告](docs/design/section-clearance/biarc-and-refusal.md)與 `section-offset-refuse`／`section-offset-biarc` 測試。
 - **已完成（2026-11-06）**：雙圓弧小間隙算不出結果的原因是樣條接原生直線的凹折角（−5.4e-3 rad）；樣條端改用原生邊切線（`SNAP` 1e-2）後，單用雙圓弧在模數 1 的 0.01–0.8、模數 3、模數 0.5 全部通過。上一筆「接點共用切線多餘」的結論已更正。
-- **下一刀**：孔洞與多區域、內縮、Worker 成本限制。接產品入口時，偏移一律走 `fallbackOffset`；屆時再決定是否只用雙圓弧（近似約慢 3.5 倍，但省掉一次被拒絕的偏移）。
-- 之後才做外圈／孔洞包含關係、外擴／內縮、相撞、孔消失及自相交前置攔截；補 Worker 成本限制，再決定明示近似選項與持久參照／UI。不要先做選面／間隙 UI，不預占 ADR／Schema。
+- **已完成（2026-11-06）**：孔洞與多區域、內縮、相撞、孔／整區消失與成本上限，見[報告](docs/design/section-clearance/regions-and-cost.md)與 `section-offset-regions`（15）／`section-offset-cost`（7）測試。研究輔助是 `tests/phase6/section-regions.ts` 的 `regionOffset`。另外找到並繞開兩個 OCCT 缺陷：順時針整圓的偏移方向相反；同心整圓構成的環內縮時，WebAssembly 模組直接崩潰。
+- **已決定（依實測建議）**：接入產品時，偏移只用雙圓弧（`mode:'biarc'`），三點圓弧與 `fallbackOffset` 留作研究對照。預設成本上限為 Bézier 段 1,000、近似邊 10,000，是本機實測值。
+- **下一刀**：接產品入口。包括 Worker 端的時間與記憶體上限及取消、明示近似選項的語意、持久參照，最後才做選面／間隙 UI；到那時才開 ADR／Schema，不預占。仍未解：內縮讓局部特徵消失時只能拒絕；OCCT 是否還有其他會崩潰的輸入，不知道。
 - 保留原三項拒絕與所有誤差／期限，不把候選測試當產品通過。所有 Heap 驗證只用 `wasmMemory.buffer.byteLength`，先斷言 >0；沒有零洩漏宣稱。詳細量測、失敗路徑與效能數據見候選報告。
 
 ### 不隨 Git 傳到另一台電腦的東西
