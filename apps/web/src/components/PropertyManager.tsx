@@ -4081,6 +4081,7 @@ function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
   const status = result?.features.find((r) => r.id === f.id);
   const warnings = status?.warnings ?? [];
   const d = status?.diagnostics;
+  const recognizing = useStore((s) => s.recognizing);
   return (
     <>
       <section className="pm-group">
@@ -4116,6 +4117,13 @@ function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
           />
         </label>
         <p className="hint">{t('pm.import.toleranceHint')}</p>
+      </section>
+      <section className="pm-group">
+        <h4>{t('recognize.title')}</h4>
+        <p className="hint">{t('recognize.hint')}</p>
+        <button type="button" data-field="recognizeFeatures" disabled={recognizing !== null || status?.status !== 'ok'} onClick={() => void store.recognizeFeatures(f.id)}>
+          {recognizing === f.id ? t('recognize.working') : t('recognize.run')}
+        </button>
       </section>
     </>
   );

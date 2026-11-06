@@ -5590,3 +5590,24 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 **門檻**：`SNAP` 1e-2 是新訂的，依實測失敗下緣約 5e-3 取約兩倍；沒有放寬任何既有門檻。
 
 **結果**：`section-offset-biarc` 18/18（新增 8 個小間隙案例；原本的「記錄限制」測試改成只保留三點圓弧被拒絕、雙圓弧通過的部分）；certificate、kink、refuse 23/23；probe、distance、envelope、isolation 20/20。typecheck、四項 lint 通過。產品程式未改，未跑全量 npm test 與 verify:ui。
+
+## 2026-11-06 STEP 特徵辨識與重建（F2.4，ADR 0239）
+
+使用者決定把藍圖 F2.4 由 X 改為要做，範圍：伸長、孔（簡單／沉頭／錐坑）、圓角與倒角、旋轉；直接做到產品功能。設計見 `docs/design/feature-recognition/plan.md`，決定見 ADR 0239。未升 Schema（仍 91）。
+
+- 核心：`Kernel.sectionEdges`；`packages/regen/src/recognize/{analyze,loops,reconstruct}.ts`。
+- 產品：輸入本體屬性管理員「辨識特徵」按鈕 → `store.recognizeFeatures` → Worker `recognizeFeatures`（獨立 Regenerator）→ `History.applyBatch` 一次復原；中英說明（`help.importStep.*`）與 `recognize.*` 訊息。
+- 開發過程修正的誤判：① 方塊的每個矩形面都是「兩平面之間的條」→ 倒角必須比兩側支撐面都窄；② 軸肩圓角在 STEP 中分成兩半圓環，軸的 Ø12 圓柱在端部與它相切而被當成圓角 → 圓角必須沿長度相切（圓柱沿軸向直線、圓環沿同軸圓）；③ 孔口倒角是錐坑孔，不另成倒角特徵（測試預期改正，理由寫在測試名稱）。
+
+### 紅隊四問與驗證
+
+1. **輸入**：非輸入本體、已抑制、本身重算失敗、多實體、自由曲面都以 `RecognizeError` 明確拒絕並說明；數值不經任何四捨五入以外的改動，運算式以 `num()` 保留到 1e-10 mm。
+2. **相交**：移除圓角／孔走 `BRepAlgoAPI_Defeaturing`，失敗則逐一退回、留在基體；最終以體積、面積、對稱差三者 ≤ 1e-6 把關，任何自相交或錯誤重建都會被拒絕，不交出結果。
+3. **依賴**：只用既有特徵與既有參照（預設面、參考點／軸／面、邊的持久名稱＋指紋）；Worker 另建 Regenerator，不動畫面上的重算結果；命令經 `History.applyBatch`。
+4. **真值**：測試以 kernel 原語自建實體為真值，自行計算對稱差並以不帶 STEP 資料的全新 Regenerator 重算；無 mock。Heap 只用 `wasmMemory.buffer.byteLength`，起點斷言 > 0。
+
+**突變**：見 ADR 0239「驗證」：四項轉紅；盲孔底面檢查未轉紅，分析為多餘後刪除，並保留新增的「孔內有銷」測試。
+
+**結果**：`feature-recognition` 20/20（約 6 秒）；`feature-recognition-fuzz` 120 組 120 重建、0 拒絕（約 24 秒），Heap 128 → 661 MiB（約 4.4 MiB／次，不宣稱零洩漏）。typecheck、lint:rules、lint:deps、lint:i18n、lint:repo 通過。相關測試另跑（單一 worker）：i18n、help、help-examples、phase1 import、phase3 import-repair／direct-edit／bodies、IGES、STL、context-menus、action-icons、packages/kernel、apps/mcp、apps/web/test，共 65 檔 836 項通過、1 既有略過。**全量 `npm test`（同日重跑）**：VM 只有 4 GB 記憶體、無 swap，整批跑會被系統結束，改為逐檔各一個程序、單一 worker 分批跑：**386 檔全部跑完，382 檔通過、4 檔整檔略過（需外部樣本），0 失敗；4,561 項通過、25 項略過**。其中 4 檔整檔跑不完 VM 的單次時限或記憶體，改為逐一測試跑，全部通過：`phase3/knurl`（16 項，合計約 180 秒）、`phase3/thread`（24 項）、`phase3/thread-fuzz`（5 項；整檔在 4 GB VM 中 SIGKILL，即 AGENTS §3.5 的螺牙 Heap 成長，與本次改動無關）、`phase6/section-offset-biarc`（18 項）、`phase8/fuzz-sheet`（170 項；第 173 行依賴前兩組，三組一起跑）。這是分檔結果的合計，不是單一一次 `npm test` 的輸出；Windows 主機上的整批結果仍以之後的實跑為準。`verify:ui` 未跑。執行環境為使用者電腦上的 Linux VM 另一份 `npm ci` 的副本（Windows 版 node_modules 不能在 VM 執行）。
+
+**未做／待確認**：`verify:ui` 瀏覽器腳本未新增；使用者端未手動試用；MCP 工具未加；草圖只加直徑／半徑尺寸（欠定義）；他牌真實 STEP（`SW_SAMPLE_DIR`）未跑。

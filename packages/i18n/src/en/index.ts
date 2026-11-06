@@ -31,6 +31,7 @@ import { ctxmenu } from './ctxmenu';
 import { asmui } from './asmui';
 import { sketchxform } from './sketchxform';
 import { asmtriad } from './asmtriad';
+import { recognize } from './recognize';
 
 /** The English catalog (D9.1). Same keys as the source catalog (`zh-TW`); a key left out shows in `zh-TW`. */
-export const en: Translation = { ...ui, ...model, ...expr, ...equations, ...edit, ...sketch, ...features, ...datums, ...output, ...app, ...viewport, ...tree, ...pmpanels, ...dialogs, ...storemsg, ...sketchtools, ...core, ...lowlevel, ...subassembly, ...patterns, ...mates, ...library, ...drawing, ...stepasm, ...bom, ...explode, ...evaluate, ...help, ...ctxmenu, ...asmui, ...sketchxform, ...asmtriad };
+export const en: Translation = { ...ui, ...model, ...expr, ...equations, ...edit, ...sketch, ...features, ...datums, ...output, ...app, ...viewport, ...tree, ...pmpanels, ...dialogs, ...storemsg, ...sketchtools, ...core, ...lowlevel, ...subassembly, ...patterns, ...mates, ...library, ...drawing, ...stepasm, ...bom, ...explode, ...evaluate, ...help, ...ctxmenu, ...asmui, ...sketchxform, ...asmtriad, ...recognize };

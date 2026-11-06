@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 91／7／38 |
-| ADR 文件 | 237 |
+| ADR 文件 | 238 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 222／218／270 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -572,6 +572,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0236：「設計配合件…」入口——以匯入的實體為參考，在同一零件檔建模並拆成組合件](<adr/0236-mating-part-entry.md>)
 - [ADR 0237：AI 代理以 MCP 操作 3D-Builder（無頭建模、量測、截圖、輸出）](<adr/0237-ai-agent-mcp-server.md>)
 - [ADR 0238：AI／MCP 連到執行中的 GUI](<adr/0238-ai-live-gui.md>)
+- [ADR 0239：STEP 特徵辨識與重建（F2.4）](<adr/0239-feature-recognition.md>)
 
 ### 歷史驗證
 
@@ -618,6 +619,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 ### 設計提案
 
+- [STEP 特徵辨識與重建（藍圖 F2.4）](<design/feature-recognition/plan.md>)
 - [3D-Builder 選單與工具圖示重新規劃](<design/menu-redesign/plan.md>)
 - [樣條間隙：偵測後拒絕、雙圓弧擬合與兩段式偏移](<design/section-clearance/biarc-and-refusal.md>)
 - [樣條間隙：明示圓弧近似與表示誤差包絡](<design/section-clearance/bounded-offset.md>)

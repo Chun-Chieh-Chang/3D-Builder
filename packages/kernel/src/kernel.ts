@@ -52,6 +52,7 @@ import {
   type HelixCurveSpec,
   type HelixCurveResult,
   type HelixAxisPath,
+  type SectionEdge,
 } from './types';
 
 /** How far a surface made by offsetting may be from the gap asked for (mm): the check of every surface feature (ADR 0067). */
@@ -3380,6 +3381,63 @@ export class Kernel {
         return { volume: Math.max(0, volume), center: null, shape: null };
       }
       return { volume, center: this.xyz(arena.own(props.CentreOfMass())), shape: this.put(shape) };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * Feature recognition (F2.4): the pieces of the boundary of the cross-section of solid `id` with the rectangle `rect` of `frame` (sketch coordinates),
+   * each as it lies in the frame: a line, an arc (with a point inside it, so that its way round is known), a full circle, or `other` with the curve type
+   * for anything else. The pieces are not ordered or chained: `@3db/regen` does that. The common of the solid and the rectangle is a boolean (AGENTS §3.5:
+   * no zero-growth claim); every temporary is arena-owned. A piece off the plane (more than 1e-7 mm from it) is an error, as is a curve not in the plane.
+   */
+  sectionEdges(id: ShapeId, frame: Frame, rect: { u0: number; u1: number; v0: number; v1: number }): SectionEdge[] {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const corners: P2[] = [[rect.u0, rect.v0], [rect.u1, rect.v0], [rect.u1, rect.v1], [rect.u0, rect.v1]];
+      const outer: Segment[] = corners.map((a, i) => ({ kind: 'line', a, b: corners[(i + 1) % 4]!, source: `r${i}` }));
+      const face = this.profile(arena, frame, [{ outer, holes: [] }], new Map());
+      const mk = this.boolOp('common', this.get(id), face, t('body.common'), arena);
+      const shape = arena.own(mk.Shape());
+      const local = (p: Vec3): P2 => {
+        const d: Vec3 = [p[0] - frame.origin[0], p[1] - frame.origin[1], p[2] - frame.origin[2]];
+        const off = dot3(d, frame.normal);
+        if (Math.abs(off) > 1e-7) throw new KernelError(t('recognize.offPlane', { distance: off.toExponential(2) }));
+        return [dot3(d, frame.xDir), dot3(d, frame.yDir)];
+      };
+      const out: SectionEdge[] = [];
+      const ex = arena.own(new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
+      for (; ex.More(); ex.Next()) {
+        const edge = arena.own(oc.TopoDS.Edge(arena.own(ex.Current())));
+        if (oc.BRep_Tool.Degenerated(edge)) continue;
+        const ad = arena.own(new oc.BRepAdaptor_Curve(edge));
+        const type = String(ad.GetType()).replace('GeomAbs_', '').toLowerCase();
+        const t0 = ad.FirstParameter();
+        const t1 = ad.LastParameter();
+        const at = (u: number) => local(this.xyz(arena.own(ad.EvalD0(u))));
+        if (type === 'line') {
+          out.push({ kind: 'line', a: at(t0), b: at(t1) });
+        } else if (type === 'circle') {
+          const c = arena.own(ad.Circle());
+          const ax = arena.own(c.Axis());
+          const normal = this.xyz(arena.own(ax.Direction()));
+          if (Math.abs(Math.abs(dot3(normal, frame.normal)) - 1) > 1e-9) {
+            out.push({ kind: 'other', curve: 'circle' });
+            continue;
+          }
+          const center = local(this.xyz(arena.own(ax.Location())));
+          const r = c.Radius();
+          const a = at(t0);
+          const b = at(t1);
+          if (Math.abs(t1 - t0 - 2 * Math.PI) < 1e-9 || (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9 && t1 - t0 > Math.PI)) out.push({ kind: 'circle', c: center, r });
+          else out.push({ kind: 'arc', c: center, r, a, b, mid: at((t0 + t1) / 2) });
+        } else {
+          out.push({ kind: 'other', curve: type });
+        }
+      }
+      return out;
     } finally {
       arena.dispose();
     }

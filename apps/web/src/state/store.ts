@@ -396,6 +396,8 @@ export interface UiState {
   bootMs: { occtMs: number; gcsMs: number } | null;
   bootError: string | null;
   notice: Notice | null;
+  /** The imported body whose features are being recognized (F2.4), or null. */
+  recognizing: Id | null;
   /** 「關閉伺服器」 pressed (dev only, ADR 0135): the dev server, its process and the kernel worker are being ended; the page shows the shutdown screen and does nothing else. */
   shuttingDown: boolean;
   /** The open document: the part above, or the assembly in `asm`. */
@@ -679,6 +681,7 @@ class AppStore {
       bootMs: null,
       bootError: null,
       notice: null,
+      recognizing: null,
       shuttingDown: false,
       active: 'part',
       asm: null,
@@ -1833,6 +1836,31 @@ class AppStore {
         this.requestRebuild();
       } catch (e) { this.history.rollback(); throw e; }
     } catch (e) { if(this.state.documentSerial===before.documentSerial)this.notify(e instanceof Error ? e.message : String(e), 'error'); }
+  }
+
+  /**
+   * 「辨識特徵」 (F2.4): imported body `featureId` replaced by sketches, extrusions, revolves, holes, fillets and chamfers that build the same solid, as
+   * one step to undo. The worker checks the result against the body it replaces; when it cannot be rebuilt the same, the user is told why and nothing changes.
+   */
+  async recognizeFeatures(featureId: Id): Promise<void> {
+    const before = this.state;
+    if (before.active !== 'part' || before.editing || before.recognizing) return;
+    const doc = this.history.doc;
+    this.set({ recognizing: featureId, notice: { kind: 'info', text: t('recognize.working') } });
+    try {
+      const { commands, report } = await this.api.recognizeFeatures(doc, featureId);
+      if (this.history.doc !== doc || this.state.documentSerial !== before.documentSerial || this.state.active !== 'part' || this.state.editing) {
+        this.notify(t('recognize.stale'), 'error');
+        return;
+      }
+      this.history.applyBatch(commands, t('recognize.title'));
+      const f = report.features;
+      this.notify(t('recognize.done', { extrude: f.extrude, revolve: f.revolve, hole: f.hole, fillet: f.fillet, chamfer: f.chamfer }));
+    } catch (e) {
+      if (this.state.documentSerial === before.documentSerial) this.notify(e instanceof Error ? e.message : String(e), 'error');
+    } finally {
+      this.set({ recognizing: null });
+    }
   }
 
   /** 「異型孔」: holes at the selected sketch's free points. */

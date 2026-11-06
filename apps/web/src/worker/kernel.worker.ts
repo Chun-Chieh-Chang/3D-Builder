@@ -7,7 +7,7 @@ import { bodyKey, combineMass, DATUM_PLANES, isDatumPlaneName, isShown, mirrorKe
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { encodeShade, flatViewLines, rasterizeShade, withoutHiddenEdges, type ShadeImage, type ViewLines } from '@3db/drawing';
-import { findEntrance, silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, drawingSketchCircles, drawingSketchFacts, placedViewFeatures, viewFeatures, viewEdges, findClearance, findInterference, flatDrawingGeometry, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
+import { findEntrance, reconstructImported, silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, drawingSketchCircles, drawingSketchFacts, placedViewFeatures, viewFeatures, viewEdges, findClearance, findInterference, flatDrawingGeometry, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { exportAssemblyStep, placedParts, placeMesh, writeStl, type StlSource, exportPartIges, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SnapItem, SourcePart, SourceProvider } from '@3db/regen';
@@ -237,6 +237,19 @@ async function viewEdgesOf(r: DrawingViewRequest): Promise<ViewEdgeSet> {
 }
 
 const api: KernelApi = {
+  async recognizeFeatures(doc, featureId) {
+    await (ready ??= boot());
+    // a regenerator of its own: the many rebuilds of the recognition must not release the shapes of the part on screen
+    const own = new Regenerator(kernel, solver, blobs);
+    try {
+      const { commands, report } = reconstructImported(kernel, own, doc, featureId);
+      return { commands, report };
+    } catch (e) {
+      throw new Error(e instanceof Error ? e.message : String(e));
+    } finally {
+      own.dispose();
+    }
+  },
   async entranceTarget(refs, seq) {
     if (!lastResult || seq !== lastPartSeq) throw new Error(t('entrance.stale'));
     return findEntrance(kernel, lastResult.body, refs);

@@ -4,6 +4,12 @@
 
 先讀本檔、[產品現況](docs/project-state.md)、[AGENTS.md](AGENTS.md) 與 [草圖互動方案](docs/design/sketch-interaction/plan.md)。開始前執行 `git status --short --branch`、`git fetch origin`、`git log -8 --oneline`；工作區不乾淨時先辨識在途變更，不直接 pull 或覆寫。
 
+## 0a. 新工作線：STEP 特徵辨識與重建（F2.4，2026-11-06）
+
+使用者決定把 F2.4 由 X 改為要做。**已實作並通過核心測試**：見 [ADR 0239](docs/adr/0239-feature-recognition.md)、[設計](docs/design/feature-recognition/plan.md)、DEV_LOG 同日一節。程式：`packages/regen/src/recognize/`、`Kernel.sectionEdges`、Worker `recognizeFeatures`、`store.recognizeFeatures`、輸入本體屬性管理員的「辨識特徵」按鈕。測試：`tests/phase8/feature-recognition.test.ts`（20/20）、`feature-recognition-fuzz.test.ts`（120/120）。
+
+下一步：① `verify:ui` 瀏覽器腳本（按鈕 → 樹出現特徵 → 復原）；② 使用者用真實 STEP 試用；③ 草圖完全定義；④ 不同方向的分層伸長（側面凸台）、拔模、鑽尖錐底；⑤ MCP 工具。全量測試已在 VM 逐檔分批跑完（386 檔、4,561 項通過、0 失敗，見 DEV_LOG）；Windows 整批 `npm test` 與 `verify:ui` 尚未跑。
+
 ## 0. 目前進行中：輪廓／截面＋間隙（跨電腦接手入口）
 
 **目前程式／探針基準為 `8e696e3`**，前一筆 `2a1d707`，更前一筆 `343dbeb`。本次交接文件另有後續提交，請以 `git log -5 --oneline origin/main` 核對。已完成樣條隔離與明示圓弧近似候選，**不是完整產品功能**；S3 已交付，勿重做。

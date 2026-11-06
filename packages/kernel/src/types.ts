@@ -177,6 +177,13 @@ export type FaceOrigin =
   /** Face `index` of an imported shape, in the order the file defines them. */
   | { rel: 'imported'; index: number };
 
+/** A piece of the boundary of a planar cross-section (F2.4, `Kernel.sectionEdges`), in the frame's own coordinates. `mid` is a point inside an arc. */
+export type SectionEdge =
+  | { kind: 'line'; a: [number, number]; b: [number, number] }
+  | { kind: 'arc'; c: [number, number]; r: number; a: [number, number]; b: [number, number]; mid: [number, number] }
+  | { kind: 'circle'; c: [number, number]; r: number }
+  | { kind: 'other'; curve: string };
+
 export interface OpResult {
   shape: ShapeId;
   /** faceOrigins[i] lists the origins of output face i. */

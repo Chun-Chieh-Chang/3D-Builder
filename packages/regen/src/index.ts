@@ -17,3 +17,4 @@ export * from './drawingEdges';
 
 export * from './flatDrawing';
 export * from './entrance';
+export * from './recognize';

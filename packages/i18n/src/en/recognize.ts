@@ -1,0 +1,32 @@
+import type { Translation } from '../index';
+
+/** Messages of feature recognition (F2.4): an imported body rebuilt as the program's own features. */
+export const recognize: Translation = {
+  'recognize.offPlane': 'A curve of the section is not in its plane ({distance} mm off)',
+  'recognize.oneSolid': 'Only a single solid can be recognized; this imported body has {n} solids',
+  'recognize.freeform': '{n} faces are freeform surfaces and cannot be recognized: {faces}',
+  'recognize.blendNoEdge': 'After removing a fillet or chamfer, the sharp edge it came from was not found: {faces}',
+  'recognize.sectionFailed': 'The cross-section could not be made: {why}',
+  'recognize.unsupportedCurve': 'The cross-section has a curve that is not supported ({curve}); only lines and arcs are',
+  'recognize.sectionOpen': 'The outline of the cross-section does not close',
+  'recognize.noBase': 'No extrusion direction or revolve axis fits: {n} faces belong to neither ({faces})',
+  'recognize.edgeNotFound': 'The edge for the {kind} was not found on the rebuilt model',
+  'recognize.featureFailed': 'A rebuilt feature does not build: {why}',
+  'recognize.notSame': 'The rebuilt solid differs from the original: volume {volume}, area {area}, not shared {difference} (relative)',
+  'recognize.notImported': 'Features can only be recognized on an imported body',
+  'recognize.suppressed': 'The imported body is suppressed; unsuppress it first',
+  'recognize.importFailed': 'The imported body itself does not rebuild; repair it first',
+  'recognize.name.sketch': 'Sketch{n}',
+  'recognize.name.extrude': 'Extrude{n}',
+  'recognize.name.revolve': 'Revolve{n}',
+  'recognize.name.hole': 'Hole{n}',
+  'recognize.name.fillet': 'Fillet{n}',
+  'recognize.name.chamfer': 'Chamfer{n}',
+  'recognize.name.datum': 'Recognized datum{n}',
+  'recognize.title': 'Recognize Features',
+  'recognize.hint': 'Replaces the imported body by sketches, extrusions, revolves, holes, fillets and chamfers of this program; the result is compared with the original and applied only when it is the same solid, as one step to undo. Only analytic surfaces (plane, cylinder, cone, torus, sphere) are recognized.',
+  'recognize.run': 'Recognize Features',
+  'recognize.working': 'Recognizing features…',
+  'recognize.stale': 'The model changed while features were recognized; nothing was applied, try again',
+  'recognize.done': 'Recognized: {extrude} extrusions, {revolve} revolves, {hole} holes, {fillet} fillets, {chamfer} chamfers; the rebuilt solid is the same as the original',
+};

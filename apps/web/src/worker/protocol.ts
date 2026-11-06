@@ -289,6 +289,11 @@ export type DrawingElementsResult = { elements: (ElementFacts | { error: string 
 
 export interface KernelApi {
   entranceTarget(refs: Ref[], seq: number): Promise<import('@3db/regen').EntranceTarget>;
+  /**
+   * 「辨識特徵」 (F2.4): the commands that replace imported body `featureId` of `doc` by the features that build the same solid, checked in the worker
+   * against the body they replace, with what was made and how near it is. Rejects with the reason the user is told when the body cannot be rebuilt the same.
+   */
+  recognizeFeatures(doc: PartDoc, featureId: Id): Promise<{ commands: import('@3db/model').Command[]; report: import('@3db/regen').ReconstructReport }>;
   init(): Promise<{ occtMs: number; gcsMs: number }>;
   /** The language of the messages the worker makes (errors, warnings); what it made before keeps its language. */
   setLocale(locale: Locale): Promise<void>;
