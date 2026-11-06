@@ -5718,3 +5718,11 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 - Fuzz 一度 1 組被拒（第 40 組）：產生器讓尖端穿出板底，那是圓錐開口而不是鑽尖盲孔，拒絕正確；產生器改為尖端距板底 ≥ 0.5 mm，否則用平底。
 - 結果：`feature-recognition` 27/27；Fuzz 120/120（60 側面凸台、16 鑽尖），Heap 128 → 793 MiB；typecheck 通過。
 
+## 2026-11-06（續）特徵辨識：拔模
+
+- `wallLean`：傾斜平面（asin|n·d|）與軸 ∥ d 的圓錐（半錐角）為拔模壁，≤ 30°；`blockers` 改用它。`extrudeBase` 依面的高度範圍（`extentAlong`）找每層的壁，角度不一致丟 `recognize.mixedDraft`。拔模層在 1/4、3/4 高度取截面，`extrapolate` 逐段（直線端點、圓弧中心／半徑／端點、整圓）線性外推到層底；`inward` 由兩截面面積比較。`Builder.layers` 加 `draft1`。
+- 紅隊：① 輸入——角度以 `deg` 運算式輸出，> 30° 的斜面不當拔模壁；② 相交——仍以三項 ≤ 1e-6 把關，兩截面對不起來丟 `recognize.draftSection`；③ 依賴——只用既有 `draft1`；④ 真值——測試以 `kernel.extrude` 的拔模參數自建實體。突變三項皆轉紅。
+- Fuzz 改寫邊的選取（依位置挑最外側的邊，不用精確座標），因為拔模會讓邊傾斜、移位。
+- 真實 STEP：見 ADR 0239 驗證最後一點（仍因自由曲面被拒；226／340 面已屬可處理種類）。
+- 結果：`feature-recognition` 32/32；Fuzz 120/120（59 拔模、30 側面凸台、22 鑽尖），Heap 128 → 793 MiB；typecheck、lint:rules／deps／i18n；`apps/mcp` recognize、i18n、help 55 項通過。
+

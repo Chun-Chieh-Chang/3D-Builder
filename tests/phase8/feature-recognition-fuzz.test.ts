@@ -46,6 +46,7 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
   let rebuilt = 0;
   let sided = 0;
   let tipped = 0;
+  let drafted = 0;
   let refused = 0;
   const refusals: string[] = [];
   for (let seed = 1; seed <= 120; seed++) {
@@ -61,7 +62,10 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
     const made: ShapeId[] = [];
     const own = (id: ShapeId) => (made.push(id), id);
     try {
-      let s = own(kernel.extrude(XY, [rect(-w / 2, -d / 2, w, d)], [0, 0, t]).shape);
+      // half of them have walls leaning in by 1° to 5° (draft); those get no side boss (a boss on a leaning wall ends on it: up to a face, not recognized)
+      const draft = r() < 0.5 ? round(1 + r() * 4) : 0;
+      let s = own(kernel.extrude(XY, [rect(-w / 2, -d / 2, w, d)], [0, 0, t], 0, undefined, (draft * Math.PI) / 180).shape);
+      if (draft) drafted++;
       // the hole, square to the top, at the middle
       if (kind === 0) s = own(kernel.boolean('cut', s, own(kernel.extrude(at(-1), [disc(hr)], [0, 0, t + 2]).shape)).shape);
       else if (kind === 1) {
@@ -82,7 +86,7 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
         s = own(kernel.boolean('cut', s, own(kernel.extrude(at(-1), [disc(hr)], [0, 0, t + 2]).shape)).shape);
       }
       // half of them get a round boss on the +x side, along x (a feature along another direction than the plate)
-      const side = r() < 0.5;
+      const side = r() < 0.5 && !draft;
       const br = round(1 + r() * Math.min(d, t) * 0.25);
       if (side) {
         const YZ: Frame = { origin: [w / 2, 0, 0], xDir: [0, 1, 0], yDir: [0, 0, 1], normal: [1, 0, 0] };
@@ -90,11 +94,13 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
         s = own(kernel.boolean('fuse', s, boss).shape);
       }
       const topo = kernel.topology(s);
-      const vertical = topo.edges.findIndex((e) => e.dir && Math.abs(e.dir[2]) > 0.99 && Math.abs(e.mid[0] - w / 2) < 1e-6 && Math.abs(e.mid[1] - d / 2) < 1e-6);
+      // the edges by where they are, not by exact numbers (a draft leans them and moves them in): the corner edge at +x +y, the top edge at -y
+      const pick = <T,>(xs: T[], score: (x: T) => number) => xs.reduce((a, b) => (score(b) > score(a) ? b : a));
+      const vertical = pick(topo.edges.map((e, i) => ({ e, i })).filter(({ e }) => e.curve === 'line' && e.dir && Math.abs(e.dir[2]) > 0.9), ({ e }) => e.mid[0] + e.mid[1]).i;
       s = own(kernel.fillet(s, [vertical], fr).shape);
       const t2 = kernel.topology(s);
-      const top = t2.edges.findIndex((e) => e.dir && Math.abs(e.dir[0]) > 0.99 && Math.abs(e.mid[1] + d / 2) < 1e-6 && Math.abs(e.mid[2] - t) < 1e-6);
-      const frontFace = t2.faces.findIndex((f) => f.normal && f.normal[1] < -0.99);
+      const top = pick(t2.edges.map((e, i) => ({ e, i })).filter(({ e }) => e.curve === 'line' && e.dir && Math.abs(e.dir[0]) > 0.99 && Math.abs(e.mid[2] - t) < 1e-6), ({ e }) => -e.mid[1]).i;
+      const frontFace = pick(t2.faces.map((f, i) => ({ f, i })).filter(({ f }) => f.surface === 'plane' && f.normal), ({ f }) => -f.normal![1]).i;
       s = own(kernel.chamfer(s, [{ edge: top, face: frontFace }], 'distanceDistance', cr, round(cr * (0.5 + r())) ).shape);
       const bytes = new TextEncoder().encode(kernel.exportStep(s, `fuzz-${seed}`));
       const sha = await sha256Hex(bytes);
@@ -130,11 +136,12 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
     }
   }
   const h1 = heap()!;
-  console.log(`feature recognition fuzz: ${rebuilt} rebuilt (${sided} with a side boss, ${tipped} with a drill point), ${refused} refused; heap ${(h0! / 2 ** 20).toFixed(1)} → ${(h1 / 2 ** 20).toFixed(1)} MiB`);
+  console.log(`feature recognition fuzz: ${rebuilt} rebuilt (${sided} with a side boss, ${tipped} with a drill point, ${drafted} drafted), ${refused} refused; heap ${(h0! / 2 ** 20).toFixed(1)} → ${(h1 / 2 ** 20).toFixed(1)} MiB`);
   if (refusals.length) console.log(refusals.join('\n'));
   expect(rebuilt + refused).toBe(120);
   // every one of these parts is made of the features recognized, so refusing one is a defect, not a safe answer
   expect(refused).toBe(0);
-  expect(sided).toBeGreaterThan(30);
+  expect(sided).toBeGreaterThan(20); // about a quarter: half of the plates without draft
   expect(tipped).toBeGreaterThan(10);
+  expect(drafted).toBeGreaterThan(30);
 }, 600_000);

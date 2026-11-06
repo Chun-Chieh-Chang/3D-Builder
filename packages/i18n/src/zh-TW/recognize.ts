@@ -27,4 +27,6 @@ export const recognize = {
   'recognize.working': '正在辨識特徵…',
   'recognize.stale': '模型在辨識期間已變更，未套用結果，請再試一次',
   'recognize.done': '已辨識：伸長 {extrude}、旋轉 {revolve}、孔 {hole}、圓角 {fillet}、倒角 {chamfer}，重建結果與原件相同',
+  'recognize.mixedDraft': '同一層的側壁拔模角不同（{angles}），一個伸長只能有一個拔模角',
+  'recognize.draftSection': '拔模層的上下截面對不起來，無法求出底部輪廓',
 } as const;

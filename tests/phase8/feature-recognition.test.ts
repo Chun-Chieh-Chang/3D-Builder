@@ -319,6 +319,68 @@ describe('features along other directions (side bosses and pockets)', () => {
   });
 });
 
+describe('drafted walls', () => {
+  const deg = (a: number) => (a * Math.PI) / 180;
+  /** As `prism`, with the walls leaning in by `angle` degrees along the extrusion (out with a negative angle). */
+  const drafted = (region: Region, z0: number, h: number, angle: number) => keep(kernel.extrude(at(z0), [region], [0, 0, h], 0, undefined, deg(angle)).shape);
+  const draftOf = (f: Feature) => (f.type === 'extrude' ? f.draft1 : undefined);
+
+  it('a block whose walls lean in by 3°', async () => {
+    const { features } = await roundTrip(drafted(rect(-20, -15, 40, 30), 0, 12, 3));
+    const [e] = ofType(features, 'extrude');
+    expect(draftOf(e!)).toEqual({ angle: '3deg', inward: true });
+  });
+
+  it('a round boss leaning out by 1° on a plain plate', async () => {
+    const s = fuse(prism(rect(-20, -20, 40, 40), 0, 5), drafted(disc(0, 0, 8), 5, 10, -1));
+    const { features } = await roundTrip(s);
+    const ex = ofType(features, 'extrude');
+    expect(ex.map((e) => draftOf(e)?.angle ?? '0')).toEqual(['0', '1deg']);
+    expect(draftOf(ex[1]!)?.inward).toBeUndefined();
+  });
+
+  it('a drafted outline with an arc and a hole through it (the hole leans the other way, as a mould would have it)', async () => {
+    const r: Region = {
+      outer: [
+        { kind: 'line', a: [0, 0], b: [40, 0], source: 'a' },
+        { kind: 'line', a: [40, 0], b: [40, 20], source: 'b' },
+        { kind: 'arc', c: [30, 20], r: 10, from: [40, 20], to: [20, 20], ccw: true, source: 'c' },
+        { kind: 'line', a: [20, 20], b: [0, 20], source: 'd' },
+        { kind: 'line', a: [0, 20], b: [0, 0], source: 'e' },
+      ],
+      holes: [[{ kind: 'circle', c: [10, 10], r: 4, source: 'h' }]],
+    };
+    const { features } = await roundTrip(drafted(r, 0, 8, 2));
+    const [e] = ofType(features, 'extrude');
+    expect(draftOf(e!)).toEqual({ angle: '2deg', inward: true });
+    expect(ofType(features, 'hole')).toHaveLength(0);
+  });
+
+  it('a drafted block rounded along its top', async () => {
+    let s = drafted(rect(0, 0, 30, 20), 0, 10, 5);
+    const top = edgeWhere(s, (m, d) => !!d && Math.abs(d[0]) > 0.99 && near(m[2], 10) && m[1] < 5);
+    s = keep(kernel.fillet(s, [top], 2).shape);
+    const { features } = await roundTrip(s);
+    expect(ofType(features, 'fillet')).toMatchObject([{ radius: '2' }]);
+    expect(draftOf(ofType(features, 'extrude')[0]!)).toEqual({ angle: '5deg', inward: true });
+  });
+
+  it('refuses a layer whose walls lean by two angles, and says which', async () => {
+    // two drafted blocks of the same height that overlap: one solid whose walls lean by 3° and by 6°
+    const two = fuse(drafted(rect(0, 0, 30, 20), 0, 10, 3), drafted(rect(20, 5, 30, 10), 0, 10, 6));
+    expect(kernel.solidCount(two)).toBe(1);
+    const bytes = new TextEncoder().encode(kernel.exportStep(two, 'part'));
+    const sha = await sha256Hex(bytes);
+    const doc = applyCommand(createEmptyPart(), { type: 'importBody', blob: { id: 'blob1', sha256: sha, kind: 'step', fileName: 'p.step' }, feature: { id: 'imp1', type: 'importedBody', name: '輸入1', suppressed: false, blob: 'blob1' }, index: 0 });
+    const regen = new Regenerator(kernel, solver, new Map([[sha, bytes]]));
+    try {
+      expect(() => reconstructImported(kernel, regen, doc, 'imp1', solver)).toThrow(/拔模角不同|伸長方向/);
+    } finally {
+      regen.dispose();
+    }
+  });
+});
+
 describe('any direction', () => {
   it('a plate with a hole, turned 30° about a slanted axis', async () => {
     const s = cut(prism(rect(-30, -20, 60, 40), 0, 10), prism(disc(5, 3, 4), -1, 12));

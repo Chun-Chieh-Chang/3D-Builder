@@ -260,6 +260,7 @@ class Builder {
         ...(op === 'boss' && first && merge === false ? { merge: false } : {}),
         // a boss goes along the sketch's normal, a cut against it (into the material): either way the layer runs along `dir`
         dir1: { type: 'blind', depth: num(depth), ...((op === 'boss' ? plane.flipped : !plane.flipped) ? { reverse: true } : {}) },
+        ...(layer.draft ? { draft1: { angle: `${num((layer.draft.angle * 180) / Math.PI)}deg`, ...(layer.draft.inward ? { inward: true } : {}) } } : {}),
       });
       first = false;
     });

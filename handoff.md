@@ -8,7 +8,7 @@
 
 使用者決定把 F2.4 由 X 改為要做。**已實作並通過核心測試**：見 [ADR 0239](docs/adr/0239-feature-recognition.md)、[設計](docs/design/feature-recognition/plan.md)、DEV_LOG 同日一節。程式：`packages/regen/src/recognize/`、`Kernel.sectionEdges`、Worker `recognizeFeatures`、`store.recognizeFeatures`、輸入本體屬性管理員的「辨識特徵」按鈕。測試：`tests/phase8/feature-recognition.test.ts`（20/20）、`feature-recognition-fuzz.test.ts`（120/120）。
 
-已加 `verify:ui` 腳本 `tests/e2e/phase8-feature-recognition.js`（並修正編輯中面板按鈕無作用的缺陷）。下一步：② 使用者用真實 STEP 試用；（③ 草圖完全定義已完成）④ 不同方向的分層伸長（側面凸台）、拔模、鑽尖錐底；（⑤ MCP 工具 `recognize_features` 已完成）。全量測試已在 VM 逐檔分批跑完（386 檔、4,561 項通過、0 失敗，見 DEV_LOG）；Windows 整批 `npm test` 與 `verify:ui` 尚未跑。
+已加 `verify:ui` 腳本 `tests/e2e/phase8-feature-recognition.js`（並修正編輯中面板按鈕無作用的缺陷）。下一步：② 使用者用真實 STEP 試用；（③ 草圖完全定義已完成）（④ 側面凸台、拔模、鑽尖錐底已完成，見 ADR 0239）下一步候選：自由曲面與拔模壁之間的過渡圓角、同層多個拔模角、孔精靈直接支援鑽尖角（需升 Schema）；（⑤ MCP 工具 `recognize_features` 已完成）。全量測試已在 VM 逐檔分批跑完（386 檔、4,561 項通過、0 失敗，見 DEV_LOG）；Windows 整批 `npm test` 與 `verify:ui` 尚未跑。
 
 ## 0. 目前進行中：輪廓／截面＋間隙（跨電腦接手入口）
 

@@ -29,4 +29,6 @@ export const recognize: Translation = {
   'recognize.working': 'Recognizing features…',
   'recognize.stale': 'The model changed while features were recognized; nothing was applied, try again',
   'recognize.done': 'Recognized: {extrude} extrusions, {revolve} revolves, {hole} holes, {fillet} fillets, {chamfer} chamfers; the rebuilt solid is the same as the original',
+  'recognize.mixedDraft': 'The walls of one layer lean by different angles ({angles}); one extrusion has one draft',
+  'recognize.draftSection': 'The sections of a drafted layer do not match, so its bottom outline cannot be found',
 };
