@@ -21,7 +21,8 @@
 - `2a1d707`：積分錯誤縮至不經 STEP 的 C0 樣條；平滑截面→伸長→精確 NURBS 轉換→自適應積分可通過體積一致性。沒有全域改 massProps。
 - `8e696e3`：研究輔助 `tests/phase6/section-offset-envelope.ts`；正權重有理 Bézier 的凸包／Bernstein 圓方程與角域條件，產生明示直線／圓弧近似。24 齒 STEP 的 0.05／0.2 mm 外擴、有效單一實體、面積／體積、原最短距離與取樣間隙門檻皆通過；模式必填，未接入產品。另有兩類各 100 組原生有理曲線、解析圓對照與兩項會轉紅的突變測試。
 - **已完成（2026-11-05，另一工作階段）：最終偏移的逐邊間隙證明**，見[逐邊間隙證明](docs/design/section-clearance/clearance-certificate.md)與 `tests/phase6/section-offset-certificate.test.ts`（14/14）。四個齒輪案例雙側界在 [間隙−1.7e-6, 間隙+1.2e-5] mm 內。另外發現 `MakeOffset` 在模數 3／0.3 mm、模數 1／0.8 mm 時回傳看似有效但違反間隙的線框（最近 0.147／0.349 mm），只有全域下限抓得到。
-- **下一刀**：定位這兩個 `MakeOffset` 違反的原因（凹角修剪？大間隙下鄰齒相撞？），決定產品行為：拒絕並指出位置，或修正。之後再做孔洞／多區域。
+- **已定位（2026-11-06）**：違反的原因是我們的圓弧近似在相鄰圓弧之間留下約 1e-4 rad 的凹折，加上遠短於間隙的圓弧，`MakeOffset` 就沒有修剪那一段。見[原因報告](docs/design/section-clearance/offset-violation-cause.md)與 `tests/phase6/section-offset-kink.test.ts`（2/2）。逐段強制相切會累積到 0.71 mm 的誤差，不可行。
+- **下一刀**：產品上先「偵測後拒絕並指出位置」。源頭修正改用雙圓弧擬合（各段兩端沿用原曲線切線），並對雙圓弧重新推導包絡、量跨來源邊的接點。之後再做孔洞／多區域。
 - 之後才做外圈／孔洞包含關係、外擴／內縮、相撞、孔消失及自相交前置攔截；補 Worker 成本限制，再決定明示近似選項與持久參照／UI。不要先做選面／間隙 UI，不預占 ADR／Schema。
 - 保留原三項拒絕與所有誤差／期限，不把候選測試當產品通過。所有 Heap 驗證只用 `wasmMemory.buffer.byteLength`，先斷言 >0；沒有零洩漏宣稱。詳細量測、失敗路徑與效能數據見候選報告。
 
@@ -69,7 +70,7 @@
 - **Schema**：目前零件 91。新鎖定有 `lockedAfter` 生效位置，保留鎖定前除料／圓角；Schema 90 無邊界的舊鎖定維持原語意。
 - **驗證**：`4f39618` 整合 MCP 前的完整檢查為 4,423 項通過、26 既有略過，UI 270/270；rebase 到 PR #9 後，本機型別、文件與 82 項相關測試通過。**2026-11-05 S3 全量**：`npm test` 372 檔、4,475 通過、26 既有略過、0 失敗；`verify:ui` 270/270。此數字屬含 S3 的提交，之後的 CI 以其 run 為準。
 - **CI**：PR #10（`37d26c6`）的三平台 `integrity` 全部 success 是歷史結果；本輪 `2a1d707`／`8e696e3` 及交接提交的雲端結果尚未核實，須看此次推送的實際 run，不沿用 S3 綠燈。最新本機證據見 §0。
-- **桌面**：**0.2.5**（`a1cec186`），11-06 07:24 在 D: 槽這台建置：`apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.2.5_x64-setup.exe`（12,556,912 B）。建置 0 錯誤 0 警告、exe 版本 0.2.5；來源已過完整 `verify:ui` 270/270。含鎖定歷史修正、工具選單入口、AI 控制與排列方向提示。安裝檔已上傳 GitHub Release [`v0.2.5`](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.2.5)，SHA-256 核對一致；另一台電腦從 Release 下載。見[版本履歷](docs/desktop-release-history.md)。**`target\` 不可跨電腦同步**：同步過來的建置腳本輸出記著另一台的 `F:` 路徑，第一次建置因此失敗。
+- **桌面**：**0.2.5**（`a1cec186`），11-06 07:24 在 D: 槽這台建置：`apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.2.5_x64-setup.exe`（12,556,912 B）。建置 0 錯誤 0 警告、exe 版本 0.2.5；來源已過完整 `verify:ui` 270/270。含鎖定歷史修正、工具選單入口、AI 控制與排列方向提示。見[版本履歷](docs/desktop-release-history.md)。**`target\` 不可跨電腦同步**：同步過來的建置腳本輸出記著另一台的 `F:` 路徑，第一次建置因此失敗。
 
 ## 1b. 已交付與待辦（接手先看）
 
@@ -81,7 +82,7 @@
 | MCP S3 使用者介面／GUI 驗收 | 已完成並合併到 main（PR #10，`aecf1a1`）；剩使用者 Claude Code 手動連線試用未確認 | 見 [ADR 0238](docs/adr/0238-ai-live-gui.md) 與 §0；勿重做 |
 | T1 安裝實測 | 使用者尚未測試 | 安裝 `3D-Builder_0.2.5_x64-setup.exe` 並開啟（最好在另一台電腦）；同時補做 SOP 的「啟動 10 秒、視窗標題 `3D-Builder`」，這次建置沒有做這一項 |
 | T2 手動 STEP 配合件流程 | 使用者尚未手動確認 | 取自動化通過作參考，不冒充使用者實測；由使用者實際操作匯入→轉輪廓→建配合件→產生組合件 |
-| 輪廓／截面＋間隙（原 #4） | 第三階段：明示圓弧近似有控制包絡，合成齒輪 0.05／0.2 mm 通過原間隙、有效實體與體積門檻；4 檔 20/20 | 見[候選報告](docs/design/section-clearance/bounded-offset.md)。逐邊間隙證明已完成（[報告](docs/design/section-clearance/clearance-certificate.md)），並抓到兩個 `MakeOffset` 違反間隙的案例；違反的處理、一般孔洞／多區域、成本及產品近似語意仍待解；未新增產品介面，原三項原生拒絕不變 |
+| 輪廓／截面＋間隙（原 #4） | 第三階段：明示圓弧近似有控制包絡，合成齒輪 0.05／0.2 mm 通過原間隙、有效實體與體積門檻；4 檔 20/20 | 見[候選報告](docs/design/section-clearance/bounded-offset.md)。逐邊間隙證明已完成（[報告](docs/design/section-clearance/clearance-certificate.md)），並抓到兩個 `MakeOffset` 違反間隙的案例；原因已定位為近似圓弧之間的微小凹折（[原因報告](docs/design/section-clearance/offset-violation-cause.md)）；違反的處理、一般孔洞／多區域、成本及產品近似語意仍待解；未新增產品介面，原三項原生拒絕不變 |
 | 一鍵凹槽座（原 #5） | 後續候選 | 依前項探針及實際案例排程，未核定完整實作 |
 | 組合件陣列方向提示（原 #6） | 已實作（2026-11-05）：線性排列、方向為組合件軸、種子偏 >0.5° 時提示，不阻擋、不改方向；單元測試與突變通過 | e2e `pat.skew` 已在 Windows 通過（`--only component-pattern` 1/1）；完整 `verify:ui` 尚無整輪結果 |
 | 自由曲線 offset、交叉／分岔區域、樣條 G2／權重 | 保留候選 | 使用者選擇入口完成後再評估，不因下方舊「下一刀」文字直接開工 |
