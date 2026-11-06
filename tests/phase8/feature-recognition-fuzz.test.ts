@@ -45,6 +45,7 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
   expect(h0).toBeGreaterThan(0);
   let rebuilt = 0;
   let sided = 0;
+  let tipped = 0;
   let refused = 0;
   const refusals: string[] = [];
   for (let seed = 1; seed <= 120; seed++) {
@@ -63,7 +64,19 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
       let s = own(kernel.extrude(XY, [rect(-w / 2, -d / 2, w, d)], [0, 0, t]).shape);
       // the hole, square to the top, at the middle
       if (kind === 0) s = own(kernel.boolean('cut', s, own(kernel.extrude(at(-1), [disc(hr)], [0, 0, t + 2]).shape)).shape);
-      else if (kind === 1) s = own(kernel.boolean('cut', s, own(kernel.extrude(at(t * 0.4), [disc(hr)], [0, 0, t]).shape)).shape);
+      else if (kind === 1) {
+        // a blind hole, half of them with a drill point (118° to 140°) at the bottom
+        const bottom = round(t * 0.4);
+        // the point must stay inside the plate (0.5 mm short of its bottom): one that comes out of the bottom is another shape, a cone opening
+        // there, which is none of the features recognized (and is refused, as it should be)
+        const point = hr / Math.tan(((118 + r() * 22) / 2) * (Math.PI / 180));
+        if (r() < 0.5 && bottom - point > 0.5) {
+          const XZ: Frame = { origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 0, 1], normal: [0, -1, 0] };
+          const p: [number, number][] = [[0, t + 1], [hr, t + 1], [hr, bottom], [0, bottom - point]];
+          s = own(kernel.boolean('cut', s, own(kernel.revolve(XZ, [{ outer: p.map((a, i) => ({ kind: 'line', a, b: p[(i + 1) % p.length]!, source: `p${i}` })), holes: [] }], { origin: [0, 0, 0], dir: [0, 0, 1] }, 2 * Math.PI).shape)).shape);
+          tipped++;
+        } else s = own(kernel.boolean('cut', s, own(kernel.extrude(at(bottom), [disc(hr)], [0, 0, t]).shape)).shape);
+      }
       else {
         s = own(kernel.boolean('cut', s, own(kernel.extrude(at(t * 0.6), [disc(hr * 1.8)], [0, 0, t]).shape)).shape);
         s = own(kernel.boolean('cut', s, own(kernel.extrude(at(-1), [disc(hr)], [0, 0, t + 2]).shape)).shape);
@@ -117,10 +130,11 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
     }
   }
   const h1 = heap()!;
-  console.log(`feature recognition fuzz: ${rebuilt} rebuilt (${sided} with a side boss), ${refused} refused; heap ${(h0! / 2 ** 20).toFixed(1)} → ${(h1 / 2 ** 20).toFixed(1)} MiB`);
+  console.log(`feature recognition fuzz: ${rebuilt} rebuilt (${sided} with a side boss, ${tipped} with a drill point), ${refused} refused; heap ${(h0! / 2 ** 20).toFixed(1)} → ${(h1 / 2 ** 20).toFixed(1)} MiB`);
   if (refusals.length) console.log(refusals.join('\n'));
   expect(rebuilt + refused).toBe(120);
   // every one of these parts is made of the features recognized, so refusing one is a defect, not a safe answer
   expect(refused).toBe(0);
   expect(sided).toBeGreaterThan(30);
+  expect(tipped).toBeGreaterThan(10);
 }, 600_000);

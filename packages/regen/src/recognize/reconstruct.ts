@@ -28,7 +28,7 @@ import {
 import { edgeFingerprint } from '@3db/naming';
 import type { SketchSolver } from '@3db/sketch';
 import type { Regenerator, RebuildResult } from '../engine';
-import { addv, distanceToSharp, dot, len, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type HoleRecord, type Recognition, type SharpEdge } from './analyze';
+import { addv, cross, distanceToSharp, dot, len, planeThroughAxis, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type HoleRecord, type Recognition, type SharpEdge } from './analyze';
 import type { Loop, P2 } from './loops';
 
 export { RecognizeError } from './analyze';
@@ -271,7 +271,7 @@ class Builder {
       const out: Vec3 = [-h.down[0], -h.down[1], -h.down[2]];
       const s = planeSpec(out, h.entrance);
       const plane = s.kind === 'datum' ? `${s.name}@${num(s.h)}:${s.flipped}` : `${s.normal.map(num).join(',')}@${s.point.map(num).join(',')}`;
-      const key = [plane, h.kind, num(h.radius), h.depth === null ? 'through' : num(h.depth), num(h.cbRadius ?? 0), num(h.cbDepth ?? 0), num(h.csRadius ?? 0), num(h.csAngle ?? 0)].join('|');
+      const key = [plane, h.kind, num(h.radius), h.depth === null ? 'through' : num(h.depth), num(h.cbRadius ?? 0), num(h.cbDepth ?? 0), num(h.csRadius ?? 0), num(h.csAngle ?? 0), num(h.tip ?? 0)].join('|');
       groups.set(key, [...(groups.get(key) ?? []), h]);
     }
     for (const group of groups.values()) {
@@ -296,7 +296,27 @@ class Builder {
         ...(plane.flipped ? { reverse: true } : {}),
       };
       this.feature(hole);
+      for (const g of group) if (g.tip !== undefined) this.drillPoint(g);
     }
+  }
+
+  /**
+   * The point of a drill at the bottom of a blind hole (the hole wizard makes a flat bottom): a revolve cut of the triangle from the shoulder (the
+   * radius at the hole's depth) to the apex on the axis, in a plane through the axis.
+   */
+  private drillPoint(h: HoleRecord): void {
+    const shoulder = addv(h.entrance, h.down, h.depth!);
+    const length = h.radius / Math.tan(h.tip! / 2);
+    const apex = addv(shoulder, h.down, length);
+    const normal = planeThroughAxis(h.down);
+    const frame = frameFor(normal, shoulder);
+    const plane = this.plane(normal, shoulder);
+    const across = unit(cross(frame.normal, h.down));
+    const at = (p: Vec3): P2 => [dot(sub(p, frame.origin), frame.xDir), dot(sub(p, frame.origin), frame.yDir)];
+    const [s, r, a] = [at(shoulder), at(addv(shoulder, across, h.radius)), at(apex)];
+    const loop: Loop = { segs: [{ kind: 'line', a: s, b: r }, { kind: 'line', a: r, b: a }, { kind: 'line', a, b: s }], area: 0, depth: 0 };
+    const { id, centerline } = this.sketch(plane.ref, [loop], { centerline: [s, a] });
+    this.feature({ id: this.ids.take('revolve'), type: 'revolve', name: this.name('revolve'), suppressed: false, sketch: id, axis: centerline!, op: 'cut', dir1: { type: 'blind', angle: '360deg' } });
   }
 }
 

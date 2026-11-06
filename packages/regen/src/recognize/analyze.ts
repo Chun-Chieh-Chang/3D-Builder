@@ -68,6 +68,11 @@ export interface HoleRecord {
   csRadius?: number;
   /** The included angle of a countersink (radians). */
   csAngle?: number;
+  /**
+   * A blind hole whose bottom is the point of a drill (a cone to a point) instead of a flat floor: its included angle (radians). `depth` is then where
+   * the full diameter ends (the shoulder), and the point goes on below it.
+   */
+  tip?: number;
 }
 
 /** A profile in a plane: the plane (a point and its normal) and the loops in the plane's sketch frame. */
@@ -388,6 +393,9 @@ function findHoles(topo: Topology, adj: Map<number, number[]>[]): { record: Hole
     for (const k of faces) {
       const circles = topo.edges.filter((e) => e.faces.includes(k) && e.geometry?.type === 'circle').map((e) => e.geometry as Extract<typeof e.geometry, { type: 'circle' }>);
       const zs = circles.map((c) => ({ z: z(c.center), r: c.radius }));
+      // the point of a drill: a cone with one circle, its other end its apex (on the axis, radius 0)
+      const g = topo.faces[k]!.geometry!;
+      if (g.type === 'cone' && zs.length === 1 && lineDistance(g.apex, axis.origin, axis.dir) <= TOL) zs.push({ z: z(g.apex), r: 0 });
       if (zs.length === 0) return;
       const lo = zs.reduce((a, b) => (b.z < a.z ? b : a));
       const hi = zs.reduce((a, b) => (b.z > a.z ? b : a));
@@ -416,8 +424,17 @@ function findHoles(topo: Topology, adj: Map<number, number[]>[]): { record: Hole
       let ok = true;
       for (let k = 1; k < walls.length; k++) if (Math.abs(walls[k]!.d0 - walls[k - 1]!.d1) > TOL) ok = false;
       if (!ok) continue;
-      const last = walls[walls.length - 1]!;
       const through = levels.length === 2;
+      // a drill point at the bottom of a blind hole: the last wall narrows to the axis, from where the wall before it ends
+      let tip: number | undefined;
+      const point = walls[walls.length - 1]!;
+      const before = walls[walls.length - 2];
+      if (!through && before && Math.abs(point.r0 - point.r1) > TOL && point.r1 <= TOL && Math.abs(point.r0 - before.r1) <= TOL && point.d1 > point.d0 + TOL) {
+        tip = 2 * Math.atan2(point.r0, point.d1 - point.d0);
+        walls.pop();
+      }
+      const bottom = through || tip !== undefined ? 0 : 1;
+      const last = walls[walls.length - 1]!;
       if (through && Math.abs(last.d1 - depthOf(other!.z)) > TOL) continue;
       // through: the far rim is where the hole leaves the body, so a plane there faces on along the hole; a floor facing back up it (with a pin
       // standing on it) is the bottom of a bore, not an exit
@@ -429,16 +446,17 @@ function findHoles(topo: Topology, adj: Map<number, number[]>[]): { record: Hole
       const center = addv(axis.origin, axis.dir, entranceAt.z);
       const depth = through ? null : last.d1;
       let record: HoleRecord | null = null;
-      if (walls.length === 1 && cyl(walls[0]!) && floors.length === (through ? 0 : 1)) {
+      if (walls.length === 1 && cyl(walls[0]!) && floors.length === bottom) {
         record = { kind: 'straight', entrance: center, down, radius: walls[0]!.r0, depth };
       } else if (walls.length === 2 && cyl(walls[0]!) && cyl(walls[1]!) && walls[0]!.r0 > walls[1]!.r0 + TOL) {
         const step = floors.find((fl) => Math.abs(fl.d - walls[0]!.d1) <= TOL && Math.abs(fl.rIn - walls[1]!.r0) <= TOL && Math.abs(fl.rOut - walls[0]!.r0) <= TOL);
-        if (step && floors.length === (through ? 1 : 2)) record = { kind: 'counterbore', entrance: center, down, radius: walls[1]!.r0, depth, cbRadius: walls[0]!.r0, cbDepth: walls[0]!.d1 };
-      } else if (walls.length === 2 && !cyl(walls[0]!) && cyl(walls[1]!) && walls[0]!.r0 > walls[0]!.r1 + TOL && Math.abs(walls[0]!.r1 - walls[1]!.r0) <= TOL && floors.length === (through ? 0 : 1)) {
+        if (step && floors.length === bottom + 1) record = { kind: 'counterbore', entrance: center, down, radius: walls[1]!.r0, depth, cbRadius: walls[0]!.r0, cbDepth: walls[0]!.d1 };
+      } else if (walls.length === 2 && !cyl(walls[0]!) && cyl(walls[1]!) && walls[0]!.r0 > walls[0]!.r1 + TOL && Math.abs(walls[0]!.r1 - walls[1]!.r0) <= TOL && floors.length === bottom) {
         const half = Math.atan2(walls[0]!.r0 - walls[0]!.r1, walls[0]!.d1 - walls[0]!.d0);
         record = { kind: 'countersink', entrance: center, down, radius: walls[1]!.r0, depth, csRadius: walls[0]!.r0, csAngle: 2 * half };
       }
       if (record) {
+        if (tip !== undefined) record.tip = tip;
         for (const k of faces) taken.add(k);
         out.push({ record, faces });
         break;

@@ -147,6 +147,27 @@ describe('holes', () => {
     expect(ofType(features, 'extrude').length).toBeGreaterThan(1);
   });
 
+  it('a blind hole with a 118° drill point at its bottom', async () => {
+    // the profile in (radius, height) about the hole's axis: Ø6 down to 4 mm below the top, then the point to the axis
+    const half = (118 / 2) * (Math.PI / 180);
+    const point = 3 / Math.tan(half);
+    const tool = keep(kernel.revolve(at(0, XZ), [poly([[0, 11], [3, 11], [3, 6], [0, 6 - point]])], { origin: [0, 0, 0], dir: [0, 0, 1] }, 2 * Math.PI).shape);
+    const { features } = await roundTrip(cut(plate(), tool));
+    expect(ofType(features, 'hole')).toMatchObject([{ kind: 'straight', diameter: '6', end: { type: 'blind', depth: '4' } }]);
+    expect(ofType(features, 'revolve').map((r) => r.op)).toEqual(['cut']);
+  });
+
+  it('two counterbored holes with drill points', async () => {
+    const half = (118 / 2) * (Math.PI / 180);
+    const point = 2 / Math.tan(half);
+    const tool = () => keep(kernel.revolve(at(0, XZ), [poly([[0, 11], [4.5, 11], [4.5, 7], [2, 7], [2, 3], [0, 3 - point]])], { origin: [0, 0, 0], dir: [0, 0, 1] }, 2 * Math.PI).shape);
+    const one = tool();
+    const two = keep(kernel.transformed(tool(), [1, 0, 0, 15, 0, 1, 0, 0, 0, 0, 1, 0]));
+    const { features } = await roundTrip(cut(cut(plate(), one), two));
+    expect(ofType(features, 'hole')).toMatchObject([{ kind: 'counterbore', diameter: '4', cbDiameter: '9', cbDepth: '3', end: { type: 'blind', depth: '7' } }]);
+    expect(ofType(features, 'revolve')).toHaveLength(2);
+  });
+
   it('a counterbore', async () => {
     const s = cut(cut(plate(), prism(disc(0, 0, 6), 6, 5)), prism(disc(0, 0, 3), -1, 12));
     const [h] = ofType((await roundTrip(s)).features, 'hole');
