@@ -69,7 +69,7 @@
 - **Schema**：目前零件 91。新鎖定有 `lockedAfter` 生效位置，保留鎖定前除料／圓角；Schema 90 無邊界的舊鎖定維持原語意。
 - **驗證**：`4f39618` 整合 MCP 前的完整檢查為 4,423 項通過、26 既有略過，UI 270/270；rebase 到 PR #9 後，本機型別、文件與 82 項相關測試通過。**2026-11-05 S3 全量**：`npm test` 372 檔、4,475 通過、26 既有略過、0 失敗；`verify:ui` 270/270。此數字屬含 S3 的提交，之後的 CI 以其 run 為準。
 - **CI**：PR #10（`37d26c6`）的三平台 `integrity` 全部 success 是歷史結果；本輪 `2a1d707`／`8e696e3` 及交接提交的雲端結果尚未核實，須看此次推送的實際 run，不沿用 S3 綠燈。最新本機證據見 §0。
-- **桌面**：**0.2.5**（`a1cec186`），11-06 07:24 在 D: 槽這台建置：`apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.2.5_x64-setup.exe`（12,556,912 B）。建置 0 錯誤 0 警告、exe 版本 0.2.5；來源已過完整 `verify:ui` 270/270。含鎖定歷史修正、工具選單入口、AI 控制與排列方向提示。見[版本履歷](docs/desktop-release-history.md)。**`target\` 不可跨電腦同步**：同步過來的建置腳本輸出記著另一台的 `F:` 路徑，第一次建置因此失敗。
+- **桌面**：**0.2.5**（`a1cec186`），11-06 07:24 在 D: 槽這台建置：`apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.2.5_x64-setup.exe`（12,556,912 B）。建置 0 錯誤 0 警告、exe 版本 0.2.5；來源已過完整 `verify:ui` 270/270。含鎖定歷史修正、工具選單入口、AI 控制與排列方向提示。安裝檔已上傳 GitHub Release [`v0.2.5`](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.2.5)，SHA-256 核對一致；另一台電腦從 Release 下載。見[版本履歷](docs/desktop-release-history.md)。**`target\` 不可跨電腦同步**：同步過來的建置腳本輸出記著另一台的 `F:` 路徑，第一次建置因此失敗。
 
 ## 1b. 已交付與待辦（接手先看）
 
