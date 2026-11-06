@@ -6,7 +6,7 @@
  */
 import { t } from '@3db/i18n';
 import { KernelError, type FaceInfo, type Frame, type Kernel, type SectionEdge, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
-import { chainLoops, LoopError, type Loop, type P2 } from './loops';
+import { chainLoops, LoopError, type Loop, type P2 } from '../section/loops';
 
 export class RecognizeError extends Error {
   override readonly name = 'RecognizeError';

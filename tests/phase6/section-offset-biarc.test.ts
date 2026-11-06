@@ -6,7 +6,8 @@ import type { TopoDS_Shape } from 'libcascade/single/init';
 import { Kernel, type ShapeId } from '@3db/kernel';
 import { Arena, ShapeIndex } from '../../packages/kernel/src/occt';
 import { toothedProfile } from '../../packages/regen/src/gears';
-import { biarcEnvelope, certifyOffset, checkedOffset, fallbackOffset, OffsetClearanceError, planarSegments, sectionEnvelope, type EnvelopePiece, type Seg2 } from './section-offset-envelope';
+import { biarcEnvelope, certifyOffset, OffsetClearanceError, type EnvelopePiece, type Seg2 } from '@3db/regen';
+import { checkedOffset, fallbackOffset, planarSegments, sectionEnvelope } from './section-offset-envelope';
 
 let k:Kernel;let initialHeap=0;const reports:Record<string,unknown>={};
 const heap=()=>(k.oc as unknown as {wasmMemory:WebAssembly.Memory}).wasmMemory.buffer.byteLength;

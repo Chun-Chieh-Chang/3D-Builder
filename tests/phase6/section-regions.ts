@@ -2,7 +2,8 @@
 import type { Kernel, ShapeId } from '@3db/kernel';
 import type { gp_Pln, TopoDS_Face, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
 import { Arena } from '../../packages/kernel/src/occt';
-import { certifyOffset, nearestField, OffsetClearanceError, planarSegments, sectionEnvelope, violationPlaces, type OffsetCertificate, type Seg2 } from './section-offset-envelope';
+import { certifyOffset, inradiusBound, OffsetClearanceError, violationPlaces, type OffsetCertificate } from '@3db/regen';
+import { planarSegments, sectionEnvelope } from './section-offset-envelope';
 
 type Raw={put(s:TopoDS_Shape):ShapeId};
 /** One outer loop with the holes directly inside it; an island inside a hole is a region of its own. */
@@ -57,18 +58,6 @@ export function regionFace(k:Kernel,plane:gp_Pln,outer:TopoDS_Wire,holes:TopoDS_
   const fix=a.own(new oc.ShapeFix_Face(a.own(m.Face())));fix.FixOrientation();return a.own(fix.Face());
 }
 
-/** Even-odd test against lines and arcs, arcs taken as chords within `sag` of the arc. */
-function insideTest(segs:Seg2[],sag:number) {
-  const edges:[number,number,number,number][]=[];
-  for(const s of segs){
-    if(s.kind==='line'){edges.push([s.a[0],s.a[1],s.b[0],s.b[1]]);continue;}
-    const ang=(p:[number,number])=>Math.atan2(p[1]-s.c[1],p[0]-s.c[0]),a0=ang(s.a);let am=ang(s.m)-a0,ab=ang(s.b)-a0;
-    const norm=(x:number)=>{while(x<0)x+=2*Math.PI;while(x>=2*Math.PI)x-=2*Math.PI;return x;};am=norm(am);ab=norm(ab);if(ab===0)ab=2*Math.PI;
-    const sweep=am<ab?ab:ab-2*Math.PI,n=Math.max(2,Math.ceil(Math.abs(sweep)/(2*Math.acos(Math.max(-1,1-sag/s.r)))));
-    let px=s.a[0],py=s.a[1];for(let i=1;i<=n;i++){const t=a0+sweep*i/n,qx=i===n?s.b[0]:s.c[0]+s.r*Math.cos(t),qy=i===n?s.b[1]:s.c[1]+s.r*Math.sin(t);edges.push([px,py,qx,qy]);px=qx;py=qy;}
-  }
-  return (p:[number,number])=>{let c=false;for(const [x1,y1,x2,y2] of edges)if((y1>p[1])!==(y2>p[1])&&p[0]<x1+(p[1]-y1)*(x2-x1)/(y2-y1))c=!c;return c;};
-}
 /** Centre and radius when the loop is one full circle. */
 function fullCircle(k:Kernel,w:TopoDS_Wire,a:Arena):[number,number,number]|null{
   const oc=k.oc,ex=a.own(new oc.BRepTools_WireExplorer(w)),ad=a.own(new oc.BRepAdaptor_Curve(a.own(ex.Current())));ex.Next();
@@ -78,22 +67,6 @@ function fullCircle(k:Kernel,w:TopoDS_Wire,a:Arena):[number,number,number]|null{
 function concentricCircles(k:Kernel,wires:TopoDS_Wire[],a:Arena){
   const centres=wires.map(w=>fullCircle(k,w,a)).filter((c):c is [number,number,number]=>c!==null);
   return centres.some((p,i)=>centres.some((q,j)=>j>i&&Math.hypot(p[0]-q[0],p[1]-q[1])<=1e-9*Math.max(1,p[2],q[2])));
-}
-/** Grid over the bounding box of lines and arcs (arcs padded to their full circle). */
-function gridOf(segs:Seg2[],h:number){
-  const xs=segs.flatMap(s=>s.kind==='arc'?[s.c[0]-s.r,s.c[0]+s.r]:[s.a[0],s.b[0]]),ys=segs.flatMap(s=>s.kind==='arc'?[s.c[1]-s.r,s.c[1]+s.r]:[s.a[1],s.b[1]]);
-  const x0=Math.min(...xs),y0=Math.min(...ys);
-  return {x0,y0,nx:Math.ceil((Math.max(...xs)-x0)/h)+1,ny:Math.ceil((Math.max(...ys)-y0)/h)+1};
-}
-/** Grid points the inradius bound may visit; a finer grid is not tried past this. */
-const INRADIUS_POINTS=400_000;
-/** Certified upper bound on a region's inradius: grid spacing h gives max over inside grid points + h/sqrt(2).
- * Null when the grid would exceed INRADIUS_POINTS: a thin region with a large box is not worth proving. */
-export function inradiusBound(segs:Seg2[],h:number) {
-  const {x0,y0,nx,ny}=gridOf(segs,h);if(nx*ny>INRADIUS_POINTS)return null;
-  const sag=h/100,inside=insideTest(segs,sag),near=nearestField(segs,h);let best=0;
-  for(let i=0;i<nx;i++)for(let j=0;j<ny;j++){const p:[number,number]=[x0+i*h,y0+j*h];if(inside(p))best=Math.max(best,near(p));}
-  return {sampled:best,bound:Math.max(best,sag)+h*Math.SQRT1_2,points:nx*ny};
 }
 
 /**

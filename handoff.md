@@ -1,6 +1,6 @@
 # 交接與接續工作
 
-更新日期：2026-11-06。**目前狀態以本檔 §0–§1b 為準；§2 起為歷史紀錄，裡面的「下一步」「未提交」「目前版本」只代表當時狀態，不可直接拿來開工。**
+更新日期：2026-11-07。**目前狀態以本檔 §0–§1b 為準；§2 起為歷史紀錄，裡面的「下一步」「未提交」「目前版本」只代表當時狀態，不可直接拿來開工。**
 
 先讀本檔、[產品現況](docs/project-state.md)、[AGENTS.md](AGENTS.md) 與 [草圖互動方案](docs/design/sketch-interaction/plan.md)。開始前執行 `git status --short --branch`、`git fetch origin`、`git log -8 --oneline`；工作區不乾淨時先辨識在途變更，不直接 pull 或覆寫。
 
@@ -10,7 +10,7 @@
 
 | # | 項目 | 範圍 | 備註 |
 |---|---|---|---|
-| 1 | **A+B 共用截面模組** | 見下方「切法」 | 先做；後面各項都用它 |
+| 1 | **A+B 共用截面模組** | **已完成（2026-11-07，分支 `claude/section-module`）**，見下方 | 後面各項都用它 |
 | 2 | **A+B Worker 時間／記憶體上限與取消** | 辨識與間隙共用一套：超時停止、可按取消 | B 的成本上限（Bézier 段 1,000、近似邊 10,000）是本機實測，非證明 |
 | 3 | **A+B OCCT 崩潰後的復原** | 已知同心整圓環內縮會讓 WASM 模組崩潰；崩潰後換新 Worker 重算，畫面上的零件不壞 | 崩潰後模組是否仍可靠未驗證 |
 | 4 | **A 同層多個拔模角** | 一層拆成數個各自拔模角的伸長；現在遇到會拒絕（`recognize.mixedDraft`） | 真實件 MT17203 需要 |
@@ -18,12 +18,18 @@
 | 6 | **A 辨識樣條輪廓：明示近似，使用者勾選才用** | 用 B 的雙圓弧近似；預設關閉，結果標明誤差上界，不宣稱「完全相同」 | 使用者已決定：勾選才用 |
 | 7 | **B 截面間隙接進產品** | ADR、Schema、特徵與重算、持久參照、選面／間隙 UI；偏移只用雙圓弧（B 已決定） | 工作量最大，最後做 |
 
-### 第 1 項的切法（2026-11-06 已盤點，尚未動手）
+### 第 1 項的結果（2026-11-07）
 
-- 現況：A 在 `Kernel.sectionEdges`（核心取截面，回傳平面座標的直線／圓弧／圓，樣條回 `other`）＋ `packages/regen/src/recognize/loops.ts`（串接、合併、巢狀深度）。B 在 `tests/phase6/section-offset-envelope.ts`、`section-regions.ts`（直接操作 OCCT wire；以 `BRepAlgoAPI_Section` 取截面）。
-- B 檔案裡**純數學、可直接搬進產品**的：`split`、`chordDistance`、`arcEnvelope`、`flatten`、`splitAt`、`circleBound`、`arcLeaving`、`endTangents`、`biarcEnvelope`（輸入是有理 Bézier 齊次控制點 `[x·w, y·w, z·w, w]`），以及 `Seg2`、`span`、`pointTo`、`along`、`nearestField`、`certifyOffset`、`violationPlaces`、`inradiusBound`。
-- **需要 OCCT、先留在測試裡、第 7 項再搬**：`sectionEnvelope`（從 wire 讀控制點並組 wire）、`counterClockwiseLoop`、`planarSegments`、`checkedOffset`、`fallbackOffset`、`classifyLoops`、`regionFace`、`sideCheck`、`regionOffset`、`sourceCost`。
-- 做法：① `Kernel.sectionEdges` 遇到 B 樣條／Bézier 改回傳分段 Bézier 控制點（`GeomConvert_BSplineCurveToBezierCurve`），不再只是 `other`；② 新增 `packages/regen/src/section/`：`loops.ts`（由 `recognize/loops.ts` 移入）與 `envelope.ts`（上面列的純數學）；③ `recognize/*` 改用 `section/`；④ `tests/phase6/*` 改由 `@3db/regen` 匯入那些純函式，不保留兩份；⑤ 截面測試（約 83 項）與辨識測試全部不退步。
+- `Kernel.sectionEdges` 的樣條回傳 `{ kind: 'bezier', curve, spans }`（修剪範圍內的分段控制點，齊次、框架座標 `[x·w, y·w, 0, w]`，可直接交給 `biarcEnvelope`）。**端面截面會出現 `beziercurve` 且會被修剪**，B 的研究路線沒碰過，已處理並有測試。
+- `packages/regen/src/section/`：`loops.ts`（`Seg`／`Loop`／`chainLoops`）、`envelope.ts`（純數學：`arcEnvelope`、`flatten`、`biarcEnvelope`、`endTangents`、`certifyOffset`、`nearestField`、`violationPlaces`、`inradiusBound`、`OffsetClearanceError`，型別 `Seg2`／`EnvelopePiece`）。
+- **仍留在 `tests/phase6/` 等第 7 項再搬**（需要 OCCT）：`sectionEnvelope`、`planarSegments`、`checkedOffset`、`fallbackOffset`（`section-offset-envelope.ts`），`classifyLoops`、`regionFace`、`sideCheck`、`regionOffset`、`sourceCost`（`section-regions.ts`）。`sectionEnvelope` 只收 B 樣條，搬的時候要改成吃 `sectionEdges` 的 `spans`，才能涵蓋 Bézier。
+- `chainLoops` 遇到 `bezier` 仍丟 `LoopError`，辨識行為與訊息不變；第 6 項才接受樣條。`Seg`（圓弧存 `ccw`）與 `Seg2`（圓弧存 `m`）是兩種表示，尚未統一，第 6 項接上時再定。
+
+### 第 1 項查到、後面各項必須面對的事實（數字見 DEV_LOG 2026-11-07）
+
+1. **`massProps` 在樣條伸長上最多差 0.55%，收緊 `eps` 更糟**（有效實體）。第 6 項若以體積比對驗收重建，會誤判；要先決定驗收改用什麼，不可直接沿用 `RECOGNIZE_TOLERANCE` 的體積比對。是否修 `massProps` 本身，**待使用者決定**（未排入 7 項）。
+2. **`closed: true` 的樣條 16% 在接縫自相交**（隨機星形輪廓 23／143），這種實體的 `Common` 會丟一塊。第 6、7 項都會收到這種輸入。是否改用週期擬合，**待使用者決定**（會改變既有草圖的幾何）。
+3. **B 樣條截面每次約 1.1 MiB Heap**（解析對照組 0.06 MiB），第 2 項的記憶體上限要算進去。
 
 ### 開工前的狀態（2026-11-06）
 

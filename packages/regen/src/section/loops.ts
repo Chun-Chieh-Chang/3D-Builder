@@ -1,7 +1,6 @@
 /**
- * Feature recognition (F2.4): the boundary pieces of a planar cross-section (`Kernel.sectionEdges`) chained into closed loops, with the pieces that
- * continue one another merged (two halves of a circle become the circle, collinear lines one line), and the loops sorted into the regions they bound.
- * Pure geometry in the plane: no kernel.
+ * The boundary pieces of a planar cross-section (`Kernel.sectionEdges`) chained into closed loops, with the pieces that continue one another merged (two halves
+ * of a circle become the circle, collinear lines one line), and the loops sorted into the regions they bound. Pure geometry in the plane: no kernel.
  */
 import type { SectionEdge } from '@3db/kernel';
 
@@ -17,7 +16,7 @@ export interface Loop {
   depth: number;
 }
 
-/** A section had a curve that is not a line, arc or circle, or its pieces do not close. */
+/** A section had a curve that is not a line, arc or circle (a loop here holds nothing else), or its pieces do not close. */
 export class LoopError extends Error {
   constructor(
     message: string,
@@ -121,7 +120,7 @@ export function chainLoops(edges: SectionEdge[], tol = 1e-6): Loop[] {
   const open: Exclude<Seg, { kind: 'circle' }>[] = [];
   const loops: Seg[][] = [];
   for (const e of edges) {
-    if (e.kind === 'other') throw new LoopError(`curve ${e.curve}`, e.curve);
+    if (e.kind === 'other' || e.kind === 'bezier') throw new LoopError(`curve ${e.curve}`, e.curve);
     if (e.kind === 'circle') loops.push([{ kind: 'circle', c: e.c, r: e.r }]);
     else if (e.kind === 'line') {
       if (!near(e.a, e.b, tol)) open.push({ kind: 'line', a: e.a, b: e.b });

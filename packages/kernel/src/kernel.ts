@@ -52,6 +52,7 @@ import {
   type HelixCurveSpec,
   type HelixCurveResult,
   type HelixAxisPath,
+  type HomogeneousPole,
   type SectionEdge,
 } from './types';
 
@@ -3387,10 +3388,10 @@ export class Kernel {
   }
 
   /**
-   * Feature recognition (F2.4): the pieces of the boundary of the cross-section of solid `id` with the rectangle `rect` of `frame` (sketch coordinates),
-   * each as it lies in the frame: a line, an arc (with a point inside it, so that its way round is known), a full circle, or `other` with the curve type
-   * for anything else. The pieces are not ordered or chained: `@3db/regen` does that. The common of the solid and the rectangle is a boolean (AGENTS §3.5:
-   * no zero-growth claim); every temporary is arena-owned. A piece off the plane (more than 1e-7 mm from it) is an error, as is a curve not in the plane.
+   * The pieces of the boundary of the cross-section of solid `id` with the rectangle `rect` of `frame` (sketch coordinates), each as it lies in the frame: a line,
+   * an arc (with a point inside it, so that its way round is known), a full circle, a spline as its Bézier spans (exact, rational included), or `other` with the
+   * curve type for anything else. The pieces are not ordered or chained: `@3db/regen` does that. The common of the solid and the rectangle is a boolean (AGENTS
+   * §3.5: no zero-growth claim); every temporary is arena-owned. A point or pole off the plane (more than 1e-7 mm from it) is an error.
    */
   sectionEdges(id: ShapeId, frame: Frame, rect: { u0: number; u1: number; v0: number; v1: number }): SectionEdge[] {
     const oc = this.oc;
@@ -3433,6 +3434,23 @@ export class Kernel {
           const b = at(t1);
           if (Math.abs(t1 - t0 - 2 * Math.PI) < 1e-9 || (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9 && t1 - t0 > Math.PI)) out.push({ kind: 'circle', c: center, r });
           else out.push({ kind: 'arc', c: center, r, a, b, mid: at((t0 + t1) / 2) });
+        } else if (type === 'bsplinecurve' || type === 'beziercurve') {
+          // The adaptor hands back the whole curve, with the edge's location applied but not its trim: the conversion takes the edge's own range. A Bézier becomes
+          // a one-span B-spline with the same parameter first, because an edge on one (a profile's own edge, seen in a section on its cap) can be trimmed too.
+          const spline = type === 'bsplinecurve' ? arena.own(ad.BSpline()) : arena.own(oc.GeomConvert.CurveToBSplineCurve(arena.own(ad.Bezier())));
+          const convert = arena.own(new oc.GeomConvert_BSplineCurveToBezierCurve(spline, t0, t1, 1e-12));
+          const spans: HomogeneousPole[][] = [];
+          for (let i = 1; i <= convert.NbArcs(); i++) {
+            const arc = arena.own(convert.Arc(i));
+            const poles: HomogeneousPole[] = [];
+            for (let j = 1; j <= arc.NbPoles(); j++) {
+              const [x, y] = local(this.xyz(arena.own(arc.Pole(j))));
+              const w = arc.Weight(j);
+              poles.push([x * w, y * w, 0, w]);
+            }
+            spans.push(poles);
+          }
+          out.push({ kind: 'bezier', curve: type, spans });
         } else {
           out.push({ kind: 'other', curve: type });
         }

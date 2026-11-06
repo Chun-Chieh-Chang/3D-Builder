@@ -6,7 +6,8 @@ import type { TopoDS_Shape } from 'libcascade/single/init';
 import { Kernel, type ShapeId } from '@3db/kernel';
 import { Arena, ShapeIndex } from '../../packages/kernel/src/occt';
 import { toothedProfile } from '../../packages/regen/src/gears';
-import { nearestField, planarSegments, sectionEnvelope, type Seg2 } from './section-offset-envelope';
+import { nearestField, type Seg2 } from '@3db/regen';
+import { planarSegments, sectionEnvelope } from './section-offset-envelope';
 
 type P=[number,number];
 let k:Kernel;let initialHeap=0;const reports:Record<string,unknown>={};

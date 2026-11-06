@@ -1,7 +1,7 @@
 import { beforeAll, expect, it } from 'vitest';
 import { Kernel } from '@3db/kernel';
 import { Arena } from '../../packages/kernel/src/occt';
-import { flatten, arcEnvelope, type EnvelopePiece } from './section-offset-envelope';
+import { flatten, arcEnvelope, type EnvelopePiece } from '@3db/regen';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 let k:Kernel;

@@ -6,7 +6,7 @@ import type { TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
 import { Kernel, type Region, type ShapeId } from '@3db/kernel';
 import { Arena, ShapeIndex } from '../../packages/kernel/src/occt';
 import { toothedProfile } from '../../packages/regen/src/gears';
-import { OffsetClearanceError } from './section-offset-envelope';
+import { OffsetClearanceError } from '@3db/regen';
 import { DEFAULT_OFFSET_LIMITS, OffsetCostError, regionOffset } from './section-regions';
 
 let k:Kernel;let initialHeap=0;const rows:Record<string,unknown>[]=[];

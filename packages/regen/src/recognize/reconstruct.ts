@@ -29,7 +29,7 @@ import { edgeFingerprint } from '@3db/naming';
 import type { SketchSolver } from '@3db/sketch';
 import type { Regenerator, RebuildResult } from '../engine';
 import { addv, cross, distanceToSharp, dot, len, planeThroughAxis, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type HoleRecord, type Recognition, type SharpEdge } from './analyze';
-import type { Loop, P2 } from './loops';
+import type { Loop, P2 } from '../section/loops';
 
 export { RecognizeError } from './analyze';
 
