@@ -624,6 +624,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [樣條間隙：偏移結果的逐邊間隙證明](<design/section-clearance/clearance-certificate.md>)
 - [樣條間隙：MakeOffset 違反間隙的原因](<design/section-clearance/offset-violation-cause.md>)
 - [輪廓／截面＋間隙：可行性探針](<design/section-clearance/plan.md>)
+- [樣條間隙：孔洞與多區域、內縮、相撞與成本上限](<design/section-clearance/regions-and-cost.md>)
 - [樣條截面：表示、積分與偏移隔離](<design/section-clearance/spline-isolation.md>)
 - [草圖互動方案：執行驗收表](<design/sketch-interaction/acceptance.md>)
 - [草圖建構互動比較與改進計畫](<design/sketch-interaction/plan.md>)

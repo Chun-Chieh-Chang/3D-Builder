@@ -73,12 +73,23 @@ export function flatten(poles:H[],epsilon:number) {
   visit(poles,0);return {points,maxBound,leaves};
 }
 
+/** A closed circle whose axis points down (-Z) is offset the wrong way by BRepOffsetAPI_MakeOffset, both on its own and
+ * as a hole: +g shrinks a disc and grows a hole. Partial arcs with a -Z axis are offset correctly. Such a loop is
+ * rebuilt as the same circle with a +Z axis; that reverses its direction of travel, which MakeFace and ShapeFix_Face
+ * settle when the face is built. */
+function counterClockwiseLoop(k:Kernel,ad:import('libcascade/single/init').BRepAdaptor_Curve,edge:import('libcascade/single/init').TopoDS_Edge,a:Arena) {
+  const oc=k.oc,c=a.own(ad.Circle());
+  if(!ad.IsClosed()||a.own(a.own(c.Axis()).Direction()).Z()>0)return edge;
+  const ax=a.own(new oc.gp_Ax2(a.own(c.Location()),a.own(new oc.gp_Dir(0,0,1)))),mk=a.own(new oc.BRepBuilderAPI_MakeEdge(a.own(new oc.gp_Circ(ax,c.Radius()))));
+  if(!mk.IsDone())throw Error('circle rebuild failed');
+  return a.own(mk.Edge());
+}
 /** Below this angle (rad) a junction between a spline and another source edge gets one shared tangent in biarc mode. */
 const SNAP=1e-2;
 export function sectionEnvelope(k:Kernel,wire:TopoDS_Wire,epsilon:number,a:Arena,mode:'polygon'|'arc'|'biarc') {
   if(!Number.isFinite(epsilon)||epsilon<=0)throw Error('positive finite envelope tolerance required');
   const oc=k.oc,ex=a.own(new oc.BRepTools_WireExplorer(wire)),mw=a.own(new oc.BRepBuilderAPI_MakeWire());
-  let edges=0,sourceEdges=0,maxBound=0,shortPoints=0;
+  let edges=0,sourceEdges=0,maxBound=0,shortPoints=0,bezierPieces=0;
   // Biarc mode, first pass: every edge's tangents at its two ends in the wire's direction. A junction where a spline meets
   // a native line or circle within SNAP rad takes the native tangent on the spline side (spline-to-spline junctions are
   // left alone: none occur in the gear sections tested). OCCT's section curve meets the radial line at the base circle a
@@ -110,10 +121,10 @@ export function sectionEnvelope(k:Kernel,wire:TopoDS_Wire,epsilon:number,a:Arena
     index++;
     const edge=a.own(ex.Current()),ad=a.own(new oc.BRepAdaptor_Curve(edge));sourceEdges++;
     const type=String(ad.GetType());
-    if(type==='GeomAbs_Line'||type==='GeomAbs_Circle'){mw.Add(edge);edges++;continue;}
+    if(type==='GeomAbs_Line'||type==='GeomAbs_Circle'){mw.Add(type==='GeomAbs_Circle'?counterClockwiseLoop(k,ad,edge,a):edge);edges++;continue;}
     if(type!=='GeomAbs_BSplineCurve')throw Error('unsupported envelope curve type');
     const bs=a.own(ad.BSpline()),beziers=a.own(new oc.GeomConvert_BSplineCurveToBezierCurve(bs,ad.FirstParameter(),ad.LastParameter(),1e-12));
-    let pieces:EnvelopePiece[]=[];
+    let pieces:EnvelopePiece[]=[];bezierPieces+=beziers.NbArcs();
     for(let i=1;i<=beziers.NbArcs();i++) {
       const bez=a.own(beziers.Arc(i)),poles:H[]=[];
       for(let j=1;j<=bez.NbPoles();j++){const p=a.own(bez.Pole(j)),w=bez.Weight(j);poles.push([p.X()*w,p.Y()*w,p.Z()*w,w]);}
@@ -136,7 +147,7 @@ export function sectionEnvelope(k:Kernel,wire:TopoDS_Wire,epsilon:number,a:Arena
   }
   if(!mw.IsDone())throw Error('empty envelope');const out=a.own(mw.Wire());
   if(!oc.BRep_Tool.IsClosed(out))throw Error('open envelope');
-  return {wire:out,edges,sourceEdges,maxBound,shortPoints,representationErrorBound:maxBound+2e-7};
+  return {wire:out,edges,sourceEdges,bezierPieces,maxBound,shortPoints,representationErrorBound:maxBound+2e-7};
 }
 
 /** Planar line or circular-arc edge read back from an OCCT wire. */
@@ -222,6 +233,8 @@ export function certifyOffset(source:Seg2[],output:Seg2[],gap:number,slack:numbe
         // Angles about the source centre, measured from its start; angles past the far side of the
         // gap in the circle count as "before the start" so a small overrun at either end is one interval.
         const sp=sourceSpans[i]!,eps=1e-12,cut=sp.sweep+(2*Math.PI-sp.sweep)/2,g=(p:[number,number])=>{const t=sp.at(p);return t>cut?t-2*Math.PI:t;};
+        // A full source circle generates every concentric arc, wherever it crosses the circle's start.
+        if(sp.sweep>=2*Math.PI-eps){const bound=Math.abs(R-s.r)+e;if(bound<best){best=bound;kind='arc';}return;}
         const ta=g(o.a),tm=g(o.m),tb=g(o.b),lo=Math.min(ta,tb),hi=Math.max(ta,tb);
         if(tm<lo-eps||tm>hi+eps||lo<-OVERRUN||hi>sp.sweep+OVERRUN)return;
         let bound=Math.abs(R-s.r)+e;
@@ -295,9 +308,13 @@ export function checkedOffset(k:Kernel,source:TopoDS_Wire,face:import('libcascad
   try{global=k.distance(si,oi) as typeof global;}finally{k.release(si);k.release(oi);}
   const output=planarSegments(k,out,a);
   if(global.distance>=gap-tolerance)return {shape:out,segments:output,minDistance:global.distance};
-  const near=nearestField(planarSegments(k,source,a),gap),bad:{p:[number,number];d:number}[]=[];
+  throw new OffsetClearanceError(gap,global.distance,violationPlaces(planarSegments(k,source,a),output,gap,tolerance,samplesPerEdge,{p:[global.pointB[0],global.pointB[1]],d:global.distance}));
+}
+/** Dense samples of `output` closer than the gap to `source`, merged into places: samples closer than the gap are one place. */
+export function violationPlaces(source:Seg2[],output:Seg2[],gap:number,tolerance:number,samplesPerEdge:number,closest:{p:[number,number];d:number}):ClearanceViolation[] {
+  const near=nearestField(source,gap),bad:{p:[number,number];d:number}[]=[];
   for(const o of output){const path=along(o);for(let j=0;j<=samplesPerEdge;j++){const p=path.at(j/samplesPerEdge),d=near(p);if(d<gap-tolerance)bad.push({p,d});}}
-  bad.push({p:[global.pointB[0],global.pointB[1]],d:global.distance});
+  bad.push(closest);
   // Union-find over a grid of cell `gap`: samples closer than `gap` belong to one place.
   const parent=bad.map((_,i)=>i),find=(i:number):number=>parent[i]===i?i:(parent[i]=find(parent[i]!)),cell=new Map<string,number[]>();
   bad.forEach((b,i)=>{const key=Math.floor(b.p[0]/gap)+','+Math.floor(b.p[1]/gap);(cell.get(key)??cell.set(key,[]).get(key)!).push(i);});
@@ -305,8 +322,7 @@ export function checkedOffset(k:Kernel,source:TopoDS_Wire,face:import('libcascad
     for(let x=cx-1;x<=cx+1;x++)for(let y=cy-1;y<=cy+1;y++)for(const j of cell.get(x+','+y)??[])if(j<i&&d2(b.p,bad[j]!.p)<gap)parent[find(i)]=find(j);});
   const groups=new Map<number,ClearanceViolation>();
   bad.forEach((b,i)=>{const r=find(i),g=groups.get(r);if(!g)groups.set(r,{point:b.p,distance:b.d,samples:1});else{g.samples++;if(b.d<g.distance){g.distance=b.d;g.point=b.p;}}});
-  const locations=[...groups.values()].sort((x,y)=>x.distance-y.distance);
-  throw new OffsetClearanceError(gap,global.distance,locations);
+  return [...groups.values()].sort((x,y)=>x.distance-y.distance);
 }
 
 /** Rational de Casteljau split of homogeneous poles at parameter t. */
