@@ -106,16 +106,29 @@ it.each([[3,40,0.3,'biarc'],[1,24,0.8,'biarc'],[1,24,0.05,'arc'],[1,24,0.2,'arc'
   expect(k.liveShapes).toBe(0);
 },170000);
 
-it('records the limit: on its own the biarc form cannot be offset at small gaps',()=>{
+it('the arc form alone is refused at large gaps where the biarc form is not',()=>{
   const a=new Arena();
   try{
     const {wire,plane}=section(1,24,a),approx=sectionEnvelope(k,wire,2e-6,a,'biarc'),face=a.own(a.own(new k.oc.BRepBuilderAPI_MakeFace(plane,approx.wire,true)).Face());
-    expect(()=>checkedOffset(k,approx.wire,face,0.05,a)).toThrow('offset failed');
-    expect(()=>checkedOffset(k,approx.wire,face,0.1,a)).not.toThrow();
-    // and on its own the arc form is refused where the biarc form is not
     const arc=sectionEnvelope(k,wire,2e-6,a,'arc'),arcFace=a.own(a.own(new k.oc.BRepBuilderAPI_MakeFace(plane,arc.wire,true)).Face());
     expect(()=>checkedOffset(k,arc.wire,arcFace,0.8,a)).toThrow(OffsetClearanceError);
     expect(()=>checkedOffset(k,approx.wire,face,0.8,a)).not.toThrow();
   }finally{a.dispose();}
   expect(k.liveShapes).toBe(0);
 },120000);
+
+// With spline ends snapped to a native neighbour's tangent (SNAP 1e-2 rad), the biarc form alone offsets at every gap.
+// Without the snap, the involute flank meets the native radial line at the base circle with a 5.4e-3 rad concave kink,
+// and MakeOffset returns not-done for gaps up to 0.06 mm (module 1).
+it.each([[1,24,0.01],[1,24,0.02],[1,24,0.05],[1,24,0.06],[1,24,0.2],[3,40,0.02],[3,40,0.05],[0.5,18,0.01]] as [number,number,number][])(
+  'biarc alone offsets small gaps: module %s, %s teeth, gap %s mm',(module,teeth,gap)=>{
+  const a=new Arena(),t0=Date.now();
+  try{
+    const {wire,plane}=section(module,teeth,a),approx=sectionEnvelope(k,wire,2e-6,a,'biarc'),face=a.own(a.own(new k.oc.BRepBuilderAPI_MakeFace(plane,approx.wire,true)).Face());
+    expect(approx.maxBound).toBeLessThanOrEqual(2e-6);
+    const r=checkedOffset(k,approx.wire,face,gap,a);
+    expect(r.minDistance).toBeGreaterThanOrEqual(gap-1e-6);
+    reports[`biarc ${module}/${teeth}/${gap}`]={approxEdges:approx.edges,maxBound:approx.maxBound,minDistance:r.minDistance,ms:Date.now()-t0};
+  }finally{a.dispose();}
+  expect(k.liveShapes).toBe(0);
+},170000);

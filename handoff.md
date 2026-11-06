@@ -23,7 +23,8 @@
 - **已完成（2026-11-05，另一工作階段）：最終偏移的逐邊間隙證明**，見[逐邊間隙證明](docs/design/section-clearance/clearance-certificate.md)與 `tests/phase6/section-offset-certificate.test.ts`（14/14）。四個齒輪案例雙側界在 [間隙−1.7e-6, 間隙+1.2e-5] mm 內。另外發現 `MakeOffset` 在模數 3／0.3 mm、模數 1／0.8 mm 時回傳看似有效但違反間隙的線框（最近 0.147／0.349 mm），只有全域下限抓得到。
 - **已定位（2026-11-06）**：違反的原因是我們的圓弧近似在相鄰圓弧之間留下約 1e-4 rad 的凹折，加上遠短於間隙的圓弧，`MakeOffset` 就沒有修剪那一段。見[原因報告](docs/design/section-clearance/offset-violation-cause.md)與 `tests/phase6/section-offset-kink.test.ts`（2/2）。逐段強制相切會累積到 0.71 mm 的誤差，不可行。
 - **已完成（2026-11-06）**：`checkedOffset`（偵測後拒絕並帶出位置）、`biarcEnvelope`（雙圓弧 G1 擬合），以及 `fallbackOffset`（先三點圓弧，被拒絕才改雙圓弧，都不行就拒絕）。六個案例都不交出違反結果，且都通過逐邊證明。見[報告](docs/design/section-clearance/biarc-and-refusal.md)與 `section-offset-refuse`／`section-offset-biarc` 測試。
-- **下一刀**：查出雙圓弧在小間隙（模數 1，≤ 0.06 mm）`MakeOffset` 算不出結果的原因；再處理孔洞與多區域、內縮、Worker 成本限制。接產品入口時，偏移一律走 `fallbackOffset`。
+- **已完成（2026-11-06）**：雙圓弧小間隙算不出結果的原因是樣條接原生直線的凹折角（−5.4e-3 rad）；樣條端改用原生邊切線（`SNAP` 1e-2）後，單用雙圓弧在模數 1 的 0.01–0.8、模數 3、模數 0.5 全部通過。上一筆「接點共用切線多餘」的結論已更正。
+- **下一刀**：孔洞與多區域、內縮、Worker 成本限制。接產品入口時，偏移一律走 `fallbackOffset`；屆時再決定是否只用雙圓弧（近似約慢 3.5 倍，但省掉一次被拒絕的偏移）。
 - 之後才做外圈／孔洞包含關係、外擴／內縮、相撞、孔消失及自相交前置攔截；補 Worker 成本限制，再決定明示近似選項與持久參照／UI。不要先做選面／間隙 UI，不預占 ADR／Schema。
 - 保留原三項拒絕與所有誤差／期限，不把候選測試當產品通過。所有 Heap 驗證只用 `wasmMemory.buffer.byteLength`，先斷言 >0；沒有零洩漏宣稱。詳細量測、失敗路徑與效能數據見候選報告。
 

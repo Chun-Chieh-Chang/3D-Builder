@@ -28,7 +28,7 @@ export function arcEnvelope(poles:H[],epsilon:number) {
   if(poles.length>27||poles.some(h=>!xyz(h).every(Number.isFinite)))throw Error('unsupported envelope degree or scale');
   if(Math.max(...poles.map(h=>xyz(h)[2]))-Math.min(...poles.map(h=>xyz(h)[2]))>1e-12)throw Error('XY planar envelope required');
   const pieces:EnvelopePiece[]=[];
-  const visit=(p:H[],depth:number)=>{
+  const visit=(p:H[],depth:number,o0?:[number,number],o1?:[number,number])=>{
     if(pieces.length>=100000)throw Error('envelope segment budget exceeded');
     const from=xyz(p[0]!),to=xyz(p.at(-1)!),parts=split(p),mid=parts.mid;
     const lineBound=Math.max(...p.map(h=>chordDistance(xyz(h),from,to)));
@@ -62,7 +62,7 @@ export function flatten(poles:H[],epsilon:number) {
   if(!Number.isFinite(epsilon)||epsilon<=0)throw Error('positive finite envelope tolerance required');
   if(poles.length<2||poles.some(p=>!p.every(Number.isFinite)||p[3]<=0))throw Error('finite poles with positive weights required');
   const points:P[]=[xyz(poles[0]!)];let maxBound=0,leaves=0;
-  const visit=(p:H[],depth:number)=>{
+  const visit=(p:H[],depth:number,o0?:[number,number],o1?:[number,number])=>{
     const first=xyz(p[0]!),last=xyz(p.at(-1)!),bound=Math.max(...p.map(h=>chordDistance(xyz(h),first,last)));
     if(bound<=epsilon){maxBound=Math.max(maxBound,bound);points.push(last);if(++leaves>100000)throw Error('envelope segment budget exceeded');return;}
     if(depth===24)throw Error('envelope subdivision budget exceeded');
@@ -73,11 +73,41 @@ export function flatten(poles:H[],epsilon:number) {
   visit(poles,0);return {points,maxBound,leaves};
 }
 
+/** Below this angle (rad) a junction between a spline and another source edge gets one shared tangent in biarc mode. */
+const SNAP=1e-2;
 export function sectionEnvelope(k:Kernel,wire:TopoDS_Wire,epsilon:number,a:Arena,mode:'polygon'|'arc'|'biarc') {
   if(!Number.isFinite(epsilon)||epsilon<=0)throw Error('positive finite envelope tolerance required');
   const oc=k.oc,ex=a.own(new oc.BRepTools_WireExplorer(wire)),mw=a.own(new oc.BRepBuilderAPI_MakeWire());
   let edges=0,sourceEdges=0,maxBound=0,shortPoints=0;
+  // Biarc mode, first pass: every edge's tangents at its two ends in the wire's direction. A junction where a spline meets
+  // a native line or circle within SNAP rad takes the native tangent on the spline side (spline-to-spline junctions are
+  // left alone: none occur in the gear sections tested). OCCT's section curve meets the radial line at the base circle a
+  // few milliradians off, a concave kink that makes MakeOffset fail at small gaps; the envelope bound is still measured
+  // against the real curve, so snapping costs only extra leaves near the junction, never accuracy.
+  const snapped=new Map<number,{t0?:[number,number];t1?:[number,number]}>();
+  if(mode==='biarc'){
+    const ends:{s:[number,number];e:[number,number];native:boolean}[]=[],ex0=a.own(new oc.BRepTools_WireExplorer(wire));
+    const unit=(v:[number,number]):[number,number]=>{const n=Math.hypot(...v);return [v[0]/n,v[1]/n];};
+    for(;ex0.More();ex0.Next()){
+      const edge=a.own(ex0.Current()),ad=a.own(new oc.BRepAdaptor_Curve(edge)),type=String(ad.GetType()),rev=String(edge.Orientation())==='TopAbs_REVERSED';
+      const f=ad.FirstParameter(),l=ad.LastParameter(),pt=(u:number):[number,number]=>{const q=a.own(ad.Value(u));return [q.X(),q.Y()];};
+      let ts:[number,number],te:[number,number];
+      if(type==='GeomAbs_Line'){const d=a.own(a.own(ad.Line()).Direction());ts=te=[d.X(),d.Y()];}
+      else if(type==='GeomAbs_Circle'){const c=a.own(ad.Circle()),o=a.own(c.Location()),z=a.own(a.own(c.Axis()).Direction()).Z(),tan=(q:[number,number]):[number,number]=>unit([-z*(q[1]-o.Y()),z*(q[0]-o.X())]);ts=tan(pt(f));te=tan(pt(l));}
+      else if(type==='GeomAbs_BSplineCurve'){const bz=a.own(new oc.GeomConvert_BSplineCurveToBezierCurve(a.own(ad.BSpline()),f,l,1e-12)),polesOf=(i:number)=>{const b=a.own(bz.Arc(i)),q:H[]=[];for(let j=1;j<=b.NbPoles();j++){const P=a.own(b.Pole(j)),w=b.Weight(j);q.push([P.X()*w,P.Y()*w,P.Z()*w,w]);}return q;};
+        ts=endTangents(polesOf(1)).t0;te=endTangents(polesOf(bz.NbArcs())).t1;}
+      else throw Error('unsupported envelope curve type');
+      const native=type!=='GeomAbs_BSplineCurve';ends.push(rev?{s:[-te[0],-te[1]],e:[-ts[0],-ts[1]],native}:{s:ts,e:te,native});
+    }
+    const n=ends.length;
+    for(let i=0;i<n;i++){const A=ends[i]!,B=ends[(i+1)%n]!,ang=Math.atan2(A.e[0]*B.s[1]-A.e[1]*B.s[0],A.e[0]*B.s[0]+A.e[1]*B.s[1]);
+      if(Math.abs(ang)>=SNAP||A.native===B.native)continue;
+      const shared=A.native?A.e:B.s;
+      (snapped.get(i)??snapped.set(i,{}).get(i)!).t1=shared;(snapped.get((i+1)%n)??snapped.set((i+1)%n,{}).get((i+1)%n)!).t0=shared;}
+  }
+  let index=-1;
   for(;ex.More();ex.Next()) {
+    index++;
     const edge=a.own(ex.Current()),ad=a.own(new oc.BRepAdaptor_Curve(edge));sourceEdges++;
     const type=String(ad.GetType());
     if(type==='GeomAbs_Line'||type==='GeomAbs_Circle'){mw.Add(edge);edges++;continue;}
@@ -88,7 +118,10 @@ export function sectionEnvelope(k:Kernel,wire:TopoDS_Wire,epsilon:number,a:Arena
       const bez=a.own(beziers.Arc(i)),poles:H[]=[];
       for(let j=1;j<=bez.NbPoles();j++){const p=a.own(bez.Pole(j)),w=bez.Weight(j);poles.push([p.X()*w,p.Y()*w,p.Z()*w,w]);}
       if(mode==='biarc'){
-        const result=biarcEnvelope(poles,epsilon);maxBound=Math.max(maxBound,result.maxBound);pieces.push(...result.pieces);}
+        // overrides are in the wire's direction; a reversed edge runs its Bezier pieces the other way
+        const sn=snapped.get(index),rev=String(edge.Orientation())==='TopAbs_REVERSED',neg=(v?:[number,number]):[number,number]|undefined=>v&&[-v[0],-v[1]];
+        const first=i===1,last=i===beziers.NbArcs(),ends={t0:first?(rev?neg(sn?.t1):sn?.t0):undefined,t1:last?(rev?neg(sn?.t0):sn?.t1):undefined};
+        const result=biarcEnvelope(poles,epsilon,ends);maxBound=Math.max(maxBound,result.maxBound);pieces.push(...result.pieces);}
       else if(mode==='arc'){const result=arcEnvelope(poles,epsilon);maxBound=Math.max(maxBound,result.maxBound);pieces.push(...result.pieces);}
       else {const result=flatten(poles,epsilon);maxBound=Math.max(maxBound,result.maxBound);pieces.push(...result.points.slice(1).map((to,i)=>({kind:'line' as const,from:result.points[i]!,to,mid:to,bound:result.maxBound})));}
     }
@@ -299,21 +332,24 @@ function arcLeaving(s:P,t:[number,number],e:P){const n:[number,number]=[-t[1],t[
  * Bernstein radial bound against the matching half of the curve, split at the parameter nearest the biarc's junction,
  * plus the distance from that junction to the curve; each half must also stay inside its arc's angular cone.
  */
+/** Unit tangents at both ends of a rational Bezier, skipping control points within 1e-3 of the chord scale of an end
+ * (a vanishing end derivative, such as the tiny hook OCCT leaves where a section curve meets a line). */
+function endTangents(p:H[]){const pts=p.map(xyz),tol=1e-3*Math.max(...pts.map(q=>distance(q,pts[0]!)));let i=1;while(i<pts.length-1&&distance(pts[i]!,pts[0]!)<=tol)i++;let j=pts.length-2;while(j>0&&distance(pts[j]!,pts.at(-1)!)<=tol)j--;
+  const u=(v:[number,number]):[number,number]=>{const l=Math.hypot(...v);return [v[0]/l,v[1]/l];};
+  return {t0:u([pts[i]![0]-pts[0]![0],pts[i]![1]-pts[0]![1]]),t1:u([pts.at(-1)![0]-pts[j]![0],pts.at(-1)![1]-pts[j]![1]])};}
 /** Leaves shorter than this (mm) become lines in biarc mode when their chord is within the tolerance. */
 const BIARC_MIN_LEAF=1e-4;
-export function biarcEnvelope(poles:H[],epsilon:number){
+export function biarcEnvelope(poles:H[],epsilon:number,ends:{t0?:[number,number];t1?:[number,number]}={}){
   if(!Number.isFinite(epsilon)||epsilon<=0)throw Error('positive finite envelope tolerance required');
   if(poles.length<2||poles.some(p=>!p.every(Number.isFinite)||p[3]<=0))throw Error('finite poles with positive weights required');
   if(poles.length>27||poles.some(h=>!xyz(h).every(Number.isFinite)))throw Error('unsupported envelope degree or scale');
   if(Math.max(...poles.map(h=>xyz(h)[2]))-Math.min(...poles.map(h=>xyz(h)[2]))>1e-12)throw Error('XY planar envelope required');
   const pieces:EnvelopePiece[]=[];
   const unit=(v:[number,number]):[number,number]=>{const l=Math.hypot(...v);return [v[0]/l,v[1]/l];};
-  const endTangents=(p:H[])=>{const pts=p.map(xyz),tol=1e-3*Math.max(...pts.map(q=>distance(q,pts[0]!)));let i=1;while(i<pts.length-1&&distance(pts[i]!,pts[0]!)<=tol)i++;let j=pts.length-2;while(j>0&&distance(pts[j]!,pts.at(-1)!)<=tol)j--;
-    return {t0:unit([pts[i]![0]-pts[0]![0],pts[i]![1]-pts[0]![1]]),t1:unit([pts.at(-1)![0]-pts[j]![0],pts.at(-1)![1]-pts[j]![1]])};};
   const inCone=(p:H[],arc:NonNullable<ReturnType<typeof arcLeaving>>,slack:number)=>p.every(h=>{const q=xyz(h);let t=arc.turn*(Math.atan2(q[1]-arc.cy,q[0]-arc.cx)-arc.a0);while(t<-Math.PI)t+=2*Math.PI;while(t>Math.PI)t-=2*Math.PI;return t>=-slack&&t<=arc.sweep+slack;});
-  const visit=(p:H[],depth:number)=>{
+  const visit=(p:H[],depth:number,o0?:[number,number],o1?:[number,number])=>{
     if(pieces.length>=100000)throw Error('envelope segment budget exceeded');
-    const from=xyz(p[0]!),to=xyz(p.at(-1)!),{t0,t1}=endTangents(p);
+    const from=xyz(p[0]!),to=xyz(p.at(-1)!),own=endTangents(p),t0=o0??own.t0,t1=o1??own.t1;
     const lineBound=Math.max(...p.map(h=>chordDistance(xyz(h),from,to)));
     const chordDir=unit([to[0]-from[0],to[1]-from[1]]),straight=Math.abs(chordDir[0]*t0[1]-chordDir[1]*t0[0])<1e-12&&Math.abs(chordDir[0]*t1[1]-chordDir[1]*t1[0])<1e-12;
     if(straight&&lineBound<=epsilon){pieces.push({kind:'line',from,to,mid:splitAt(p,0.5).point,bound:lineBound});return;}
@@ -349,9 +385,9 @@ export function biarcEnvelope(poles:H[],epsilon:number){
       }
     }
     if(depth===24)throw Error('envelope subdivision budget exceeded');
-    const half=splitAt(p,0.5);visit(half.left,depth+1);visit(half.right,depth+1);
+    const half=splitAt(p,0.5);visit(half.left,depth+1,o0,undefined);visit(half.right,depth+1,undefined,o1);
   };
-  visit(poles,0);
+  visit(poles,0,ends.t0,ends.t1);
   return {pieces,maxBound:Math.max(...pieces.map(p=>p.bound))};
 }
 
