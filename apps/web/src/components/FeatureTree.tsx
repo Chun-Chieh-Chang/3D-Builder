@@ -572,6 +572,10 @@ export function FeatureTree() {
           {menu.feature.type === 'sketch' && doc.features.indexOf(menu.feature) < rollback && (
             <li onClick={act(() => store.beginEditSketchPlane(menu.feature.id))}>{t('tree.editSketchPlane')}</li>
           )}
+          {/* Recognize Features (F2.4, ADR 0239): the same as the button of the imported body panel */}
+          {menu.feature.type === 'importedBody' && !menu.feature.suppressed && doc.features.indexOf(menu.feature) < rollback && (
+            <li data-action="recognize-features" onClick={act(() => void store.recognizeFeatures(menu.feature.id))}>{t('recognize.run')}</li>
+          )}
           {menu.feature.suppressed ? (
             <>
               <li onClick={act(() => store.suppress(menu.feature.id, 'unsuppress'))}>{t('tree.unsuppress')}</li>

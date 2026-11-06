@@ -5,7 +5,7 @@
 //   const r = await __fr.run();
 //
 // A new part imports tests/fixtures/step/plate-with-hole.step (40 × 30 × 10, an R4 hole through it; served on 127.0.0.1:5393 by verify:ui), its
-// panel is opened for editing and, after an undo, by a double-click on the tree row; 「辨識特徵」 is pressed in it each time. The import goes, sketches, an extrusion and a hole come, the
+// panel is opened for editing, then (after an undo) by a double-click on the tree row, then the tree row's right-click menu is used; 「辨識特徵」 is pressed each time. The import goes, sketches, an extrusion and a hole come, the
 // solid is the same; one undo brings the import back. Without the sample server the run is left out (`skipped`, which is no pass).
 
 const here = import.meta.url.slice(0, import.meta.url.lastIndexOf('/') + 1);
@@ -36,9 +36,9 @@ FR.run = async (base = globalThis.__samplesOrigin ?? 'http://127.0.0.1:5393/') =
   const imported = { types: types(), volume: volume(), failed: failed() };
 
   /** Presses 「辨識特徵」 in the import's panel once it is open, and reads what came of it. */
-  const press = async () => {
-    const button = document.querySelector('.property-manager button[data-field="recognizeFeatures"]');
-    const offered = { found: !!button, label: button?.textContent, disabled: button?.disabled, editing: store.getState().editing?.featureId ?? null };
+  const press = async (find = () => document.querySelector('.property-manager button[data-field="recognizeFeatures"]')) => {
+    const button = find();
+    const offered = { found: !!button, label: button?.textContent, disabled: button?.disabled ?? false, editing: store.getState().editing?.featureId ?? null };
     const was = store.getState().notice;
     button?.click();
     await H.waitFor(() => store.getState().notice !== was && /^已辨識|無法|不同|找不到/.test(store.getState().notice?.text ?? ''), 120000, 'the recognition');
@@ -75,6 +75,26 @@ FR.run = async (base = globalThis.__samplesOrigin ?? 'http://127.0.0.1:5393/') =
   const shown = await press();
   store.undo();
   await H.settle();
+  // 3. the tree's right-click menu
+  const row3 = [...document.querySelectorAll('.feature-tree .tree-row')].find((r) => /輸入1/.test(r.textContent));
+  const box = row3?.getBoundingClientRect();
+  row3?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: (box?.left ?? 0) + 20, clientY: (box?.top ?? 0) + 5 }));
+  await H.wait(150);
+  const menu = await press(() => document.querySelector('li[data-action="recognize-features"]'));
+  store.undo();
+  await H.settle();
+  // the menu of a feature that is not an imported body does not offer it
+  store.redo();
+  await H.settle();
+  const other = [...document.querySelectorAll('.feature-tree .tree-row')].find((r) => /伸長1/.test(r.textContent));
+  other?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 30, clientY: 30 }));
+  await H.wait(150);
+  const offeredOnExtrude = !!document.querySelector('li[data-action="recognize-features"]');
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+  await H.wait(100);
+  store.undo();
+  await H.settle();
   store.redo();
   await H.settle();
   const redone = { types: types(), volume: volume() };
@@ -91,12 +111,15 @@ FR.run = async (base = globalThis.__samplesOrigin ?? 'http://127.0.0.1:5393/') =
     editing,
     undone,
     shown,
+    menu,
+    offeredOnExtrude,
     redone,
     pass:
       JSON.stringify(imported.types) === '["importedBody"]' && same(imported.volume) &&
       editing.offered.editing === 'import1' && good(editing) &&
       JSON.stringify(undone.types) === '["importedBody"]' && undone.blobs === 1 && undone.failed.length === 0 && same(undone.volume) &&
       good(shown) &&
+      good(menu) && offeredOnExtrude === false &&
       JSON.stringify(redone.types) === JSON.stringify(shown.types) && same(redone.volume),
   };
 };

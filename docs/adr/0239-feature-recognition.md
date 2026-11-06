@@ -16,7 +16,7 @@
    - 核心新增 `Kernel.sectionEdges`（實體與平面矩形的 common，回傳平面座標的直線／圓弧／圓）。
 3. **全有或全無**：重建後與原件比體積、面積、對稱差（`Va + Vb − 2·V∩`），相對值都 ≤ `RECOGNIZE_TOLERANCE` = 1e-6 才回傳；同時要求所有新特徵及原本 ok 的特徵仍 ok。否則丟 `RecognizeError`，文件不動。面數只回報、不當條件（他牌 STEP 的分面方式可能不同）。
 4. **草圖平面**：方向與預設平面法向一致 → 預設平面或其 `offset` 參考面；其他方向 → 兩個座標參考點 → 參考軸 → 垂直於軸的參考面。與重算引擎相同的 `planeFrame` 換算座標。
-5. **產品入口**：輸入本體的屬性管理員最下方「辨識特徵」按鈕 → `store.recognizeFeatures`（面板若正在編輯這個輸入本體，先依「確定」結束編輯、保留面板裡改過的值；正在編輯別的特徵則不動作） → Worker `recognizeFeatures`（**另建一個 Regenerator**，避免多次重算釋放畫面上零件的形狀）→ 回傳命令，以 `History.applyBatch` 一次套用、一次復原。等待期間文件若被改，結果不套用。
+5. **產品入口**：設計樹右鍵輸入本體的「辨識特徵」（2026-11-06 續；只對未抑制、未在退回位置之後的輸入本體出現），或輸入本體的屬性管理員最下方「辨識特徵」按鈕 → `store.recognizeFeatures`（面板若正在編輯這個輸入本體，先依「確定」結束編輯、保留面板裡改過的值；正在編輯別的特徵則不動作） → Worker `recognizeFeatures`（**另建一個 Regenerator**，避免多次重算釋放畫面上零件的形狀）→ 回傳命令，以 `History.applyBatch` 一次套用、一次復原。等待期間文件若被改，結果不套用。
 7. **MCP 工具 `recognize_features {feature}`**（2026-11-06 續）：`CadSession.recognize` 以獨立 Regenerator 算出命令，再交給既有的 `apply`（同一個交易、`broken` 檢查、`undo`，連線時經 app 的 gate 同步）。`RecognizeError` 轉成工具錯誤，零件不動。代理說明（`INSTRUCTIONS`）加第 7 點。代理取得輸入本體的途徑：`part_open` 含輸入本體的 .3dbx，或連線時 app 送來的零件。
 6. **草圖完全定義**（2026-11-06 續）：圓與圓弧先加直徑／半徑；其餘依設計者的順序逐一試加候選（在原點則與原點重合 → 水平／垂直 → 每條直線長度 → 每點相對原點的 X／Y 距離，座標為 0 則改用與原點水平／垂直對齊），每加一個就求解，只保留讓自由度下降、又不多餘不衝突的。數值都等於草圖現有的值，所以幾何不動。求解器做不完時保持欠定義，絕不過定義。例：60×40 板的草圖為 4 個水平／垂直、長 60、寬 40、角點 X30 Y20；孔的草圖為 X5 Y3。`reconstructImported` 多一個選填的 `solver` 參數；Worker 傳入它的求解器。
 
@@ -33,3 +33,5 @@
 - 瀏覽器腳本 `tests/e2e/phase8-feature-recognition.js`（`verify:ui`）：新零件匯入 `plate-with-hole.step`，分別從「編輯中」與「雙擊設計樹顯示」的面板按「辨識特徵」，都得到草圖＋伸長＋孔（直徑 8、貫穿）、體積相同、檔案資料移除；一次復原回到輸入本體。此腳本抓到一個缺陷：編輯中的面板按鈕原本沒有作用（`recognizeFeatures` 遇到編輯中就返回）；修正後通過，把修正拿掉則腳本逾時失敗。VM 中以 `@sparticuz/chromium` 執行，另跑 `phase3-direct-edit`、`phase3-hole-direct` 通過；整批 `verify:ui` 未跑。
 - 草圖完全定義後：`feature-recognition` 20/20 且每個草圖 `fully`、dof 0（測試斷言）；Fuzz 120 組全部重建、每個草圖 dof 0；瀏覽器腳本另斷言兩個草圖皆 `fully/0`，通過。
 - MCP：`apps/mcp/test/recognize.test.ts` 2/2（工作範例匯出 STEP → 輸入本體 → `recognize_features`：committed、無 broken、草圖 fully/0、體積與手算相同、`undo` 回到輸入本體；錯誤 id／空字串／拼錯參數名都拒絕且序列化文件不變）；`e2e.test.ts` 的工具清單加入 `recognize_features`；apps/mcp 6 檔 51 項通過。
+- 設計樹右鍵（2026-11-06 續）：瀏覽器腳本加第三種用法（右鍵 → 辨識特徵），並確認右鍵伸長特徵時不出現此項；PASS。`context-menus`、`help` 單元測試 64 項通過。
+- 真實 STEP（SolidWorks 2024 輸出的塑膠產品件，340 面，客戶零件，不進 repo）：拒絕，「有 114 個面是自由曲面」，約 1.1 秒。面種類：圓錐 122（半錐角 1° 的拔模壁 86）、圓環 72、B 樣條 114（含 48 片帶尖點的齒狀面）、平面 14、圓柱 18。結論：這類零件要能辨識，除了拔模，還需要自由曲面與拔模壁之間的過渡圓角，不在第一版範圍。

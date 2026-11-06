@@ -5696,3 +5696,10 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 - `server.ts` 新工具 `recognize_features {feature}`（必填、拼錯的參數名照既有 `argsOf` 拒絕）；`INSTRUCTIONS` 第 7 點。
 - 紅隊：① 輸入——非字串或空字串立即拒絕，不存在或非輸入本體的 id 由 `reconstructImported` 拒絕；② 相交——同 ADR 0239 的全有或全無；③ 依賴——只經 `apply`；④ 真值——測試以手算體積 `PLATE_WITH_HOLE_VOLUME` 比對，拒絕時比對序列化文件。
 - 結果：`apps/mcp/test/recognize.test.ts` 2/2；apps/mcp 全部 6 檔 51 項通過（含工具清單）。
+
+## 2026-11-06（續）真實 STEP 試辨識、分支合併、設計樹右鍵
+
+- **真實 STEP**（使用者提供的 SolidWorks 2024 塑膠產品件，340 面、989.9 mm³，放在 `scratch/feature-recognition/samples/`，客戶零件不進 repo）：辨識拒絕，「有 114 個面是自由曲面」，約 1.1 秒，原件不動。面：圓錐 122（半錐角 1° 的拔模壁 86、15° 26、45°／3°／10° 各數個）、圓環 72、B 樣條 114（z≈5.3 有 48 片帶退化邊的齒狀面，夾在拔模圓錐之間）、平面 14、圓柱 18；主要方向 Z（212 面），另有 X 與斜 60°。結論：即使做完拔模、側面凸台、鑽尖錐底，這個零件仍會因自由曲面被拒絕；之後把它當進度指標（無法解釋的面數），不當通過門檻。
+- **合併 `claude/section-regions`**（`4b4a01a2`）：唯一衝突是 DEV_LOG 檔尾，兩段都保留、依時間排列；合併後 typecheck、lint:repo、`section-offset-regions` 15/15、`section-offset-cost` 7/7。
+- **設計樹右鍵「辨識特徵」**：`FeatureTree.tsx` 的特徵選單，只對未抑制、在退回位置之前的輸入本體出現，呼叫與面板按鈕相同的 `store.recognizeFeatures`。瀏覽器腳本加第三種用法（右鍵 → 辨識特徵），並確認右鍵伸長特徵時沒有此項；PASS（約 8 秒）。typecheck、`context-menus`、`help` 64 項通過。
+
