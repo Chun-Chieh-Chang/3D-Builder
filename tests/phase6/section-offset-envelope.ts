@@ -73,7 +73,7 @@ export function flatten(poles:H[],epsilon:number) {
   visit(poles,0);return {points,maxBound,leaves};
 }
 
-export function sectionEnvelope(k:Kernel,wire:TopoDS_Wire,epsilon:number,a:Arena,mode:'polygon'|'arc') {
+export function sectionEnvelope(k:Kernel,wire:TopoDS_Wire,epsilon:number,a:Arena,mode:'polygon'|'arc'|'biarc') {
   if(!Number.isFinite(epsilon)||epsilon<=0)throw Error('positive finite envelope tolerance required');
   const oc=k.oc,ex=a.own(new oc.BRepTools_WireExplorer(wire)),mw=a.own(new oc.BRepBuilderAPI_MakeWire());
   let edges=0,sourceEdges=0,maxBound=0,shortPoints=0;
@@ -87,7 +87,9 @@ export function sectionEnvelope(k:Kernel,wire:TopoDS_Wire,epsilon:number,a:Arena
     for(let i=1;i<=beziers.NbArcs();i++) {
       const bez=a.own(beziers.Arc(i)),poles:H[]=[];
       for(let j=1;j<=bez.NbPoles();j++){const p=a.own(bez.Pole(j)),w=bez.Weight(j);poles.push([p.X()*w,p.Y()*w,p.Z()*w,w]);}
-      if(mode==='arc'){const result=arcEnvelope(poles,epsilon);maxBound=Math.max(maxBound,result.maxBound);pieces.push(...result.pieces);}
+      if(mode==='biarc'){
+        const result=biarcEnvelope(poles,epsilon);maxBound=Math.max(maxBound,result.maxBound);pieces.push(...result.pieces);}
+      else if(mode==='arc'){const result=arcEnvelope(poles,epsilon);maxBound=Math.max(maxBound,result.maxBound);pieces.push(...result.pieces);}
       else {const result=flatten(poles,epsilon);maxBound=Math.max(maxBound,result.maxBound);pieces.push(...result.points.slice(1).map((to,i)=>({kind:'line' as const,from:result.points[i]!,to,mid:to,bound:result.maxBound})));}
     }
     if(String(edge.Orientation())==='TopAbs_REVERSED')pieces=pieces.reverse().map(p=>({...p,from:p.to,to:p.from}));
@@ -231,4 +233,146 @@ export function planarSegments(k:Kernel,shape:import('libcascade/single/init').T
     } else throw Error(`unsupported offset edge type ${type}`);
   }
   return out;
+}
+
+/** Where an offset comes closer to its source than the gap: the closest point of one place, its distance, how many samples. */
+export type ClearanceViolation={point:[number,number];distance:number;samples:number};
+/** Thrown instead of returning an offset that violates the gap, with every place where it does. */
+export class OffsetClearanceError extends Error {
+  constructor(readonly gap:number,readonly minDistance:number,readonly locations:ClearanceViolation[]) {
+    super(`offset violates the gap ${gap} mm at ${locations.length} place(s); closest ${minDistance.toFixed(6)} mm at (${locations[0]?.point.map(x=>x.toFixed(3)).join(', ')})`);
+    this.name='OffsetClearanceError';
+  }
+}
+/**
+ * Offsets a planar face whose boundary is the line/arc wire `source` outward by `gap`, and refuses the result when any part
+ * of it comes closer than `gap - tolerance` to the source. Detection is the global minimum distance (OCCT extrema over the
+ * whole wires); the places are found by sampling every output edge at `samplesPerEdge` points with the exact point distance,
+ * grouped when closer than `gap` to each other. The global closest point always appears in the places.
+ */
+export function checkedOffset(k:Kernel,source:TopoDS_Wire,face:import('libcascade/single/init').TopoDS_Face,gap:number,a:Arena,tolerance=1e-6,samplesPerEdge=32) {
+  if(!Number.isFinite(gap)||gap<=0)throw Error('positive finite gap required');
+  if(!Number.isFinite(tolerance)||tolerance<=0||tolerance>=gap)throw Error('positive finite tolerance below the gap required');
+  if(!Number.isInteger(samplesPerEdge)||samplesPerEdge<1)throw Error('a positive whole number of samples per edge required');
+  const oc=k.oc,raw=k as unknown as {put(s:import('libcascade/single/init').TopoDS_Shape):import('@3db/kernel').ShapeId};
+  const mo=a.own(new oc.BRepOffsetAPI_MakeOffset(face,oc.GeomAbs_JoinType.GeomAbs_Arc,false));mo.Perform(gap);
+  if(!mo.IsDone())throw Error('offset failed');
+  const out=a.own(mo.Shape());
+  const si=raw.put(source.Oriented(source.Orientation())),oi=raw.put(out.Oriented(out.Orientation()));let global:{distance:number;pointB:[number,number,number]};
+  try{global=k.distance(si,oi) as typeof global;}finally{k.release(si);k.release(oi);}
+  const output=planarSegments(k,out,a);
+  if(global.distance>=gap-tolerance)return {shape:out,segments:output,minDistance:global.distance};
+  const near=nearestField(planarSegments(k,source,a),gap),bad:{p:[number,number];d:number}[]=[];
+  for(const o of output){const path=along(o);for(let j=0;j<=samplesPerEdge;j++){const p=path.at(j/samplesPerEdge),d=near(p);if(d<gap-tolerance)bad.push({p,d});}}
+  bad.push({p:[global.pointB[0],global.pointB[1]],d:global.distance});
+  // Union-find over a grid of cell `gap`: samples closer than `gap` belong to one place.
+  const parent=bad.map((_,i)=>i),find=(i:number):number=>parent[i]===i?i:(parent[i]=find(parent[i]!)),cell=new Map<string,number[]>();
+  bad.forEach((b,i)=>{const key=Math.floor(b.p[0]/gap)+','+Math.floor(b.p[1]/gap);(cell.get(key)??cell.set(key,[]).get(key)!).push(i);});
+  bad.forEach((b,i)=>{const cx=Math.floor(b.p[0]/gap),cy=Math.floor(b.p[1]/gap);
+    for(let x=cx-1;x<=cx+1;x++)for(let y=cy-1;y<=cy+1;y++)for(const j of cell.get(x+','+y)??[])if(j<i&&d2(b.p,bad[j]!.p)<gap)parent[find(i)]=find(j);});
+  const groups=new Map<number,ClearanceViolation>();
+  bad.forEach((b,i)=>{const r=find(i),g=groups.get(r);if(!g)groups.set(r,{point:b.p,distance:b.d,samples:1});else{g.samples++;if(b.d<g.distance){g.distance=b.d;g.point=b.p;}}});
+  const locations=[...groups.values()].sort((x,y)=>x.distance-y.distance);
+  throw new OffsetClearanceError(gap,global.distance,locations);
+}
+
+/** Rational de Casteljau split of homogeneous poles at parameter t. */
+function splitAt(p:H[],t:number){let row=p;const left:H[]=[row[0]!],right:H[]=[row.at(-1)!];
+  while(row.length>1){row=row.slice(0,-1).map((h,i)=>h.map((x,j)=>x*(1-t)+row[i+1]![j]!*t) as H);left.push(row[0]!);right.push(row.at(-1)!);}
+  return {left,right:right.reverse(),point:xyz(row[0]!)};}
+/** Radial deviation bound of a positive-weight rational Bezier from the circle (cx, cy, r): the Bernstein form of
+ * F = (X-cx W)^2 + (Y-cy W)^2 - r^2 W^2 bounds |F|, and |rho - r| = |F| / (W^2 (rho + r)) <= max|F| / (minW^2 r). */
+function circleBound(p:H[],cx:number,cy:number,r:number){
+  const n=p.length-1,minW=Math.min(...p.map(h=>h[3])),maxW=Math.max(...p.map(h=>h[3]));let maxF=0,maxTerm=0;
+  for(let k=0;k<=2*n;k++){let f=0;for(let i=Math.max(0,k-n);i<=Math.min(n,k);i++){const j=k-i,pi=p[i]!,pj=p[j]!,factor=choose(n,i)*choose(n,j)/choose(2*n,k),x=(pi[0]-cx*pi[3])*(pj[0]-cx*pj[3]),y=(pi[1]-cy*pi[3])*(pj[1]-cy*pj[3]),z=r*r*pi[3]*pj[3];f+=factor*(x+y-z);maxTerm=Math.max(maxTerm,Math.abs(x)+Math.abs(y)+Math.abs(z));}maxF=Math.max(maxF,Math.abs(f));}
+  return (maxF+128*Number.EPSILON*(n+1)*(maxTerm+r*r*maxW*maxW))/(minW*minW*r);}
+/** The arc leaving point s with unit tangent t that ends at e; null when s, t, e are collinear (a line). */
+function arcLeaving(s:P,t:[number,number],e:P){const n:[number,number]=[-t[1],t[0]],dx=e[0]-s[0],dy=e[1]-s[1],den=2*(dx*n[0]+dy*n[1]);
+  if(Math.abs(den)<=1e-14*Math.hypot(dx,dy))return null;
+  const sN=(dx*dx+dy*dy)/den,cx=s[0]+sN*n[0],cy=s[1]+sN*n[1],r=Math.abs(sN),a0=Math.atan2(s[1]-cy,s[0]-cx),a1=Math.atan2(e[1]-cy,e[0]-cx),turn=sN>0?1:-1;
+  let sweep=turn*(a1-a0);while(sweep<0)sweep+=2*Math.PI;while(sweep>=2*Math.PI)sweep-=2*Math.PI;
+  const mid:P=[cx+r*Math.cos(a0+turn*sweep/2),cy+r*Math.sin(a0+turn*sweep/2),s[2]];
+  return {cx,cy,r,a0,turn,sweep,mid,endTangent:[-turn*Math.sin(a0+turn*sweep),turn*Math.cos(a0+turn*sweep)] as [number,number]};}
+/**
+ * G1 envelope of one rational Bezier: each leaf is a biarc whose two ends take the curve's own tangents there, so
+ * consecutive leaves (and consecutive Bezier pieces of a C1 spline) meet without a kink. The bound of each arc is the
+ * Bernstein radial bound against the matching half of the curve, split at the parameter nearest the biarc's junction,
+ * plus the distance from that junction to the curve; each half must also stay inside its arc's angular cone.
+ */
+/** Leaves shorter than this (mm) become lines in biarc mode when their chord is within the tolerance. */
+const BIARC_MIN_LEAF=1e-4;
+export function biarcEnvelope(poles:H[],epsilon:number){
+  if(!Number.isFinite(epsilon)||epsilon<=0)throw Error('positive finite envelope tolerance required');
+  if(poles.length<2||poles.some(p=>!p.every(Number.isFinite)||p[3]<=0))throw Error('finite poles with positive weights required');
+  if(poles.length>27||poles.some(h=>!xyz(h).every(Number.isFinite)))throw Error('unsupported envelope degree or scale');
+  if(Math.max(...poles.map(h=>xyz(h)[2]))-Math.min(...poles.map(h=>xyz(h)[2]))>1e-12)throw Error('XY planar envelope required');
+  const pieces:EnvelopePiece[]=[];
+  const unit=(v:[number,number]):[number,number]=>{const l=Math.hypot(...v);return [v[0]/l,v[1]/l];};
+  const endTangents=(p:H[])=>{const pts=p.map(xyz),tol=1e-3*Math.max(...pts.map(q=>distance(q,pts[0]!)));let i=1;while(i<pts.length-1&&distance(pts[i]!,pts[0]!)<=tol)i++;let j=pts.length-2;while(j>0&&distance(pts[j]!,pts.at(-1)!)<=tol)j--;
+    return {t0:unit([pts[i]![0]-pts[0]![0],pts[i]![1]-pts[0]![1]]),t1:unit([pts.at(-1)![0]-pts[j]![0],pts.at(-1)![1]-pts[j]![1]])};};
+  const inCone=(p:H[],arc:NonNullable<ReturnType<typeof arcLeaving>>,slack:number)=>p.every(h=>{const q=xyz(h);let t=arc.turn*(Math.atan2(q[1]-arc.cy,q[0]-arc.cx)-arc.a0);while(t<-Math.PI)t+=2*Math.PI;while(t>Math.PI)t-=2*Math.PI;return t>=-slack&&t<=arc.sweep+slack;});
+  const visit=(p:H[],depth:number)=>{
+    if(pieces.length>=100000)throw Error('envelope segment budget exceeded');
+    const from=xyz(p[0]!),to=xyz(p.at(-1)!),{t0,t1}=endTangents(p);
+    const lineBound=Math.max(...p.map(h=>chordDistance(xyz(h),from,to)));
+    const chordDir=unit([to[0]-from[0],to[1]-from[1]]),straight=Math.abs(chordDir[0]*t0[1]-chordDir[1]*t0[0])<1e-12&&Math.abs(chordDir[0]*t1[1]-chordDir[1]*t1[0])<1e-12;
+    if(straight&&lineBound<=epsilon){pieces.push({kind:'line',from,to,mid:splitAt(p,0.5).point,bound:lineBound});return;}
+    // A leaf shorter than BIARC_MIN_LEAF is taken as a line when its chord is within the tolerance, even though its end
+    // tangents differ from the chord: such leaves only appear where the section curve has a tiny end hook, and a biarc there
+    // would follow the hook with micro arcs.
+    if(distance(from,to)<BIARC_MIN_LEAF&&lineBound<=epsilon){pieces.push({kind:'line',from,to,mid:splitAt(p,0.5).point,bound:lineBound});return;}
+    const vx=to[0]-from[0],vy=to[1]-from[1],dot=t0[0]*t1[0]+t0[1]*t1[1],den=2*(1-dot),vt=vx*(t0[0]+t1[0])+vy*(t0[1]+t1[1]),vv=vx*vx+vy*vy;
+    const d=den<1e-14?vv/(2*(vx*t0[0]+vy*t0[1])):(-vt+Math.sqrt(vt*vt+den*vv))/den;
+    if(Number.isFinite(d)&&d>0){
+      const q0:[number,number]=[from[0]+d*t0[0],from[1]+d*t0[1]],q1:[number,number]=[to[0]-d*t1[0],to[1]-d*t1[1]],J:P=[(q0[0]+q1[0])/2,(q0[1]+q1[1])/2,from[2]];
+      const a1=arcLeaving(from,t0,J),a2=arcLeaving(J,unit([q1[0]-q0[0],q1[1]-q0[1]]),to);
+      if(a1&&a2&&a1.sweep<Math.PI/2&&a2.sweep<Math.PI/2&&distance(from,J)>=1e-6&&distance(J,to)>=1e-6){
+        // the curve parameter nearest the junction: coarse samples, then golden-section refinement
+        let tau=0,best=Infinity;for(let i=0;i<=32;i++){const q=splitAt(p,i/32).point,dd=distance(q,J);if(dd<best){best=dd;tau=i/32;}}
+        let lo=Math.max(0,tau-1/32),hi=Math.min(1,tau+1/32);for(let it=0;it<60;it++){const m1=lo+(hi-lo)*0.382,m2=lo+(hi-lo)*0.618;if(distance(splitAt(p,m1).point,J)<distance(splitAt(p,m2).point,J))hi=m2;else lo=m1;}
+        tau=(lo+hi)/2;const s=splitAt(p,tau),e=distance(s.point,J);
+        if(tau>0&&tau<1){
+          const slack=(e+epsilon)/Math.min(a1.r,a2.r)+1e-12;
+          // Two bounds for each half, the smaller one kept. (a) Bernstein radial bound, valid when the half stays in the
+          // arc's cone. (b) Chord route, free of the r^2 round-off that grows with the radius: the half is within its
+          // control-hull distance of its own chord, that chord is within e of the arc's chord, and a minor arc is within its
+          // sagitta of its chord, both ways.
+          const sag=(arc:NonNullable<typeof a1>,c0:P,c1:P)=>{const h=distance(c0,c1)/2;return arc.r-Math.sqrt(Math.max(0,arc.r*arc.r-h*h));};
+          const hull=(q:H[])=>{const f=xyz(q[0]!),l=xyz(q.at(-1)!);return Math.max(...q.map(h=>chordDistance(xyz(h),f,l)));};
+          const alt1=hull(s.left)+sag(a1,from,J)+e,alt2=hull(s.right)+sag(a2,J,to)+e;
+          const cone=inCone(s.left,a1,slack)&&inCone(s.right,a2,slack);
+          {
+            const b1=Math.min(cone?circleBound(s.left,a1.cx,a1.cy,a1.r)+e:Infinity,alt1),b2=Math.min(cone?circleBound(s.right,a2.cx,a2.cy,a2.r)+e:Infinity,alt2);
+            if(b1<=epsilon&&b2<=epsilon){pieces.push({kind:'arc',from,to:J,mid:a1.mid,bound:b1},{kind:'arc',from:J,to,mid:a2.mid,bound:b2});return;}
+          }
+        }
+      }
+    }
+    if(depth===24)throw Error('envelope subdivision budget exceeded');
+    const half=splitAt(p,0.5);visit(half.left,depth+1);visit(half.right,depth+1);
+  };
+  visit(poles,0);
+  return {pieces,maxBound:Math.max(...pieces.map(p=>p.bound))};
+}
+
+/**
+ * Two-stage offset of a section wire that never returns a result violating the gap. The arc approximation goes first
+ * (it works at every gap measured so far); only when its offset is refused is the biarc (G1) approximation tried, since
+ * MakeOffset can fail outright on the biarc form at small gaps. When neither gives a result, the first clearance error is
+ * thrown with its places; when neither even offsets, the failure says so.
+ */
+export function fallbackOffset(k:Kernel,section:TopoDS_Wire,plane:import('libcascade/single/init').gp_Pln,gap:number,epsilon:number,a:Arena) {
+  const oc=k.oc,attempts:{mode:'arc'|'biarc';outcome:'ok'|'refused'|'failed';minDistance?:number;places?:number}[]=[];let firstRefusal:OffsetClearanceError|null=null;
+  for(const mode of ['arc','biarc'] as const){
+    const approx=sectionEnvelope(k,section,epsilon,a,mode),fm=a.own(new oc.BRepBuilderAPI_MakeFace(plane,approx.wire,true));
+    if(!fm.IsDone())throw Error(`${mode} approximation face failed`);
+    try{const result=checkedOffset(k,approx.wire,a.own(fm.Face()),gap,a);attempts.push({mode,outcome:'ok',minDistance:result.minDistance});return {mode,approx,result,attempts};}
+    catch(e){
+      if(e instanceof OffsetClearanceError){attempts.push({mode,outcome:'refused',minDistance:e.minDistance,places:e.locations.length});firstRefusal??=e;continue;}
+      if(e instanceof Error&&e.message==='offset failed'){attempts.push({mode,outcome:'failed'});continue;}
+      throw e;
+    }
+  }
+  if(firstRefusal)throw firstRefusal;
+  throw Error('offset failed in every approximation mode');
 }

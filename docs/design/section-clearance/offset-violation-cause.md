@@ -70,3 +70,5 @@
 - **Heap**：只用 `wasmMemory.buffer.byteLength`，起點斷言 > 0，不宣稱洩漏結論；`liveShapes` 歸零。
 
 重現：`npm test -- tests/phase6/section-offset-kink.test.ts --maxWorkers 1`。量測輸出在 `out/section-clearance/offset-kink.json`。
+
+後續：偵測後拒絕、雙圓弧擬合與兩段式偏移見 [biarc-and-refusal.md](biarc-and-refusal.md)。

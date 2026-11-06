@@ -619,6 +619,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 ### 設計提案
 
 - [3D-Builder 選單與工具圖示重新規劃](<design/menu-redesign/plan.md>)
+- [樣條間隙：偵測後拒絕、雙圓弧擬合與兩段式偏移](<design/section-clearance/biarc-and-refusal.md>)
 - [樣條間隙：明示圓弧近似與表示誤差包絡](<design/section-clearance/bounded-offset.md>)
 - [樣條間隙：偏移結果的逐邊間隙證明](<design/section-clearance/clearance-certificate.md>)
 - [樣條間隙：MakeOffset 違反間隙的原因](<design/section-clearance/offset-violation-cause.md>)
