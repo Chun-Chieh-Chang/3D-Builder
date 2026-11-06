@@ -5726,3 +5726,10 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 - 真實 STEP：見 ADR 0239 驗證最後一點（仍因自由曲面被拒；226／340 面已屬可處理種類）。
 - 結果：`feature-recognition` 32/32；Fuzz 120/120（59 拔模、30 側面凸台、22 鑽尖），Heap 128 → 793 MiB；typecheck、lint:rules／deps／i18n；`apps/mcp` recognize、i18n、help 55 項通過。
 
+## 2026-11-07 Windows 整批驗收（基準 `b84de82e`）
+
+- 使用者在 Windows 的這個資料夾推送 `main`（GitHub `main` = `b84de82e`）並刪除遠端 `claude/section-regions`。
+- `npm run verify:ui`：**271/271 pass**，0 已知缺陷、0 失敗（含新的 `phase8-feature-recognition.js`，7.3 秒）。
+- `npm test`：380 檔通過、4 略過、**4,551 項通過**、26 略過、0 項失敗；5 個檔載入失敗，全部是 `apps/mcp/test/*`，原因是這台 `node_modules` 沒有 `@modelcontextprotocol/sdk` 與 `ws`（`package-lock.json` 自 ADR 0237／0238 起就有，這台未重新安裝）。`npm ci` 後重跑 `apps/mcp`：6 檔 51 項全過。
+- 教訓：換電腦或 lock 檔變動後，先 `npm ci` 再跑整批；「測試檔失敗但測試項目 0 失敗」代表檔案載入就失敗，先看缺什麼套件。
+

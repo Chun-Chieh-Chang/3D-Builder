@@ -27,7 +27,7 @@
 
 ### 開工前的狀態（2026-11-06）
 
-- 本機 `main` 比 `origin/main`（`77544ac9`）多 7 筆，最新 `1c41feb2`，可直接快轉推送；**GitHub 上尚未推送**，遠端分支 `claude/section-regions` 也還在（內容已併入 `main`，可刪）。使用者需在**這個資料夾**執行 `git push origin main`、`git push origin --delete claude/section-regions`，並在這個資料夾跑整批 `npm test`、`npm run verify:ui`（先前回報的「已推送、已跑」看起來是在另一個 checkout 做的，未涵蓋這 7 筆）。
+- **2026-11-07 已在 Windows 確認**：`main` 已推送到 GitHub（`b84de82e`），遠端分支 `claude/section-regions` 已刪除。整批 `npm run verify:ui` **271/271**；`npm test` 380 檔通過、4 略過、4,551 項通過、0 失敗，另 5 個 `apps/mcp` 檔因這台的 `node_modules` 缺 `@modelcontextprotocol/sdk` 與 `ws` 而載入失敗，`npm ci` 後 `apps/mcp` 6 檔 51 項全過（不是程式錯誤）。
 - 進度頁：`scratch/feature-recognition/progress.html`（每 30 秒重新整理；資料在同目錄 `progress.json`，`render.py` 產生），第 20–27 組對應本節。使用者要求細分子項、依實際證據更新。
 - 真實樣本：`scratch/feature-recognition/samples/MT17203.step`（客戶零件，不進 repo）。目前因 114 個自由曲面被拒；其餘 226／340 面已屬可處理種類。
 - 在使用者電腦的 Linux VM 跑測試：Windows 版 `node_modules` 不能用，要在 VM 另做一份副本（`rsync` 到 `~/work/3db`，排除 `node_modules`、`target`、`scratch`、`.git`），`npm ci --ignore-scripts`。VM 只有 4 GB，全量測試要逐檔各一個程序、單一 worker 跑；`verify:ui` 用 npm 套件 `@sparticuz/chromium` 的 Chromium（`CHROME_PATH`）。git 推送在 VM 內沒有憑證，要使用者在 Windows 推。
