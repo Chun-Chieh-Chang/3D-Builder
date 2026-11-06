@@ -233,6 +233,16 @@ class Builder {
       this.feature({ id: this.ids.take('revolve'), type: 'revolve', name: this.name('revolve'), suppressed: false, sketch: id, axis: centerline!, op: 'boss', ...(merge === false ? { merge: false } : {}), dir1: { type: 'blind', angle: '360deg' } });
       return;
     }
+    if (b.type === 'composite') {
+      this.base({ ...rec, base: b.base }, merge);
+      for (const extra of b.extras) this.layers(extra.rec, extra.op, undefined);
+      return;
+    }
+    this.layers(b, 'boss', merge);
+  }
+
+  /** The layers of an extrusion record, bottom up: each a sketch on the plane of its bottom and a blind extrusion of the layer's height along `dir` (a cut goes the same way). */
+  private layers(b: Extract<Recognition['base'], { type: 'extrude' }>, op: 'boss' | 'cut', merge: boolean | undefined): void {
     let first = true;
     b.layers.forEach((layer, i) => {
       if (!layer) return;
@@ -246,9 +256,10 @@ class Builder {
         name: this.name('extrude'),
         suppressed: false,
         sketch: id,
-        op: 'boss',
-        ...(first && merge === false ? { merge: false } : {}),
-        dir1: { type: 'blind', depth: num(depth), ...(plane.flipped ? { reverse: true } : {}) },
+        op,
+        ...(op === 'boss' && first && merge === false ? { merge: false } : {}),
+        // a boss goes along the sketch's normal, a cut against it (into the material): either way the layer runs along `dir`
+        dir1: { type: 'blind', depth: num(depth), ...((op === 'boss' ? plane.flipped : !plane.flipped) ? { reverse: true } : {}) },
       });
       first = false;
     });

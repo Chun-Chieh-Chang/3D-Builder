@@ -235,6 +235,69 @@ describe('revolves', () => {
   });
 });
 
+describe('features along other directions (side bosses and pockets)', () => {
+  /** A prism of `region` in the YZ plane, from x0 along +x by h. */
+  const YZ: Frame = { origin: [0, 0, 0], xDir: [0, 1, 0], yDir: [0, 0, 1], normal: [1, 0, 0] };
+  const along = (region: Region, x0: number, h: number) => keep(kernel.extrude({ ...YZ, origin: [x0, 0, 0] }, [region], [h, 0, 0]).shape);
+  const block = () => prism(rect(0, 0, 40, 30), 0, 20);
+
+  it('a round boss on the side of a block', async () => {
+    const s = fuse(block(), along(disc(15, 10, 6), 40, 8));
+    const { features } = await roundTrip(s);
+    const ex = ofType(features, 'extrude');
+    expect(ex.map((e) => e.op).sort()).toEqual(['boss', 'boss']);
+  });
+
+  it('a square boss on one side and a round one on another', async () => {
+    const s = fuse(fuse(block(), along(rect(5, 5, 10, 8), 40, 6)), keep(kernel.extrude({ origin: [0, 30, 0], xDir: [1, 0, 0], yDir: [0, 0, 1], normal: [0, 1, 0] }, [disc(20, 10, 5)], [0, 7, 0]).shape));
+    const { features } = await roundTrip(s);
+    expect(ofType(features, 'extrude').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('a slot with round ends cut into the side', async () => {
+    const slot: Region = {
+      outer: [
+        { kind: 'line', a: [8, 6], b: [22, 6], source: 'a' },
+        { kind: 'arc', c: [22, 10], r: 4, from: [22, 6], to: [22, 14], ccw: true, source: 'b' },
+        { kind: 'line', a: [22, 14], b: [8, 14], source: 'c' },
+        { kind: 'arc', c: [8, 10], r: 4, from: [8, 14], to: [8, 6], ccw: true, source: 'd' },
+      ],
+      holes: [],
+    };
+    // along x every face is a wall or an end, so it is two layers along x (the same solid as a block and a cut; which is chosen is the fewest layers)
+    const s = cut(block(), along(slot, 33, 10));
+    const { features } = await roundTrip(s);
+    expect(ofType(features, 'extrude').length).toBe(2);
+  });
+
+  it('the same slot in a block with a boss on top: no one direction fits, so one of them is a feature along another direction', async () => {
+    const slot: Region = {
+      outer: [
+        { kind: 'line', a: [8, 6], b: [22, 6], source: 'a' },
+        { kind: 'arc', c: [22, 10], r: 4, from: [22, 6], to: [22, 14], ccw: true, source: 'b' },
+        { kind: 'line', a: [22, 14], b: [8, 14], source: 'c' },
+        { kind: 'arc', c: [8, 10], r: 4, from: [8, 14], to: [8, 6], ccw: true, source: 'd' },
+      ],
+      holes: [],
+    };
+    const s = cut(fuse(block(), prism(disc(15, 15, 6), 20, 5)), along(slot, 33, 10));
+    const { features } = await roundTrip(s);
+    // either way round it is the same solid: x with the top boss as a boss along z, or z with the slot as a cut along x
+    const ex = ofType(features, 'extrude');
+    expect(ex.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('a side boss with a round on its rim and a hole through it', async () => {
+    let s = fuse(block(), along(disc(15, 10, 7), 40, 10));
+    const rim = edgeWhere(s, (m, _d, c) => c === 'circle' && near(m[0], 50));
+    s = keep(kernel.fillet(s, [rim], 1).shape);
+    s = cut(s, along(disc(15, 10, 3), 30, 25));
+    const { features } = await roundTrip(s);
+    expect(ofType(features, 'hole')).toHaveLength(1);
+    expect(ofType(features, 'fillet')).toMatchObject([{ radius: '1' }]);
+  });
+});
+
 describe('any direction', () => {
   it('a plate with a hole, turned 30° about a slanted axis', async () => {
     const s = cut(prism(rect(-30, -20, 60, 40), 0, 10), prism(disc(5, 3, 4), -1, 12));

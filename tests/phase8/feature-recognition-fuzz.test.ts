@@ -44,6 +44,7 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
   const h0 = heap();
   expect(h0).toBeGreaterThan(0);
   let rebuilt = 0;
+  let sided = 0;
   let refused = 0;
   const refusals: string[] = [];
   for (let seed = 1; seed <= 120; seed++) {
@@ -66,6 +67,14 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
       else {
         s = own(kernel.boolean('cut', s, own(kernel.extrude(at(t * 0.6), [disc(hr * 1.8)], [0, 0, t]).shape)).shape);
         s = own(kernel.boolean('cut', s, own(kernel.extrude(at(-1), [disc(hr)], [0, 0, t + 2]).shape)).shape);
+      }
+      // half of them get a round boss on the +x side, along x (a feature along another direction than the plate)
+      const side = r() < 0.5;
+      const br = round(1 + r() * Math.min(d, t) * 0.25);
+      if (side) {
+        const YZ: Frame = { origin: [w / 2, 0, 0], xDir: [0, 1, 0], yDir: [0, 0, 1], normal: [1, 0, 0] };
+        const boss = own(kernel.extrude(YZ, [{ outer: [{ kind: 'circle', c: [-d / 4, t / 2], r: br, source: 'c' }], holes: [] }], [round(2 + r() * 8), 0, 0]).shape);
+        s = own(kernel.boolean('fuse', s, boss).shape);
       }
       const topo = kernel.topology(s);
       const vertical = topo.edges.findIndex((e) => e.dir && Math.abs(e.dir[2]) > 0.99 && Math.abs(e.mid[0] - w / 2) < 1e-6 && Math.abs(e.mid[1] - d / 2) < 1e-6);
@@ -99,6 +108,7 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
         expect(out.doc.features.filter((f) => f.type === 'hole'), `seed ${seed}`).toHaveLength(1);
         expect(out.doc.features.filter((f) => f.type === 'fillet'), `seed ${seed}`).toHaveLength(1);
         rebuilt++;
+        if (side) sided++;
       } finally {
         regen.dispose();
       }
@@ -107,9 +117,10 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
     }
   }
   const h1 = heap()!;
-  console.log(`feature recognition fuzz: ${rebuilt} rebuilt, ${refused} refused; heap ${(h0! / 2 ** 20).toFixed(1)} → ${(h1 / 2 ** 20).toFixed(1)} MiB`);
+  console.log(`feature recognition fuzz: ${rebuilt} rebuilt (${sided} with a side boss), ${refused} refused; heap ${(h0! / 2 ** 20).toFixed(1)} → ${(h1 / 2 ** 20).toFixed(1)} MiB`);
   if (refusals.length) console.log(refusals.join('\n'));
   expect(rebuilt + refused).toBe(120);
   // every one of these parts is made of the features recognized, so refusing one is a defect, not a safe answer
   expect(refused).toBe(0);
+  expect(sided).toBeGreaterThan(30);
 }, 600_000);

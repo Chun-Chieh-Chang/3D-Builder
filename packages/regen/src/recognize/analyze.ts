@@ -79,7 +79,12 @@ export interface PlanarProfile {
 export type BaseRecord =
   | { type: 'revolve'; axis: { origin: Vec3; dir: Vec3 }; profile: PlanarProfile }
   /** One profile per layer, bottom up: layer i is extruded from `levels[i]` to `levels[i + 1]` along `dir`. */
-  | { type: 'extrude'; dir: Vec3; levels: number[]; layers: (PlanarProfile | null)[] };
+  | { type: 'extrude'; dir: Vec3; levels: number[]; layers: (PlanarProfile | null)[] }
+  /**
+   * A body extruded along one direction with features along others (a boss on its side, a pocket cut into it): `base` is the body with those taken
+   * off (Delete Face), each extra is what was taken off, a boss (material added back) or a cut (material taken away), extruded along its own direction.
+   */
+  | { type: 'composite'; base: BaseRecord; extras: { op: 'boss' | 'cut'; rec: Extract<BaseRecord, { type: 'extrude' }> }[] };
 
 export interface Recognition {
   base: BaseRecord;
@@ -224,7 +229,13 @@ function blendCandidates(topo: Topology, smooth: boolean[], adj: Map<number, num
     const s = c.tangent!.filter((n) => !rounds.has(n));
     c.supports = s.length === 2 ? [s[0]!, s[1]!] : [-1, -1];
   }
-  return out;
+  // a round joins two faces that would meet at the edge it took off: between two parallel planes (the round end of a slot) there is no such edge, so
+  // it is part of the profile, not a round
+  return out.filter((c) => {
+    if (c.type !== 'fillet' || c.supports[0] < 0) return true;
+    const [a, b] = c.supports.map((k) => topo.faces[k]!.geometry);
+    return !(a?.type === 'plane' && b?.type === 'plane' && parallel(a.normal, b.normal));
+  });
 }
 
 /** A point on the line where two planes meet (the line runs along `dir`). */
@@ -339,8 +350,15 @@ function findHoles(topo: Topology, adj: Map<number, number[]>[]): { record: Hole
       if (h.type === 'cone') return !h.convex && coaxial(h.apex, h.axis, axis.origin, axis.dir);
       if (h.type === 'plane') {
         if (!parallel(h.normal, axis.dir)) return false;
-        const own = topo.edges.filter((e) => e.faces.includes(n));
-        return own.every((e) => e.geometry?.type === 'circle' && coaxial(e.geometry.center, e.geometry.normal, axis.origin, axis.dir, TOL));
+        // a floor of the hole (its bottom, the step of a counterbore): bounded only by circles about the axis, each against a wall of the hole.
+        // The end of a boss the hole is drilled into is bounded by the boss's own (convex) wall, so it is where the hole enters, not part of it.
+        return topo.edges.every((e, ei) => {
+          if (!e.faces.includes(n)) return true;
+          if (e.geometry?.type !== 'circle' || !coaxial(e.geometry.center, e.geometry.normal, axis.origin, axis.dir, TOL)) return false;
+          const other = e.faces.find((k) => k !== n);
+          const g = other === undefined ? undefined : topo.faces[other]!.geometry;
+          return ei >= 0 && !!g && ((g.type === 'cylinder' && !g.convex && coaxial(g.origin, g.axis, axis.origin, axis.dir)) || (g.type === 'cone' && !g.convex && coaxial(g.apex, g.axis, axis.origin, axis.dir)));
+        });
       }
       return false;
     };
@@ -384,6 +402,8 @@ function findHoles(topo: Topology, adj: Map<number, number[]>[]): { record: Hole
       const sign = levels.length === 2 ? Math.sign(other!.z - entranceAt.z) : Math.sign(pieces.reduce((a, p) => a + (p.z0 + p.z1) / 2, 0) / pieces.length - entranceAt.z);
       if (sign === 0) continue;
       const down: Vec3 = [axis.dir[0] * sign, axis.dir[1] * sign, axis.dir[2] * sign];
+      // the hole enters through a face that faces out against the way it is drilled (the material is behind it)
+      if (dot(ef.normal, down) > -0.5) continue;
       const depthOf = (zz: number) => (zz - entranceAt.z) * sign;
       const walls = pieces.filter((p) => !p.plane).map((p) => {
         const a = { d: depthOf(p.z0), r: p.r0 };
@@ -399,6 +419,10 @@ function findHoles(topo: Topology, adj: Map<number, number[]>[]): { record: Hole
       const last = walls[walls.length - 1]!;
       const through = levels.length === 2;
       if (through && Math.abs(last.d1 - depthOf(other!.z)) > TOL) continue;
+      // through: the far rim is where the hole leaves the body, so a plane there faces on along the hole; a floor facing back up it (with a pin
+      // standing on it) is the bottom of a bore, not an exit
+      const exit = through ? topo.faces[other!.face]!.geometry : undefined;
+      if (exit?.type === 'plane' && dot(exit.normal, down) < 0.5) continue;
       // a blind hole's bottom needs no check of its own: with the hole's every rim at the entrance, the last wall ends on a floor of the group (a
       // disc), and anything standing in it (a pin) is a second rim, which makes the group not a blind hole (mutation-checked, DEV_LOG 2026-11-06)
       const cyl = (w: (typeof walls)[number]) => Math.abs(w.r0 - w.r1) <= TOL;
@@ -484,6 +508,94 @@ function canonical(d: Vec3): Vec3 {
   const u = unit(d);
   const k = Math.abs(u[0]) > 1e-12 ? 0 : Math.abs(u[1]) > 1e-12 ? 1 : 2;
   return u[k]! < 0 ? [-u[0], -u[1], -u[2]] : u;
+}
+
+/** How far down a body taken apart along several directions may go: a feature on a feature on the base. */
+const MAX_SIDE_DEPTH = 3;
+
+/**
+ * The base of a body: one extrusion direction if there is one, else (side bosses and pockets) the best direction with the faces in the way taken off by
+ * Delete Face, and each piece that made or took away recognized as an extrusion along its own direction.
+ */
+function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameFor, depth = 0): BaseRecord {
+  try {
+    return extrudeBase(kernel, shape, topo, frameFor);
+  } catch (first) {
+    if (!(first instanceof RecognizeError) || depth >= MAX_SIDE_DEPTH) throw first;
+    const best = bestDirection(topo);
+    if (!best || best.blocking.length === 0) throw first;
+    // the faces in the way, and every face that only they (and faces already taken) surround: the end of a boss, the floor of a pocket
+    const adj = adjacency(topo);
+    const group = new Set(best.blocking);
+    for (let grown = true; grown; ) {
+      grown = false;
+      topo.faces.forEach((_, i) => {
+        if (group.has(i)) return;
+        const around = [...adj[i]!.keys()];
+        if (around.length > 0 && around.every((n) => group.has(n))) {
+          group.add(i);
+          grown = true;
+        }
+      });
+    }
+    const made: ShapeId[] = [];
+    try {
+      let rest: ShapeId;
+      try {
+        rest = kernel.deleteFaces(shape, [...group]).shape;
+      } catch (e) {
+        if (e instanceof KernelError) throw first;
+        throw e;
+      }
+      made.push(rest);
+      const base = baseOf(kernel, rest, kernel.topology(rest), frameFor, depth + 1);
+      const extras: Extract<BaseRecord, { type: 'composite' }>['extras'] = [];
+      const size = kernel.massProps(shape).volume;
+      for (const [op, a, b] of [['boss', shape, rest], ['cut', rest, shape]] as const) {
+        const diff = kernel.boolean('cut', a, b);
+        made.push(diff.shape);
+        for (const piece of kernel.splitSolids(diff)) {
+          made.push(piece.shape);
+          if (kernel.massProps(piece.shape).volume <= 1e-9 * size) continue;
+          let rec: BaseRecord;
+          try {
+            rec = extrudeBase(kernel, piece.shape, kernel.topology(piece.shape), frameFor);
+          } catch (e) {
+            if (e instanceof RecognizeError) throw first;
+            throw e;
+          }
+          extras.push({ op, rec: rec as Extract<BaseRecord, { type: 'extrude' }> });
+        }
+      }
+      if (extras.length === 0) throw first;
+      return { type: 'composite', base, extras };
+    } finally {
+      for (const id of made) kernel.release(id);
+    }
+  }
+}
+
+/** The extrusion direction most faces fit, with the faces that do not (null when there are no planes or cylinders at all). */
+function bestDirection(topo: Topology): { d: Vec3; blocking: number[] } | null {
+  const candidates: Vec3[] = [];
+  const add = (d: Vec3) => {
+    const c = canonical(d);
+    if (!candidates.some((x) => parallel(x, c))) candidates.push(c);
+  };
+  for (const c of CANONICAL) add(c);
+  for (const f of topo.faces) {
+    if (f.geometry?.type === 'plane') add(f.geometry.normal);
+    if (f.geometry?.type === 'cylinder') add(f.geometry.axis);
+  }
+  // fewest faces in the way, then the most area along it (the main body), then the default directions first
+  const area = (d: Vec3) => topo.faces.filter((f) => !blockers({ ...topo, faces: [f] }, d).length).reduce((a, f) => a + f.area, 0);
+  let best: { d: Vec3; blocking: number[]; area: number } | null = null;
+  for (const d of candidates) {
+    const blocking = blockers(topo, d);
+    const a = area(d);
+    if (!best || blocking.length < best.blocking.length || (blocking.length === best.blocking.length && a > best.area + 1e-9)) best = { d, blocking, area: a };
+  }
+  return best && { d: best.d, blocking: best.blocking };
 }
 
 function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameFor): BaseRecord {
@@ -599,7 +711,7 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor): R
     }
     const topo2 = kernel.topology(current);
     const axis = revolveAxis(topo2);
-    const base = axis ? revolveBase(kernel, current, axis, planeThroughAxis(axis.dir), frameFor) : extrudeBase(kernel, current, topo2, frameFor);
+    const base = axis ? revolveBase(kernel, current, axis, planeThroughAxis(axis.dir), frameFor) : baseOf(kernel, current, topo2, frameFor);
     return {
       base,
       holes: holes.map((h) => h.record),
