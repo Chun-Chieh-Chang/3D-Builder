@@ -52,12 +52,14 @@ async function roundTrip(shape: ShapeId): Promise<{ doc: PartDoc; report: Recons
   });
   const regen = new Regenerator(kernel, solver, new Map([[sha, bytes]]));
   try {
-    const out = reconstructImported(kernel, regen, doc, 'imp1');
+    const out = reconstructImported(kernel, regen, doc, 'imp1', solver);
     // the result stands on its own: a fresh regenerator, without the file, rebuilds it to the same volume
     const fresh = new Regenerator(kernel, solver, new Map());
     try {
       const r = fresh.rebuild(out.doc);
       expect(r.features.filter((f) => f.status !== 'ok').map((f) => `${f.id}:${f.message}`)).toEqual([]);
+      // every sketch is fully defined: each size of the part is a dimension to change
+      expect(r.features.filter((f) => f.sketch && (f.sketch.status !== 'fully' || f.sketch.dof !== 0)).map((f) => `${f.id}:${f.sketch!.status}/${f.sketch!.dof}`)).toEqual([]);
       // checked here against the solid made by the test, not against the recognizer's own report
       const v0 = kernel.massProps(shape).volume;
       const v1 = kernel.massProps(r.body!.shape).volume;

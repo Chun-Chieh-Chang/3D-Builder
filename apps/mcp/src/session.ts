@@ -10,7 +10,7 @@ import { setLocale, type Locale } from '@3db/i18n';
 import { applyCommand, createEmptyPart, parsePart, type Command, type PartDoc, type Ref } from '@3db/model';
 import { Kernel, type MassProps, type ShapeId } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
-import { exportFaces, Regenerator, type FeatureResult, type RebuildResult } from '@3db/regen';
+import { exportFaces, reconstructImported, RecognizeError, Regenerator, type FeatureResult, type RebuildResult, type ReconstructReport } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint } from '@3db/naming';
 import { exportPartStep, readPartFile, writePartFile, writeStl, writeThreeMf } from '@3db/io';
 import { heapOf, shouldRestartHeap, HEAP_GROWTH_LIMIT } from '../../web/src/worker/heap';
@@ -313,6 +313,28 @@ export class CadSession {
   }
 
   // ------------------------------------------------------------------ commands
+
+  /**
+   * 「辨識特徵」 (F2.4, ADR 0239): imported body `featureId` replaced by sketches, extrusions, revolves, holes, fillets and chamfers that rebuild the same solid
+   * (checked against it), applied as one batch through `apply` (so the same transaction, undo and app gate). A body that cannot be rebuilt the same is
+   * refused with the reason and the part is not changed.
+   */
+  async recognize(featureId: unknown, options: { gate?: (commands: Command[]) => Promise<void> } = {}): Promise<ApplyReport & { recognized: ReconstructReport }> {
+    if (typeof featureId !== 'string' || featureId === '') throw new AgentError('feature must be the id of an imported body (part_summary lists the features)');
+    // a regenerator of its own: the rebuilds of the recognition must not release the shapes of the part as built
+    const own = new Regenerator(this.kernel, this.solver, this.blobs);
+    let found: { commands: Command[]; report: ReconstructReport };
+    try {
+      found = reconstructImported(this.kernel, own, this.doc, featureId, this.solver);
+    } catch (e) {
+      if (e instanceof RecognizeError) throw new AgentError(e.message);
+      throw e;
+    } finally {
+      own.dispose();
+    }
+    const applied = await this.apply(found.commands, options);
+    return { ...applied, recognized: found.report };
+  }
 
   /**
    * Applies `commands` in order as one transaction. A command that is not an object with a known `type` is refused before anything is applied

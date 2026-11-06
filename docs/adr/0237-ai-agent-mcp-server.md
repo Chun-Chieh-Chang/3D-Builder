@@ -39,7 +39,7 @@
 
 ## 工具
 
-`part_new`、`part_open`、`part_save`、`part_summary`、`command_reference`、`apply_commands`、`undo`、`query_elements`、`render_view`、`export_file`（STEP／STL／3MF）、`rebuild_events`、`session_status`。
+`part_new`、`part_open`、`part_save`、`part_summary`、`command_reference`、`apply_commands`、`undo`、`query_elements`、`render_view`、`export_file`（STEP／STL／3MF）、`rebuild_events`、`session_status`；2026-11-06 加 `recognize_features`（見 ADR 0239）。
 
 ## 紅隊四問
 

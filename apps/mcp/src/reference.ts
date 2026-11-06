@@ -77,4 +77,5 @@ How to work:
 3. Read the answer: 'broken' lists features that fail and why; 'after' has the volume, area and box. Compare them with what you expect.
 4. To pick a face, edge or vertex (for fillets, shells, sketch planes), ask query_elements and copy its 'ref' into the command as is.
 5. Look at the part with render_view when the numbers alone do not tell you enough.
-6. Save with part_save (a .3dbx file), or write STEP/STL with export_file. Files are read and written only inside the workspace folder.`;
+6. Save with part_save (a .3dbx file), or write STEP/STL with export_file. Files are read and written only inside the workspace folder.
+7. A part with an imported body (an importedBody feature, from a STEP or IGES file) can be turned into native features with recognize_features: it either rebuilds the same solid or says why not.`;

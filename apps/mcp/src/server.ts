@@ -31,6 +31,12 @@ export const TOOLS: Tool[] = [
   },
   { name: 'undo', description: 'Takes back the last batch that was kept.', inputSchema: { type: 'object', properties: {} } },
   {
+    name: 'recognize_features',
+    description:
+      'Replaces an imported body (a STEP or IGES file read into the part) by native, fully defined sketches, extrusions, revolves, holes (straight, counterbore, countersink), fillets and chamfers that rebuild the same solid: checked against it (volume, area and the volume not shared within 1e-6 relative) and kept as one batch, which undo takes back. Freeform or drafted faces, several solids, or anything else that cannot be rebuilt the same is refused with the reason and nothing changes.',
+    inputSchema: { type: 'object', properties: { feature: { type: 'string', description: "The id of the importedBody feature (part_summary lists the features)." } }, required: ['feature'] },
+  },
+  {
     name: 'query_elements',
     description: "Faces, edges or vertices of the part as built, with the 'ref' a command takes (copy it as is). Filter by type (plane, cylinder, line, circle, ...), by direction (a planar face's outward normal, or a straight edge's direction, within 1 degree) and by body.",
     inputSchema: { type: 'object', properties: { kind: { type: 'string', enum: ['face', 'edge', 'vertex'] }, type: { type: 'string' }, direction: vec3, body: { type: 'string' }, limit: { type: 'integer', minimum: 1 } }, required: ['kind'] },
@@ -131,6 +137,16 @@ export async function callTool(session: CadSession, name: string, raw: unknown, 
         const content: CallToolResult['content'] = [{ type: 'text', text: JSON.stringify(preview && 'error' in preview ? { ...rest, preview } : rest, null, 1) }];
         if (preview && !('error' in preview)) content.push({ type: 'image', data: Buffer.from(preview.png).toString('base64'), mimeType: 'image/png' });
         return { content, ...(report.error && !report.dryRun ? { isError: true } : {}) };
+      }
+      case 'recognize_features': {
+        const gate = linked
+          ? async (commands: unknown[]) => {
+              const r = await live!.request({ kind: 'apply', commands: commands as never, label: 'AI: recognize features' });
+              if (!r.ok) throw new AgentError(appRefusal(r));
+            }
+          : undefined;
+        const report = await session.recognize(a.feature, gate ? { gate } : {});
+        return { ...json(report), ...(report.error ? { isError: true } : {}) };
       }
       case 'undo':
         return json(

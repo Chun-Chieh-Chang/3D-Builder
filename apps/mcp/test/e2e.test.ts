@@ -38,7 +38,7 @@ const json = (r: CallToolResult) => JSON.parse((r.content[0] as { text: string }
 it('tells the client how to work, and lists its tools', async () => {
   expect(client.getInstructions()).toMatch(/apply_commands/);
   const { tools } = await client.listTools();
-  expect(tools.map((t) => t.name).sort()).toEqual(['apply_commands', 'command_reference', 'export_file', 'live_status', 'part_new', 'part_open', 'part_save', 'part_summary', 'query_elements', 'rebuild_events', 'render_view', 'session_status', 'undo']);
+  expect(tools.map((t) => t.name).sort()).toEqual(['apply_commands', 'command_reference', 'export_file', 'live_status', 'part_new', 'part_open', 'part_save', 'part_summary', 'query_elements', 'rebuild_events', 'recognize_features', 'render_view', 'session_status', 'undo']);
 });
 
 it('builds, previews, checks, looks at and writes a part', async () => {

@@ -81,7 +81,7 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
       try {
         let out;
         try {
-          out = reconstructImported(kernel, regen, doc, 'imp1');
+          out = reconstructImported(kernel, regen, doc, 'imp1', solver);
         } catch (e) {
           if (!(e instanceof RecognizeError)) throw new Error(`seed ${seed}: ${(e as Error).message}`);
           refused++;
@@ -90,6 +90,7 @@ it('120 random plates: each refused or rebuilt the same, nothing crashes', async
         }
         const res = regen.rebuild(out.doc);
         expect(res.features.every((f) => f.status === 'ok'), `seed ${seed}`).toBe(true);
+        expect(res.features.filter((f) => f.sketch && f.sketch.dof !== 0).map((f) => f.id), `seed ${seed}`).toEqual([]);
         const v0 = kernel.massProps(s).volume;
         const v1 = kernel.massProps(res.body!.shape).volume;
         const shared = kernel.common(s, res.body!.shape, 0);

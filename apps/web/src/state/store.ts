@@ -1843,8 +1843,14 @@ class AppStore {
    * one step to undo. The worker checks the result against the body it replaces; when it cannot be rebuilt the same, the user is told why and nothing changes.
    */
   async recognizeFeatures(featureId: Id): Promise<void> {
+    if (this.state.active !== 'part' || this.state.recognizing) return;
+    // the button is in the imported body's own panel, so its edit is open: it is closed as OK closes it (keeping what was changed in it), any other edit is left alone
+    if (this.state.editing) {
+      if (this.state.editing.featureId !== featureId) return;
+      this.commitEdit();
+      if (this.state.editing) return;
+    }
     const before = this.state;
-    if (before.active !== 'part' || before.editing || before.recognizing) return;
     const doc = this.history.doc;
     this.set({ recognizing: featureId, notice: { kind: 'info', text: t('recognize.working') } });
     try {

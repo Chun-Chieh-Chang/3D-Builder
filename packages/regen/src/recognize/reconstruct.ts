@@ -26,6 +26,7 @@ import {
   type SketchFeature,
 } from '@3db/model';
 import { edgeFingerprint } from '@3db/naming';
+import type { SketchSolver } from '@3db/sketch';
 import type { Regenerator, RebuildResult } from '../engine';
 import { addv, distanceToSharp, dot, len, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type HoleRecord, type Recognition, type SharpEdge } from './analyze';
 import type { Loop, P2 } from './loops';
@@ -85,11 +86,17 @@ export function frameFor(normal: Vec3, point: Vec3): Frame {
 
 // ------------------------------------------------------------------ building features
 
+/** A member of a union without its id, member by member. */
+type WithoutId<T> = T extends unknown ? Omit<T, 'id'> : never;
+
 class Builder {
   readonly features: Feature[] = [];
   readonly counts: ReconstructReport['features'] = { sketch: 0, extrude: 0, revolve: 0, hole: 0, fillet: 0, chamfer: 0, datum: 0 };
   private readonly planes = new Map<string, Ref>();
-  constructor(private readonly ids: IdAllocator) {}
+  constructor(
+    private readonly ids: IdAllocator,
+    private readonly solver?: SketchSolver,
+  ) {}
 
   private feature<F extends Feature>(f: F): F {
     this.features.push(f);
@@ -169,8 +176,51 @@ class Builder {
       entities.push({ id: centerline, type: 'line', p1: a, p2: b, construction: true });
     }
     const id = this.ids.take('sketch');
-    this.feature<SketchFeature>({ id, type: 'sketch', name: this.name('sketch'), suppressed: false, plane, entities, constraints });
+    const sketch: SketchFeature = { id, type: 'sketch', name: this.name('sketch'), suppressed: false, plane, entities, constraints };
+    if (this.solver) this.define(sketch, pts);
+    this.feature<SketchFeature>(sketch);
     return { id, ...(centerline ? { centerline } : {}) };
+  }
+
+  /**
+   * Makes the sketch fully defined, so that every size of what was recognized is a dimension to change: candidate relations and dimensions, in the order
+   * a designer gives them (on the origin, horizontal and vertical, the length of each line, then where each point is from the origin), each kept only
+   * when the solver says it takes a degree of freedom away without being redundant or in conflict. Every value is what the sketch already has, so nothing
+   * moves. A sketch the solver cannot finish is left as it is (under-defined), never over-defined.
+   */
+  private define(sketch: SketchFeature, pts: { id: Id; p: P2 }[]): void {
+    const solver = this.solver!;
+    const state = () => solver.solve(sketch);
+    let s = state();
+    if (s.status === 'over' || s.status === 'failed') return;
+    const at = new Map(pts.map((q) => [q.id, q.p]));
+    for (const e of sketch.entities) if (e.type === 'point') at.set(e.id, [e.x, e.y]);
+    const candidates: SketchConstraint[] = [];
+    const take = (c: WithoutId<SketchConstraint>) => candidates.push({ ...c, id: this.ids.take('d') } as SketchConstraint);
+    const ZERO = 1e-9;
+    for (const [id, p] of at) if (Math.hypot(p[0], p[1]) <= ZERO) take({ type: 'coincident', a: id, b: '@origin' });
+    const lines = sketch.entities.filter((e): e is Extract<SketchEntity, { type: 'line' }> => e.type === 'line');
+    for (const l of lines) {
+      const [a, b] = [at.get(l.p1)!, at.get(l.p2)!];
+      if (Math.abs(a[1] - b[1]) <= ZERO) take({ type: 'horizontal', a: l.id });
+      else if (Math.abs(a[0] - b[0]) <= ZERO) take({ type: 'vertical', a: l.id });
+    }
+    for (const l of lines) {
+      if (l.construction) continue;
+      const [a, b] = [at.get(l.p1)!, at.get(l.p2)!];
+      take({ type: 'distance', a: l.id, value: num(Math.hypot(b[0] - a[0], b[1] - a[1])) });
+    }
+    for (const [id, p] of at) {
+      take(Math.abs(p[0]) <= ZERO ? { type: 'vertical', a: id, b: '@origin' } : { type: 'distanceX', a: '@origin', b: id, value: num(Math.abs(p[0])) });
+      take(Math.abs(p[1]) <= ZERO ? { type: 'horizontal', a: id, b: '@origin' } : { type: 'distanceY', a: '@origin', b: id, value: num(Math.abs(p[1])) });
+    }
+    for (const c of candidates) {
+      if (s.dof === 0) break;
+      sketch.constraints.push(c);
+      const next = state();
+      if (next.status === 'over' || next.status === 'failed' || next.dof >= s.dof || next.redundant.length || next.conflicting.length) sketch.constraints.pop();
+      else s = next;
+    }
   }
 
   base(rec: Recognition, merge: boolean | undefined): void {
@@ -314,9 +364,9 @@ function failedOf(r: RebuildResult, ids: Iterable<Id>): string | null {
 
 /**
  * Replaces imported body `featureId` of `doc` by the features that build it (F2.4). `regen` is the regenerator of the document (its kernel and the
- * document's blobs). Returns the new document; throws `RecognizeError` and leaves nothing changed when the body cannot be rebuilt the same.
+ * document's blobs); with `solver`, every sketch made is fully defined (`Builder.define`). Returns the new document; throws `RecognizeError` and leaves nothing changed when the body cannot be rebuilt the same.
  */
-export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: PartDoc, featureId: Id): { doc: PartDoc; commands: Command[]; report: ReconstructReport } {
+export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: PartDoc, featureId: Id, solver?: SketchSolver): { doc: PartDoc; commands: Command[]; report: ReconstructReport } {
   const index = doc.features.findIndex((f) => f.id === featureId);
   const imported = doc.features[index];
   if (!imported || imported.type !== 'importedBody') throw new RecognizeError(t('recognize.notImported'));
@@ -340,7 +390,7 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
     const rec = recognize(kernel, shape, frameFor);
 
     const ids = new IdAllocator(doc.idCounters, idsInUse(doc));
-    const b = new Builder(ids);
+    const b = new Builder(ids, solver);
     b.base(rec, imported.merge);
     b.holes(rec.holes);
     // the commands, as the app applies them in one undoable step

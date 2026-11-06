@@ -5611,3 +5611,25 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 **結果**：`feature-recognition` 20/20（約 6 秒）；`feature-recognition-fuzz` 120 組 120 重建、0 拒絕（約 24 秒），Heap 128 → 661 MiB（約 4.4 MiB／次，不宣稱零洩漏）。typecheck、lint:rules、lint:deps、lint:i18n、lint:repo 通過。相關測試另跑（單一 worker）：i18n、help、help-examples、phase1 import、phase3 import-repair／direct-edit／bodies、IGES、STL、context-menus、action-icons、packages/kernel、apps/mcp、apps/web/test，共 65 檔 836 項通過、1 既有略過。**全量 `npm test`（同日重跑）**：VM 只有 4 GB 記憶體、無 swap，整批跑會被系統結束，改為逐檔各一個程序、單一 worker 分批跑：**386 檔全部跑完，382 檔通過、4 檔整檔略過（需外部樣本），0 失敗；4,561 項通過、25 項略過**。其中 4 檔整檔跑不完 VM 的單次時限或記憶體，改為逐一測試跑，全部通過：`phase3/knurl`（16 項，合計約 180 秒）、`phase3/thread`（24 項）、`phase3/thread-fuzz`（5 項；整檔在 4 GB VM 中 SIGKILL，即 AGENTS §3.5 的螺牙 Heap 成長，與本次改動無關）、`phase6/section-offset-biarc`（18 項）、`phase8/fuzz-sheet`（170 項；第 173 行依賴前兩組，三組一起跑）。這是分檔結果的合計，不是單一一次 `npm test` 的輸出；Windows 主機上的整批結果仍以之後的實跑為準。`verify:ui` 未跑。執行環境為使用者電腦上的 Linux VM 另一份 `npm ci` 的副本（Windows 版 node_modules 不能在 VM 執行）。
 
 **未做／待確認**：`verify:ui` 瀏覽器腳本未新增；使用者端未手動試用；MCP 工具未加；草圖只加直徑／半徑尺寸（欠定義）；他牌真實 STEP（`SW_SAMPLE_DIR`）未跑。
+
+## 2026-11-06（續）特徵辨識的瀏覽器腳本與一個介面缺陷
+
+- 新增 `tests/e2e/phase8-feature-recognition.js`：新零件匯入 `tests/fixtures/step/plate-with-hole.step`，從**編輯中**的面板（`store.beginEdit`，同 `phase3-direct-edit.js`）與**雙擊設計樹**顯示的面板各按一次「辨識特徵」；檢查設計樹出現 草圖／伸長／孔（直徑 8、貫穿）、體積 = 40·30·10 − π·4²·10（相對 1e-6）、沒有失敗特徵、檔案資料移除；一次復原回到輸入本體、再取消復原相同。
+- **抓到的缺陷**：按鈕只在面板中出現，而 `store.recognizeFeatures` 遇到「編輯中」就直接返回，編輯中的面板按了沒反應。單元測試不經介面，所以沒抓到。修正：正在編輯的就是這個輸入本體時，先 `commitEdit()`（等同按確定、保留面板裡改過的值），再辨識；正在編輯別的特徵則不動作。
+- 第一版腳本只用雙擊開面板，那時 `editing` 為 null，把修正拿掉仍然通過（突變沒被抓到）；改為兩種開法都測後，拿掉修正 → 腳本等不到辨識結果、124.9 秒逾時失敗；放回修正 → 通過（約 6 秒）。
+- 執行環境：VM 無 Chrome、apt 與 Chrome 下載被網路白名單擋，改用 npm 套件 `@sparticuz/chromium`（放在 VM 的 `~/work/chr`，不進 repo）設 `CHROME_PATH`。同時跑 `phase3-direct-edit`、`phase3-hole-direct` 通過；typecheck 通過。整批 `verify:ui`（271 支）未跑。
+
+## 2026-11-06（續）辨識出的草圖完全定義
+
+- `Builder.define`（`packages/regen/src/recognize/reconstruct.ts`）：候選約束依設計者順序（與原點重合 → 水平／垂直 → 直線長度 → 點相對原點的 X／Y，座標 0 改水平／垂直對齊原點），每加一個就用 PlaneGCS 求解，只保留讓 dof 下降且沒有多餘／衝突的；數值皆等於現值，幾何不動。做不完則保持欠定義，絕不過定義。
+- `reconstructImported(kernel, regen, doc, id, solver?)`：Worker 傳入它的求解器；沒有求解器時行為同前一版（只有直徑／半徑）。
+- 紅隊：① 輸入——尺寸值取絕對值、方向由求解器依現有位置決定（與 `tests/phase1/builders.ts` 的 `pin` 相同），座標 0 不用 0 值尺寸而用對齊關係；② 相交——不改幾何，只加約束；③ 依賴——只用既有約束種類與 `@origin`；④ 真值——測試斷言重算後每個草圖 `fully`、dof 0，且體積／對稱差仍 ≤ 1e-6。
+- 結果：`feature-recognition` 20/20（每個草圖 fully/0）；`feature-recognition-fuzz` 120/120（每個草圖 dof 0），Heap 128 → 661 MiB（同前）；`phase8-feature-recognition.js` PASS（兩個草圖 fully/0）；typecheck 通過。60×40 板加 Ø8 孔整個辨識約 0.5 秒（VM）。
+
+## 2026-11-06（續）MCP 工具 `recognize_features`
+
+- `CadSession.recognize(featureId, { gate })`：獨立 Regenerator 跑 `reconstructImported`（含求解器，草圖完全定義），命令交給既有 `apply`，所以交易、`broken`、`undo`、連線 gate 全部沿用，不另開建模路徑（ADR 0237 的原則）。`RecognizeError` → `AgentError`。
+- `server.ts` 新工具 `recognize_features {feature}`（必填、拼錯的參數名照既有 `argsOf` 拒絕）；`INSTRUCTIONS` 第 7 點。
+- 紅隊：① 輸入——非字串或空字串立即拒絕，不存在或非輸入本體的 id 由 `reconstructImported` 拒絕；② 相交——同 ADR 0239 的全有或全無；③ 依賴——只經 `apply`；④ 真值——測試以手算體積 `PLATE_WITH_HOLE_VOLUME` 比對，拒絕時比對序列化文件。
+- 結果：`apps/mcp/test/recognize.test.ts` 2/2；apps/mcp 全部 6 檔 51 項通過（含工具清單）。
+

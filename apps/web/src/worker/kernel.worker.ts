@@ -242,7 +242,7 @@ const api: KernelApi = {
     // a regenerator of its own: the many rebuilds of the recognition must not release the shapes of the part on screen
     const own = new Regenerator(kernel, solver, blobs);
     try {
-      const { commands, report } = reconstructImported(kernel, own, doc, featureId);
+      const { commands, report } = reconstructImported(kernel, own, doc, featureId, solver);
       return { commands, report };
     } catch (e) {
       throw new Error(e instanceof Error ? e.message : String(e));
