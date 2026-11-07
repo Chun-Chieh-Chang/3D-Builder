@@ -6,6 +6,7 @@
 
 | `faces-only.step` | `tests/support/stepSamples.ts` 的 `facesOnly()`（2026-10-08）：20×10×5 方塊的六個面，沒有實體 | 瀏覽器腳本 `tests/e2e/phase3-direct-edit.js` 的「輸入修復」（`npm run verify:ui` 在 5393 埠提供） |
 | `gapped.step` | 同上的 `gapped(0.05)`：頂面抬高 0.05 mm，與側面接不上 | 同上：預設容差縫不起來、縫合容差 0.1 縫得起來 |
+| `spline-outline.step` | 本程式輸出（2026-11-07，OCCT 8.0）：寬 28.72 的開放樣條輪廓伸長 20，體積 17016.96 | 瀏覽器腳本 `tests/e2e/phase8-recognize-spline.js`：樣條輪廓的雙圓弧近似（ADR 0243） |
 
 輸入的面依「檔案讀進來的順序」命名（`<特徵>:f<k>`）。如果日後升級幾何核心改變了這個順序，金樣測試會先失敗，
 而不是讓使用者零件裡的參考默默指到別的面。這些檔案不可修改；需要新情境時另外新增。

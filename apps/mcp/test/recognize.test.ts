@@ -3,7 +3,7 @@
  * session writes of the worked example), which is replaced by native features: the volume is checked against the one worked out by hand, every sketch is
  * fully defined, undo brings the import back, and a refusal leaves the part as it was (the serialized document is compared).
  */
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -74,4 +74,33 @@ it('refuses a feature that is not an imported body, or none, and leaves the part
   const misspelt = await callTool(s, 'recognize_features', { featre: 'import1' });
   expect(misspelt.isError).toBe(true);
   expect(serializePart(s.doc)).toBe(doc);
+});
+
+describe('a spline outline (ADR 0243)', () => {
+  const importedSpline = async () => {
+    const bytes = new Uint8Array(readFileSync(join(__dirname, '../../../tests/fixtures/step/spline-outline.step')));
+    const sha = await sha256Hex(bytes);
+    const doc = applyCommand(createEmptyPart(), { type: 'importBody', blob: { id: 'blob1', sha256: sha, kind: 'step', fileName: 'spline.step' }, feature: { id: 'import1', type: 'importedBody', name: 'i', suppressed: false, blob: 'blob1' }, index: 0 });
+    return s.load(doc, new Map([[sha, bytes]]));
+  };
+
+  it('unasked, refused with the part as it was; asked, rebuilt and told how close', async () => {
+    await importedSpline();
+    const refused = await callTool(s, 'recognize_features', { feature: 'import1' });
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toContain('自由曲面');
+    const r = data(await callTool(s, 'recognize_features', { feature: 'import1', approximate_splines: true }));
+    expect(r.committed).toBe(true);
+    const close = r.recognized.approximation;
+    expect(close.bound).toBeGreaterThan(0);
+    expect(close.bound).toBeLessThanOrEqual(0.01);
+    expect(close.distance).toBeLessThanOrEqual(close.bound);
+  });
+
+  it('a value that is no yes or no is refused, not taken as one', async () => {
+    await importedSpline();
+    const r = await callTool(s, 'recognize_features', { feature: 'import1', approximate_splines: 'yes' });
+    expect(r.isError).toBe(true);
+    expect(text(r)).toContain('approximate_splines');
+  });
 });

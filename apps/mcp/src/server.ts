@@ -35,7 +35,7 @@ export const TOOLS: Tool[] = [
     name: 'recognize_features',
     description:
       'Replaces an imported body (a STEP or IGES file read into the part) by native, fully defined sketches, extrusions, revolves, holes (straight, counterbore, countersink), fillets and chamfers that rebuild the same solid: checked against it (volume, area and the volume not shared within 1e-6 relative) and kept as one batch, which undo takes back. Freeform or drafted faces, several solids, or anything else that cannot be rebuilt the same is refused with the reason and nothing changes.',
-    inputSchema: { type: 'object', properties: { feature: { type: 'string', description: "The id of the importedBody feature (part_summary lists the features)." } }, required: ['feature'] },
+    inputSchema: { type: 'object', properties: { feature: { type: 'string', description: "The id of the importedBody feature (part_summary lists the features)." }, approximate_splines: { type: 'boolean', description: 'Make the spline outline of an extrusion of arcs. The result is then close to the original, not the same: read recognized.approximation for the bound and the measured distance. Off unless asked for.' } }, required: ['feature'] },
   },
   {
     name: 'query_elements',
@@ -146,7 +146,8 @@ export async function callTool(session: CadSession, name: string, raw: unknown, 
               if (!r.ok) throw new AgentError(appRefusal(r));
             }
           : undefined;
-        const report = await session.recognize(a.feature, gate ? { gate } : {});
+        if (a.approximate_splines !== undefined && typeof a.approximate_splines !== 'boolean') return refused('approximate_splines must be true or false');
+        const report = await session.recognize(a.feature, { ...(gate ? { gate } : {}), approximateSplines: a.approximate_splines === true });
         return { ...json(report), ...(report.error ? { isError: true } : {}) };
       }
       case 'undo':

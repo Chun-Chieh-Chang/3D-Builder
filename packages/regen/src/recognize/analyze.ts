@@ -7,7 +7,20 @@
 import { t } from '@3db/i18n';
 import { KernelError, rethrowTrap, type FaceInfo, type Frame, type Kernel, type SectionEdge, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
 import type { Budget } from '../budget';
+import { biarcEnvelope } from '../section/envelope';
 import { chainLoops, LoopError, type Loop, type P2 } from '../section/loops';
+
+/**
+ * The user's choice to have a spline outline made of biarcs (ADR 0243): off unless asked for, since the result is then close to the original rather than the same. Filled in as it is used.
+ */
+export interface SplineApproximation {
+  /** What each biarc is built to keep within (mm). */
+  tolerance: number;
+  /** The largest bound actually proved for a piece (mm); 0 when no spline was met. */
+  bound: number;
+  /** Whether a spline was met at all: without one the body is held to the exact check. */
+  used: boolean;
+}
 
 export class RecognizeError extends Error {
   override readonly name = 'RecognizeError';
@@ -481,7 +494,33 @@ function findHoles(topo: Topology, adj: Map<number, number[]>[]): { record: Hole
 
 // ------------------------------------------------------------------ base body
 
-function section(kernel: Kernel, shape: ShapeId, frame: Frame, box: { min: Vec3; max: Vec3 }, half = false, budget?: Budget): Loop[] {
+/** The centre of the circle through three points, or null when they lie on a line. */
+function circleThrough(a: readonly number[], m: readonly number[], b: readonly number[]): [number, number] | null {
+  const [ax, ay, bx, by, cx, cy] = [a[0]!, a[1]!, m[0]!, m[1]!, b[0]!, b[1]!];
+  const det = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+  if (Math.abs(det) < 1e-14) return null;
+  const [s1, s2, s3] = [ax * ax + ay * ay, bx * bx + by * by, cx * cx + cy * cy];
+  return [(s1 * (by - cy) + s2 * (cy - ay) + s3 * (ay - by)) / det, (s1 * (cx - bx) + s2 * (ax - cx) + s3 * (bx - ax)) / det];
+}
+
+/** A section's splines as biarcs, with the bound that was proved kept in `approx`. */
+function asBiarcs(edges: SectionEdge[], approx: SplineApproximation): SectionEdge[] {
+  return edges.flatMap((e): SectionEdge[] => {
+    if (e.kind !== 'bezier') return [e];
+    approx.used = true;
+    return e.spans.flatMap((span) => {
+      const { pieces, maxBound } = biarcEnvelope(span, approx.tolerance);
+      approx.bound = Math.max(approx.bound, maxBound);
+      return pieces.map((p): SectionEdge => {
+        const [a, b]: [P2, P2] = [[p.from[0], p.from[1]], [p.to[0], p.to[1]]];
+        const c = p.kind === 'arc' ? circleThrough(p.from, p.mid, p.to) : null;
+        return c ? { kind: 'arc', c, r: Math.hypot(a[0] - c[0], a[1] - c[1]), a, b, mid: [p.mid[0], p.mid[1]] } : { kind: 'line', a, b };
+      });
+    });
+  });
+}
+
+function section(kernel: Kernel, shape: ShapeId, frame: Frame, box: { min: Vec3; max: Vec3 }, half = false, budget?: Budget, approx?: SplineApproximation): Loop[] {
   budget?.check();
   const corners: Vec3[] = [];
   for (const x of [box.min[0], box.max[0]]) for (const y of [box.min[1], box.max[1]]) for (const z of [box.min[2], box.max[2]]) corners.push([x, y, z]);
@@ -497,7 +536,7 @@ function section(kernel: Kernel, shape: ShapeId, frame: Frame, box: { min: Vec3;
     throw e;
   }
   try {
-    return chainLoops(edges, TOL * 10);
+    return chainLoops(approx ? asBiarcs(edges, approx) : edges, TOL * 10);
   } catch (e) {
     if (e instanceof LoopError) throw new RecognizeError(e.curve ? t('recognize.unsupportedCurve', { curve: e.curve }) : t('recognize.sectionOpen'));
     throw e;
@@ -538,11 +577,19 @@ function wallLean(f: FaceInfo, d: Vec3): number | null {
   return null;
 }
 
-function blockers(topo: Topology, d: Vec3): number[] {
+/** A face with no simple surface that is a straight wall along a direction, when splines are to be approximated (ADR 0243). */
+type FreeWall = (face: number, d: Vec3) => boolean;
+
+function freeWalls(kernel: Kernel, shape: ShapeId, approx?: SplineApproximation): FreeWall | undefined {
+  return approx ? (face, d) => kernel.faceRuledAlong(shape, face, d) : undefined;
+}
+
+function blockers(topo: Topology, d: Vec3, free?: FreeWall): number[] {
   return topo.faces.flatMap((f, i) => {
     const g = f.geometry;
     if (g?.type === 'plane' && parallel(g.normal, d)) return [];
-    return wallLean(f, d) === null ? [i] : [];
+    if (wallLean(f, d) !== null) return [];
+    return !g && free?.(i, d) ? [] : [i];
   });
 }
 
@@ -609,13 +656,13 @@ const MAX_SIDE_DEPTH = 3;
  * The base of a body: one extrusion direction if there is one, else (side bosses and pockets) the best direction with the faces in the way taken off by
  * Delete Face, and each piece that made or took away recognized as an extrusion along its own direction.
  */
-function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameFor, depth = 0, budget?: Budget): BaseRecord {
+function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameFor, depth = 0, budget?: Budget, approx?: SplineApproximation): BaseRecord {
   try {
-    return extrudeBase(kernel, shape, topo, frameFor, budget);
+    return extrudeBase(kernel, shape, topo, frameFor, budget, approx);
   } catch (first) {
     rethrowTrap(first);
     if (!(first instanceof RecognizeError) || depth >= MAX_SIDE_DEPTH) throw first;
-    const best = bestDirection(topo);
+    const best = bestDirection(topo, freeWalls(kernel, shape, approx));
     if (!best || best.blocking.length === 0) throw first;
     // the faces in the way, and every face that only they (and faces already taken) surround: the end of a boss, the floor of a pocket
     const adj = adjacency(topo);
@@ -641,7 +688,7 @@ function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameF
         throw e;
       }
       made.push(rest);
-      const base = baseOf(kernel, rest, kernel.topology(rest), frameFor, depth + 1, budget);
+      const base = baseOf(kernel, rest, kernel.topology(rest), frameFor, depth + 1, budget, approx);
       const extras: Extract<BaseRecord, { type: 'composite' }>['extras'] = [];
       const size = kernel.massProps(shape).volume;
       for (const [op, a, b] of [['boss', shape, rest], ['cut', rest, shape]] as const) {
@@ -652,7 +699,7 @@ function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameF
           if (kernel.massProps(piece.shape).volume <= 1e-9 * size) continue;
           let rec: BaseRecord;
           try {
-            rec = extrudeBase(kernel, piece.shape, kernel.topology(piece.shape), frameFor, budget);
+            rec = extrudeBase(kernel, piece.shape, kernel.topology(piece.shape), frameFor, budget, approx);
           } catch (e) {
             if (e instanceof RecognizeError) throw first;
             throw e;
@@ -669,7 +716,7 @@ function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameF
 }
 
 /** The extrusion direction most faces fit, with the faces that do not (null when there are no planes or cylinders at all). */
-function bestDirection(topo: Topology): { d: Vec3; blocking: number[] } | null {
+function bestDirection(topo: Topology, free?: FreeWall): { d: Vec3; blocking: number[] } | null {
   const candidates: Vec3[] = [];
   const add = (d: Vec3) => {
     const c = canonical(d);
@@ -681,17 +728,17 @@ function bestDirection(topo: Topology): { d: Vec3; blocking: number[] } | null {
     if (f.geometry?.type === 'cylinder') add(f.geometry.axis);
   }
   // fewest faces in the way, then the most area along it (the main body), then the default directions first
-  const area = (d: Vec3) => topo.faces.filter((f) => !blockers({ ...topo, faces: [f] }, d).length).reduce((a, f) => a + f.area, 0);
   let best: { d: Vec3; blocking: number[]; area: number } | null = null;
   for (const d of candidates) {
-    const blocking = blockers(topo, d);
-    const a = area(d);
+    const blocking = blockers(topo, d, free);
+    const a = topo.faces.reduce((sum, f, i) => (blocking.includes(i) ? sum : sum + f.area), 0);
     if (!best || blocking.length < best.blocking.length || (blocking.length === best.blocking.length && a > best.area + 1e-9)) best = { d, blocking, area: a };
   }
   return best && { d: best.d, blocking: best.blocking };
 }
 
-function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameFor, budget?: Budget): BaseRecord {
+function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameFor, budget?: Budget, approx?: SplineApproximation): BaseRecord {
+  const free = freeWalls(kernel, shape, approx);
   const candidates: Vec3[] = [];
   const addCandidate = (d: Vec3) => {
     const c = canonical(d);
@@ -708,7 +755,7 @@ function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: F
     const caps = topo.faces.filter((f) => f.geometry?.type === 'plane' && parallel(f.geometry.normal, d));
     const levels = [...new Set(caps.map((f) => dot(f.center, d).toFixed(7)))].map(Number).sort((a, b) => a - b);
     const rank = CANONICAL.findIndex((c) => parallel(c, d));
-    return { d, levels, cap: caps.reduce((a, f) => a + f.area, 0), blocking: blockers(topo, d), rank: rank < 0 ? 9 : rank };
+    return { d, levels, cap: caps.reduce((a, f) => a + f.area, 0), blocking: blockers(topo, d, free), rank: rank < 0 ? 9 : rank };
   });
   const valid = options.filter((o) => o.blocking.length === 0 && o.levels.length >= 2);
   if (valid.length === 0) {
@@ -726,13 +773,14 @@ function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: F
   const layers = exact.slice(0, -1).map((h, i) => {
     const top = exact[i + 1]!;
     const frame = frameFor(d, [d[0] * h, d[1] * h, d[2] * h]);
-    const cut = (f: number): Loop[] => section(kernel, shape, { ...frame, origin: addv(frame.origin, d, (top - h) * f) }, box, false, budget);
+    const cut = (f: number): Loop[] => section(kernel, shape, { ...frame, origin: addv(frame.origin, d, (top - h) * f) }, box, false, budget, approx);
     // the walls of this layer, and how they lean: one extrusion has one draft
     const leans = topo.faces.flatMap((f, k) => {
       const [lo, hi] = extent[k]!;
       if (!(lo < top - 1e-7 && hi > h + 1e-7)) return [];
       const lean = wallLean(f, d);
-      return lean === null ? [] : [lean];
+      if (lean === null) return !f.geometry && free?.(k, d) ? [0] : [];
+      return [lean];
     });
     const angle = leans.length ? leans[0]! : 0;
     if (leans.some((x) => Math.abs(x - angle) > 1e-7)) {
@@ -786,13 +834,19 @@ export function planeThroughAxis(dir: Vec3): Vec3 {
  * Takes `shape` apart. The shapes made on the way are released; `shape` is not. Throws `RecognizeError` with a message for the user when some part of
  * the body is none of the features this recognizes.
  */
-export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, budget?: Budget): Recognition {
+export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, budget?: Budget, approx?: SplineApproximation): Recognition {
   if (kernel.solidCount(shape) !== 1) throw new RecognizeError(t('recognize.oneSolid', { n: kernel.solidCount(shape) }));
   const made: ShapeId[] = [];
   try {
     const topo0 = kernel.topology(shape);
     const odd = topo0.faces.flatMap((f, i) => (ANALYTIC.has(f.surface) && f.geometry ? [] : [i]));
-    if (odd.length) throw new RecognizeError(t('recognize.freeform', { n: odd.length, faces: describe(topo0, odd) }));
+    if (odd.length) {
+      // asked to, faces like these may be the walls of an extrusion; they must all be walls along one direction, the direction some plane of the body faces
+      const free = freeWalls(kernel, shape, approx);
+      const along = (d: Vec3) => odd.every((i) => !!free?.(i, d));
+      const walls = free && topo0.faces.some((f) => f.geometry?.type === 'plane' && along(f.geometry.normal));
+      if (!walls) throw new RecognizeError(`${t('recognize.freeform', { n: odd.length, faces: describe(topo0, odd) })}${approx ? '' : ` ${t('recognize.freeformHint')}`}`);
+    }
     const smooth = kernel.smoothEdges(shape, topo0.edges.map((_, i) => i));
     const cands = blendCandidates(topo0, smooth, adjacency(topo0));
     const blends = removeBlends(kernel, shape, topo0, cands);
@@ -825,7 +879,7 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
     }
     const topo2 = kernel.topology(current);
     const axis = revolveAxis(topo2);
-    const base = axis ? revolveBase(kernel, current, axis, planeThroughAxis(axis.dir), frameFor, budget) : baseOf(kernel, current, topo2, frameFor, 0, budget);
+    const base = axis ? revolveBase(kernel, current, axis, planeThroughAxis(axis.dir), frameFor, budget) : baseOf(kernel, current, topo2, frameFor, 0, budget, approx);
     return {
       base,
       holes: holes.map((h) => h.record),

@@ -337,13 +337,13 @@ export class CadSession {
    * (checked against it), applied as one batch through `apply` (so the same transaction, undo and app gate). A body that cannot be rebuilt the same is
    * refused with the reason and the part is not changed.
    */
-  async recognize(featureId: unknown, options: { gate?: (commands: Command[]) => Promise<void> } = {}): Promise<ApplyReport & { recognized: ReconstructReport }> {
+  async recognize(featureId: unknown, options: { gate?: (commands: Command[]) => Promise<void>; approximateSplines?: boolean } = {}): Promise<ApplyReport & { recognized: ReconstructReport }> {
     if (typeof featureId !== 'string' || featureId === '') throw new AgentError('feature must be the id of an imported body (part_summary lists the features)');
     // a regenerator of its own: the rebuilds of the recognition must not release the shapes of the part as built
     const own = new Regenerator(this.kernel, this.solver, this.blobs);
     let found: { commands: Command[]; report: ReconstructReport };
     try {
-      found = reconstructImported(this.kernel, own, this.doc, featureId, this.solver);
+      found = reconstructImported(this.kernel, own, this.doc, featureId, this.solver, undefined, { approximateSplines: options.approximateSplines === true });
     } catch (e) {
       if (e instanceof RecognizeError || e instanceof BudgetError) throw new AgentError(e.message);
       throw e;

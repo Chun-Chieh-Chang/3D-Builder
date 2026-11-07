@@ -2067,6 +2067,33 @@ export class Kernel {
    * face and the round that meets it. The two faces' normals are compared at three places along the edge (the middle and near each end); an edge with
    * not exactly two faces (a seam, an edge of an open shell) is not smooth in this sense, the caller treats those by themselves.
    */
+  /**
+   * Whether a face is a straight wall along `d`, whatever kind of surface carries it (an extrusion surface, or the B-spline a STEP file made of one): its normal is square to `d` everywhere it
+   * was asked. Asked at 9 × 9 places within the face's own parameter range (ADR 0243).
+   */
+  faceRuledAlong(target: ShapeId, faceIndex: number, d: Vec3): boolean {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const face = ShapeIndex.of(oc, this.get(target), T.FACE, arena).keys[faceIndex];
+      if (!face) throw new KernelError(t('edit.faceOutOfRange', { index: faceIndex }));
+      const ad = arena.own(new oc.BRepAdaptor_Surface(arena.own(oc.TopoDS.Face(face)), true));
+      const [u0, u1, v0, v1] = [ad.FirstUParameter(), ad.LastUParameter(), ad.FirstVParameter(), ad.LastVParameter()];
+      for (let i = 0; i < 9; i++) {
+        for (let j = 0; j < 9; j++) {
+          const d1 = ad.EvalD1(u0 + ((u1 - u0) * (i + 0.5)) / 9, v0 + ((v1 - v0) * (j + 0.5)) / 9);
+          arena.own(d1.Point);
+          const c = cross3(this.xyz(arena.own(d1.D1U)), this.xyz(arena.own(d1.D1V)));
+          const len = Math.hypot(...c);
+          if (len > 1e-12 && Math.abs(c[0] * d[0] + c[1] * d[1] + c[2] * d[2]) / len > 1e-6) return false;
+        }
+      }
+      return true;
+    } finally {
+      arena.dispose();
+    }
+  }
+
   smoothEdges(target: ShapeId, edgeIndices: number[]): boolean[] {
     const oc = this.oc;
     const arena = new Arena();

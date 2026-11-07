@@ -42,7 +42,7 @@ export interface JobApi {
    * 「辨識特徵」 (F2.4): the commands that replace imported body `featureId` of `doc` by the features that build the same solid, checked against the body they replace, with
    * what was made and how near it is. Rejects with the reason the user is told when the body cannot be rebuilt the same, or the job went past its limits.
    */
-  recognizeFeatures(doc: PartDoc, featureId: Id, blobs: Map<string, Uint8Array>): Promise<{ commands: import('@3db/model').Command[]; report: import('@3db/regen').ReconstructReport }>;
+  recognizeFeatures(doc: PartDoc, featureId: Id, blobs: Map<string, Uint8Array>, options?: { approximateSplines?: boolean }): Promise<{ commands: import('@3db/model').Command[]; report: import('@3db/regen').ReconstructReport }>;
 }
 
 export interface ProbeApi {

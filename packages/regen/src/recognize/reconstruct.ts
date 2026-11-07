@@ -29,7 +29,8 @@ import { edgeFingerprint } from '@3db/naming';
 import type { SketchSolver } from '@3db/sketch';
 import { RECOGNIZE_LIMITS, startBudget, type BudgetLimits } from '../budget';
 import type { Regenerator, RebuildResult } from '../engine';
-import { addv, cross, distanceToSharp, dot, len, planeThroughAxis, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type HoleRecord, type Recognition, type SharpEdge } from './analyze';
+import { addv, cross, distanceToSharp, dot, len, planeThroughAxis, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type BaseRecord, type HoleRecord, type Recognition, type SharpEdge, type SplineApproximation } from './analyze';
+import { compareSections, sectionsClose } from './compareSections';
 import type { Loop, P2 } from '../section/loops';
 
 export { RecognizeError } from './analyze';
@@ -44,7 +45,28 @@ export interface ReconstructReport {
   volumeError: number;
   areaError: number;
   difference: number;
+  /** Set when a spline outline was approximated (ADR 0243): the rebuilt solid is close to the original, not the same. */
+  approximation?: {
+    /** The largest distance the biarcs were proved to keep from the spline (mm). */
+    bound: number;
+    /** The largest distance measured between the two boundaries, over the sections compared (mm). */
+    distance: number;
+    /** Over the sections compared, the largest difference of area and the largest area not shared, each over the section's area. */
+    sectionAreaError: number;
+    sectionDifference: number;
+    /** How many sections were compared. */
+    sections: number;
+  };
 }
+
+/** What recognition may do beyond rebuilding the very same solid. */
+export interface ReconstructOptions {
+  /** Make a spline outline of biarcs, and say how close that is. Off by default: the user asks for it (ADR 0243). */
+  approximateSplines?: boolean;
+}
+
+/** What each biarc is built to keep within (mm): the same size as a hundredth, and 16 pieces for a gentle curve of 30 mm. */
+export const SPLINE_TOLERANCE = 0.01;
 
 /** The relative error the rebuilt solid may have (volume, area, and the volume not shared). */
 export const RECOGNIZE_TOLERANCE = 1e-6;
@@ -387,6 +409,62 @@ function blendFeature(rec: BlendRecord, r: RebuildResult, ids: IdAllocator, b: B
 
 // ------------------------------------------------------------------ the whole
 
+/**
+ * The check when a spline was made of biarcs (ADR 0243): the solids are not the same, so they are compared for what the approximation promises. In the section at a quarter, the middle and
+ * three quarters of each layer: the boundaries no further apart than the bound, and the areas that differ and that are not shared no more than that distance along the boundary. And the
+ * volumes, by the same reasoning over the surface. A solid boolean is not asked for: two surfaces crossing each other within a hundredth of a millimetre is what it does worst.
+ */
+export function approximateReport(kernel: Kernel, whole: ShapeId, rebuilt: ShapeId, rec: Recognition, approx: SplineApproximation, base: Pick<ReconstructReport, 'features' | 'faces'>): ReconstructReport {
+  // the flattening of the comparison, far smaller than any bound, and the rounding of the kernel's own section
+  const SLACK = 1e-3;
+  const limit = approx.bound + SLACK;
+  const m0 = kernel.massProps(whole);
+  const m1 = kernel.massProps(rebuilt);
+  const volumeError = Math.abs(m1.volume - m0.volume) / m0.volume;
+  const areaError = Math.abs(m1.area - m0.area) / m0.area;
+  let [distance, sectionAreaError, sectionDifference, sections] = [0, 0, 0, 0];
+  const box = kernel.bounds(whole);
+  const reach = Math.hypot(...sub(box.max, box.min)) + 1;
+  const extrusions = (b: BaseRecord): Extract<BaseRecord, { type: 'extrude' }>[] => (b.type === 'extrude' ? [b] : b.type === 'composite' ? [...extrusions(b.base), ...b.extras.map((x) => x.rec)] : []);
+  for (const record of extrusions(rec.base)) {
+    for (let i = 0; i + 1 < record.levels.length; i++) {
+      const layer = record.layers[i];
+      if (!layer) continue;
+      const height = record.levels[i + 1]! - record.levels[i]!;
+      for (const f of [0.25, 0.5, 0.75]) {
+        const frame = { ...layer.frame, origin: addv(layer.frame.origin, record.dir, height * f) };
+        const across = (axis: Vec3) => Math.abs(dot(sub(box.min, frame.origin), axis)) + reach;
+        const [u, v] = [across(frame.xDir), across(frame.yDir)];
+        const rect = { u0: -u, u1: u, v0: -v, v1: v };
+        const c = compareSections(kernel.sectionEdges(whole, frame, rect), kernel.sectionEdges(rebuilt, frame, rect));
+        if (!c) throw new RecognizeError(t('recognize.approxCompareFailed'));
+        sections += 1;
+        distance = Math.max(distance, c.distance);
+        const areaOff = Math.abs(c.areaA - c.areaB);
+        if (!sectionsClose(c, limit)) {
+          throw new RecognizeError(t('recognize.approxNotClose', { distance: c.distance.toExponential(2), bound: approx.bound.toExponential(2), area: areaOff.toExponential(2), notShared: c.notShared.toExponential(2) }));
+        }
+        if (c.areaA > 0) {
+          sectionAreaError = Math.max(sectionAreaError, areaOff / c.areaA);
+          sectionDifference = Math.max(sectionDifference, c.notShared / c.areaA);
+        }
+      }
+    }
+  }
+  // nothing compared would be nothing checked
+  if (sections === 0) throw new RecognizeError(t('recognize.approxCompareFailed'));
+  if (Math.abs(m1.volume - m0.volume) > limit * m0.area + RECOGNIZE_TOLERANCE * m0.volume) {
+    throw new RecognizeError(t('recognize.notSame', { volume: volumeError.toExponential(2), area: areaError.toExponential(2), difference: sectionDifference.toExponential(2) }));
+  }
+  return { ...base, volume: m0.volume, volumeError, areaError, difference: sectionDifference, approximation: { bound: approx.bound, distance, sectionAreaError, sectionDifference, sections } };
+}
+
+function arcsOf(b: BaseRecord): number {
+  if (b.type === 'composite') return arcsOf(b.base) + b.extras.reduce((n, x) => n + arcsOf(x.rec), 0);
+  const profiles = b.type === 'revolve' ? [b.profile] : b.layers;
+  return profiles.reduce((n, p) => n + (p?.loops ?? []).reduce((m, l) => m + l.segs.filter((s) => s.kind === 'arc').length, 0), 0);
+}
+
 function failedOf(r: RebuildResult, ids: Iterable<Id>): string | null {
   for (const id of ids) {
     const f = r.features.find((x) => x.id === id);
@@ -399,7 +477,7 @@ function failedOf(r: RebuildResult, ids: Iterable<Id>): string | null {
  * Replaces imported body `featureId` of `doc` by the features that build it (F2.4). `regen` is the regenerator of the document (its kernel and the
  * document's blobs); with `solver`, every sketch made is fully defined (`Builder.define`). Returns the new document; throws `RecognizeError` and leaves nothing changed when the body cannot be rebuilt the same.
  */
-export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: PartDoc, featureId: Id, solver?: SketchSolver, limits: BudgetLimits = RECOGNIZE_LIMITS): { doc: PartDoc; commands: Command[]; report: ReconstructReport } {
+export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: PartDoc, featureId: Id, solver?: SketchSolver, limits: BudgetLimits = RECOGNIZE_LIMITS, options: ReconstructOptions = {}): { doc: PartDoc; commands: Command[]; report: ReconstructReport } {
   const index = doc.features.findIndex((f) => f.id === featureId);
   const imported = doc.features[index];
   if (!imported || imported.type !== 'importedBody') throw new RecognizeError(t('recognize.notImported'));
@@ -423,7 +501,10 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
     keep.push(shape);
     const facesBefore = solo.body.topology.faces.length;
     budget.check();
-    const rec = recognize(kernel, shape, frameFor, budget);
+    const approx: SplineApproximation | undefined = options.approximateSplines ? { tolerance: SPLINE_TOLERANCE, bound: 0, used: false } : undefined;
+    const rec = recognize(kernel, shape, frameFor, budget, approx);
+    // a solver that cannot take the sketch is what an approximation runs into first: say how many arcs it came to
+    const whyFailed = (why: string): string => t('recognize.featureFailed', { why }) + (approx?.used ? ` ${t('recognize.approxArcs', { arcs: arcsOf(rec.base) })}` : '');
 
     const ids = new IdAllocator(doc.idCounters, idsInUse(doc));
     const b = new Builder(ids, solver);
@@ -444,7 +525,7 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
       budget.check();
       const r = regen.rebuild(next, { until: end });
       const failed = failedOf(r, made);
-      if (failed) throw new RecognizeError(t('recognize.featureFailed', { why: failed }));
+      if (failed) throw new RecognizeError(whyFailed(failed));
       for (const f of blendFeature(blend, r, ids, b)) {
         run({ type: 'insertFeature', feature: f, index: end });
         made.push(f.id);
@@ -454,9 +535,13 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
     budget.check();
     const after = regen.rebuild(next);
     const failed = failedOf(after, [...made, ...okBefore.filter((id) => id !== featureId)]);
-    if (failed) throw new RecognizeError(t('recognize.featureFailed', { why: failed }));
+    if (failed) throw new RecognizeError(whyFailed(failed));
     if (!after.body) throw new RecognizeError(t('recognize.featureFailed', { why: '—' }));
     budget.check();
+    if (approx?.used) {
+      const report = approximateReport(kernel, whole, after.body.shape, rec, approx, { features: { ...b.counts }, faces: [facesBefore, after.body.topology.faces.length] });
+      return { doc: next, commands, report };
+    }
     const m0 = kernel.massProps(whole);
     const m1 = kernel.massProps(after.body.shape);
     const shared = kernel.common(whole, after.body.shape, 0);

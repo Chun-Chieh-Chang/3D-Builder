@@ -4082,6 +4082,7 @@ function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
   const warnings = status?.warnings ?? [];
   const d = status?.diagnostics;
   const recognizing = useStore((s) => s.recognizing);
+  const [approximate, setApproximate] = useState(false);
   return (
     <>
       <section className="pm-group">
@@ -4121,7 +4122,12 @@ function ImportedBodyPanel({ f }: { f: ImportedBodyFeature }) {
       <section className="pm-group">
         <h4>{t('recognize.title')}</h4>
         <p className="hint">{t('recognize.hint')}</p>
-        <button type="button" data-field="recognizeFeatures" disabled={recognizing !== null || status?.status !== 'ok'} onClick={() => void store.recognizeFeatures(f.id)}>
+        <label className="pm-row checkbox">
+          <input type="checkbox" data-field="recognizeApproximate" checked={approximate} onChange={(e) => setApproximate(e.target.checked)} />
+          <span>{t('recognize.approximate')}</span>
+        </label>
+        <p className="hint">{t('recognize.approximateHint')}</p>
+        <button type="button" data-field="recognizeFeatures" disabled={recognizing !== null || status?.status !== 'ok'} onClick={() => void store.recognizeFeatures(f.id, { approximateSplines: approximate })}>
           {recognizing === f.id ? t('recognize.working') : t('recognize.run')}
         </button>
       </section>

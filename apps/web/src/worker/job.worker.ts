@@ -18,10 +18,10 @@ const api: JobApi = {
     solver = await PlaneGcsSolver.create(gcsWasm);
     kernel = await Kernel.load({ wasmUrl: occtWasm });
   },
-  async recognizeFeatures(doc, featureId, blobs) {
+  async recognizeFeatures(doc, featureId, blobs, options) {
     const regen = new Regenerator(kernel, solver, blobs);
     try {
-      const { commands, report } = reconstructImported(kernel, regen, doc, featureId, solver);
+      const { commands, report } = reconstructImported(kernel, regen, doc, featureId, solver, undefined, options);
       return { commands, report };
     } catch (e) {
       // the reason itself is what the user is told; anything else came out of the kernel, in its own terms

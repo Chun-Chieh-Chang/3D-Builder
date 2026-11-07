@@ -1859,7 +1859,7 @@ class AppStore {
    * 「辨識特徵」 (F2.4): imported body `featureId` replaced by sketches, extrusions, revolves, holes, fillets and chamfers that build the same solid, as
    * one step to undo. The worker checks the result against the body it replaces; when it cannot be rebuilt the same, the user is told why and nothing changes.
    */
-  async recognizeFeatures(featureId: Id): Promise<void> {
+  async recognizeFeatures(featureId: Id, options: { approximateSplines?: boolean } = {}): Promise<void> {
     if (this.state.active !== 'part' || this.state.recognizing) return;
     // the button is in the imported body's own panel, so its edit is open: it is closed as OK closes it (keeping what was changed in it), any other edit is left alone
     if (this.state.editing) {
@@ -1876,7 +1876,7 @@ class AppStore {
     const job = startJob(
       () => new Worker(new URL('../worker/job.worker.ts', import.meta.url), { type: 'module' }),
       (worker) => (jobApi = Comlink.wrap<JobApi>(worker)).init(getLocale()),
-      () => jobApi.recognizeFeatures(doc, featureId, blobs),
+      () => jobApi.recognizeFeatures(doc, featureId, blobs, options),
       this.recognizeLimitMs,
     );
     this.recognition = job;
@@ -1888,7 +1888,10 @@ class AppStore {
       }
       this.history.applyBatch(commands, t('recognize.title'));
       const f = report.features;
-      this.notify(t('recognize.done', { extrude: f.extrude, revolve: f.revolve, hole: f.hole, fillet: f.fillet, chamfer: f.chamfer }));
+      const close = report.approximation;
+      if (close) {
+        this.notify(t('recognize.doneApprox', { extrude: f.extrude, revolve: f.revolve, hole: f.hole, fillet: f.fillet, chamfer: f.chamfer, bound: close.bound.toFixed(4), distance: close.distance.toFixed(4), difference: (close.sectionDifference * 100).toFixed(3), sections: close.sections }));
+      } else this.notify(t('recognize.done', { extrude: f.extrude, revolve: f.revolve, hole: f.hole, fillet: f.fillet, chamfer: f.chamfer }));
     } catch (e) {
       if (this.state.documentSerial !== before.documentSerial) return;
       if (e instanceof JobStopped) {
