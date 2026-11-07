@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { parsePart, serializePart, type BlobRef, type PartDoc } from '@3db/model';
+import { parsePart, serializePart, splinesRedrawn, type BlobRef, type PartDoc } from '@3db/model';
 import { DOCUMENT_ENTRY, documentEntry, documentText, isZip, zipEntries } from './container';
 import { safeFileName } from './names';
 import { writeZip, type ZipEntry } from './zip';
@@ -43,9 +43,15 @@ export async function writePartFile(doc: PartDoc, blobs: ReadonlyMap<string, Uin
   return writeZip(entries);
 }
 
+function redrawnNotes(text: string): string[] {
+  const names = splinesRedrawn(text);
+  return names.length ? [t('part.splinesRedrawn', { names: names.join(', ') })] : [];
+}
+
 /** The bare document text older versions saved (B9.2: old files keep opening). */
 export function readOldPartFile(bytes: Uint8Array): PartFile {
-  return { doc: parsePart(documentText(bytes, t('file.kindPart'), t('file.notDocText'))), blobs: new Map(), format: 'json', warnings: [] };
+  const text = documentText(bytes, t('file.kindPart'), t('file.notDocText'));
+  return { doc: parsePart(text), blobs: new Map(), format: 'json', warnings: redrawnNotes(text) };
 }
 
 /** Opens a `.3dbx` file, or the bare document text older versions saved. */
@@ -55,9 +61,10 @@ export async function readPartFile(bytes: Uint8Array): Promise<PartFile> {
 
 /** The part in an opened `.3dbx` archive, with the data it imports. */
 export async function partFromEntries(files: ReadonlyMap<string, Uint8Array>): Promise<PartFile> {
-  const doc = parsePart(documentEntry(files, t('file.kindPart')));
+  const text = documentEntry(files, t('file.kindPart'));
+  const doc = parsePart(text);
   const blobs = new Map<string, Uint8Array>();
-  const warnings: string[] = [];
+  const warnings = redrawnNotes(text);
   const seen = new Set<string>();
   for (const b of doc.blobs) {
     if (seen.has(b.sha256)) continue; // equal imports share one entry

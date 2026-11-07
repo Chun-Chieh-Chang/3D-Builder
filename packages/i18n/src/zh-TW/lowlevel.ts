@@ -66,6 +66,7 @@ export const lowlevel = {
   'container.notDoc': '不是 3D-Builder {what}{hint}',
   'container.noEntry': '不是 3D-Builder {what}（缺少 {entry}）',
   'part.blobMissing': '檔案中缺少輸入的資料 {id}（{path}）',
+  'part.splinesRedrawn': '這個檔案是舊版存的：{names} 裡的樣條，實體現在改成和草圖畫面相同的曲線，形狀可能與存檔時不同，請檢查尺寸與後續特徵',
   'part.blobHash': '輸入的資料 {id} 與記錄的雜湊值不符，已略過',
   'history.busy': '已有進行中的編輯',
   'history.noRewrite': '編輯中不能改寫復原記錄',

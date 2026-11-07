@@ -149,7 +149,7 @@ describe('what comes of it', () => {
   });
 
   it('a closed spline', async () => {
-    const s = kernel.extrude(XY, [ring(12, (a) => 25 + 5 * Math.cos(2 * a))], [0, 0, 20]).shape;
+    const s = kernel.extrude(XY, [ring(6, (a) => 25 + 2 * Math.cos(2 * a))], [0, 0, 20]).shape;
     expect(kernel.check(s).valid).toBe(true);
     const { doc, report, regen } = await recognizeIt(s, true);
     const walk = splineToArcs(s, regen.rebuild(doc).body!.shape, 3);
@@ -203,9 +203,8 @@ describe('what it does not take', () => {
     expect(m).toMatch(/\d+ 段圓弧/);
   });
 
-  it('a solid the kernel itself calls invalid (a closed spline tied at its seam): refused, no crash', async () => {
-    const radii = [28, 12, 25, 9, 30, 14, 22, 8, 27, 16, 19, 11];
-    const s = kernel.extrude(XY, [ring(12, (a) => radii[Math.round((a * 12) / (2 * Math.PI))]!)], [0, 0, 20]).shape;
+  it('a solid the kernel itself calls invalid (a bow tie, drawn crossing itself): refused, no crash', async () => {
+    const s = kernel.extrude(XY, [{ outer: [{ kind: 'spline', points: [[0, 0], [20, 20], [20, 0], [0, 20]], closed: true, source: 'c' }], holes: [] } as Region], [0, 0, 20]).shape;
     expect(kernel.check(s).valid).toBe(false);
     await refusal(s);
   });

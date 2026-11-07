@@ -68,6 +68,7 @@ export const lowlevel: Translation = {
   'container.notDoc': 'Not a 3D-Builder {what}{hint}',
   'container.noEntry': 'Not a 3D-Builder {what} ({entry} is missing)',
   'part.blobMissing': 'The imported data {id} is missing from the file ({path})',
+  'part.splinesRedrawn': 'This file was saved by an older version: the splines in {names} now make the curve the sketch draws, so the shape may differ from when it was saved. Check its sizes and the features after them',
   'part.blobHash': 'The imported data {id} does not match its recorded hash and was skipped',
   'history.busy': 'An edit is already in progress',
   'history.noRewrite': 'The undo history cannot be rewritten during an edit',

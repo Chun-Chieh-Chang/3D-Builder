@@ -3,7 +3,6 @@
  * by their ends, and the area by the shoelace formula. Those answers are compared with a truth that does not pass through any of this.
  */
 import type { HomogeneousPole, Kernel, SectionEdge } from '@3db/kernel';
-import { Arena } from '../../packages/kernel/src/occt';
 
 export type Pt = [number, number];
 
@@ -117,27 +116,20 @@ export function polygonArea(loop: Pt[]): number {
 }
 
 /**
- * The curve the kernel fits to a closed spline's points (`GeomAPI_PointsToBSpline` through them and back to the first), sampled with OCCT's own evaluator: the input
- * itself, before any solid, boolean or section. Its area is the truth for a section, because a solid's `massProps` is not: on these profiles it was measured up to
- * 0.55 % off, on valid solids, while this curve and its sections agreed to seven digits.
+ * The curve a closed spline's points make (ADR 0244: Catmull-Rom, wrapping, what the sketch draws), from its formula: the input itself, with no OCCT in it, before any solid, boolean or
+ * section. Its area is the truth for a section.
  */
-export function fitted(k: Kernel, points: Pt[], samples: number): Pt[] {
-  const oc = k.oc;
-  const a = new Arena();
-  try {
-    const arr = a.own(new oc.NCollection_Array1_gp_Pnt(1, points.length + 1));
-    points.forEach((p, i) => arr.SetValue(i + 1, a.own(new oc.gp_Pnt(p[0], p[1], 0))));
-    arr.SetValue(points.length + 1, a.own(new oc.gp_Pnt(points[0]![0], points[0]![1], 0)));
-    const curve = a.own(a.own(new oc.GeomAPI_PointsToBSpline(arr)).Curve());
-    const t0 = curve.FirstParameter();
-    const t1 = curve.LastParameter();
-    const out: Pt[] = [];
-    for (let i = 0; i < samples; i++) {
-      const q = a.own(curve.Value(t0 + ((t1 - t0) * i) / samples));
-      out.push([q.X(), q.Y()]);
+export function fitted(_k: Kernel, points: Pt[], samples: number): Pt[] {
+  const n = points.length;
+  const at = (i: number) => points[((i % n) + n) % n]!;
+  const out: Pt[] = [];
+  const steps = Math.ceil(samples / n);
+  for (let s = 0; s < n; s++) {
+    const [a, b, c, d] = [at(s - 1), at(s), at(s + 1), at(s + 2)];
+    for (let k = 0; k < steps; k++) {
+      const t = k / steps;
+      out.push([0, 1].map((x) => 0.5 * (2 * b[x]! + (c[x]! - a[x]!) * t + (2 * a[x]! - 5 * b[x]! + 4 * c[x]! - d[x]!) * t * t + (3 * b[x]! - a[x]! - 3 * c[x]! + d[x]!) * t * t * t)) as Pt);
     }
-    return out;
-  } finally {
-    a.dispose();
   }
+  return out;
 }

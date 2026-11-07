@@ -1,10 +1,10 @@
 /**
- * AGENTS §3.4: 120 random closed splines, each on its own rigid placement. Truth does not pass through the conversion or a boolean: the area of the curve the kernel
- * fits, evaluated by OCCT. The section, and the two halves of it added, must close into loops and match. On its own file for a fresh Heap (§3.5); growth goes to the
+ * AGENTS §3.4: 120 random closed splines, each on its own rigid placement. Truth does not pass through the conversion or a boolean: the area of the curve the points
+ * make, from its formula. The section, and the two halves of it added, must close into loops and match. On its own file for a fresh Heap (§3.5); growth goes to the
  * report, not claimed as 0.
  *
- * - Only profiles that do not cross themselves count. A closed spline is fitted without periodicity, so some curl at their seam; their solids are invalid and a boolean
- *   on one drops a lobe (a measured case: 54.73 against the 52.92 the curve encloses on that side), so no truth has a meaning there. The rate goes to the report.
+ * - Only profiles that do not cross themselves count: a boolean on such a solid drops a lobe, so no truth has a meaning there. The rate goes to the report. (The fitted curve
+ *   of before ADR 0244 curled at its seam on some 16 % of these; the curve the sketch draws has no seam to curl at.)
  * - `massProps` is not the truth (see `fitted`). How far off it was goes to the report; it is not asserted.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';

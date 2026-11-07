@@ -255,7 +255,22 @@ const migrations: Record<number, (doc: Json) => Json> = {
   89: (doc) => doc,
   // v91: newly locked bodies retain their existing machining history. Legacy locks remain unchanged.
   90: (doc) => doc,
+  // v92: a spline's solid is the curve its sketch draws (ADR 0244). The document holds the same points; the geometry they make changes, which `splinesRedrawn` tells the one opening the file.
+  91: (doc) => doc,
 };
+
+/**
+ * The names of the sketches in a part's text whose splines make a different solid from the one they made when it was saved (ADR 0244): files older than v92, splines fitted then, not a Bézier
+ * (its poles are its curve) and not a construction line. Read from the text, because the document itself has been brought up to date by the time anyone can ask it.
+ */
+export function splinesRedrawn(text: string): string[] {
+  const raw = parseJson(text);
+  if (typeof raw.schemaVersion !== 'number' || raw.schemaVersion >= 92 || !Array.isArray(raw.features)) return [];
+  return (raw.features as Json[]).flatMap((f) => {
+    const spline = f.type === 'sketch' && Array.isArray(f.entities) && (f.entities as Json[]).some((e) => e.type === 'spline' && !e.bezier && !e.construction);
+    return spline ? [String(f.name ?? f.id)] : [];
+  });
+}
 
 export class FormatError extends Error {
   constructor(message: string) {

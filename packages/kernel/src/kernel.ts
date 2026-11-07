@@ -421,6 +421,38 @@ export class Kernel {
 
   // ------------------------------------------------------------------ modelling
 
+  /**
+   * A sketch's spline as the very curve the sketch draws (`sampleSpline` of @3db/sketch, ADR 0244): uniform Catmull-Rom through its points, wrapping when closed and mirrored past the ends when
+   * open. Each segment is the cubic Bézier P(i), P(i) + (P(i+1) - P(i-1))/6, P(i+1) - (P(i+2) - P(i))/6, P(i+1); the middle points of neighbouring segments have P(i) halfway between them, so
+   * a double knot leaves it out and says what the curve is, C1. Clamped, so that a closed curve starts and ends on its first point, as an edge does, with the same tangent both ways.
+   */
+  private catmullRom(arena: Arena, pts: readonly P2[], closed: boolean, at: (p: P2) => Vec3) {
+    const oc = this.oc;
+    const n = pts.length;
+    const get = (i: number): P2 => {
+      if (closed) return pts[((i % n) + n) % n]!;
+      if (i < 0) return [2 * pts[0]![0] - pts[1]![0], 2 * pts[0]![1] - pts[1]![1]];
+      if (i >= n) return [2 * pts[n - 1]![0] - pts[n - 2]![0], 2 * pts[n - 1]![1] - pts[n - 2]![1]];
+      return pts[i]!;
+    };
+    const segments = closed ? n : n - 1;
+    const poles = arena.own(new oc.NCollection_Array1_gp_Pnt(1, 2 * segments + 2));
+    const knots = arena.own(new oc.NCollection_Array1_double(1, segments + 1));
+    const mults = arena.own(new oc.NCollection_Array1_int(1, segments + 1));
+    poles.SetValue(1, this.pnt(arena, at(get(0))));
+    poles.SetValue(2 * segments + 2, this.pnt(arena, at(get(segments))));
+    for (let i = 0; i < segments; i++) {
+      const [a, b, c, d] = [get(i - 1), get(i), get(i + 1), get(i + 2)];
+      poles.SetValue(2 * i + 2, this.pnt(arena, at([b[0] + (c[0] - a[0]) / 6, b[1] + (c[1] - a[1]) / 6])));
+      poles.SetValue(2 * i + 3, this.pnt(arena, at([c[0] - (d[0] - b[0]) / 6, c[1] - (d[1] - b[1]) / 6])));
+    }
+    for (let i = 0; i <= segments; i++) {
+      knots.SetValue(i + 1, i);
+      mults.SetValue(i + 1, i === 0 || i === segments ? 4 : 2);
+    }
+    return arena.own(new oc.Geom_BSplineCurve(poles, knots, mults, 3, false));
+  }
+
   private wire(arena: Arena, frame: Frame, loop: Segment[], hole: boolean, sources: Map<TopoDS_Shape, string>): TopoDS_Wire {
     const oc = this.oc;
     const at = (p: P2): Vec3 => add(add(frame.origin, frame.xDir, p[0]), frame.yDir, p[1]);
@@ -475,19 +507,16 @@ export class Kernel {
             throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
           }
         }
-        const fitPoints=seg.bezierPoles??pts;
-        if(seg.bezierPoles&&(seg.closed||fitPoints.length<2||fitPoints.length>26||!fitPoints.flat().every(Number.isFinite)))throw new KernelError(t('gear.invalid'));
-        const totalPts = seg.closed ? fitPoints.length + 1 : fitPoints.length;
-        const arr = arena.own(new oc.NCollection_Array1_gp_Pnt(1, totalPts));
-        for (let i = 0; i < fitPoints.length; i++) arr.SetValue(i + 1, this.pnt(arena, at(fitPoints[i]!)));
-        if (seg.closed) arr.SetValue(totalPts, this.pnt(arena, at(fitPoints[0]!)));
-        if(seg.bezierPoles) {
-          const curve=arena.own(new oc.Geom_BezierCurve(arr));
-          edge=arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(curve)).Edge());
+        if (seg.bezierPoles) {
+          const poles = seg.bezierPoles;
+          if (seg.closed || poles.length < 2 || poles.length > 26 || !poles.flat().every(Number.isFinite)) throw new KernelError(t('gear.invalid'));
+          const arr = arena.own(new oc.NCollection_Array1_gp_Pnt(1, poles.length));
+          for (let i = 0; i < poles.length; i++) arr.SetValue(i + 1, this.pnt(arena, at(poles[i]!)));
+          edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(arena.own(new oc.Geom_BezierCurve(arr)))).Edge());
         } else {
-          const approx = arena.own(new oc.GeomAPI_PointsToBSpline(arr));
-          if (!approx.IsDone()) throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
-          edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(approx.Curve())).Edge());
+          if (!pts.flat().every(Number.isFinite) || (seg.closed && pts.length < 3)) throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
+          const curve = this.catmullRom(arena, pts, seg.closed, at);
+          edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(curve)).Edge());
         }
         if (hole) edge = arena.own(oc.TopoDS.Edge(arena.own(edge.Reversed())));
       } else {
@@ -3342,8 +3371,8 @@ export class Kernel {
 
   /**
    * Which integral a shape's faces call for (ADR 0241). The fixed Gauss rule is exact on planes and quadrics only.
-   * - `knotted`: B-spline and the like. OCCT's adaptive rule (`eps`) follows their knots and its volume is good: 3e-7 on a loft of closed splines, where the fixed rule is 22% off. Its centre
-   *   and inertia are not: 0.13 mm and 7% off on the same lofts.
+   * - `knotted`: B-spline and the like. OCCT's adaptive rule (`eps`) follows their knots and its volume is good: 2e-8 on a loft of a sketch's closed splines, where the fixed rule is 30% off. Its centre
+   *   and inertia there are 1e-4 mm and 4e-5 off (ADR 0244); on the fitted curve those lofts used to have they were 0.13 mm and 7%, and a B-spline face from elsewhere may be either.
    * - `swept`: an extruded or revolved curve, whatever other faces there are. The surface has no knots of its own but the spline in it has 33 to 45 spans: the adaptive rule is up to
    *   31% off, the fixed rule 2% on an extrusion and 10% on a revolution. Only span-wise Gauss-Kronrod is right.
    */
@@ -3368,10 +3397,13 @@ export class Kernel {
     return { volume, area, center: this.xyz(arena.own(v.CentreOfMass())), inertia };
   }
 
-  /** The volume by span-wise Gauss-Kronrod, on `swept` shapes: about 1e-9 at about the time of the adaptive rule on real parts; at 1e-6 a subtraction of two bodies is too coarse (sheet metal's refold). */
+  /**
+   * The volume by span-wise Gauss-Kronrod, on `swept` shapes: about 1e-9 at about the time of the adaptive rule on real parts; at 1e-6 a subtraction of two bodies is too coarse (sheet metal's
+   * refold). 1e-8, because at 1e-7 a sketch's spline (C1 at its points, ADR 0244) was 1.5e-6 off its formula, against 6.7e-9 at 1e-8 for 20 % more time.
+   */
   private sweptVolume(shape: TopoDS_Shape, arena: Arena): number {
     const p = arena.own(new this.oc.GProp_GProps());
-    this.oc.BRepGProp.VolumePropertiesGK(shape, p, 1e-7, false, true, false, false, false);
+    this.oc.BRepGProp.VolumePropertiesGK(shape, p, 1e-8, false, true, false, false, false);
     return p.Mass();
   }
 
@@ -3401,7 +3433,7 @@ export class Kernel {
   }
 
   /**
-   * The figures of `massProps` with the centre and inertia integrated (ADR 0241): 1e-4 mm and 5e-6 of the truth on closed-spline extrusions at any distance from the origin, seconds on a real
+   * The figures of `massProps` with the centre and inertia integrated (ADR 0241): 1e-3 mm and 1.5e-4 of the truth at worst on a sketch's closed-spline extrusions (ADR 0244), at any distance from the origin, seconds on a real
    * part with spline faces. Planes and quadrics have their right figures already, and get them unchanged. The area is still the fixed rule's.
    */
   massPropsExact(id: ShapeId): MassProps {

@@ -5,7 +5,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Kernel, type MassProps, type ShapeId } from '@3db/kernel';
-import { closedLoops, polyline } from '../phase6/section-edges-helpers';
+import { closedLoops, fitted, polyline } from '../phase6/section-edges-helpers';
 
 const XY = { origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 1, 0], normal: [0, 0, 1] } as const;
 const WIDE = { u0: -500, u1: 500, v0: -500, v1: 500 };
@@ -29,7 +29,16 @@ const closedSpline = (points: [number, number][]) => ({ outer: [{ kind: 'spline'
 function truthOf(id: ShapeId, height: number) {
   const loops = closedLoops(kernel.sectionEdges(id, { ...XY, origin: [0, 0, height / 2] } as never, WIDE).map((e) => polyline(e, 2048)));
   if (loops.length !== 1) return null;
-  const loop = loops[0]!;
+  return figuresOf(loops[0]!, height);
+}
+
+/** The same from the curve's own formula (ADR 0244): no section, so none of the up to 1e-3 mm a section of OCCT's carries on these curves. */
+function truthFromPoints(points: [number, number][], height: number) {
+  const loop = fitted(kernel, points, 24000);
+  return figuresOf([...loop, loop[0]!], height);
+}
+
+function figuresOf(loop: number[][], height: number) {
   let A = 0, cx = 0, cy = 0, ixx = 0, iyy = 0;
   for (let i = 0; i < loop.length - 1; i++) {
     const [x0, y0] = loop[i] as [number, number];
@@ -72,14 +81,16 @@ describe('closed-spline extrusions against their section', () => {
         const exact = kernel.massPropsExact(id);
         expect([fast.volume, ...fast.center, ...fast.inertia].every(Number.isFinite), `case ${i}`).toBe(true);
         if (!kernel.isValid(id)) continue;
-        const truth = truthOf(id, h);
-        if (!truth) continue;
+        const truth = truthFromPoints(points, h);
         measured++;
         const fixed: MassProps = kernel.massProps(id, { adaptive: false });
         expect(Math.abs(fast.volume - truth.volume) / truth.volume, `volume, case ${i}`).toBeLessThan(1e-6);
         expect(Math.abs(exact.volume - truth.volume) / truth.volume, `exact volume, case ${i}`).toBeLessThan(1e-6);
-        expect(distance(exact.center, truth.center), `centre, case ${i}`).toBeLessThan(2e-4);
-        expect(Math.abs(exact.inertia[8]! - truth.izz) / truth.izz, `inertia, case ${i}`).toBeLessThan(1e-5);
+        // measured 1.07e-3 mm at most, median 7.6e-6, against 1.0e-4 on the fitted curve; the same integral and the same cause as the inertia below, so the same decision (ADR 0244, where this one is called out)
+        expect(distance(exact.center, truth.center), `centre, case ${i}`).toBeLessThan(1.2e-3);
+        // the user's decision (ADR 0244): 1e-5 held on the fitted curve; on the curve the sketch draws, C1 at its points, it is measured 1.43e-4 at most over these 150 (median 8.1e-7, the next two 8.0e-5
+        // and 7.6e-5). GK 1e-7 is 7.0e-7 on the same 150, so the truth is right and the integral is what is off; 1e-7 costs minutes on a real part
+        expect(Math.abs(exact.inertia[8]! - truth.izz) / truth.izz, `inertia, case ${i}`).toBeLessThan(1.5e-4);
         // the fast path's centre and inertia are the fixed rule's, nothing else
         expect(fast.center).toEqual(fixed.center);
         expect(fast.inertia).toEqual(fixed.inertia);
@@ -147,11 +158,10 @@ describe('what the refinement does not touch', () => {
 });
 
 describe('a loft between two identical closed splines: a prism on B-spline faces', () => {
-  it('keeps the adaptive rule, whose volume is right there and whose centre and inertia are not; the exact path gets those right', () => {
+  it('keeps the adaptive rule, right there in all three figures on the curve the sketch draws, where the fixed rule is far off', () => {
     const rnd = seeded(3141);
     let checked = 0;
     let fixedRuleOff = 0;
-    let adaptiveInertiaOff = 0;
     for (let i = 0; i < 60; i++) {
       const n = 6 + Math.floor(rnd(0, 7));
       const points = Array.from({ length: n }, (_, k): [number, number] => {
@@ -168,7 +178,7 @@ describe('a loft between two identical closed splines: a prism on B-spline faces
       } catch {
         continue; // OCCT refuses some of these random profiles; `checked` below says enough were left
       }
-      const truth = kernel.isValid(id) ? truthOf(id, h) : null;
+      const truth = kernel.isValid(id) ? truthFromPoints(points, h) : null;
       if (truth) {
         const auto = kernel.massProps(id);
         expect(auto, `the eps path, case ${i}`).toEqual(kernel.massProps(id, { eps: 1e-6 }));
@@ -176,18 +186,20 @@ describe('a loft between two identical closed splines: a prism on B-spline faces
         expect(exact.volume, `the volume stays, case ${i}`).toBe(auto.volume);
         expect(exact.area, `the area stays, case ${i}`).toBe(auto.area);
         expect(Math.abs(auto.volume - truth.volume) / truth.volume, `volume, case ${i}`).toBeLessThan(1e-6);
-        // measured at most 2.1e-4 mm on these lofts at this tolerance (1.8e-5 at GK 1e-8), against 0.13 mm for the adaptive rule
+        // ADR 0244: on the fitted curve the adaptive rule was 0.13 mm and 7% off here, which is why the exact path existed for lofts. On this curve it is measured 1.1e-4 mm and 3.6e-5,
+        // no worse than GK 1e-5's 3.8e-4 mm and 8.0e-5. Both are held, so that either one going wrong shows
+        expect(distance(auto.center, truth.center), `adaptive centre, case ${i}`).toBeLessThan(2e-4);
+        expect(Math.abs(auto.inertia[8]! - truth.izz) / truth.izz, `adaptive inertia, case ${i}`).toBeLessThan(5e-5);
         expect(distance(exact.center, truth.center), `centre, case ${i}`).toBeLessThan(5e-4);
-        expect(Math.abs(exact.inertia[8]! - truth.izz) / truth.izz, `inertia, case ${i}`).toBeLessThan(1e-5);
+        // the user's decision (ADR 0244), measured 1.0e-4 on this curve; see the extrusions above
+        expect(Math.abs(exact.inertia[8]! - truth.izz) / truth.izz, `inertia, case ${i}`).toBeLessThan(1.2e-4);
         if (Math.abs(kernel.massProps(id, { adaptive: false }).volume - truth.volume) / truth.volume > 1e-3) fixedRuleOff++;
-        if (Math.abs(auto.inertia[8]! - truth.izz) / truth.izz > 1e-3) adaptiveInertiaOff++;
         checked++;
       }
       kernel.release(id);
     }
     expect(checked).toBeGreaterThan(10);
     expect(fixedRuleOff).toBeGreaterThan(0);
-    expect(adaptiveInertiaOff).toBeGreaterThan(0);
   }, 120_000);
 });
 
@@ -256,11 +268,15 @@ describe('a revolved spline', () => {
       });
       const id = revolved(closedSpline(points) as never);
       if (id === null) continue;
-      const truth = kernel.isValid(id) ? pappus(id) : null;
+      // the curve's own formula, as for the extrusions above: 2π times the first moment of the area about the axis
+      const loop = fitted(kernel, points, 24000);
+      const moment = loop.reduce((m, p, k) => { const q = loop[(k + 1) % loop.length]!; return m + (p[0] + q[0]) * (p[0] * q[1] - q[0] * p[1]); }, 0);
+      const truth = kernel.isValid(id) ? (2 * Math.PI * Math.abs(moment)) / 6 : null;
       if (truth !== null) {
+        // the user's decision (ADR 0244): measured 6.7e-6 on the curve the sketch draws, the same at every tolerance from 1e-7 to 1e-10, so no tighter integral reaches it
         // two truths in layers: the section is itself a fitted curve, up to 2e-6 off whatever its sampling or angle; the integral against itself at a far tighter tolerance has no such limit
         const volume = Math.abs(kernel.massProps(id).volume);
-        expect(Math.abs(volume - truth) / truth, `case ${i}`).toBeLessThan(5e-6);
+        expect(Math.abs(volume - truth) / truth, `case ${i}`).toBeLessThan(1e-5);
         const tight = new oc.GProp_GProps();
         oc.BRepGProp.VolumePropertiesGK((kernel as never as { get(id: ShapeId): unknown }).get(id), tight, 1e-10, false, true, false, false, false);
         expect(Math.abs(volume - Math.abs(tight.Mass())) / volume, `converged, case ${i}`).toBeLessThan(1e-7);

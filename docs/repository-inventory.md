@@ -6,9 +6,9 @@
 
 | 項目 | 程式來源值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 91／7／38 |
-| ADR 文件 | 242 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 227／222／274 |
+| 零件／組合件／工程圖 Schema | 92／7／38 |
+| ADR 文件 | 243 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 228／223／275 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -577,6 +577,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0241：樣條面上的質量性質：依曲面分類的體積，與開對話框才積分的質心、慣量](<adr/0241-mass-properties-on-spline-faces.md>)
 - [ADR 0242：幾何核心崩潰後換新重算，與重新網格化從頭算](<adr/0242-kernel-crash-and-finer-mesh.md>)
 - [ADR 0243：辨識樣條輪廓：使用者勾選才用的雙圓弧近似](<adr/0243-spline-outline-by-biarcs.md>)
+- [ADR 0244：草圖樣條的實體就是畫面上那條曲線](<adr/0244-spline-solid-is-the-drawn-curve.md>)
 
 ### 歷史驗證
 
