@@ -226,6 +226,12 @@ function blendCandidates(topo: Topology, smooth: boolean[], adj: Map<number, num
     if (!(strip < widthFrom(s1, l1.ei) - 1e-6 && strip < widthFrom(s2, l2.ei) - 1e-6)) return;
     out.push({ face: i, type: 'chamfer', supports: [s1, s2], rims: [rim1, rim2] });
   });
+  // a triangle where three chamfers meet is a corner piece, as a ball is where rounds meet: taken off with them, with no edge of its own
+  const chamfers = new Set(out.filter((c) => c.type === 'chamfer').map((c) => c.face));
+  topo.faces.forEach((f, i) => {
+    const around = [...adj[i]!.keys()];
+    if (f.geometry?.type === 'plane' && !chamfers.has(i) && around.length === 3 && around.every((n) => chamfers.has(n))) out.push({ face: i, type: 'chamfer', supports: [-1, -1] });
+  });
   // a round's supports are the faces it is tangent to that are not rounds themselves (a chain of rounds runs on into the next one);
   // with other than two, it is a corner piece: taken off with the rest, with no edge of its own
   // a ball is only ever a corner piece, where rounds meet: it stays when anything it touches is not a round
@@ -295,18 +301,19 @@ function removeBlends(kernel: Kernel, shape: ShapeId, topo: Topology, cands: Ble
     r = kernel.deleteFaces(shape, kept.map((c) => c.face));
   } catch (e) {
     if (!(e instanceof KernelError)) throw e;
-    // some of them cannot come off (a slot's round end has no corner to go back to): keep the ones that can, one by one, and leave the rest in the body
-    kept = kept.filter((c) => {
+    // some of them cannot come off (a slot's round end has no corner to go back to), and some can alone but not together: add them one at a time, keep what still comes off, and leave the rest in the body
+    kept = [];
+    for (const c of cands) {
       try {
-        kernel.release(kernel.deleteFaces(shape, [c.face]).shape);
-        return true;
+        const next = kernel.deleteFaces(shape, [...kept, c].map((x) => x.face));
+        if (r) kernel.release(r.shape);
+        r = next;
+        kept = [...kept, c];
       } catch (err) {
-        if (err instanceof KernelError) return false;
-        throw err;
+        if (!(err instanceof KernelError)) throw err;
       }
-    });
-    if (kept.length === 0) return null;
-    r = kernel.deleteFaces(shape, kept.map((c) => c.face));
+    }
+    if (!r) return null;
   }
   const after = kernel.topology(r.shape);
   const oldMids = topo.edges.map((e) => e.mid);
