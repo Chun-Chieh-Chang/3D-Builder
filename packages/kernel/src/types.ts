@@ -328,6 +328,30 @@ export interface GeometryReport {
   volume: number;
 }
 
+/**
+ * The geometry code itself stopped: a WebAssembly trap (`function signature mismatch`, `table index is out of bounds`, `memory access out of bounds`, an abort), or the stack overrun.
+ * Unlike a `KernelError`, which is OCCT saying an operation cannot be done, this leaves a module that must not be trusted: C++ destructors did not run and its stack pointer was not put
+ * back. The only way on is a new module, so nothing may catch one of these and carry on (ADR 0242).
+ */
+export class KernelCrash extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'KernelCrash';
+  }
+}
+
+/** Whether `e` is the geometry code stopping rather than an answer from it (see KernelCrash). */
+export function isTrap(e: unknown): boolean {
+  if (e instanceof KernelCrash) return true;
+  if (typeof WebAssembly !== 'undefined' && e instanceof WebAssembly.RuntimeError) return true;
+  return e instanceof RangeError && /call stack/i.test(e.message);
+}
+
+/** The first line of a `catch` that goes on after a failure: a crash is not a failure to go on from. */
+export function rethrowTrap(e: unknown): void {
+  if (isTrap(e)) throw e;
+}
+
 export class KernelError extends Error {
   constructor(message: string) {
     super(message);

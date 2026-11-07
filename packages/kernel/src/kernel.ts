@@ -9,6 +9,8 @@ import { loopPoints, sweepVolumeFloor } from './sweepFloor';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
   KernelError,
+  isTrap,
+  rethrowTrap,
   type CurveGeometry,
   type EdgeInfo,
   type FaceInfo,
@@ -297,6 +299,12 @@ function lyingOn(line: readonly number[], others: readonly (readonly number[])[]
  */
 export class Kernel {
   private shapes = new Map<ShapeId, TopoDS_Shape>();
+  /**
+   * Traps taken as a refusal since this module was loaded (see `refusalWords`). It answered, but it has trapped: whoever holds it should move to a new one when that costs little (ADR 0242).
+   */
+  trapsAbsorbed = 0;
+  /** The finest tolerance each shape has been meshed to (see `mesh`). */
+  private meshedTo = new Map<ShapeId, number>();
   private nextId = 1;
   private fileSeq = 0;
 
@@ -341,6 +349,7 @@ export class Kernel {
   release(id: ShapeId): void {
     this.shapes.get(id)?.delete();
     this.shapes.delete(id);
+    this.meshedTo.delete(id);
   }
 
   get liveShapes(): number {
@@ -349,12 +358,26 @@ export class Kernel {
 
   // ------------------------------------------------------------------ helpers
 
+  /**
+   * The words for a refusal at one of the two places where a trap is OCCT's usual answer rather than an accident: the B-spline converter on some faces (a STEP file is then written as it is,
+   * with a warning: ADR 0067), and the IGES reader on a broken file (33 of 200 in the fuzz test). The user asked for something that has an answer, so that answer is given, and it is counted so
+   * that the module is left behind afterwards. Nowhere else: a trap anywhere else is a crash (ADR 0242), and a test holds this list.
+   */
+  private refusalWords(e: unknown): string {
+    if (!isTrap(e)) return this.errorText(e);
+    this.trapsAbsorbed += 1;
+    return e instanceof Error ? e.message : String(e);
+  }
+
+  /** The words of an OCCT failure. A crash is not one and goes on from here (ADR 0242): that is what lets the sites that ask for its words not swallow it. */
   private errorText(e: unknown): string {
+    rethrowTrap(e);
     if (typeof WebAssembly !== 'undefined' && 'Exception' in WebAssembly && e instanceof WebAssembly.Exception) {
       try {
         const [type, message] = this.oc.getExceptionMessage(e);
         return message ? `${type}: ${message}` : type;
-      } catch {
+      } catch (e) {
+        rethrowTrap(e);
         return t('kernel.occtException');
       }
     }
@@ -1893,6 +1916,7 @@ export class Kernel {
           usedMk = mk;
           break;
         } catch (err) {
+          rethrowTrap(err);
           lastErr = err;
         }
       }
@@ -3622,7 +3646,22 @@ export class Kernel {
 
   // ------------------------------------------------------------------ tessellation (A4.1)
 
-  /** A shape keeps the finest mesh it has had: BRepMesh refines one, never coarsens it. Mesh a shape once, with the setting it is to have. */
+  /** Whether any of these faces already has a mesh. How fine it is cannot be asked of it: `Poly_Triangulation.Deflection` is what was measured (0.172 on a face meshed to 0.01), not what was asked for. */
+  private anyFaceMeshed(faces: readonly TopoDS_Shape[], arena: Arena): boolean {
+    const oc = this.oc;
+    return faces.some((f) => {
+      const tri = oc.BRep_Tool.Triangulation(arena.own(oc.TopoDS.Face(f)), arena.own(new oc.TopLoc_Location()), 0);
+      if (!tri) return false;
+      arena.own(tri);
+      return true;
+    });
+  }
+
+  /**
+   * A shape keeps the finest mesh it has had: BRepMesh refines one, never coarsens it. Refining is the trouble: asked for a finer mesh than it has, BRepMesh works from the coarse one, and on
+   * a wavy spline face that took 54 s and 3312 MiB against 2.3 s and 265 MiB from nothing (ADR 0242). So a finer mesh starts over, and so does a first one on faces that came with a mesh of
+   * unknown fineness from the shape they were made from (the faces a boolean left alone).
+   */
   mesh(id: ShapeId, options: MeshOptions = {}): MeshData {
     const oc = this.oc;
     const arena = new Arena();
@@ -3639,6 +3678,9 @@ export class Kernel {
         tolerance = Math.min(1, Math.max(0.002, Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) * (options.relative ?? 5e-4)));
       }
       const angular = options.angular ?? 0.25;
+      const finest = this.meshedTo.get(id);
+      if (finest === undefined ? this.anyFaceMeshed(faces.keys, arena) : tolerance < finest) oc.BRepTools.Clean(shape, true);
+      if (finest === undefined || tolerance < finest) this.meshedTo.set(id, tolerance);
       arena.own(new oc.BRepMesh_IncrementalMesh(shape, tolerance, false, angular, false));
 
       // Faces: per-face vertices (crisp edges between faces), winding flipped on reversed faces.
@@ -4909,7 +4951,8 @@ export class Kernel {
           let grown: TopoDS_Shape;
           try {
             grown = extendOn(sides);
-          } catch {
+          } catch (e) {
+            rethrowTrap(e);
             continue;
           }
           const boundary = ShapeIndex.of(oc, grown, T.EDGE, arena);
@@ -4964,7 +5007,7 @@ export class Kernel {
         return this.put(out.Oriented(out.Orientation()));
       } catch (e) {
         // the converter stops on some faces that are B-splines already (the rounded join of an offset round a freeform edge: ADR 0067's limits)
-        throw new KernelError(t('surface.bsplineFailed', { why: this.errorText(e) }));
+        throw new KernelError(t('surface.bsplineFailed', { why: this.refusalWords(e) }));
       }
     } finally {
       arena.dispose();
@@ -5319,7 +5362,8 @@ export class Kernel {
           try {
             mk.Perform(sign * d);
             if (!mk.IsDone()) continue;
-          } catch {
+          } catch (e) {
+            rethrowTrap(e);
             continue;
           }
           const wires = ShapeIndex.of(oc, arena.own(mk.Shape()), 'TopAbs_WIRE', arena);
@@ -5391,7 +5435,7 @@ export class Kernel {
    * mesh (the surface evaluated at the node's (u, v): exact; the mesh's own normals, averaged from its triangles, are 0.1° out on a 5° cone, ADR 0074), turned outward, and
    * the angle is asin(normal · pull). A face is `positive` when every sample is at least `required` (radians), `negative` when every one is at most −required,
    * `straddle` when it has both, `required` when it is nearer to the direction than that (a wall that has to be given draft). The mesh is made on a copy of the shape, as
-   * fine as `angular` says (a shape is meshed once, at the first fineness asked: ADR 0074), so the answer does not depend on how the shape is shown.
+   * fine as `angular` says (a shape keeps the finest tolerance it has had, whatever the angle: ADR 0074), so the answer does not depend on how the shape is shown.
    */
   draftAnalysis(id: ShapeId, pull: Vec3, required: number, options: { angular?: number } = {}): DraftReport {
     const len = Math.hypot(pull[0], pull[1], pull[2]);
@@ -5638,7 +5682,8 @@ export class Kernel {
       doc.delete();
       try {
         oc.FS.unlink(path);
-      } catch {
+      } catch (e) {
+        rethrowTrap(e);
         // not written
       }
       arena.dispose();
@@ -5687,7 +5732,8 @@ export class Kernel {
       doc.delete();
       try {
         oc.FS.unlink(path);
-      } catch {
+      } catch (e) {
+        rethrowTrap(e);
         // not written
       }
       arena.dispose();
@@ -5842,7 +5888,8 @@ export class Kernel {
       doc.delete();
       try {
         oc.FS.unlink(path);
-      } catch {
+      } catch (e) {
+        rethrowTrap(e);
         // not written
       }
       arena.dispose();
@@ -5970,7 +6017,8 @@ export class Kernel {
       doc.delete();
       try {
         oc.FS.unlink(path);
-      } catch {
+      } catch (e) {
+        rethrowTrap(e);
         // not written
       }
       arena.dispose();
@@ -6005,7 +6053,8 @@ export class Kernel {
     } finally {
       try {
         oc.FS.unlink(path);
-      } catch {
+      } catch (e) {
+        rethrowTrap(e);
         // not written
       }
       arena.dispose();
@@ -6027,20 +6076,21 @@ export class Kernel {
       try {
         status = r.ReadFile(path);
       } catch (e) {
-        throw new KernelError(t('import.igesCannotRead', { reason: this.errorText(e) }));
+        throw new KernelError(t('import.igesCannotRead', { reason: this.refusalWords(e) }));
       }
       if (status !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) throw new KernelError(t('import.notIges'));
       try {
         r.TransferRoots(arena.own(new oc.Message_ProgressRange()));
       } catch (e) {
-        throw new KernelError(t('import.igesCannotRead', { reason: this.errorText(e) }));
+        throw new KernelError(t('import.igesCannotRead', { reason: this.refusalWords(e) }));
       }
       if (r.NbShapes() === 0) throw new KernelError(t('import.igesNoShapes'));
       return this.repairImport(arena.own(r.OneShape()), options);
     } finally {
       try {
         oc.FS.unlink(path);
-      } catch {
+      } catch (e) {
+        rethrowTrap(e);
         // not written
       }
       arena.dispose();

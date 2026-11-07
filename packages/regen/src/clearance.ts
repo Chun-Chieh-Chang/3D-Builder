@@ -1,4 +1,4 @@
-import { KernelError, type Kernel, type ShapeId } from '@3db/kernel';
+import { KernelError, rethrowTrap, type Kernel, type ShapeId } from '@3db/kernel';
 import { MIN_INTERFERENCE_VOLUME, placementRows, type InterferenceComponent, type Pose, type Vec3 } from '@3db/model';
 
 /** How far apart two components are, where (the closest points, in the assembly's frame): one row of the clearance check. */
@@ -87,6 +87,7 @@ export function findClearance(kernel: Kernel, components: readonly InterferenceC
             found.rows.push(best);
           }
         } catch (e) {
+          rethrowTrap(e);
           found.failed.push({ a: a.id, b: b.id, message: e instanceof Error ? e.message : String(e) });
         }
       }

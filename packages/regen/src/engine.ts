@@ -95,7 +95,7 @@ import {
   modelRefOf,
 } from '@3db/model';
 import { bentPath, BendProblem, findOutlines, findProfiles, reversePath, ribbonOf, selectContours, ThinProblem, thinRegions, type ProfileResult, type SketchSolver, type SketchStatus, type SolvedSketch } from '@3db/sketch';
-import { KernelError, SURFACE_TOLERANCE, type Frame, type KnurlSpec, type Region, type Segment, type SweepSpec, type ThreadSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
+import { KernelCrash, KernelError, SURFACE_TOLERANCE, isTrap, rethrowTrap, type Frame, type KnurlSpec, type Region, type Segment, type SweepSpec, type ThreadSpec, type FaceOrigin, type ImportDiagnostics, type Kernel, type OpResult, type ShapeId, type Topology } from '@3db/kernel';
 import { nameElements, nameFromFaces, resolveRef, type Candidate, type ElementNames } from '@3db/naming';
 import { Bodies, type BodyState, type BodyView } from './bodies';
 import { followReferences, NO_NAMES, NO_TOPOLOGY, ReferenceProblem, type DatumScope } from './references';
@@ -507,7 +507,8 @@ const importKey = (sha256: string, sewTolerance: string | undefined): string => 
   if (sewTolerance !== undefined) {
     try {
       tolerance = String(evalLength(sewTolerance));
-    } catch {
+    } catch (e) {
+      rethrowTrap(e);
       tolerance = sewTolerance; // reported by the feature itself
     }
   }
@@ -674,7 +675,8 @@ export class Regenerator {
         if (index === limit && feature.type === 'sketch') {
           try {
             frames.set(feature.id, this.frame(feature, set));
-          } catch {
+          } catch (e) {
+            rethrowTrap(e);
             // the edited sketch's plane is gone: the sketch reports it once it is evaluated
           }
         }
@@ -934,6 +936,8 @@ export class Regenerator {
           }
         }
       } catch (e) {
+        // not this feature's error: the module cannot be used any more, the page replaces it (ADR 0242)
+        if (isTrap(e)) throw e instanceof KernelCrash ? e : new KernelCrash(t('worker.crashIn', { feature: feature.name, why: e instanceof Error ? e.message : String(e) }));
         if (e instanceof FeatureError) return done({ status: 'error', message: e.message, ...(e.unresolved ? { unresolved: e.unresolved } : {}) });
         if (e instanceof KernelError) return done({ status: 'error', message: e.message });
         return done({ status: 'error', message: t('regen.internal', { why: e instanceof Error ? e.message : String(e) }) });
@@ -1041,7 +1045,8 @@ export class Regenerator {
         if (Math.abs(removed - (vBefore - vAfter)) > 1e-3 * (vBefore - vAfter) + 1e-6) sheet.mapping.notIncluded.push({ feature: feature.id, why: 'bend' });
         sheet.mapping.panels = panels;
       }
-    } catch {
+    } catch (e) {
+      rethrowTrap(e);
       // the difference could not be made: the flat pattern will not have this cut, and does not say it does
     }
   }
@@ -1848,7 +1853,8 @@ export class Regenerator {
             const [lo, hi] = this.spanAlong(body, O, Z, faceIdx);
             zc = f.reverse ? hi : lo;
           }
-        } catch {
+        } catch (e) {
+          rethrowTrap(e);
           // fallback to 0
         }
       }
@@ -2867,6 +2873,7 @@ export class Regenerator {
         try {
           results = k.splitBody(target.shape, plane);
         } catch (e) {
+          rethrowTrap(e);
           if (hasTargets) {
             throw e instanceof KernelError ? new FeatureError(e.message) : e;
           }
@@ -3105,6 +3112,7 @@ export class Regenerator {
         const r = blob.kind === 'iges' ? this.kernel.importIges(data, options) : this.kernel.importStep(data, options);
         imported = { shape: r.shape, faceOrigins: r.faceOrigins, warnings: r.warnings, diagnostics: r.diagnostics };
       } catch (e) {
+        rethrowTrap(e);
         imported = { error: e instanceof Error ? e.message : String(e) };
       }
       this.imports.set(key, imported);
@@ -4964,7 +4972,8 @@ export class Regenerator {
         try {
           this.kernel.release(this.kernel.fillet(shape, edges, r).shape);
           return true;
-        } catch {
+        } catch (e) {
+          rethrowTrap(e);
           return false;
         }
       };

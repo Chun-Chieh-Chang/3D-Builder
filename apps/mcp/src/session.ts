@@ -8,7 +8,7 @@ import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { setLocale, type Locale } from '@3db/i18n';
 import { applyCommand, createEmptyPart, parsePart, type Command, type PartDoc, type Ref } from '@3db/model';
-import { Kernel, type MassProps, type ShapeId } from '@3db/kernel';
+import { Kernel, isTrap, type MassProps, type ShapeId } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { BudgetError, exportFaces, reconstructImported, RecognizeError, Regenerator, type FeatureResult, type RebuildResult, type ReconstructReport } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint } from '@3db/naming';
@@ -178,14 +178,32 @@ export class CadSession {
 
   /** Builds `doc` and keeps the result. The heap of OCCT only grows (AGENTS.md §3.5): past the limit, a new kernel takes the work (ADR 0126). */
   private async rebuild(doc: PartDoc): Promise<RebuildResult> {
-    if (shouldRestartHeap(this.heapBytes(), this.heapBase, this.heapLimit)) {
+    // past the limit, or once the module has trapped, even if that was taken as a refusal (ADR 0242)
+    if (shouldRestartHeap(this.heapBytes(), this.heapBase, this.heapLimit) || this.kernel.trapsAbsorbed > 0) {
       this.regen.dispose();
       await this.loadKernel();
       this.restarts++;
     }
     await this.solver.fresh(); // the same numbers for the same document every time (see PlaneGcsSolver.fresh)
-    this.result = this.regen.rebuild(doc);
+    try {
+      this.result = this.regen.rebuild(doc);
+    } catch (e) {
+      if (isTrap(e)) await this.replaceKernel();
+      throw e;
+    }
     return this.result;
+  }
+
+  /** The module stopped (a WebAssembly trap, ADR 0242): whatever it says from now on cannot be trusted, and every shape it held is gone with it. */
+  private async replaceKernel(): Promise<void> {
+    await this.loadKernel();
+    this.restarts++;
+  }
+
+  /** After a trap out of anything but a rebuild, which sees to its own: a new kernel, and the part built again in it so that what is asked next has something to answer from. */
+  async recoverFromCrash(): Promise<void> {
+    await this.replaceKernel();
+    await this.rebuild(this.doc);
   }
 
   private record(cause: RebuildEvent['cause'], committed: boolean, summary: PartSummary, dryRun?: boolean): void {

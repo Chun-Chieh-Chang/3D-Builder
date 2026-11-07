@@ -293,7 +293,10 @@ describe('B-splines (the way out of the program)', () => {
 
   it('says so when the converter stops (a freeform side offset round its sharp end edge has B-spline joins that the converter of OCCT cannot take)', () => {
     const off = kernel.offsetSolid(lofted([25, 15, 22]), 3);
+    const before = kernel.trapsAbsorbed;
     expect(() => kernel.toBSpline(off.shape)).toThrow(/B 樣條/);
+    // it stops by trapping: the answer is the same, and the module is known not to be trusted (ADR 0242)
+    expect(kernel.trapsAbsorbed).toBe(before + 1);
   });
 });
 

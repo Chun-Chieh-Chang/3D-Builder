@@ -5,7 +5,7 @@
  * that build it. Nothing here touches a document: `reconstruct.ts` turns this into features and checks the result against the original.
  */
 import { t } from '@3db/i18n';
-import { KernelError, type FaceInfo, type Frame, type Kernel, type SectionEdge, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
+import { KernelError, rethrowTrap, type FaceInfo, type Frame, type Kernel, type SectionEdge, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
 import type { Budget } from '../budget';
 import { chainLoops, LoopError, type Loop, type P2 } from '../section/loops';
 
@@ -613,6 +613,7 @@ function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameF
   try {
     return extrudeBase(kernel, shape, topo, frameFor, budget);
   } catch (first) {
+    rethrowTrap(first);
     if (!(first instanceof RecognizeError) || depth >= MAX_SIDE_DEPTH) throw first;
     const best = bestDirection(topo);
     if (!best || best.blocking.length === 0) throw first;

@@ -129,6 +129,9 @@ export const edit: Translation = {
   'pm.combine.hint': 'The result is the main body; the others are used up. Pick a face of a body in the graphics area to add or remove it. Add needs the bodies to touch; Subtract and Common take the main body and how it meets them.',
   'pick.combine': 'Pick faces of bodies: the first is the main body, the rest are the bodies to combine',
   'worker.stalled': 'The rebuild did not finish in {seconds} s and was stopped; the geometry kernel was reloaded. This content made OCCT stall; undo the last action and try another way',
+  'worker.crashIn': 'Feature "{feature}" stopped the geometry kernel ({why})',
+  'worker.crashed': 'The geometry kernel stopped; it was replaced and the model recomputed: {why}',
+  'worker.crashedAgain': 'The geometry kernel stopped again; it was replaced but will not recompute by itself: {why}. The view shows the last result; undo the last action, or suppress this feature, and try again',
   'worker.abandoned': 'The last rebuild took too long and was stopped; the geometry kernel was reloaded',
   'worker.heapRecycled': 'The geometry kernel had accumulated {mb} MB of memory (the booleans of threads and knurls leave memory behind that the library never returns), so the kernel was rebuilt and the part recalculated before it could run out',
 

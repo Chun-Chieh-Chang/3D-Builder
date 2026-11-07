@@ -1,6 +1,6 @@
 import { composePose, DATUM_PLANES, mateEnds, evalAngle, evalLength, isDatumPlaneName, type AssemblyDoc, type Id, type InnerPoses, type Mate, type PlaneFrame, type Pose, type Ref, type SourceTree, type Vec3 } from '@3db/model';
 import { placed, solve, type BodyResult, type MateGeometry, type MateResult, type MateSpec, type MoveGoal, type SolverBody } from '@3db/assembly';
-import type { EdgeInfo, FaceInfo, Topology } from '@3db/kernel';
+import { rethrowTrap, type EdgeInfo, type FaceInfo, type Topology } from '@3db/kernel';
 import { resolveRef, type ElementNames } from '@3db/naming';
 import { t } from '@3db/i18n';
 
@@ -163,6 +163,7 @@ function specOf(m: Mate, parts: ReadonlyMap<Id, MateSource | null>): MateSpec | 
     if (m.min !== undefined) min = read(m.min);
     if (m.max !== undefined) max = read(m.max);
   } catch (e) {
+    rethrowTrap(e);
     return e instanceof Error ? e.message : String(e);
   }
   return {

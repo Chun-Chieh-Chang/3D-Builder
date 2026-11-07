@@ -283,6 +283,8 @@ export interface AssemblyHost {
   api: Remote<KernelApi>;
   changed(state: AssemblyState): void;
   notify(text: string, kind?: 'info' | 'error'): void;
+  /** Every part has been read and built without the worker stopping (ADR 0242). */
+  partsBuilt(): void;
   /** The project folder; when there is none yet the user is asked, with `reason`. Null if they cancel. */
   projectFolder(reason: string): Promise<FileSystemDirectoryHandle | null>;
 }
@@ -322,6 +324,8 @@ export class AssemblyStore {
   private closed = false;
   /** Bumped by reload: reads started before it are stale. */
   private generation = 0;
+  /** The builds the worker of now has the shapes of. What is shown is kept here when the worker is replaced, and the new one has none of it (ADR 0242). */
+  private inWorker = new Set<string>();
   /** Solves run one at a time; while one runs, only the newest request waits. */
   private solving = false;
   private solveAgain = false;
@@ -476,6 +480,11 @@ export class AssemblyStore {
   }
 
   /** Reads every part file again: parts changed since they were read show as they are now. */
+  /** The worker was replaced: the parts stay on the screen, and each is built again in the new one when it is next read. */
+  workerReplaced(): void {
+    this.inWorker.clear();
+  }
+
   reload(): void {
     this.generation += 1;
     this.set({ files: new Map() });
@@ -512,6 +521,7 @@ export class AssemblyStore {
       if (![...this.state.files.values()].some((s) => s.status === 'loading')) {
         this.settled();
         this.pointOutMissing();
+        this.host.partsBuilt();
       }
       this.requestSolve();
     });
@@ -556,10 +566,11 @@ export class AssemblyStore {
       const masters = await gatherSources(project, path, bytes);
       this.masterStamps.set(path, masters.stamps);
       key = await contentKey(bytes, masters.sources);
-      if (!this.state.builds.has(key)) {
+      if (!this.state.builds.has(key) || !this.inWorker.has(key)) {
         const build = await this.host.api.buildPart(key, bytes, proxy((stage: PartStage) => this.stageReached(path, stage, generation)), masters.sources.length > 0 ? masters.sources : undefined);
         // A file that gave no body and said why (a STEP file that is none, a part whose features all failed) is an error, not a part to place. An empty part has nothing to say and stays.
         if (!build.mesh && build.problems.length > 0) return { status: 'error', message: `無法使用「${path}」：${build.problems.join('；')}` };
+        this.inWorker.add(key);
         this.set({ builds: new Map(this.state.builds).set(key, build) });
       }
       return { status: 'ok', key };

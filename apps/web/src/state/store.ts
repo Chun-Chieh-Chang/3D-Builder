@@ -80,6 +80,7 @@ import type { UnresolvedRef } from '../sketcher/sketch-references';
 import type { PickFilter, Snap, Viewer } from '@3db/render';
 import { captureVertexAnchor, resolveVertexAnchor } from './measureAnchors';
 import type { JobApi, KernelApi, PartExportOptions, PartIgesOptions, StlExportOptions, ProbeApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
+import { isWorkerCrash } from '../worker/crash';
 import { shouldRestartHeap } from '../worker/heap';
 import { JobStopped, startJob, type RunningJob } from '../worker/job';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
@@ -586,6 +587,10 @@ class AppStore {
   private remote!: Comlink.Remote<KernelApi>;
   /** Counts the workers started: an answer or a failure from an earlier one is ignored. */
   private workerGeneration = 0;
+  /** The document a worker was replaced for after a trap taken as a refusal: if that document traps in the new worker too, replacing it again would only go round (ADR 0242). */
+  private replacedAfterTrap: PartDoc | null = null;
+  /** Crashes of the worker since a rebuild last finished (ADR 0242). */
+  private crashesInARow = 0;
   /** When the rebuild in flight began. */
   private startedAt = 0;
   /** How long a rebuild may take before its worker is replaced (kept here so a test can shorten it). */
@@ -645,7 +650,7 @@ class AppStore {
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void this.autosave.flush());
     this.api = new Proxy({} as Comlink.Remote<KernelApi>, {
       // never `then` (the proxy is not a promise) and no symbols: only the methods of the worker's API
-      get: (_target, name) => (typeof name === 'symbol' || name === 'then' ? undefined : (...args: unknown[]) => (this.remote as unknown as Record<string, (...a: unknown[]) => unknown>)[name]!(...args)),
+      get: (_target, name) => (typeof name === 'symbol' || name === 'then' ? undefined : (...args: unknown[]) => this.watchingForCrash((this.remote as unknown as Record<string, (...a: unknown[]) => unknown>)[name]!(...args))),
     });
     this.savedText = serializePart(this.history.doc);
     this.state = {
@@ -3370,9 +3375,36 @@ class AppStore {
     this.inFlight = false;
     this.pending = false;
     this.startWorker();
+    this.assembly?.workerReplaced();
     this.sketchRunner.abandon();
     this.set({ bootMs: null, rebuilding: false });
     this.boot(getLocale());
+  }
+
+  /** Passes on the answer of a call to the worker, noticing when the module in it stopped. Every call comes through here, so no caller has to know about it. */
+  private watchingForCrash<T>(answer: T): T {
+    const generation = this.workerGeneration;
+    return (answer as Promise<unknown>).catch((e: unknown) => {
+      if (isWorkerCrash(e) && generation === this.workerGeneration) this.workerCrashed(e);
+      throw e;
+    }) as T;
+  }
+
+  /**
+   * The module stopped (a WebAssembly trap, ADR 0242): nothing it says from now on can be trusted, so it is replaced whatever it was doing. The document is here, so the model is computed
+   * again in the new one. A second crash with no finished rebuild in between comes from the document, and computing it again would only crash again: the user is told what it was, and the
+   * next edit is what tries again.
+   */
+  private workerCrashed(e: Error): void {
+    this.crashesInARow += 1;
+    this.restartWorker();
+    if (this.crashesInARow >= 2) {
+      this.notify(t('worker.crashedAgain', { why: e.message }), 'error');
+      return;
+    }
+    this.notify(t('worker.crashed', { why: e.message }), 'error');
+    if (this.assembly) this.assembly.reload();
+    else void this.run();
   }
 
   /**
@@ -3382,6 +3414,14 @@ class AppStore {
    * this is called after a result is shown rather than instead of one.
    */
   private recycleIfHeapHigh(result: RebuildPayload): void {
+    if (result.trapsAbsorbed === 0) this.replacedAfterTrap = null;
+    else if (this.replacedAfterTrap !== this.history.doc) {
+      // the module said no by trapping (a STEP file written as it is, a broken IGES file): this result came out of it, so the next comes out of a new one
+      this.replacedAfterTrap = this.history.doc;
+      this.restartWorker();
+      void this.run();
+      return;
+    }
     if (!shouldRestartHeap(result.heapBytes, result.heapBase)) return;
     const mb = Math.round(((result.heapBytes ?? 0) - (result.heapBase ?? 0)) / 1048576);
     this.restartWorker();
@@ -3488,6 +3528,7 @@ class AppStore {
       const sources = await this.masterFiles(doc);
       const result = await this.withinLimit(this.api.rebuild({ seq, doc, ...(sources ? { sources } : {}), ...(until === undefined ? {} : { until }) }));
       if (worker !== this.workerGeneration) return; // the worker was replaced meanwhile: this is not an answer to use
+      this.crashesInARow = 0;
       // A queued request supersedes this result: showing it would briefly contradict the current document.
       if (result.seq === this.seq && !this.pending) {
         this.set({ result, ...this.referenceProblemsOf(result) });
@@ -4191,6 +4232,9 @@ class AppStore {
     this.assembly = new AssemblyStore(
       {
         api: this.api,
+        partsBuilt: () => {
+          this.crashesInARow = 0;
+        },
         changed: (asm) => this.set({ asm }),
         notify: (text, kind) => this.notify(text, kind),
         projectFolder: (reason) => this.projectFolder(reason),

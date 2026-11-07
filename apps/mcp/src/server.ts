@@ -7,6 +7,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, typ
 import { AgentError, EXPORT_FORMATS, messageOf, type CadSession, type ElementQuery, type ExportFormat } from './session';
 import { RENDER_VIEWS, renderView, type RenderOptions } from './render';
 import { commandReference, exampleReference, INSTRUCTIONS, typeReference } from './reference';
+import { isTrap } from '@3db/kernel';
 import type { LiveBridge } from './bridge';
 
 const vec3 = { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 } as const;
@@ -189,6 +190,7 @@ export async function callTool(session: CadSession, name: string, raw: unknown, 
     }
     return refused(`no tool ${name}`);
   } catch (e) {
+    if (isTrap(e)) await session.recoverFromCrash().catch(() => undefined);
     return refused(messageOf(e));
   }
 }

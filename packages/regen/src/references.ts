@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import type { SolvedGeometry } from '@3db/sketch';
 import { modelRefOf, type Id, type PlaneFrame, type Ref, type SketchEntity, type SketchFeature, type Vec3 } from '@3db/model';
-import type { Topology } from '@3db/kernel';
+import { rethrowTrap, type Topology } from '@3db/kernel';
 import { edgeFingerprint, faceFingerprint, resolveRef, vertexFingerprint, type Candidate, type ElementNames } from '@3db/naming';
 
 /**
@@ -413,6 +413,7 @@ export function convertEdges(scope: ReferenceScope, refs: Ref[], mode: 'convert'
       if (mode === 'pierce') items.push(...piercePoints(scope, index).map((pierce) => ({ ref, pierce })));
       else items.push({ ref, projected: projectEdge(scope.topology, index, scope.frame) });
     } catch (e) {
+      rethrowTrap(e);
       errors.push(e instanceof Error ? e.message : String(e));
     }
   }

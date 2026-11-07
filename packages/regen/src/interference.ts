@@ -1,4 +1,4 @@
-import { KernelError, type Kernel, type ShapeId } from '@3db/kernel';
+import { KernelError, rethrowTrap, type Kernel, type ShapeId } from '@3db/kernel';
 import { MIN_INTERFERENCE_VOLUME, placementRows, type InterferenceComponent, type Vec3 } from '@3db/model';
 
 /**
@@ -85,6 +85,7 @@ export function findInterference(kernel: Kernel, components: readonly Interferen
             }
           }
         } catch (e) {
+          rethrowTrap(e);
           // what was found of this pair before it failed is not a result: part of its volume would read as all of it
           for (const o of found.overlaps.splice(first)) kernel.release(o.shape);
           found.failed.push({ a: a.id, b: b.id, message: e instanceof KernelError || e instanceof Error ? e.message : String(e) });

@@ -155,6 +155,8 @@ export interface RebuildPayload {
    * MiB of it per call (AGENTS.md §3.5), so the page replaces a worker whose heap has grown past `HEAP_GROWTH_LIMIT`. `null` when it cannot be read.
    */
   heapBytes: number | null;
+  /** Traps the kernel took as a refusal since it was loaded (ADR 0242): it should be left behind when that costs little. */
+  trapsAbsorbed: number;
   heapBase: number | null;
 }
 

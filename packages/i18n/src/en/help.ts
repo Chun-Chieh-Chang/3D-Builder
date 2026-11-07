@@ -1217,7 +1217,7 @@ export const help: Translation = {
   'help.rebuild.summary': 'Rebuilds the whole part.',
 
   'help.rebuild.body':
-    'Recalculates the whole part: every feature is worked out again in order.\n\n- Normally it recalculates automatically after each change; use this command to force one more recalculation.\n- A feature that cannot be worked out turns red in the tree, the bottom of the window says "N errors", and "Why the error?" in the right-click menu of the row explains.',
+    'Recalculates the whole part: every feature is worked out again in order.\n\n- Normally it recalculates automatically after each change; use this command to force one more recalculation.\n- A feature that cannot be worked out turns red in the tree, the bottom of the window says "N errors", and "Why the error?" in the right-click menu of the row explains.\n\n- If the geometry kernel stops during a computation (the underlying library itself failing, not a message about a feature), a new kernel takes over and the model is recomputed; the model is not changed, and you are told.\n- After two in a row it does not recompute by itself: the notice names the feature, and the view keeps the last result. Undo the last action or suppress that feature, and the next change tries again.',
 
   'help.rebuild.keywords': 'rebuild recalculate regenerate errors',
 

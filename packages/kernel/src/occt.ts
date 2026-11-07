@@ -1,5 +1,7 @@
 import { createInstance, type OpenCascadeInstance, type TopoDS_Shape } from 'libcascade/single/init';
 
+import { rethrowTrap } from './types';
+
 export type OC = OpenCascadeInstance;
 
 export interface LoadOptions {
@@ -29,7 +31,8 @@ export class Arena {
     for (let i = this.items.length - 1; i >= 0; i--) {
       try {
         this.items[i]!.delete();
-      } catch {
+      } catch (e) {
+        rethrowTrap(e);
         // already deleted
       }
     }

@@ -5,13 +5,14 @@ import occtWasm from 'libcascade/single/wasm?url';
 import gcsWasm from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { bodyKey, combineMass, DATUM_PLANES, isDatumPlaneName, isShown, mirrorKey, modelRefOf, type PlaneFrame, MESH_QUALITY, placementRows, settingsOf, type ViewFeature, type ViewEdgeSet, type AssemblyDoc, type Id, type MeasureReport, type PartDoc, type SourceTree } from '@3db/model';
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
-import { COMPONENT_MESH, Kernel, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
+import { COMPONENT_MESH, Kernel, isTrap, rethrowTrap, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { encodeShade, flatViewLines, rasterizeShade, withoutHiddenEdges, type ShadeImage, type ViewLines } from '@3db/drawing';
 import { findEntrance, silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, drawingSketchCircles, drawingSketchFacts, placedViewFeatures, viewFeatures, viewEdges, findClearance, findInterference, flatDrawingGeometry, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { exportAssemblyStep, placedParts, placeMesh, writeStl, type StlSource, exportPartIges, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SnapItem, SourcePart, SourceProvider } from '@3db/regen';
 import { mergeMeshes } from './mergeMesh';
+import { reportingCrashes } from './crash';
 import { heapOf } from './heap';
 import { partFeatures } from './partOutline';
 import type { AssemblyStepRequest, DrawingElementsResult, DrawingFeaturesResult, DrawingViewRequest, DrawingViewResult, ClearanceResult, CollisionResult, SweepOutcome, ConvertPayload, InterferenceResult, PartExportOptions, PartIgesOptions, ConvertRequest, KernelApi, StlExportOptions, StlOutput, PartBuildPayload, PartStage, RebuildPayload, RebuildRequest, SketchSolvePayload, SketchSolveRequest, SourceFileData, StepOutput } from './protocol';
@@ -298,6 +299,7 @@ const api: KernelApi = {
       mass: massOf(r),
       totalMs: r.totalMs,
       heapBytes: heapOf(kernel.oc),
+      trapsAbsorbed: kernel.trapsAbsorbed,
       heapBase,
     };
     const arrays = mesh ? [mesh.positions, mesh.normals, mesh.indices, mesh.faceRanges, mesh.edgePoints, mesh.edgeRanges] : [];
@@ -345,6 +347,7 @@ const api: KernelApi = {
       if (sketch && !other) return { items: [], errors: [t('reference.sketchMissing', { name: sketch })] };
       return convertEdges(scope, [...edges, ...outline, ...(other ? sketchEntityRefs(other) : [])], mode);
     } catch (e) {
+      rethrowTrap(e);
       return { items: [], errors: [e instanceof Error ? e.message : String(e)] };
     }
   },
@@ -638,11 +641,13 @@ const api: KernelApi = {
             const raster = mesh ? rasterizeShade(mesh, r.shade.px) : null;
             shade = raster ? await encodeShade(raster) : { error: t('drawing.noBody') };
           } catch (e) {
+            rethrowTrap(e);
             shade = { error: e instanceof Error ? e.message : String(e) };
           }
         }
         out.push({ lines: drawn, ...(r.anchors ? { anchors: drawingAnchors(kernel, viewParts, r.axes) } : {}), ...(shade ? { shade } : {}), ms: performance.now() - began });
       } catch (e) {
+        rethrowTrap(e);
         out.push({ error: e instanceof Error ? e.message : String(e) });
       } finally {
         for (const id of made) kernel.release(id);
@@ -678,6 +683,7 @@ const api: KernelApi = {
         }
         out.push({ features: viewFeatures(body.topology, body.names, r.axes, allowed, built.holes, built.result.cosmeticThreads), edges: viewEdges(kernel, body.shape, body.topology, body.names, r.axes, allowed, mesh), sketchCircles: drawingSketchCircles(built.result.sketches) });
       } catch (e) {
+        rethrowTrap(e);
         out.push({ error: e instanceof Error ? e.message : String(e) });
       }
     }
@@ -711,6 +717,7 @@ const api: KernelApi = {
         }
         out.push({ edges, features });
       } catch (e) {
+        rethrowTrap(e);
         out.push({ error: e instanceof Error ? e.message : String(e) });
       }
     }
@@ -730,6 +737,7 @@ const api: KernelApi = {
         try { out.push({ elements: r.refs.map(ref => ref.kind === 'sketch' ? drawingSketchFacts(built.result.sketches, ref) : ref.name.includes('@flat:') ? (flat ? elementFacts(flat.topology, flat.names, ref) : { error: t('flat.noSheet') }) : elementFacts(body.topology, body.names, ref, built.holes, built.result.cosmeticThreads)) }); }
         finally { if (flat) kernel.release(flat.shape); }
       } catch (e) {
+        rethrowTrap(e);
         out.push({ error: e instanceof Error ? e.message : String(e) });
       }
     }
@@ -865,4 +873,4 @@ const api: KernelApi = {
   },
 };
 
-Comlink.expose(api);
+Comlink.expose(reportingCrashes(api, isTrap));
