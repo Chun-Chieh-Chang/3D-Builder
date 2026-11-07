@@ -34,6 +34,8 @@ export const evaluate: Translation = {
   'physical.areaNote': 'The surface area is the sum of the surfaces of the parts, not the area of the assembly shell.',
   'physical.unitNote': 'Mass in g, volume in mm³, area in mm², center in mm, inertia in g·mm² (the density is the material in the part file properties).',
   'physical.noBody': 'There is no body to compute.',
+  'physical.computing': 'Computing…',
+  'physical.exactFailed': 'The exact integration did not succeed. The center of mass and the inertia come from the fast method and may be off on spline surfaces.',
   'physical.assemblyIs': 'Assembly: its parts put together at their positions (the exploded view does not matter).',
   'measure.count': 'Measure one or two elements at a time',
   'measure.act': 'Measure',

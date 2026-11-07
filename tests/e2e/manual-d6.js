@@ -102,7 +102,7 @@ M.run = async () => {
     document.querySelector('[data-measure] .primary').click();
     await H.wait(300);
     await H.action('工具', '物質特性…');
-    await H.waitFor(() => document.querySelector('[data-physical]'), 5000, 'the mass properties');
+    await H.waitFor(() => document.querySelector('[data-physical] [data-field="principal"]'), 5000, 'the mass properties');
     const text = document.querySelector('[data-physical]').textContent;
     await shot('6-mass-properties');
     const mass = document.querySelector('[data-physical] [data-field="mass"]')?.textContent;

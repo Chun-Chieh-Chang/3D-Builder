@@ -449,9 +449,10 @@ export class CadSession {
     return this.ownBodies().reduce((n, b) => n + this.kernel.massProps(b.shape).volume, 0);
   }
 
-  summary(doc: PartDoc = this.doc): PartSummary {
+  /** What is answered after every batch, quickly; `exact` integrates the centre too, in seconds on spline faces, for when the summary itself is asked for (ADR 0241). */
+  summary(doc: PartDoc = this.doc, exact = false): PartSummary {
     const r = this.result;
-    const masses = this.ownBodies().map((b) => this.kernel.massProps(b.shape));
+    const masses = this.ownBodies().map((b) => (exact ? this.kernel.massPropsExact(b.shape) : this.kernel.massProps(b.shape)));
     return {
       path: this.path,
       features: r.features.map((f) => this.row(doc, f)),

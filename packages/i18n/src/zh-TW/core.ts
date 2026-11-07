@@ -41,6 +41,7 @@ export const core = {
   'regen.edgeNoFace': '這條邊線沒有相鄰的面',
   'kernel.handleReleased': '形狀控制代碼已釋放：{id}',
   'kernel.occtException': 'OCCT 例外',
+  'kernel.massDiverged': '質量積分沒有收斂。',
   'kernel.opFailedWhy': '{label}失敗：{why}',
   'kernel.opFailed': '{label}失敗',
   'kernel.wireNotClosed': '輪廓無法連成封閉線框（圖元 {source}）',

@@ -127,10 +127,13 @@ function meshOf(r: RebuildResult, shown: boolean[], quality: MeshOptions = {}): 
   return parts.length > 0 ? mergeMeshes(parts) : null;
 }
 
-/** Mass of the part: its bodies except the reference ones (C7.1) and the surface bodies (4b), the centre weighted by volume. */
-function massOf(r: RebuildResult): MassProps | null {
+/**
+ * Mass of the part: its bodies except the reference ones (C7.1) and the surface bodies (4b), the centre weighted by volume.
+ * `exact` also integrates the centre and inertia, in seconds on spline faces: for the mass properties dialog, not for every rebuild (ADR 0241).
+ */
+function massOf(r: RebuildResult, exact = false): MassProps | null {
   if (!r.body) return null;
-  const own = r.bodies.filter((b) => !b.reference && !b.surface).map((b) => kernel.massProps(b.shape));
+  const own = r.bodies.filter((b) => !b.reference && !b.surface).map((b) => (exact ? kernel.massPropsExact(b.shape) : kernel.massProps(b.shape)));
   if (own.length === 0) return null;
   if (own.length === r.bodies.length && own.length === 1) return own[0]!;
   // the bodies as one: for a density of one the mass is the volume (see combineMass)
@@ -796,6 +799,12 @@ const api: KernelApi = {
       out.push(shape === undefined ? null : kernel.check(shape));
     }
     return out;
+  },
+
+  async exactMass(key): Promise<MassProps | null> {
+    await api.init();
+    const r = key === null ? lastResult : ((await parts.get(key)?.catch(() => null))?.result ?? null);
+    return r ? massOf(r, true) : null;
   },
 
   async analyzeDraft(pull, required): Promise<DraftReport> {

@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import type { BRepBuilderAPI_MakeShape, NCollection_Array1_gp_Pnt2d, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
+import type { BRepBuilderAPI_MakeShape, GProp_GProps, NCollection_Array1_gp_Pnt2d, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
 import { anyHit, buildBvh, nearestHitAt, triangleNormal } from './rays';
 import { forEachSample } from './sampling';
 import { escapeStepText } from './stepText';
@@ -3290,47 +3290,81 @@ export class Kernel {
   }
 
   /**
-   * Whether a shape contains non-elementary freeform surfaces (B-spline, Bezier, Offset, Other)
-   * that require adaptive integration for volume accuracy.
+   * Which integral a shape's faces call for (ADR 0241). The fixed Gauss rule is exact on planes and quadrics only.
+   * - `knotted`: B-spline and the like. OCCT's adaptive rule (`eps`) follows their knots and its volume is good: 3e-7 on a loft of closed splines, where the fixed rule is 22% off. Its centre
+   *   and inertia are not: 0.13 mm and 7% off on the same lofts.
+   * - `swept`: an extruded or revolved curve, whatever other faces there are. The surface has no knots of its own but the spline in it has 33 to 45 spans: the adaptive rule is up to
+   *   31% off, the fixed rule 2% on an extrusion and 10% on a revolution. Only span-wise Gauss-Kronrod is right.
    */
-  private hasComplexSurfaces(shape: TopoDS_Shape, arena: Arena): boolean {
+  private integralFor(shape: TopoDS_Shape, arena: Arena): 'analytic' | 'knotted' | 'swept' {
     const oc = this.oc;
+    let kind: 'analytic' | 'knotted' = 'analytic';
     const ex = arena.own(new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
     for (; ex.More(); ex.Next()) {
       const face = arena.own(oc.TopoDS.Face(ex.Current()));
       const ad = arena.own(new oc.BRepAdaptor_Surface(face, true));
       const type = String(ad.GetType()).replace('GeomAbs_', '').toLowerCase();
-      if (type === 'bsplinesurface' || type === 'beziersurface' || type === 'offsetsurface' || type === 'othersurface') {
-        return true;
-      }
+      if (type === 'surfaceofextrusion' || type === 'surfaceofrevolution') return 'swept';
+      if (type === 'bsplinesurface' || type === 'beziersurface' || type === 'offsetsurface' || type === 'othersurface') kind = 'knotted';
     }
-    return false;
+    return kind;
+  }
+
+  private massPropsOf(v: GProp_GProps, area: number, volume: number, arena: Arena): MassProps {
+    const m = arena.own(v.MatrixOfInertia());
+    const inertia: number[] = [];
+    for (let r = 1; r <= 3; r++) for (let c = 1; c <= 3; c++) inertia.push(m.Value(r, c));
+    return { volume, area, center: this.xyz(arena.own(v.CentreOfMass())), inertia };
+  }
+
+  /** The volume by span-wise Gauss-Kronrod, on `swept` shapes: about 1e-9 at about the time of the adaptive rule on real parts; at 1e-6 a subtraction of two bodies is too coarse (sheet metal's refold). */
+  private sweptVolume(shape: TopoDS_Shape, arena: Arena): number {
+    const p = arena.own(new this.oc.GProp_GProps());
+    this.oc.BRepGProp.VolumePropertiesGK(shape, p, 1e-7, false, true, false, false, false);
+    return p.Mass();
   }
 
   /**
-   * Volume, area, centre and inertia. By default OCCT integrates with a fixed number of points per face, which is exact on planes and quadrics but
-   * not on long B-spline faces: a thread's faces come out about 1e-4 of the volume off. With `eps` (or automatically when complex B-spline surfaces
-   * are detected), the volume integrates adaptively until its relative error is below `eps`.
+   * What every rebuild and most code asks for (ADR 0241). The volume is right for every kind of face. The centre and inertia are only right on planes and quadrics: on spline faces they are
+   * up to 0.36 mm and 7% off, so whoever shows them as a result calls `massPropsExact`. The area is the fixed rule's everywhere. `adaptive: false` is the fixed rule for all of it, `eps` the
+   * adaptive rule for all of it.
    */
   massProps(id: ShapeId, options: { eps?: number; adaptive?: boolean } = {}): MassProps {
     const oc = this.oc;
     const arena = new Arena();
     try {
       const shape = this.get(id);
+      const kind = options.eps === undefined && (options.adaptive ?? true) ? this.integralFor(shape, arena) : 'analytic';
+      const eps = options.eps ?? (kind === 'knotted' ? 1e-6 : undefined);
       const v = arena.own(new oc.GProp_GProps());
-      let eps = options.eps;
-      const adaptive = options.adaptive ?? true;
-      if (eps === undefined && adaptive && this.hasComplexSurfaces(shape, arena)) {
-        eps = 1e-6;
-      }
       if (eps !== undefined) oc.BRepGProp.VolumeProperties(shape, v, eps, false, false);
       else oc.BRepGProp.VolumeProperties(shape, v, false, false, false);
       const s = arena.own(new oc.GProp_GProps());
       oc.BRepGProp.SurfaceProperties(shape, s, false, false);
-      const m = arena.own(v.MatrixOfInertia());
-      const inertia: number[] = [];
-      for (let r = 1; r <= 3; r++) for (let c = 1; c <= 3; c++) inertia.push(m.Value(r, c));
-      return { volume: v.Mass(), area: s.Mass(), center: this.xyz(arena.own(v.CentreOfMass())), inertia };
+      const swept = kind === 'swept' ? this.sweptVolume(shape, arena) : NaN;
+      // a rebuild must not fail on a figure: what does not converge keeps the fixed rule's volume, which is what the part had before; massPropsExact says so instead
+      return this.massPropsOf(v, s.Mass(), Number.isFinite(swept) ? swept : v.Mass(), arena);
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * The figures of `massProps` with the centre and inertia integrated (ADR 0241): 1e-4 mm and 5e-6 of the truth on closed-spline extrusions at any distance from the origin, seconds on a real
+   * part with spline faces. Planes and quadrics have their right figures already, and get them unchanged. The area is still the fixed rule's.
+   */
+  massPropsExact(id: ShapeId): MassProps {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const shape = this.get(id);
+      const fast = this.massProps(id);
+      if (this.integralFor(shape, arena) === 'analytic') return fast;
+      const v = arena.own(new oc.GProp_GProps());
+      oc.BRepGProp.VolumePropertiesGK(shape, v, 1e-5, false, true, true, true, false);
+      const out = this.massPropsOf(v, fast.area, fast.volume, arena);
+      if (![v.Mass(), ...out.center, ...out.inertia].every(Number.isFinite)) throw new KernelError(t('kernel.massDiverged'));
+      return out;
     } finally {
       arena.dispose();
     }

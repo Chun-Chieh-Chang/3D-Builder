@@ -111,7 +111,7 @@ export async function callTool(session: CadSession, name: string, raw: unknown, 
       case 'part_save':
         return json(await session.save(a.path as string | undefined));
       case 'part_summary':
-        return json(session.summary());
+        return json(session.summary(undefined, true));
       case 'command_reference': {
         if (a.topic === 'commands') return { content: [{ type: 'text', text: commandReference() }] };
         if (a.topic === 'example') return { content: [{ type: 'text', text: exampleReference() }] };

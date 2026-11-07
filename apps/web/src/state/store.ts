@@ -129,7 +129,7 @@ import {
   keepRecovery,
   recoveryCopy,
 } from '../files';
-import type { DraftReport, GeometryReport, MeshData, ThicknessReport, UndercutReport } from '@3db/kernel';
+import type { DraftReport, GeometryReport, MassProps, MeshData, ThicknessReport, UndercutReport } from '@3db/kernel';
 import { AssemblyStore, type AssemblySource, type AssemblyState } from './assembly';
 import { AiBridge, type AiBridgeStatus } from './aiBridge';
 import { groupOverlaps, pairKey, shownPairs, stepPair, type InterferenceOthers, type InterferencePair } from './interferenceView';
@@ -800,6 +800,11 @@ class AppStore {
     if (!this.state.draft) return;
     this.set({ draft: { ...this.state.draft, required } });
     void this.runDraft();
+  }
+
+  /** The integrated mass properties of the open part (`null`) or of a part of the assembly (E1.2, ADR 0241): for the mass properties dialog, in seconds on spline faces. */
+  exactMass(key: string | null): Promise<MassProps | null> {
+    return this.api.exactMass(key);
   }
 
   private async runDraft(): Promise<void> {

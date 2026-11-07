@@ -92,6 +92,7 @@ import {
 import { contentKey, gatherSources } from './sources';
 import { ASSEMBLY_FILE_EXTENSION, assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, readDocumentFile, sha256Hex, stepStructure, writeAssemblyFile, writePartFile } from '@3db/io';
 import { t } from '@3db/i18n';
+import type { MassProps } from '@3db/kernel';
 import type { AssemblyResult } from '@3db/regen';
 import type { AssemblyStepRequest, KernelApi, PartBuildPayload, PartStage } from '../worker/protocol';
 import { fileIn, listFiles, pathIn, pickAssemblySaveTarget, pickPartFile, writeFile, writeFilesInto } from '../files';
@@ -731,15 +732,27 @@ export class AssemblyStore {
     return { components: groups.map((g) => ({ id: g.id, parts: g.leaves.map((l) => interferencePart(l, unmirror)) })), names, tops };
   }
 
-  /** The mass properties of the assembly (E1.2): its parts put together at their positions. Derived. */
-  physical(): Physical {
+  /**
+   * The mass properties of the assembly (E1.2): its parts put together at their positions. Derived.
+   * `exact` has the integrated figures of parts by key (ADR 0241); a part's density stays that of its build.
+   */
+  physical(exact?: ReadonlyMap<string, MassProps>): Physical {
     const suffix = t('pattern.mirrorSuffix');
     return assemblyPhysical(
       this.assembledLeaves().map((l) => {
         const base = bomName(l.file ?? l.key);
-        return { name: l.mirrored ? `${base}${suffix}` : base, pose: l.pose, mirrored: !!l.mirrored, mass: this.state.builds.get(l.mirrored ? l.key.slice(0, -mirrorKey('').length) : l.key)?.mass ?? undefined };
+        const key = l.mirrored ? l.key.slice(0, -mirrorKey('').length) : l.key;
+        const mass = this.state.builds.get(key)?.mass ?? undefined;
+        const better = exact?.get(key);
+        return { name: l.mirrored ? `${base}${suffix}` : base, pose: l.pose, mirrored: !!l.mirrored, mass: mass && better ? { ...mass, center: better.center, inertia: better.inertia } : mass };
       }),
     );
+  }
+
+  /** The parts whose centre and inertia go into `physical`: those read with a material, each once however often it is placed. */
+  physicalKeys(): string[] {
+    const keys = this.assembledLeaves().map((l) => (l.mirrored ? l.key.slice(0, -mirrorKey('').length) : l.key));
+    return [...new Set(keys)].filter((key) => this.state.builds.get(key)?.mass?.density != null);
   }
 
   /** The parts list (C15.16) of the assembly as it is now: flat and indented. Derived from the document and the parts read, never stored. */

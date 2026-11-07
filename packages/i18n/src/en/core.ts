@@ -43,6 +43,7 @@ export const core: Translation = {
   'regen.edgeNoFace': 'This edge has no neighbouring face',
   'kernel.handleReleased': 'The shape handle was released: {id}',
   'kernel.occtException': 'OCCT exception',
+  'kernel.massDiverged': 'The mass integral did not converge.',
   'kernel.opFailedWhy': '{label} failed: {why}',
   'kernel.opFailed': '{label} failed',
   'kernel.wireNotClosed': 'The profile cannot be joined into a closed wire (entity {source})',

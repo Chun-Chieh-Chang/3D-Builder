@@ -32,6 +32,8 @@ export const evaluate = {
   'physical.areaNote': '表面積是各零件表面積的總和，不是組合件外殼的面積。',
   'physical.unitNote': '質量 g、體積 mm³、表面積 mm²、質心 mm、慣性矩 g·mm²（密度用零件檔「檔案屬性」的材質）。',
   'physical.noBody': '沒有可以計算的本體。',
+  'physical.computing': '計算中…',
+  'physical.exactFailed': '精確積分沒有成功，質心與慣性矩是快速算法的結果；有樣條曲面時可能有誤差。',
   'physical.assemblyIs': '組合件：依各零件的位置合成（爆炸視圖不影響）。',
   'measure.count': '一次測量 1 或 2 個元素',
   'measure.act': '測量',
