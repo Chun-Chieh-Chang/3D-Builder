@@ -79,8 +79,9 @@ import type { SolvedGeometry } from '@3db/sketch';
 import type { UnresolvedRef } from '../sketcher/sketch-references';
 import type { PickFilter, Snap, Viewer } from '@3db/render';
 import { captureVertexAnchor, resolveVertexAnchor } from './measureAnchors';
-import type { KernelApi, PartExportOptions, PartIgesOptions, StlExportOptions, ProbeApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
+import type { JobApi, KernelApi, PartExportOptions, PartIgesOptions, StlExportOptions, ProbeApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
 import { shouldRestartHeap } from '../worker/heap';
+import { JobStopped, startJob, type RunningJob } from '../worker/job';
 import { SketchController, type ControllerView, type SketchHost } from '../sketcher/controller';
 import { accepts, axisDefinitionFor, emptyRef, put, treePick, treeRef } from './datumSlots';
 import { measureTargetsOf, pickKey, type SelectionFacts } from './selectionFacts';
@@ -539,6 +540,8 @@ class LatestRunner<Req, Res> {
 const REBUILD_LIMIT_MS = 60_000;
 /** A rebuild that has run this long, with the document changed since, is given up on at once. */
 const REBUILD_SUSPECT_MS = 15_000;
+/** The recognition's own limit stops it with its reason (`RECOGNIZE_LIMITS`, asked between OCCT's calls); this one, later, is for one call that never returns. */
+const RECOGNIZE_LIMIT_MS = 130_000;
 
 class StalledError extends Error {}
 
@@ -587,6 +590,10 @@ class AppStore {
   private startedAt = 0;
   /** How long a rebuild may take before its worker is replaced (kept here so a test can shorten it). */
   rebuildLimitMs = REBUILD_LIMIT_MS;
+  /** The recognition running, to cancel. */
+  private recognition: RunningJob<unknown> | null = null;
+  /** How long it may take once its kernel is loaded (kept here so a test can shorten it). */
+  recognizeLimitMs = RECOGNIZE_LIMIT_MS;
   private listeners = new Set<() => void>();
   private seq = 0;
   private inFlight = false;
@@ -1853,8 +1860,18 @@ class AppStore {
     const before = this.state;
     const doc = this.history.doc;
     this.set({ recognizing: featureId, notice: { kind: 'info', text: t('recognize.working') } });
+    const blobs = this.blobs;
+    // one wrap, kept to the end: Comlink tells the worker to stop listening when a wrapped proxy is collected, and a second wrap of the same worker would then never be answered
+    let jobApi: Comlink.Remote<JobApi>;
+    const job = startJob(
+      () => new Worker(new URL('../worker/job.worker.ts', import.meta.url), { type: 'module' }),
+      (worker) => (jobApi = Comlink.wrap<JobApi>(worker)).init(getLocale()),
+      () => jobApi.recognizeFeatures(doc, featureId, blobs),
+      this.recognizeLimitMs,
+    );
+    this.recognition = job;
     try {
-      const { commands, report } = await this.api.recognizeFeatures(doc, featureId);
+      const { commands, report } = await job.answer;
       if (this.history.doc !== doc || this.state.documentSerial !== before.documentSerial || this.state.active !== 'part' || this.state.editing) {
         this.notify(t('recognize.stale'), 'error');
         return;
@@ -1863,10 +1880,21 @@ class AppStore {
       const f = report.features;
       this.notify(t('recognize.done', { extrude: f.extrude, revolve: f.revolve, hole: f.hole, fillet: f.fillet, chamfer: f.chamfer }));
     } catch (e) {
-      if (this.state.documentSerial === before.documentSerial) this.notify(e instanceof Error ? e.message : String(e), 'error');
+      if (this.state.documentSerial !== before.documentSerial) return;
+      if (e instanceof JobStopped) {
+        if (e.reason === 'cancelled') this.notify(t('job.cancelled'), 'info');
+        else if (e.reason === 'time') this.notify(t('job.timedOut', { seconds: Math.round(this.recognizeLimitMs / 1000) }), 'error');
+        else this.notify(t('job.crashed', { why: e.message }), 'error');
+      } else this.notify(e instanceof Error ? e.message : String(e), 'error');
     } finally {
+      this.recognition = null;
       this.set({ recognizing: null });
     }
+  }
+
+  /** Stops the recognition running: its worker is terminated, the part on screen is not touched, and the document stays as it was. */
+  cancelRecognition(): void {
+    this.recognition?.cancel();
   }
 
   /** 「異型孔」: holes at the selected sketch's free points. */

@@ -5758,3 +5758,30 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 - Heap（各自全新 Heap、1000 次，唯一真實路徑）：`sectionEdges` **+1135.8 MiB**，裸 `Common` **+1135.8 MiB**，兩者完全相同，讀控制點不增加成長；解析圓柱對照組 +56.4 MiB。每次約 1.1 MiB 來自 §3.5 的 B 樣條布林，第 2 項要算進去。不宣稱零洩漏。
 - 既有截面與辨識測試 12 檔 116 項通過；MT17203 仍以同樣訊息拒絕（114 個自由曲面）。
 - `npm test`：387 檔通過、4 略過，4,610 項通過、26 略過、0 失敗（Windows）。typecheck、lint:rules／deps／i18n／repo 通過。`verify:ui` 只跑 `phase8-feature-recognition`（PASS）：本次未動繪圖、疊加層、檢視或點選，未跑整批。
+
+## 2026-11-07（續）長時間計算的上限與取消（handoff §0b 第 2 項，ADR 0240）
+
+- 辨識改在用完即丟的 Worker（`worker/job.worker.ts`、`worker/job.ts`）。取消、超時、崩潰只終止它；`KernelApi.recognizeFeatures` 已移除，只留一條路徑。
+- `@3db/regen` 的 `startBudget`／`RECOGNIZE_LIMITS`（120 秒、Heap 成長 512 MiB）：每個截面與重建之間詢問，預設開啟，MCP 也受保護（`BudgetError` → `AgentError`）。頁面另有 130 秒的硬上限，處理單一 OCCT 呼叫不返回。
+- 狀態列的「取消」（`data-action="cancel-recognize"`）；說明內文已寫入。順手更正說明裡過時的「拔模面會被拒絕」（ADR 0239 已支援拔模）。
+- **只有瀏覽器抓得到的缺陷**：兩次 `Comlink.wrap` 同一個 Worker，第一個 proxy 被回收後 Worker 停止監聽，辨識永遠等不到回應，由 130 秒上限收場。單元測試全綠。詳見 ADR 0240。
+
+### 紅隊四問
+
+1. **輸入破壞**：`startBudget` 對 0、負數、NaN、Infinity 明確拒絕，不修正（有測試、有突變）。
+2. **拓樸與幾何相交**：無新幾何。
+3. **依賴鏈完整性**：`KernelApi` → `JobApi`、`store`、`StatusBar`、`i18n`（中英）、`help.*`、MCP 的錯誤對應全部接線；`lint:deps`、`lint:i18n` 通過。
+4. **規格真實性與零 Mock**：記憶體上限在真實成長的 Heap 上觸發（`wasmMemory.buffer.byteLength`，先斷言 > 0）；瀏覽器腳本用真實 Worker。`job.test.ts` 用假 Worker 測的是結束路徑的邏輯，不冒充實機。
+
+### 未驗證
+
+- 頁面 130 秒硬上限針對「單一 OCCT 呼叫卡死」的情境，沒有真正會卡死的輸入可測；瀏覽器腳本以 1 ms 上限走同一條路徑。
+- MCP 擋不住單一呼叫卡死（沒有可終止的 Worker）。
+
+### 驗證結果
+
+- `npm test`：389 檔通過、4 略過，4,621 項通過、26 略過、0 失敗（637.97 秒）。
+- `verify:ui --only phase8-feature-recognition`：通過（13.4 秒），已移除除錯碼。只跑這一支，沒有跑完整一輪：改動在 Worker、store 與狀態列，沒有動繪圖層、疊加層、檢視或點選（§4）。
+- typecheck、`lint:rules`、`lint:deps`、`lint:i18n`、`lint:repo` 通過。
+
+使用者的 21 題決定寫在 `handoff.md` §0b。

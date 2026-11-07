@@ -10,7 +10,7 @@ import { setLocale, type Locale } from '@3db/i18n';
 import { applyCommand, createEmptyPart, parsePart, type Command, type PartDoc, type Ref } from '@3db/model';
 import { Kernel, type MassProps, type ShapeId } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
-import { exportFaces, reconstructImported, RecognizeError, Regenerator, type FeatureResult, type RebuildResult, type ReconstructReport } from '@3db/regen';
+import { BudgetError, exportFaces, reconstructImported, RecognizeError, Regenerator, type FeatureResult, type RebuildResult, type ReconstructReport } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint } from '@3db/naming';
 import { exportPartStep, readPartFile, writePartFile, writeStl, writeThreeMf } from '@3db/io';
 import { heapOf, shouldRestartHeap, HEAP_GROWTH_LIMIT } from '../../web/src/worker/heap';
@@ -327,7 +327,7 @@ export class CadSession {
     try {
       found = reconstructImported(this.kernel, own, this.doc, featureId, this.solver);
     } catch (e) {
-      if (e instanceof RecognizeError) throw new AgentError(e.message);
+      if (e instanceof RecognizeError || e instanceof BudgetError) throw new AgentError(e.message);
       throw e;
     } finally {
       own.dispose();

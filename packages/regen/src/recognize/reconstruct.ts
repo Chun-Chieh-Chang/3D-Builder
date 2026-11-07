@@ -27,6 +27,7 @@ import {
 } from '@3db/model';
 import { edgeFingerprint } from '@3db/naming';
 import type { SketchSolver } from '@3db/sketch';
+import { RECOGNIZE_LIMITS, startBudget, type BudgetLimits } from '../budget';
 import type { Regenerator, RebuildResult } from '../engine';
 import { addv, cross, distanceToSharp, dot, len, planeThroughAxis, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type HoleRecord, type Recognition, type SharpEdge } from './analyze';
 import type { Loop, P2 } from '../section/loops';
@@ -398,13 +399,14 @@ function failedOf(r: RebuildResult, ids: Iterable<Id>): string | null {
  * Replaces imported body `featureId` of `doc` by the features that build it (F2.4). `regen` is the regenerator of the document (its kernel and the
  * document's blobs); with `solver`, every sketch made is fully defined (`Builder.define`). Returns the new document; throws `RecognizeError` and leaves nothing changed when the body cannot be rebuilt the same.
  */
-export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: PartDoc, featureId: Id, solver?: SketchSolver): { doc: PartDoc; commands: Command[]; report: ReconstructReport } {
+export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: PartDoc, featureId: Id, solver?: SketchSolver, limits: BudgetLimits = RECOGNIZE_LIMITS): { doc: PartDoc; commands: Command[]; report: ReconstructReport } {
   const index = doc.features.findIndex((f) => f.id === featureId);
   const imported = doc.features[index];
   if (!imported || imported.type !== 'importedBody') throw new RecognizeError(t('recognize.notImported'));
   if (imported.suppressed) throw new RecognizeError(t('recognize.suppressed'));
   const blob = doc.blobs.find((b) => b.id === imported.blob);
   if (!blob) throw new RecognizeError(t('recognize.notImported'));
+  const budget = startBudget(kernel, limits);
   const keep: ShapeId[] = [];
   try {
     const before = regen.rebuild(doc);
@@ -414,12 +416,14 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
     keep.push(whole);
     // the imported body by itself
     const alone = applyCommand(createEmptyPart(), { type: 'importBody', blob, feature: { ...imported, merge: undefined }, index: 0 });
+    budget.check();
     const solo = regen.rebuild(alone);
     if (!solo.body || failedOf(solo, [featureId])) throw new RecognizeError(t('recognize.importFailed'));
     const shape = kernel.copy(solo.body.shape);
     keep.push(shape);
     const facesBefore = solo.body.topology.faces.length;
-    const rec = recognize(kernel, shape, frameFor);
+    budget.check();
+    const rec = recognize(kernel, shape, frameFor, budget);
 
     const ids = new IdAllocator(doc.idCounters, idsInUse(doc));
     const b = new Builder(ids, solver);
@@ -437,6 +441,7 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
     let end = index + b.features.length;
     const made = b.features.map((f) => f.id);
     for (const blend of rec.blends) {
+      budget.check();
       const r = regen.rebuild(next, { until: end });
       const failed = failedOf(r, made);
       if (failed) throw new RecognizeError(t('recognize.featureFailed', { why: failed }));
@@ -446,10 +451,12 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
         end++;
       }
     }
+    budget.check();
     const after = regen.rebuild(next);
     const failed = failedOf(after, [...made, ...okBefore.filter((id) => id !== featureId)]);
     if (failed) throw new RecognizeError(t('recognize.featureFailed', { why: failed }));
     if (!after.body) throw new RecognizeError(t('recognize.featureFailed', { why: '—' }));
+    budget.check();
     const m0 = kernel.massProps(whole);
     const m1 = kernel.massProps(after.body.shape);
     const shared = kernel.common(whole, after.body.shape, 0);

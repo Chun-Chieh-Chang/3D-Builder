@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 91／7／38 |
-| ADR 文件 | 238 |
+| ADR 文件 | 239 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 223／219／271 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -573,6 +573,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0237：AI 代理以 MCP 操作 3D-Builder（無頭建模、量測、截圖、輸出）](<adr/0237-ai-agent-mcp-server.md>)
 - [ADR 0238：AI／MCP 連到執行中的 GUI](<adr/0238-ai-live-gui.md>)
 - [ADR 0239：STEP 特徵辨識與重建（F2.4）](<adr/0239-feature-recognition.md>)
+- [ADR 0240：長時間計算放在用完即丟的 Worker](<adr/0240-long-computations-disposable-worker.md>)
 
 ### 歷史驗證
 

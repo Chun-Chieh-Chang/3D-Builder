@@ -5,7 +5,7 @@
 //   const r = await __fr.run();
 //
 // A new part imports tests/fixtures/step/plate-with-hole.step (40 × 30 × 10, an R4 hole through it; served on 127.0.0.1:5393 by verify:ui), its
-// panel is opened for editing, then (after an undo) by a double-click on the tree row, then the tree row's right-click menu is used; 「辨識特徵」 is pressed each time. The import goes, sketches, an extrusion and a hole come, the
+// panel is opened for editing, then (after an undo) by a double-click on the tree row, then the tree row's right-click menu is used; 「辨識特徵」 is pressed each time. It is then stopped twice (the status bar's Cancel, the time limit): the document, the result and the kernel worker stay as they were, and it still works after. The import goes, sketches, an extrusion and a hole come, the
 // solid is the same; one undo brings the import back. Without the sample server the run is left out (`skipped`, which is no pass).
 
 const here = import.meta.url.slice(0, import.meta.url.lastIndexOf('/') + 1);
@@ -41,7 +41,9 @@ FR.run = async (base = globalThis.__samplesOrigin ?? 'http://127.0.0.1:5393/') =
     const offered = { found: !!button, label: button?.textContent, disabled: button?.disabled ?? false, editing: store.getState().editing?.featureId ?? null };
     const was = store.getState().notice;
     button?.click();
-    await H.waitFor(() => store.getState().notice !== was && /^已辨識|無法|不同|找不到/.test(store.getState().notice?.text ?? ''), 120000, 'the recognition');
+    await H.waitFor(() => store.getState().notice !== was && /^已辨識|無法|不同|找不到/.test(store.getState().notice?.text ?? ''), 120000, 'the recognition').catch((e) => {
+      throw new Error(`${e.message}; the notice says: ${store.getState().notice?.text}`);
+    });
     await H.settle();
     const doc = store.getState().doc;
     const hole = doc.features.find((f) => f.type === 'hole');
@@ -99,7 +101,43 @@ FR.run = async (base = globalThis.__samplesOrigin ?? 'http://127.0.0.1:5393/') =
   await H.settle();
   const redone = { types: types(), volume: volume() };
 
+  // 4. stopping it: a job has a worker of its own, so neither a cancel nor the time limit touches the part on screen or the kernel worker that holds it
+  store.undo();
+  await H.settle();
+  const stopped = async (act) => {
+    const generation = store.workerGeneration;
+    const doc = store.getState().doc;
+    const result = store.getState().result;
+    const was = store.getState().notice;
+    void store.recognizeFeatures('import1');
+    await H.waitFor(() => document.querySelector('[data-status="recognizing"]'), 5000, 'the cancel button');
+    await act();
+    await H.waitFor(() => store.getState().recognizing === null, 60000, 'the stop');
+    await H.settle();
+    return {
+      gone: !document.querySelector('[data-status="recognizing"]'),
+      notice: store.getState().notice?.text,
+      changedNotice: store.getState().notice !== was,
+      sameDoc: store.getState().doc === doc,
+      sameResult: store.getState().result === result,
+      sameWorker: store.workerGeneration === generation,
+      volume: volume(),
+    };
+  };
+  const cancelled = await stopped(async () => document.querySelector('[data-action="cancel-recognize"]').click());
+  const limit = store.recognizeLimitMs;
+  store.recognizeLimitMs = 1;
+  const timedOut = await stopped(async () => undefined);
+  store.recognizeLimitMs = limit;
+  // and it still works after all that
+  const row4 = [...document.querySelectorAll('.feature-tree .tree-row')].find((r) => /輸入1/.test(r.textContent));
+  const box4 = row4?.getBoundingClientRect();
+  row4?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: (box4?.left ?? 0) + 20, clientY: (box4?.top ?? 0) + 5 }));
+  await H.wait(150);
+  const after = await press(() => document.querySelector('li[data-action="recognize-features"]'));
+
   const same = (v) => Math.abs(v - PLATE) / PLATE < 1e-6;
+  const stoppedWell = (r, text) => r.gone && r.changedNotice && text.test(r.notice ?? '') && r.sameDoc && r.sameResult && r.sameWorker && same(r.volume);
   const good = (r) =>
     r.offered.found && r.offered.disabled === false && r.offered.label === '辨識特徵' &&
     /^已辨識/.test(r.notice ?? '') && !r.types.includes('importedBody') && r.types.includes('extrude') && r.types.includes('hole') &&
@@ -114,12 +152,16 @@ FR.run = async (base = globalThis.__samplesOrigin ?? 'http://127.0.0.1:5393/') =
     menu,
     offeredOnExtrude,
     redone,
+    cancelled,
+    timedOut,
+    after,
     pass:
       JSON.stringify(imported.types) === '["importedBody"]' && same(imported.volume) &&
       editing.offered.editing === 'import1' && good(editing) &&
       JSON.stringify(undone.types) === '["importedBody"]' && undone.blobs === 1 && undone.failed.length === 0 && same(undone.volume) &&
       good(shown) &&
       good(menu) && offeredOnExtrude === false &&
-      JSON.stringify(redone.types) === JSON.stringify(shown.types) && same(redone.volume),
+      JSON.stringify(redone.types) === JSON.stringify(shown.types) && same(redone.volume) &&
+      stoppedWell(cancelled, /已取消/) && stoppedWell(timedOut, /超過 0 秒/) && good(after),
   };
 };

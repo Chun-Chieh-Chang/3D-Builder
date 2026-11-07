@@ -12,6 +12,7 @@ export function StatusBar() {
   const notice = useStore((s) => s.notice);
   const result = useStore((s) => s.result);
   const rebuilding = useStore((s) => s.rebuilding);
+  const recognizing = useStore((s) => s.recognizing);
   const doc = useStore((s) => s.doc);
   const selected = useStore((s) => s.selected);
   const editing = useStore((s) => s.editing);
@@ -91,6 +92,14 @@ export function StatusBar() {
         <span title={`${doc.material.name}  ${doc.material.density} g/cm³`}>{t('material.mass')} {formatMass(massGrams(result.mass.volume, doc.material.density))}</span>
       )}
       <span>{rebuilding ? t('status.rebuilding') : result ? t('status.rebuilt', { ms: result.totalMs.toFixed(1) }) : ''}</span>
+      {recognizing && (
+        <span data-status="recognizing">
+          {t('recognize.working')}{' '}
+          <button type="button" data-action="cancel-recognize" onClick={() => store.cancelRecognition()}>
+            {t('job.cancel')}
+          </button>
+        </span>
+      )}
       {bootMs && <span className="muted">{t('status.coreLoaded', { ms: Math.round(bootMs.occtMs) })}</span>}
       <span className="units">MMGS</span>
         <span className="credit" data-credit title={AUTHOR_CREDIT}>

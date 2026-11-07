@@ -6,6 +6,7 @@
  */
 import { t } from '@3db/i18n';
 import { KernelError, type FaceInfo, type Frame, type Kernel, type SectionEdge, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
+import type { Budget } from '../budget';
 import { chainLoops, LoopError, type Loop, type P2 } from '../section/loops';
 
 export class RecognizeError extends Error {
@@ -473,7 +474,8 @@ function findHoles(topo: Topology, adj: Map<number, number[]>[]): { record: Hole
 
 // ------------------------------------------------------------------ base body
 
-function section(kernel: Kernel, shape: ShapeId, frame: Frame, box: { min: Vec3; max: Vec3 }, half = false): Loop[] {
+function section(kernel: Kernel, shape: ShapeId, frame: Frame, box: { min: Vec3; max: Vec3 }, half = false, budget?: Budget): Loop[] {
+  budget?.check();
   const corners: Vec3[] = [];
   for (const x of [box.min[0], box.max[0]]) for (const y of [box.min[1], box.max[1]]) for (const z of [box.min[2], box.max[2]]) corners.push([x, y, z]);
   const us = corners.map((c) => dot(sub(c, frame.origin), frame.xDir));
@@ -600,9 +602,9 @@ const MAX_SIDE_DEPTH = 3;
  * The base of a body: one extrusion direction if there is one, else (side bosses and pockets) the best direction with the faces in the way taken off by
  * Delete Face, and each piece that made or took away recognized as an extrusion along its own direction.
  */
-function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameFor, depth = 0): BaseRecord {
+function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameFor, depth = 0, budget?: Budget): BaseRecord {
   try {
-    return extrudeBase(kernel, shape, topo, frameFor);
+    return extrudeBase(kernel, shape, topo, frameFor, budget);
   } catch (first) {
     if (!(first instanceof RecognizeError) || depth >= MAX_SIDE_DEPTH) throw first;
     const best = bestDirection(topo);
@@ -631,7 +633,7 @@ function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameF
         throw e;
       }
       made.push(rest);
-      const base = baseOf(kernel, rest, kernel.topology(rest), frameFor, depth + 1);
+      const base = baseOf(kernel, rest, kernel.topology(rest), frameFor, depth + 1, budget);
       const extras: Extract<BaseRecord, { type: 'composite' }>['extras'] = [];
       const size = kernel.massProps(shape).volume;
       for (const [op, a, b] of [['boss', shape, rest], ['cut', rest, shape]] as const) {
@@ -642,7 +644,7 @@ function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameF
           if (kernel.massProps(piece.shape).volume <= 1e-9 * size) continue;
           let rec: BaseRecord;
           try {
-            rec = extrudeBase(kernel, piece.shape, kernel.topology(piece.shape), frameFor);
+            rec = extrudeBase(kernel, piece.shape, kernel.topology(piece.shape), frameFor, budget);
           } catch (e) {
             if (e instanceof RecognizeError) throw first;
             throw e;
@@ -681,7 +683,7 @@ function bestDirection(topo: Topology): { d: Vec3; blocking: number[] } | null {
   return best && { d: best.d, blocking: best.blocking };
 }
 
-function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameFor): BaseRecord {
+function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameFor, budget?: Budget): BaseRecord {
   const candidates: Vec3[] = [];
   const addCandidate = (d: Vec3) => {
     const c = canonical(d);
@@ -716,7 +718,7 @@ function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: F
   const layers = exact.slice(0, -1).map((h, i) => {
     const top = exact[i + 1]!;
     const frame = frameFor(d, [d[0] * h, d[1] * h, d[2] * h]);
-    const cut = (f: number): Loop[] => section(kernel, shape, { ...frame, origin: addv(frame.origin, d, (top - h) * f) }, box);
+    const cut = (f: number): Loop[] => section(kernel, shape, { ...frame, origin: addv(frame.origin, d, (top - h) * f) }, box, false, budget);
     // the walls of this layer, and how they lean: one extrusion has one draft
     const leans = topo.faces.flatMap((f, k) => {
       const [lo, hi] = extent[k]!;
@@ -743,12 +745,12 @@ function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: F
   return { type: 'extrude', dir: d, levels: exact, layers };
 }
 
-function revolveBase(kernel: Kernel, shape: ShapeId, axis: { origin: Vec3; dir: Vec3 }, planeNormal: Vec3, frameFor: FrameFor): BaseRecord {
+function revolveBase(kernel: Kernel, shape: ShapeId, axis: { origin: Vec3; dir: Vec3 }, planeNormal: Vec3, frameFor: FrameFor, budget?: Budget): BaseRecord {
   const frame = frameFor(planeNormal, axis.origin);
   // the half of the plane on one side of the axis: x across the axis in the plane, y along it
   const across = unit(cross(frame.normal, axis.dir));
   const half: Frame = { origin: axis.origin, xDir: across, yDir: axis.dir, normal: cross(across, axis.dir) };
-  const loops = section(kernel, shape, half, kernel.bounds(shape), true);
+  const loops = section(kernel, shape, half, kernel.bounds(shape), true, budget);
   // the loops in the sketch frame
   const to = (p: P2): P2 => {
     const q = addv(addv(half.origin, half.xDir, p[0]), half.yDir, p[1]);
@@ -776,7 +778,7 @@ export function planeThroughAxis(dir: Vec3): Vec3 {
  * Takes `shape` apart. The shapes made on the way are released; `shape` is not. Throws `RecognizeError` with a message for the user when some part of
  * the body is none of the features this recognizes.
  */
-export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor): Recognition {
+export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, budget?: Budget): Recognition {
   if (kernel.solidCount(shape) !== 1) throw new RecognizeError(t('recognize.oneSolid', { n: kernel.solidCount(shape) }));
   const made: ShapeId[] = [];
   try {
@@ -815,7 +817,7 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor): R
     }
     const topo2 = kernel.topology(current);
     const axis = revolveAxis(topo2);
-    const base = axis ? revolveBase(kernel, current, axis, planeThroughAxis(axis.dir), frameFor) : baseOf(kernel, current, topo2, frameFor);
+    const base = axis ? revolveBase(kernel, current, axis, planeThroughAxis(axis.dir), frameFor, budget) : baseOf(kernel, current, topo2, frameFor, 0, budget);
     return {
       base,
       holes: holes.map((h) => h.record),
