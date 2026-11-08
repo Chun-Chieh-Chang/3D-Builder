@@ -236,3 +236,7 @@
   3. **`expect` 在第一個失敗就停，「量到的最大值」可能只是前幾組**：我向使用者報告慣量 8.0e-5 取得同意，全部 150 組的最大值其實是 1.43e-4，質心也超標。請使用者決定門檻之前，先用不中斷的探針量完整批次；數字事後變了，必須再明說。
   4. **精度閘門綁的是當時的曲線**：「`eps` 的質心不準（放樣）」的閘門在新曲線上不再觸發（0.13 mm → 1.1e-4 mm）。閘門轉紅時要查前提是否還成立，把發現寫下來，不要找一個能讓它繼續觸發的形狀。
   5. **求解器的大小上限是軟的**：`PlaneGcsSolver.overflow` 在真的記憶體不足時才記下，同一個求解器先前算過什麼會影響結果。測試件不要踩在上限附近。
+
+- **2026-11-08（CI 雲端排程 Nightly 單元測試超時）**：
+  1. **虛擬機核心數與平行 Worker 搶佔**：GitHub Actions 標準 runner 只有 2 顆 vCPU，而 `vitest.config.ts` 原硬編碼 `maxWorkers: 4`。在 2 核心機器上跑 4 個 OCCT/WASM Worker 造成嚴重 CPU 飢餓，導致三個重型 Fuzz/壓測逾時（`gear-fuzz`、`section-offset-cost`、`recognize-approximate-fuzz`），而其餘 4,734 項測試全過。修法：引入 `availableParallelism()` 動態將 `maxWorkers` 限制在 `Math.min(4, Math.max(1, cores))`，並在 CI Nightly 顯式指定 `--maxWorkers 2`，消除過度平行造成的虛假超時。
+  2. **重型 Fuzz 測試時間預算必須顯式宣告**：`gear-fuzz.test.ts` 執行 100 顆漸開線齒輪實體生成與拓樸求值，漏設時間預算而退化為全域的 60 秒上限（本機跑需 36 秒，CI 核心受搶佔時即超時）。比照 `knurl-fuzz` 與 `thread-fuzz`，重型 Fuzz 必須顯式指定合理的執行預算（設為 120 秒）。

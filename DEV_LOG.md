@@ -5949,3 +5949,32 @@ Schema 93 記錄來源本體、基準面或模型平面、帶符號的平面偏�
 - Host full browser regression exited 0 with 278/278 passed, 0 known-defect passes and 0 failures, including the Split and Auto Dimension scripts. See `scratch/feature-recognition/sketch-followups-host-full-ui.log`.
 - Host full Vitest v5.0.2 started at 15:43:22 on 2026-11-08 and exited 0 after 1266.04 s. Of 406 files, 402 passed and 4 were skipped. Of 4,764 tests, 4,738 passed and 26 were skipped, with 0 failures. The manual-help suite passed all 40 tests and the IGES fuzz file finished in 39.829 s. See `scratch/feature-recognition/sketch-followups-host-vitest-final.log`.
 - G09 remains probe-only (ADR 0228). Native offset samples agreed with independently computed normals within 3.45e-15 mm across seven cases. The −5 mm quadratic cusp had zero reported self-intersections, while the −6 mm offset looped. Editable offsets would need a persistent source reference and signed distance, native reconstruction, a curvature guard and self-intersection checks. The 17-point fit missed the 1e-6 mm length target on all four regular curved cases. The 65-point fit met it on those cases with 33 poles per curved result and gives no general error bound.
+
+## 2026-11-08：CI 雲端排程 Nightly 全套單元測試超時根因分析與 Worker 動態排程 (RCA & CAPA)
+
+### 1. 失敗現象與錯誤定位
+- GitHub Actions 執行紀錄 Run #175（Scheduled 定時排程 `full-suite` job，Run ID: 42464075906）報錯，耗時 22 分 58 秒，Exit Code 1。
+- 檢視失敗日誌：全套 406 檔測試中，**4,734 項測試全數通過（無任何邏輯錯誤或幾何破壞）**，僅有 3 個長耗時 Fuzz／壓測超時：
+  1. `tests/phase3/gear-fuzz.test.ts`：100 顆漸開線齒輪實體生成與拓樸驗證，漏設個別時間預算，被全域預設 `60_000ms`（60 秒）攔截超時。
+  2. `tests/phase6/section-offset-cost.test.ts`：40 齒截面偏移在多 worker CPU 排程延遲下超過個別預算 `175000ms`。
+  3. `tests/phase8/recognize-approximate-fuzz.test.ts`：120 組樣條辨識 Fuzz 耗時 590,467ms，恰好超出 `590_000ms` 上限約 0.4 秒。
+
+### 2. 根因分析 (RCA)
+- **虛擬機核心數競爭**：GitHub Actions 標準 `ubuntu-latest` 虛擬機僅配備 2 顆 vCPU。而 `vitest.config.ts` 原硬編碼 `maxWorkers: 4`（為本機 10 核心 i5-14400 所測之最優值）。4 個重型 OCCT/WASM Worker 在 2 顆 CPU 上同時切換搶佔，造成嚴重的 CPU 飢餓（CPU starvation）與執行緒延遲。
+- **預算漏設**：同級別 Fuzz 測試（`knurl-fuzz` 900s、`thread-fuzz` 300s、`feature-recognition-fuzz` 600s、`recognize-approximate-fuzz` 590s）皆有專屬預算，而 `gear-fuzz.test.ts` 未指定預算退化至 60 秒（本機單獨執行需 36 秒，在 CI 核心受搶佔時即溢出）。
+
+### 3. 矯正與預防措施 (CAPA)
+遵守 [AGENTS.md](AGENTS.md) §3.3 零門檻妥協原則（解方為減少爭搶核心的進程數，而非私自放寬 timeout）：
+1. **Worker 動態自適應核心數**：
+   - `vitest.config.ts` 引入 `node:os` 的 `availableParallelism()` / `cpus().length`，將 `maxWorkers` 設為 `Math.min(4, Math.max(1, cores))`。在本機多核環境維持 4 Workers，在 CI 2-vCPU 或受限環境自動下調至實體可用核心數，避免 CPU 飢餓。
+2. **補齊測試預算**：
+   - `tests/phase3/gear-fuzz.test.ts` 補齊顯式超時預算 `120_000ms`（2 分鐘），符合 100 顆真實幾何 Fuzz 的正常執行裕度。
+3. **CI 夜間全量深度防禦**：
+   - `.github/workflows/repository-integrity.yml` 的 `full-suite` 顯式加上 `--maxWorkers 2`，確保雲端單一虛擬機上 0 核心超額爭搶。
+
+### 4. 本地確效結果
+- `gear-fuzz.test.ts` 單獨跑通過（36.7 秒，Heap 成長 346.9 MB < 512 MB 限制）。
+- CI Smoke Suite（21 檔 300 項）全數 PASS（15.0 秒）。
+- 指標基準測試 `apps/web/test/sketch-pointer-baseline.test.ts` PASS（1.49 秒）。
+- 靜態守門：`typecheck`, `lint:repo`, `lint:rules`, `lint:deps`, `lint:i18n` 全數通過。
+- 生產建置：`npm run build` 成功（1.98 秒）。

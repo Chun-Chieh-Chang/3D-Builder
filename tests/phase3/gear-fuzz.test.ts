@@ -26,4 +26,4 @@ it('fuzzes 100 actual involute gear solids against analytic volume and native-cu
   }finally{kernel.release(shape);}
  }
  const final=(kernel.oc as any).wasmMemory.buffer.byteLength;expect(final-initial).toBeLessThan(512*1024*1024);console.info('100 gear heap growth bytes',final-initial);
-});
+}, 120_000);
