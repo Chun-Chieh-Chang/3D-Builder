@@ -6,8 +6,8 @@
 
 | 項目 | 程式來源值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 93／7／38 |
-| ADR 文件 | 244 |
+| 零件／組合件／工程圖 Schema | 94／7／38 |
+| ADR 文件 | 245 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 229／224／276 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -579,6 +579,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0243：辨識樣條輪廓：使用者勾選才用的雙圓弧近似](<adr/0243-spline-outline-by-biarcs.md>)
 - [ADR 0244：草圖樣條的實體就是畫面上那條曲線](<adr/0244-spline-solid-is-the-drawn-curve.md>)
 - [ADR 0245 截面間隙](<adr/0245-section-clearance.md>)
+- [ADR 0247 — Native drill points in Hole Wizard](<adr/0247-hole-wizard-drill-point.md>)
 
 ### 歷史驗證
 

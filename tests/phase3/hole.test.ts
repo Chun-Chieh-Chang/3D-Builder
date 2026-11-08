@@ -3,7 +3,7 @@
  * hand-calculated from the shape of each hole, every face of every hole has a name of its own, and what comes after finds its edges (ADR 0030).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyCommand, holeSize, ISO_HOLE_SIZES, type Feature, type HoleFeature, type PartDoc } from '@3db/model';
+import { applyCommand, holeSize, ISO_HOLE_SIZES, parsePart, SCHEMA_VERSION, serializePart, type Feature, type HoleFeature, type PartDoc } from '@3db/model';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, type RebuildResult } from '@3db/regen';
@@ -50,6 +50,105 @@ describe('the hole wizard (C4.8)', () => {
     const through = rebuild(make({ end: { type: 'throughAll' } }));
     expect(failures(through)).toEqual([]);
     expect(volume(through)).toBeCloseTo(12000 - Math.PI * 9 * 10, 6);
+  });
+
+  it('keeps the drill-point face reference through an angle edit and a save/reopen', () => {
+    const tip = 'h1:side:s2.p1.tip';
+    const doc = build(...plate(), at([0, 0]), hole({ drillPointAngle: '118deg' }), {
+      id: 'axis1', type: 'refAxis', name: 'Tip axis', suppressed: false, def: { mode: 'cylinder', face: face(tip) },
+    });
+    for (const degrees of [118, 135]) {
+      const { id, type, name, suppressed, sketch, ...settings } = doc.features.find((f): f is HoleFeature => f.type === 'hole')!;
+      const edited = applyCommand(doc, { type: 'setHole', featureId: id, hole: { ...settings, drillPointAngle: `${degrees}deg` } });
+      const saved = parsePart(serializePart(edited));
+      expect(saved.schemaVersion).toBe(SCHEMA_VERSION);
+      expect(saved.schemaVersion).toBeGreaterThanOrEqual(94);
+      expect(saved.features.find((f) => f.type === 'hole')?.drillPointAngle).toBe(`${degrees}deg`);
+      const r = rebuild(saved);
+      expect(failures(r)).toEqual([]);
+      const body = r.body!;
+      const cone = body.topology.faces[body.names.faces.indexOf(tip)]?.geometry;
+      expect(cone?.type).toBe('cone');
+      const half = degrees * Math.PI / 360;
+      const height = 3 / Math.tan(half);
+      if (cone?.type !== 'cone') throw new Error('Missing native cone');
+      expect(Math.abs(cone.halfAngle)).toBeCloseTo(half, 9);
+      expect(r.axes.get('axis1')?.origin[2]).toBeCloseTo(5 - height, 8);
+      expect(volume(r)).toBeCloseTo(12000 - Math.PI * 9 * (5 + height / 3), 6);
+      expect(kernel.isValid(body.shape)).toBe(true);
+    }
+  });
+
+  it('upgrades a schema 93 hole as a flat bottom', () => {
+    const legacy = parsePart(JSON.stringify({ ...make({}), schemaVersion: 93 }));
+    expect(legacy.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(legacy.features.find((f) => f.type === 'hole')?.drillPointAngle).toBeUndefined();
+    const r = rebuild(legacy);
+    expect(failures(r)).toEqual([]);
+    expect(r.body!.names.faces).toContain('h1:side:s2.p1.bottom');
+    expect(volume(r)).toBeCloseTo(12000 - Math.PI * 9 * 5, 6);
+  });
+
+  it('rebuilds a countersink when the drill-point angle variable changes', () => {
+    const base = make({ kind: 'countersink', csDiameter: '12', csAngle: '90deg', end: { type: 'blind', depth: '6' } });
+    const withVariable = applyCommand(base, { type: 'addVariable', variable: { id: 'v1', name: 'pointAngle', expr: '118deg' } });
+    const settings = { kind: 'countersink', diameter: '6', csDiameter: '12', csAngle: '90deg', end: { type: 'blind', depth: '6' }, drillPointAngle: 'pointAngle' } as const;
+    const doc = applyCommand(withVariable, { type: 'setHole', featureId: 'h1', hole: settings });
+    const regen = new Regenerator(kernel, solver, new Map());
+    try {
+      const before = regen.rebuild(doc);
+      expect(failures(before)).toEqual([]);
+      const beforeVolume = volume(before);
+      const after = regen.rebuild(applyCommand(doc, { type: 'setVariable', id: 'v1', expr: '135deg' }));
+      expect(failures(after)).toEqual([]);
+      expect(after.body!.names.faces).toEqual(expect.arrayContaining(['h1:side:s2.p1.cone', 'h1:side:s2.p1.tip']));
+      expect(volume(after) - beforeVolume).toBeCloseTo(9 * Math.PI * (1 / Math.tan(59 * Math.PI / 180) - 1 / Math.tan(67.5 * Math.PI / 180)), 6);
+    } finally {
+      regen.dispose();
+    }
+  });
+
+  it('rejects invalid angles and degenerate or unbounded tip profiles before geometry', () => {
+    for (const angle of ['0deg', '-1deg', '180deg', '181deg', 'NaN', '1e100deg', '1e-12deg', '179.999999deg']) {
+      expect(() => make({ drillPointAngle: angle })).toThrow();
+    }
+    const through = { type: 'throughAll' } as const;
+    expect(() => make({ end: through, drillPointAngle: '118deg' })).toThrow();
+    const doc = make({ drillPointAngle: '118deg' });
+    const malformed = { ...doc, features: doc.features.map((f) => f.type === 'hole' ? { ...f, end: through } : f) };
+    expect(failures(rebuild(malformed))).toEqual([expect.stringMatching(/^h1=error/)]);
+  });
+
+  it('rebuilds 128 seeded blind drill profiles with the analytic volume and valid topology', () => {
+    const heap = () => (kernel.oc as unknown as { wasmMemory?: WebAssembly.Memory }).wasmMemory?.buffer.byteLength;
+    const initial = heap()!;
+    expect(initial).toBeGreaterThan(0);
+    const live = kernel.liveShapes;
+    const regen = new Regenerator(kernel, solver, new Map());
+    let seed = 0xc405;
+    const random = () => {
+      seed = (Math.imul(1664525, seed) + 1013904223) >>> 0;
+      return seed / 2 ** 32;
+    };
+    try {
+      for (let i = 0; i < 128; i++) {
+        const diameter = 0.2 + random() * 6;
+        const depth = 0.2 + random() * 5;
+        const angle = 75 + random() * 104.9;
+        const height = diameter / (2 * Math.tan(angle * Math.PI / 360));
+        const r = regen.rebuild(make({ diameter: String(diameter), end: { type: 'blind', depth: String(depth) }, drillPointAngle: `${angle}deg` }));
+        expect(failures(r), `seed case ${i}`).toEqual([]);
+        expect(kernel.isValid(r.body!.shape), `seed case ${i}`).toBe(true);
+        expect(volume(r), `seed case ${i}`).toBeCloseTo(12000 - Math.PI * (diameter / 2) ** 2 * (depth + height / 3), 6);
+      }
+    } finally {
+      regen.dispose();
+    }
+    expect(kernel.liveShapes).toBe(live);
+    const final = heap()!;
+    expect(final).toBeGreaterThan(0);
+    console.info('128 drill point cases, WASM heap growth (bytes):', final - initial);
+    expect(final - initial).toBeLessThan(512 * 1024 * 1024);
   });
 
   it('a counterbore: Ø11 for 3, then Ø6 to a depth of 8', () => {

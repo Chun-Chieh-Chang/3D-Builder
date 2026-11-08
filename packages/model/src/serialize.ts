@@ -259,6 +259,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   91: (doc) => doc,
   // v93: a section clearance feature retains its source body and plane references.
   92: (doc) => doc,
+  // v94: a blind hole can have an included drill-point angle. Existing holes retain their flat bottoms.
+  93: (doc) => doc,
 };
 
 /**

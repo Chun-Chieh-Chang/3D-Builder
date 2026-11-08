@@ -15,6 +15,11 @@ export interface HoleSize {
 
 export const HOLE_STANDARD_SOURCE = 'ISO 273 / ISO 4762 / ISO 7046';
 
+/** Axial distance from the cylindrical bore shoulder to the apex. The angle is in radians. */
+export function drillPointHeight(radius: number, includedAngle: number): number {
+  return radius / Math.tan(includedAngle / 2);
+}
+
 export const ISO_HOLE_SIZES: readonly HoleSize[] = [
   { name: 'M3', tapDrill: 2.5, close: 3.2, normal: 3.4, cbDiameter: 6.5, cbDepth: 3.4, csDiameter: 6.3 },
   { name: 'M4', tapDrill: 3.3, close: 4.3, normal: 4.5, cbDiameter: 8.0, cbDepth: 4.4, csDiameter: 9.4 },

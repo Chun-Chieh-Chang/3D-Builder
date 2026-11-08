@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 93;
+export const SCHEMA_VERSION = 94;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -299,6 +299,8 @@ export interface HoleFeature extends FeatureBase {
   toleranceClass?: string;
   diameter: Expr;
   end: { type: 'blind'; depth: Expr } | { type: 'throughAll' };
+  /** Included drill-point angle for blind holes. Depth ends at the bore shoulder; absent gives a flat bottom. */
+  drillPointAngle?: Expr;
   /** Counterbore: the wider part's diameter and depth. */
   cbDiameter?: Expr;
   cbDepth?: Expr;

@@ -29,7 +29,7 @@ import { edgeFingerprint } from '@3db/naming';
 import type { SketchSolver } from '@3db/sketch';
 import { RECOGNIZE_LIMITS, startBudget, type BudgetLimits } from '../budget';
 import type { Regenerator, RebuildResult } from '../engine';
-import { addv, cross, distanceToSharp, dot, len, planeThroughAxis, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type BaseRecord, type HoleRecord, type Recognition, type SharpEdge, type SplineApproximation } from './analyze';
+import { addv, distanceToSharp, dot, len, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type BaseRecord, type HoleRecord, type Recognition, type SharpEdge, type SplineApproximation } from './analyze';
 import { compareSections, sectionsClose } from './compareSections';
 import type { Loop, P2 } from '../section/loops';
 
@@ -316,31 +316,12 @@ class Builder {
         end: h.depth === null ? { type: 'throughAll' } : { type: 'blind', depth: num(h.depth) },
         ...(h.kind === 'counterbore' ? { cbDiameter: num(2 * h.cbRadius!), cbDepth: num(h.cbDepth!) } : {}),
         ...(h.kind === 'countersink' ? { csDiameter: num(2 * h.csRadius!), csAngle: `${num((h.csAngle! * 180) / Math.PI)}deg` } : {}),
+        ...(h.tip === undefined ? {} : { drillPointAngle: `${num((h.tip * 180) / Math.PI)}deg` }),
         // the hole goes against the sketch's normal; the plane of the entrance face points out of the material, unless the plane had to be the other way round
         ...(plane.flipped ? { reverse: true } : {}),
       };
       this.feature(hole);
-      for (const g of group) if (g.tip !== undefined) this.drillPoint(g);
     }
-  }
-
-  /**
-   * The point of a drill at the bottom of a blind hole (the hole wizard makes a flat bottom): a revolve cut of the triangle from the shoulder (the
-   * radius at the hole's depth) to the apex on the axis, in a plane through the axis.
-   */
-  private drillPoint(h: HoleRecord): void {
-    const shoulder = addv(h.entrance, h.down, h.depth!);
-    const length = h.radius / Math.tan(h.tip! / 2);
-    const apex = addv(shoulder, h.down, length);
-    const normal = planeThroughAxis(h.down);
-    const frame = frameFor(normal, shoulder);
-    const plane = this.plane(normal, shoulder);
-    const across = unit(cross(frame.normal, h.down));
-    const at = (p: Vec3): P2 => [dot(sub(p, frame.origin), frame.xDir), dot(sub(p, frame.origin), frame.yDir)];
-    const [s, r, a] = [at(shoulder), at(addv(shoulder, across, h.radius)), at(apex)];
-    const loop: Loop = { segs: [{ kind: 'line', a: s, b: r }, { kind: 'line', a: r, b: a }, { kind: 'line', a, b: s }], area: 0, depth: 0 };
-    const { id, centerline } = this.sketch(plane.ref, [loop], { centerline: [s, a] });
-    this.feature({ id: this.ids.take('revolve'), type: 'revolve', name: this.name('revolve'), suppressed: false, sketch: id, axis: centerline!, op: 'cut', dir1: { type: 'blind', angle: '360deg' } });
   }
 }
 

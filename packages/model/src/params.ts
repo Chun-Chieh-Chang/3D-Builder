@@ -1,4 +1,5 @@
 import { gearParameters } from './gears';
+import { drillPointHeight } from './holes';
 import { t } from '@3db/i18n';
 import type { Id } from './ids';
 import { evalAngle, evalLength, evalQuantity, ExprError, parseExpr, referencesOf, rewriteRefs, type Env, type NameRef, type Quantity } from './expr';
@@ -189,10 +190,11 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       const cbDepth = one(f.cbDepth, 'length', 'positive');
       const csDiameter = one(f.csDiameter, 'length', 'positive');
       const csAngle = one(f.csAngle, 'angle', 'includedAngle');
+      const drillPointAngle = one(f.drillPointAngle, 'angle', 'includedAngle');
       const chamfer = one(f.chamfer, 'length', 'positive');
-      const same = diameter === f.diameter && JSON.stringify(end) === JSON.stringify(f.end) && cbDiameter === f.cbDiameter && cbDepth === f.cbDepth && csDiameter === f.csDiameter && csAngle === f.csAngle && chamfer === f.chamfer;
+      const same = diameter === f.diameter && JSON.stringify(end) === JSON.stringify(f.end) && cbDiameter === f.cbDiameter && cbDepth === f.cbDepth && csDiameter === f.csDiameter && csAngle === f.csAngle && drillPointAngle === f.drillPointAngle && chamfer === f.chamfer;
       if (same) return feature;
-      return { ...f, diameter, end, ...(cbDiameter === undefined ? {} : { cbDiameter }), ...(cbDepth === undefined ? {} : { cbDepth }), ...(csDiameter === undefined ? {} : { csDiameter }), ...(csAngle === undefined ? {} : { csAngle }), ...(chamfer === undefined ? {} : { chamfer }) };
+      return { ...f, diameter, end, ...(cbDiameter === undefined ? {} : { cbDiameter }), ...(cbDepth === undefined ? {} : { cbDepth }), ...(csDiameter === undefined ? {} : { csDiameter }), ...(csAngle === undefined ? {} : { csAngle }), ...(drillPointAngle === undefined ? {} : { drillPointAngle }), ...(chamfer === undefined ? {} : { chamfer }) };
     }
     case 'screwBoss': {
       const f = feature;
@@ -663,6 +665,18 @@ export class Parameters implements Env {
     });
     if (!problem && (next.type==='gear'||next.type==='rack')) {
       try { gearParameters(next); } catch(error) { problem=error instanceof Error?error.message:String(error); }
+    }
+    if (!problem && next.type === 'hole' && next.drillPointAngle !== undefined) {
+      if (next.end.type !== 'blind') problem = t('feature.holeDrillPointBlind');
+      else {
+        const radius = evalLength(next.diameter) / 2;
+        const depth = evalLength(next.end.depth);
+        const height = drillPointHeight(radius, evalAngle(next.drillPointAngle));
+        // Keep the new profile above OCCT's modeling precision and bound its extent before revolving.
+        if (!(radius >= 1e-6 && radius <= 1e6 && depth >= 1e-6 && height >= 1e-6 && depth + height <= 1e6)) {
+          problem = t('feature.holeDrillPointExtent');
+        }
+      }
     }
     return { feature: next as F, problem };
   }
