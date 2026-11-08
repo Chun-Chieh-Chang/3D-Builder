@@ -102,8 +102,8 @@ export const MAX_DRAFT = (30 * Math.PI) / 180;
 
 export type BaseRecord =
   | { type: 'revolve'; axis: { origin: Vec3; dir: Vec3 }; profile: PlanarProfile }
-  /** One profile per layer, bottom up: layer i is extruded from `levels[i]` to `levels[i + 1]` along `dir`. */
-  | { type: 'extrude'; dir: Vec3; levels: number[]; layers: (PlanarProfile | null)[] }
+  /** Profiles per layer, bottom up: layer i is extruded from `levels[i]` to `levels[i + 1]` along `dir`. */
+  | { type: 'extrude'; dir: Vec3; levels: number[]; layers: PlanarProfile[][] }
   /**
    * A body extruded along one direction with features along others (a boss on its side, a pocket cut into it): `base` is the body with those taken
    * off (Delete Face), each extra is what was taken off, a boss (material added back) or a cut (material taken away), extruded along its own direction.
@@ -203,6 +203,13 @@ function blendCandidates(topo: Topology, smooth: boolean[], adj: Map<number, num
       return;
     }
     if (g?.type !== 'plane') return;
+    // A small cap at the narrow end of a drafted profile can also look like a strip between two walls.
+    // If the whole rim is surrounded by walls of the same draft, keep the cap for layer detection.
+    if (across.length >= 3) {
+      const leans = across.map(([n]) => wallLean(topo.faces[n]!, g.normal));
+      const lean = leans[0];
+      if (lean !== null && lean !== undefined && lean > 0 && leans.every((x) => x !== null && Math.abs(x - lean) <= 1e-7)) return;
+    }
     // a chamfer on a straight edge: a strip whose two longest edges are parallel lines between two planes that would meet outside it
     const own = topo.edges.map((e, ei) => ({ e, ei })).filter(({ e }) => e.faces.includes(i));
     const lines = own.filter(({ e }) => e.curve === 'line' && e.dir).sort((a, b) => b.e.length - a.e.length);
@@ -520,17 +527,20 @@ function asBiarcs(edges: SectionEdge[], approx: SplineApproximation): SectionEdg
   });
 }
 
-function section(kernel: Kernel, shape: ShapeId, frame: Frame, box: { min: Vec3; max: Vec3 }, half = false, budget?: Budget, approx?: SplineApproximation): Loop[] {
-  budget?.check();
+function sectionRect(frame: Frame, box: { min: Vec3; max: Vec3 }, half: boolean) {
   const corners: Vec3[] = [];
   for (const x of [box.min[0], box.max[0]]) for (const y of [box.min[1], box.max[1]]) for (const z of [box.min[2], box.max[2]]) corners.push([x, y, z]);
   const us = corners.map((c) => dot(sub(c, frame.origin), frame.xDir));
   const vs = corners.map((c) => dot(sub(c, frame.origin), frame.yDir));
   const pad = 1 + 0.01 * Math.hypot(...sub(box.max, box.min));
-  const rect = { u0: half ? 0 : Math.min(...us) - pad, u1: Math.max(...us) + pad, v0: Math.min(...vs) - pad, v1: Math.max(...vs) + pad };
+  return { u0: half ? 0 : Math.min(...us) - pad, u1: Math.max(...us) + pad, v0: Math.min(...vs) - pad, v1: Math.max(...vs) + pad };
+}
+
+function section(kernel: Kernel, shape: ShapeId, frame: Frame, box: { min: Vec3; max: Vec3 }, half = false, budget?: Budget, approx?: SplineApproximation): Loop[] {
+  budget?.check();
   let edges: SectionEdge[];
   try {
-    edges = kernel.sectionEdges(shape, frame, rect);
+    edges = kernel.sectionEdges(shape, frame, sectionRect(frame, box, half));
   } catch (e) {
     if (e instanceof KernelError) throw new RecognizeError(t('recognize.sectionFailed', { why: e.message }));
     throw e;
@@ -563,17 +573,22 @@ function revolveAxis(topo: Topology): { origin: Vec3; dir: Vec3 } | null {
   return axis;
 }
 
-/** Faces that keep a direction from being an extrusion direction. */
-/** How far a wall of an extrusion along `d` leans from it (radians): 0 for a plane or cylinder along it; null for a face that is no wall (or a cap). */
+/** Signed lean in radians: positive where material narrows along `d`, zero for a straight wall, null for caps and non-walls. */
 function wallLean(f: FaceInfo, d: Vec3): number | null {
   const g = f.geometry;
   if (g?.type === 'plane') {
     if (parallel(g.normal, d)) return null;
-    const lean = Math.asin(Math.min(1, Math.abs(dot(unit(g.normal), unit(d)))));
-    return lean <= 1e-9 ? 0 : lean <= MAX_DRAFT + 1e-12 ? lean : null;
+    const axial = dot(unit(g.normal), unit(d));
+    const lean = Math.asin(Math.min(1, Math.abs(axial)));
+    return lean <= 1e-9 ? 0 : lean <= MAX_DRAFT + 1e-12 ? Math.sign(axial) * lean : null;
   }
   if (g?.type === 'cylinder') return parallel(g.axis, d) ? 0 : null;
-  if (g?.type === 'cone') return parallel(g.axis, d) && g.halfAngle <= MAX_DRAFT + 1e-12 ? g.halfAngle : null;
+  if (g?.type === 'cone') {
+    const lean = Math.abs(g.halfAngle);
+    if (!parallel(g.axis, d) || lean > MAX_DRAFT + 1e-12) return null;
+    // Radius grows away from the apex. A concave wall reverses the material side.
+    return lean * Math.sign(dot(sub(f.center, g.apex), d)) * (g.convex ? -1 : 1);
+  }
   return null;
 }
 
@@ -584,6 +599,7 @@ function freeWalls(kernel: Kernel, shape: ShapeId, approx?: SplineApproximation)
   return approx ? (face, d) => kernel.faceRuledAlong(shape, face, d) : undefined;
 }
 
+/** Faces that keep a direction from being an extrusion direction. */
 function blockers(topo: Topology, d: Vec3, free?: FreeWall): number[] {
   return topo.faces.flatMap((f, i) => {
     const g = f.geometry;
@@ -640,6 +656,103 @@ function extrapolate(a: Loop[], b: Loop[], k: number): Loop[] | null {
 
 const sub2 = (p: P2, q: P2): [number, number] => [p[0] - q[0], p[1] - q[1]];
 const regionArea = (loops: Loop[]) => loops.reduce((a, l) => a + (l.depth % 2 === 0 ? Math.abs(l.area) : -Math.abs(l.area)), 0);
+
+function uniformLean(leans: number[]): number | undefined {
+  const angle = leans[0] ?? 0;
+  return leans.every((x) => Math.abs(x - angle) <= 1e-7) ? angle : undefined;
+}
+
+function layerProfile(kernel: Kernel, shape: ShapeId, frame: Frame, d: Vec3, height: number, lean: number, budget?: Budget, approx?: SplineApproximation): PlanarProfile | null {
+  const box = kernel.bounds(shape);
+  const cut = (f: number) => section(kernel, shape, { ...frame, origin: addv(frame.origin, d, height * f) }, box, false, budget, approx);
+  if (lean === 0) {
+    const loops = cut(0.5);
+    return loops.length ? { frame, loops } : null;
+  }
+  // Drafted walls change linearly with the height. Extrapolate the two interior sections to the bottom cap.
+  const [q1, q3] = [cut(0.25), cut(0.75)];
+  if (!q1.length) return null;
+  const loops = extrapolate(q3, q1, 0.5);
+  if (!loops) throw new RecognizeError(t('recognize.draftSection'));
+  return { frame, loops, draft: { angle: Math.abs(lean), inward: regionArea(q3) < regionArea(q1) } };
+}
+
+/** The slab already made the bottom section. Use its analytic boundary without another boolean. */
+function bottomLoops(topo: Topology, frame: Frame, d: Vec3): Loop[] | null {
+  const caps = new Set(topo.faces.flatMap((f, i) => {
+    const g = f.geometry;
+    return g?.type === 'plane' && parallel(g.normal, d) && Math.abs(dot(sub(g.origin, frame.origin), d)) <= 1e-7 ? [i] : [];
+  }));
+  const local = (p: Vec3): P2 => {
+    const v = sub(p, frame.origin);
+    return [dot(v, frame.xDir), dot(v, frame.yDir)];
+  };
+  const edges: SectionEdge[] = [];
+  for (const e of topo.edges) {
+    // Edges between two coplanar cap faces are internal to the section.
+    if ([...new Set(e.faces)].filter((i) => caps.has(i)).length !== 1) continue;
+    const g = e.geometry;
+    if (g?.type === 'circle' && Math.abs(e.length - 2 * Math.PI * g.radius) <= TOL) {
+      edges.push({ kind: 'circle', c: local(g.center), r: g.radius });
+      continue;
+    }
+    const [a, b] = e.vertices.map((i) => local(topo.vertices[i]!.point));
+    if (!a || !b) return null;
+    if (g?.type === 'line') edges.push({ kind: 'line', a, b });
+    else if (g?.type === 'circle') edges.push({ kind: 'arc', a, b, c: local(g.center), r: g.radius, mid: local(e.mid) });
+    else return null;
+  }
+  try {
+    return chainLoops(edges, TOL * 10);
+  } catch (e) {
+    if (e instanceof LoopError) return null;
+    throw e;
+  }
+}
+
+/** The slab removes connections through other layers. Each remaining solid must have its own uniform draft. */
+function mixedLayer(kernel: Kernel, shape: ShapeId, frame: Frame, d: Vec3, height: number, leans: number[], budget?: Budget, approx?: SplineApproximation): PlanarProfile[] {
+  const deg = [...new Set(leans.map((x) => ((x * 180) / Math.PI).toFixed(2)))].join('°, ');
+  const refusal = new RecognizeError(t('recognize.mixedDraft', { angles: `${deg}°` }));
+  const made: ShapeId[] = [];
+  try {
+    budget?.check();
+    const { u0, u1, v0, v1 } = sectionRect(frame, kernel.bounds(shape), false);
+    const points: P2[] = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+    const outer = points.map((a, i) => ({ kind: 'line' as const, a, b: points[(i + 1) % 4]!, source: `slab${i}` }));
+    const slab = kernel.extrude(frame, [{ outer, holes: [] }], addv([0, 0, 0], d, height));
+    made.push(slab.shape);
+    const clipped = kernel.common(shape, slab.shape, 0).shape;
+    if (clipped === null) throw refusal;
+    made.push(clipped);
+    const pieces = kernel.splitSolids({ shape: clipped, faceOrigins: [] });
+    made.push(...pieces.map((p) => p.shape));
+    if (pieces.length < 2) throw refusal;
+    return pieces.map((p) => {
+      budget?.check();
+      const topo = kernel.topology(p.shape);
+      const free = freeWalls(kernel, p.shape, approx);
+      if (blockers(topo, d, free).length) throw refusal;
+      const lean = uniformLean(topo.faces.flatMap((f, i) => {
+        const lean = wallLean(f, d);
+        return lean !== null ? [lean] : !f.geometry && free?.(i, d) ? [0] : [];
+      }));
+      if (lean === undefined) throw refusal;
+      const loops = bottomLoops(topo, frame, d);
+      if (loops?.length) return { frame, loops, ...(lean !== 0 ? { draft: { angle: Math.abs(lean), inward: lean > 0 } } : {}) };
+      if (approx && free) {
+        const profile = layerProfile(kernel, p.shape, frame, d, height, lean, budget, approx);
+        if (profile) return profile;
+      }
+      throw refusal;
+    });
+  } catch (e) {
+    if (e instanceof KernelError) throw refusal;
+    throw e;
+  } finally {
+    for (const id of made.reverse()) kernel.release(id);
+  }
+}
 
 const CANONICAL: Vec3[] = [[0, 1, 0], [0, 0, 1], [1, 0, 0]];
 
@@ -749,7 +862,6 @@ function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: F
     if (f.geometry?.type === 'plane') addCandidate(f.geometry.normal);
     if (f.geometry?.type === 'cylinder') addCandidate(f.geometry.axis);
   }
-  const box = kernel.bounds(shape);
   type Option = { d: Vec3; levels: number[]; cap: number; blocking: number[]; rank: number };
   const options: Option[] = candidates.map((d) => {
     const caps = topo.faces.filter((f) => f.geometry?.type === 'plane' && parallel(f.geometry.normal, d));
@@ -773,8 +885,7 @@ function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: F
   const layers = exact.slice(0, -1).map((h, i) => {
     const top = exact[i + 1]!;
     const frame = frameFor(d, [d[0] * h, d[1] * h, d[2] * h]);
-    const cut = (f: number): Loop[] => section(kernel, shape, { ...frame, origin: addv(frame.origin, d, (top - h) * f) }, box, false, budget, approx);
-    // the walls of this layer, and how they lean: one extrusion has one draft
+    // The walls of this layer, and how they lean.
     const leans = topo.faces.flatMap((f, k) => {
       const [lo, hi] = extent[k]!;
       if (!(lo < top - 1e-7 && hi > h + 1e-7)) return [];
@@ -782,21 +893,10 @@ function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: F
       if (lean === null) return !f.geometry && free?.(k, d) ? [0] : [];
       return [lean];
     });
-    const angle = leans.length ? leans[0]! : 0;
-    if (leans.some((x) => Math.abs(x - angle) > 1e-7)) {
-      const deg = [...new Set(leans.map((x) => ((x * 180) / Math.PI).toFixed(2)))].join('°, ');
-      throw new RecognizeError(t('recognize.mixedDraft', { angles: `${deg}°` }));
-    }
-    if (angle === 0) {
-      const loops = cut(0.5);
-      return loops.length ? { frame, loops } : null;
-    }
-    // drafted walls: the section changes linearly with the height, so two sections give the one at the bottom of the layer exactly
-    const [q1, q3] = [cut(0.25), cut(0.75)];
-    if (!q1.length) return null;
-    const loops = extrapolate(q3, q1, 0.5);
-    if (!loops) throw new RecognizeError(t('recognize.draftSection'));
-    return { frame, loops, draft: { angle, inward: regionArea(q3) < regionArea(q1) } };
+    const angle = uniformLean(leans);
+    if (angle === undefined) return mixedLayer(kernel, shape, frame, d, top - h, leans, budget, approx);
+    const profile = layerProfile(kernel, shape, frame, d, top - h, angle, budget, approx);
+    return profile ? [profile] : [];
   });
   return { type: 'extrude', dir: d, levels: exact, layers };
 }

@@ -264,28 +264,30 @@ class Builder {
     this.layers(b, 'boss', merge);
   }
 
-  /** The layers of an extrusion record, bottom up: each a sketch on the plane of its bottom and a blind extrusion of the layer's height along `dir` (a cut goes the same way). */
+  /** Each layer profile gets its own sketch and blind extrusion over the layer's height along `dir`. */
   private layers(b: Extract<Recognition['base'], { type: 'extrude' }>, op: 'boss' | 'cut', merge: boolean | undefined): void {
     let first = true;
-    b.layers.forEach((layer, i) => {
-      if (!layer) return;
+    b.layers.forEach((profiles, i) => {
+      if (!profiles.length) return;
       const h = b.levels[i]!;
       const plane = this.plane(b.dir, [b.dir[0] * h, b.dir[1] * h, b.dir[2] * h]);
-      const { id } = this.sketch(plane.ref, layer.loops);
       const depth = b.levels[i + 1]! - h;
-      this.feature({
-        id: this.ids.take('extrude'),
-        type: 'extrude',
-        name: this.name('extrude'),
-        suppressed: false,
-        sketch: id,
-        op,
-        ...(op === 'boss' && first && merge === false ? { merge: false } : {}),
-        // a boss goes along the sketch's normal, a cut against it (into the material): either way the layer runs along `dir`
-        dir1: { type: 'blind', depth: num(depth), ...((op === 'boss' ? plane.flipped : !plane.flipped) ? { reverse: true } : {}) },
-        ...(layer.draft ? { draft1: { angle: `${num((layer.draft.angle * 180) / Math.PI)}deg`, ...(layer.draft.inward ? { inward: true } : {}) } } : {}),
-      });
-      first = false;
+      for (const layer of profiles) {
+        const { id } = this.sketch(plane.ref, layer.loops);
+        this.feature({
+          id: this.ids.take('extrude'),
+          type: 'extrude',
+          name: this.name('extrude'),
+          suppressed: false,
+          sketch: id,
+          op,
+          ...(op === 'boss' && first && merge === false ? { merge: false } : {}),
+          // a boss goes along the sketch's normal, a cut against it (into the material): either way the layer runs along `dir`
+          dir1: { type: 'blind', depth: num(depth), ...((op === 'boss' ? plane.flipped : !plane.flipped) ? { reverse: true } : {}) },
+          ...(layer.draft ? { draft1: { angle: `${num((layer.draft.angle * 180) / Math.PI)}deg`, ...(layer.draft.inward ? { inward: true } : {}) } } : {}),
+        });
+        first = false;
+      }
     });
   }
 
@@ -428,7 +430,7 @@ export function approximateReport(kernel: Kernel, whole: ShapeId, rebuilt: Shape
   const extrusions = (b: BaseRecord): Extract<BaseRecord, { type: 'extrude' }>[] => (b.type === 'extrude' ? [b] : b.type === 'composite' ? [...extrusions(b.base), ...b.extras.map((x) => x.rec)] : []);
   for (const record of extrusions(rec.base)) {
     for (let i = 0; i + 1 < record.levels.length; i++) {
-      const layer = record.layers[i];
+      const layer = record.layers[i]?.[0];
       if (!layer) continue;
       const height = record.levels[i + 1]! - record.levels[i]!;
       for (const f of [0.25, 0.5, 0.75]) {
@@ -461,8 +463,8 @@ export function approximateReport(kernel: Kernel, whole: ShapeId, rebuilt: Shape
 
 function arcsOf(b: BaseRecord): number {
   if (b.type === 'composite') return arcsOf(b.base) + b.extras.reduce((n, x) => n + arcsOf(x.rec), 0);
-  const profiles = b.type === 'revolve' ? [b.profile] : b.layers;
-  return profiles.reduce((n, p) => n + (p?.loops ?? []).reduce((m, l) => m + l.segs.filter((s) => s.kind === 'arc').length, 0), 0);
+  const profiles = b.type === 'revolve' ? [b.profile] : b.layers.flat();
+  return profiles.reduce((n, p) => n + p.loops.reduce((m, l) => m + l.segs.filter((s) => s.kind === 'arc').length, 0), 0);
 }
 
 function failedOf(r: RebuildResult, ids: Iterable<Id>): string | null {
