@@ -75,3 +75,9 @@ G19：無完整自動尺寸配置工作流；自動定義必須讓使用者指�
 
 - D08（acceptance.md）：探針報告已交付；每項獨立提出可支援範圍。
 - G19：探針完成，可核定 MVP 範圍。
+
+## 9. V1 implementation decisions
+
+The datum selector offers the sketch origin and horizontal or vertical construction lines. A construction line supplies its start point for X/Y dimensions and its direction for angle dimensions. The origin uses the sketch X axis for angles. The preferences cover X, Y, radial and angular dimensions. Circles get diameter candidates and arcs get radius candidates. Planar lines, arcs, circles and standalone points are eligible.
+
+V1 tries at most 48 candidates in sketch order. Each accepted candidate must reduce solver DOF without conflicts, redundancy or geometry displacement above `1e-7 mm`. The preview shows accepted candidates with dashed lines and rejected candidates in red. The user can omit individual accepted dimensions. Confirmation solves the checked subset again from persisted sketch inputs, then adds the dimensions in one command. A changed document invalidates the preview. Zero distances and parallel angular candidates are omitted. Dense sketches can retain freedoms after applying the proposed batch.

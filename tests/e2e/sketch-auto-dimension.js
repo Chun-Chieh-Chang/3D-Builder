@@ -1,0 +1,46 @@
+// await __sketchAutoDimension.run();
+const here = import.meta.url.slice(0, import.meta.url.lastIndexOf('/') + 1);
+await import(here + 'phase1-demo-parts.js?' + Date.now());
+const H = window.__ui;
+const { store } = H;
+const check = (ok, message) => { if (!ok) throw new Error(message); };
+const click = name => {
+  const button = document.querySelector(`button[name="${name}"]`);
+  check(button && !button.disabled, `${name} is available`);
+  button.click();
+};
+
+window.__sketchAutoDimension = { run: async () => {
+  H.ready();
+  await H.action('檔案', '新零件');
+  await H.treeClick('前基準面');
+  await H.action('草圖', '草圖');
+  await H.frameSketch(10, 8, 10);
+  await H.tool('圓');
+  await H.sk(10, 8);
+  await H.sk(15, 8);
+  await H.solved();
+  await H.selectTool();
+  const baseline = H.sketch().constraints.length;
+  const dof = store.getState().sketchSolve.dof;
+  await H.tool('自動標尺寸');
+  click('previewAutoDimensions');
+  await store.sketcher.settled();
+  check(store.sketcher.getView().autoDimensions.some(row => row.checked), 'solver accepted driving dimensions');
+  await window.__shot?.('sketch-auto-dimension-preview');
+  check(H.sketch().constraints.length === baseline, 'preview leaves the document intact');
+  store.sketcher.escape();
+  check(H.sketch().constraints.length === baseline, 'cancelling changes nothing');
+  await H.tool('自動標尺寸');
+  click('previewAutoDimensions');
+  await store.sketcher.settled();
+  click('applyAutoDimensions');
+  await store.sketcher.settled();
+  await H.solved();
+  check(store.getState().sketchSolve.dof < dof, 'accepted dimensions reduce real solver DOF');
+  check(H.sketch().constraints.slice(baseline).every(c => c.driving !== false && ['distanceX', 'distanceY', 'diameter'].includes(c.type)), 'batch contains driving dimensions');
+  store.undo();
+  await H.solved();
+  check(H.sketch().constraints.length === baseline, 'one undo removes the whole batch');
+  return { pass: true };
+} };

@@ -78,6 +78,50 @@ function lines(h: Host, c: SketchController): void {
   c.escape();
 }
 
+describe('standalone split and auto dimension workflows', () => {
+  it('previews an explicit split, cancels, and undoes both pieces in one step', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    lines(h, c);
+    const before = h.doc();
+    c.setTool('split');
+    click(c, -5, 0);
+    move(c, 3, 0);
+    expect(overview(c).map(p => p.role)).toEqual(['add', 'change']);
+    c.escape();
+    expect(h.doc()).toBe(before);
+    click(c, -5, 0);
+    click(c, 3, 0);
+    await c.settled();
+    expect(h.sketch().entities.filter(e => e.type === 'line')).toHaveLength(3);
+    h.history.undo();
+    expect(h.doc()).toEqual(before);
+  });
+
+  it('lets users omit a dimension before committing the revalidated subset', async () => {
+    const h = new Host();
+    const c = new SketchController(h);
+    c.setTool('circle');
+    click(c, 10, 8);
+    click(c, 15, 8);
+    const before = h.doc();
+    const dof = h.last!.dof;
+    c.setTool('autoDimension');
+    c.previewAutoDimensions('@origin', { x: true, y: true, radial: true, angle: true });
+    await c.settled();
+    const rows = c.getView().autoDimensions?.filter(row => row.accepted);
+    expect(rows).toHaveLength(3);
+    expect(h.doc()).toBe(before);
+    c.toggleAutoDimension(rows![0]!.dimension.id, false);
+    c.applyAutoDimensions();
+    await c.settled();
+    expect(h.last!.dof).toBe(dof - 2);
+    expect(h.sketch().constraints.some(k => k.id === rows![0]!.dimension.id)).toBe(false);
+    h.history.undo();
+    expect(h.doc()).toEqual(before);
+  });
+});
+
 describe('operation preview of the shared plan (G06, P2-1: trim)', () => {
   it('hover on a trimmable segment previews where the kept part will end, and moves nothing', () => {
     const h = new Host();

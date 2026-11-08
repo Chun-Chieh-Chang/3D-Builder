@@ -62,6 +62,7 @@
     "tool-sketchFillet",
     "tool-sketchChamfer",
     "tool-trim",
+    "tool-split",
     "tool-extend",
     "tool-offset",
     "tool-mirror",
@@ -72,6 +73,7 @@
   ],
   "C6": [
     "tool-dimension",
+    "tool-autoDimension",
     "sketch",
     "exit-sketch",
     "edit-feature-sketch"

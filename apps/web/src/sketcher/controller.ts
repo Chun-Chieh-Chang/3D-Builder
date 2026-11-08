@@ -64,13 +64,17 @@ import { angleStep, DEFAULT_SNAPS, extensionSnap, gridPoint, intersectionSnap, l
 import { snapHold, type HoldCandidate, type HoldKind } from './snap-hold';
 import { checkSketch, repairSketch, type SketchIssue } from '@3db/sketch/check';
 import {
+  acceptsAutoDimensions,
   anchorModel,
   anchorModelForSelection,
   applyTransform,
+  autoDimensionCandidates,
+  autoDimensionDatums,
   chamfer,
   dissolveText,
   extend,
   fillet,
+  hitsOf,
   isCurve,
   mergePoints,
   mirror,
@@ -82,9 +86,13 @@ import {
   referenceEntities,
   relationCrossings,
   slot,
+  split,
   transformEntities,
   transformProblem,
+  trialAutoDimensions,
   trim,
+  type AutoDimensionPreferences,
+  type AutoDimensionRow,
   type Maker,
   type ModelItem,
   type OpResult,
@@ -95,6 +103,7 @@ import {
 import type { SketchSolvePayload } from '../worker/protocol';
 
 export type ToolId =
+  | 'autoDimension'
   | 'select'
   | 'line'
   | 'centerline'
@@ -115,6 +124,7 @@ export type ToolId =
   | 'sketchFillet'
   | 'sketchChamfer'
   | 'trim'
+  | 'split'
   | 'extend'
   | 'offset'
   | 'mirror'
@@ -141,10 +151,10 @@ const TRANSFORM_HINTS: Record<TransformTool, PlainKey[]> = {
 };
 
 /** The tools of C1.8–C1.19, whose hints and messages come from the message catalog. */
-type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'trim' | 'extend' | 'offset' | 'mirror' | 'convert' | 'pierce' | 'intersect' | 'silhouette' | TransformTool;
+type OperationTool = 'slot' | 'polygon' | 'sketchFillet' | 'sketchChamfer' | 'trim' | 'split' | 'autoDimension' | 'extend' | 'offset' | 'mirror' | 'convert' | 'pierce' | 'intersect' | 'silhouette' | TransformTool;
 
 /** Tools that pick existing geometry instead of placing points: no snapping, the element under the cursor is what counts. */
-const PICK_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'trim', 'extend', 'sketchFillet', 'sketchChamfer', 'offset', 'mirror']);
+const PICK_TOOLS: ReadonlySet<ToolId> = new Set(['dimension', 'trim', 'split', 'extend', 'sketchFillet', 'sketchChamfer', 'offset', 'mirror']);
 
 /** Drawing tools that keep the chain when one is switched for another, so a path runs on from where the last segment ended. */
 const CHAIN_TOOLS: ReadonlySet<ToolId> = new Set(['line', 'centerline', 'tangentArc']);
@@ -272,6 +282,8 @@ export interface EntryView {
 }
 
 export interface ControllerView {
+  autoDimensions?: (AutoDimensionRow & { checked: boolean })[];
+  autoDimensionBusy?: boolean;
   /** The values that can be typed in for the click about to be made; null when the tool takes none. */
   entry?: EntryView | null;
   candidates?: { id: Id; kind: Hit['kind'] }[];
@@ -352,6 +364,8 @@ const PLAIN_NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
  * document commands; geometry shown comes from the solver (derived data).
  */
 export class SketchController {
+  private autoPlan: { doc: PartDoc; baseline: SketchSolvePayload; rows: NonNullable<ControllerView['autoDimensions']> } | null = null;
+  private autoRequest = 0;
   private tool: ToolId = 'select';
   private selection = new Set<Id>();
   private hover: Hit | null = null;
@@ -451,6 +465,8 @@ export class SketchController {
     const chained = !!this.chain && (drawingLine || this.tool === 'tangentArc');
     const step = this.tool === 'dimension' ? Math.min(this.picks.length, 2) : chained ? 1 : this.clicks.length;
     return {
+      autoDimensions: this.tool === 'autoDimension' && this.autoPlan?.doc === this.host.doc() ? this.autoPlan.rows : undefined,
+      autoDimensionBusy: this.tool === 'autoDimension' && this.busy,
       entry: this.entryView(),
       dimensionDrag: this.dimensionDrag?.moved ? { id: this.dimensionDrag.id, position: this.dimensionDrag.position } : undefined,
       candidates: this.candidates.map(({ id, kind }) => ({ id, kind })),
@@ -465,7 +481,7 @@ export class SketchController {
       grid: this.gridShown(),
       preview: this.previewShapes(),
       picks: [...this.picks],
-      pickedCrossings: this.picks.flatMap((id) => (this.crossings.has(id) ? [this.crossings.get(id)!.p] : [])),
+      pickedCrossings: this.tool === 'split' ? this.clicks.map(c => c.p) : this.picks.flatMap((id) => (this.crossings.has(id) ? [this.crossings.get(id)!.p] : [])),
       cursor: this.cursor,
       hint: this.hint(step),
       message: this.message?.text ?? null,
@@ -521,6 +537,10 @@ export class SketchController {
         return t(this.picks.length === 0 ? 'sketch.hint.corner1' : 'sketch.hint.corner2');
       case 'trim':
         return t('sketch.hint.trim');
+      case 'split':
+        return t('sketch.hint.split');
+      case 'autoDimension':
+        return t('sketch.hint.autoDimension');
       case 'extend':
         return t(this.picks.length > 0 ? 'sketch.hint.extendBoundary' : 'sketch.hint.extend');
       case 'offset':
@@ -1020,6 +1040,8 @@ export class SketchController {
   }
 
   private resetTool(): void {
+    this.autoPlan = null;
+    this.autoRequest++;
     this.candidates = [];
     this.candidate = null;
     this.clicks = [];
@@ -1046,7 +1068,7 @@ export class SketchController {
     else if (this.cancelEntry()) return;
     else if (this.candidate) { this.candidate = null; this.hover = null; this.candidates = []; this.press = null; }
     else if (this.dimensionDrag) { this.dimensionDrag = null; this.press = null; }
-    else if (this.tool === 'mirror' || this.tool === 'offset' || isTransformTool(this.tool)) this.setTool('select');
+    else if (this.tool === 'mirror' || this.tool === 'offset' || this.tool === 'autoDimension' || isTransformTool(this.tool)) this.setTool('select');
     else if (this.tool === 'slot' && this.clicks.length === 2 && this.slotEntry) {
       this.clicks.pop();
       this.entry = { texts: { ...this.slotEntry }, active: 0, focus: this.entry.focus + 1 };
@@ -1826,6 +1848,7 @@ export class SketchController {
   }
 
   private click(e: PointerInput): void {
+    if (this.tool === 'autoDimension') return;
     if (this.tool === 'dimension') return void this.dimensionClick(e);
     if (PICK_TOOLS.has(this.tool)) return this.operationClick(e);
     // a value typed that cannot be used makes nothing: the click would not make what was typed (T09)
@@ -2172,7 +2195,30 @@ export class SketchController {
    * (G06, P2-1 trim; P2-2 the rest of the PICK tools). Null where the op would fail or the corner is not complete, so hover
    * then offers nothing instead of a preview the click could not submit.
    */
+  private splitPoint(e: PointerInput, id: Id, geometry: Geometry): P2 | null {
+    const g = geometry.get(id);
+    if (!isCurve(g)) return null;
+    const projected = closestOn(g, e.p);
+    const tolerance = PICK_PX * e.px;
+    if (!projected || dist(projected, e.p) > tolerance) return null;
+    const crossings = hitsOf(geometry, id, g, false).sort((a, b) => dist(a.at, e.p) - dist(b.at, e.p));
+    const nearest = crossings[0];
+    return nearest && dist(nearest.at, e.p) <= tolerance ? nearest.at : projected;
+  }
+
   private operationPlan(e: PointerInput): { doc: PartDoc; target: Id; shapes: PreviewShape[] } | null {
+    if (this.tool === 'split') {
+      const id = this.picks[0];
+      if (!id) return null;
+      const geometry = this.geometry();
+      const at = this.splitPoint(e, id, geometry);
+      if (!at) return null;
+      this.snapTarget = { kind: 'curve', id, p: at };
+      const first = this.clicks[0]?.p;
+      if (geometry.get(id)?.type === 'circle' && !first) return null;
+      const result = split(this.sketch(), geometry, this.allocator(), id, first ?? at, first ? at : undefined);
+      return 'error' in result ? null : { doc: this.host.doc(), target: id, shapes: editPreviewShapes(result.edit, geometry) };
+    }
     if (this.tool === 'mirror' && this.picks.length > 0) {
       // a sketch axis (ADR 0170) is not in the sketch's geometry, so it is only found by axisAt (empty geometry, axes always on);
       // the generic hover below skips axes whenever a curve is nearby, which is why mirroring across an axis showed no preview
@@ -2263,6 +2309,26 @@ export class SketchController {
     const sketch = this.sketch();
     const ids = this.allocator();
     switch (this.tool) {
+      case 'split': {
+        const id = this.picks[0];
+        if (!id) {
+          const hit = this.pickedCurve(e);
+          if (hit && isCurve(hit.g)) this.picks = [hit.id];
+          else this.host.notify(t('sketch.splitNotCurve'), 'info');
+          return;
+        }
+        const at = this.splitPoint(e, id, geometry);
+        if (!at) return this.host.notify(t('sketch.splitPosition'), 'info');
+        const first = this.clicks[0]?.p;
+        if (geometry.get(id)?.type === 'circle' && !first) {
+          this.clicks.push({ kind: 'curve', id, p: at });
+          return;
+        }
+        const session = this.autoRequest;
+        this.run(split(sketch, geometry, ids, id, first ?? at, first ? at : undefined), () => this.resetTool(),
+          () => this.tool === 'split' && this.autoRequest === session);
+        return;
+      }
       case 'trim':
       case 'extend': {
         const hit = this.pickedCurve(e);
@@ -2474,17 +2540,18 @@ export class SketchController {
    * Applies the result of an operation as one command (one undo step), after the solver agrees the sketch is not
    * over-defined by it, like a dimension or a relation.
    */
-  private run(r: OpResult, done?: () => void): void {
+  private run(r: OpResult, done?: () => void, active?: () => boolean): void {
     if ('error' in r) return this.host.notify(r.error, 'info');
-    this.submit({ type: 'editSketch', featureId: this.host.featureId, ...r.edit } as Command, () => { if(r.message)this.host.notify(r.message,'info');done?.(); });
+    this.submit({ type: 'editSketch', featureId: this.host.featureId, ...r.edit } as Command, () => { if(r.message)this.host.notify(r.message,'info');done?.(); }, active);
   }
 
   /** Trial-solves what the command would make of the sketch and, if it is not over-defined, executes it. */
-  private submit(cmd: Command, done?: () => void): void {
+  private submit(cmd: Command, done?: () => void, active?: () => boolean): void {
     if (this.busy) return;
+    const base = this.host.doc();
     let next: PartDoc;
     try {
-      next = applyCommand(this.host.doc(), cmd);
+      next = applyCommand(base, cmd);
     } catch (e) {
       return this.host.notify(t('sketch.opFailed', { reason: e instanceof Error ? e.message : String(e) }), 'error');
     }
@@ -2493,6 +2560,7 @@ export class SketchController {
     this.pending = this.host
       .trial(candidate, next)
       .then((solved) => {
+        if (this.host.doc() !== base || active?.() === false) return;
         if (solved.status === 'over' || solved.status === 'failed') this.host.notify(t('sketch.opOverDefined'), 'error');
         else if (this.host.execute(cmd)) done?.();
       })
@@ -2506,6 +2574,67 @@ export class SketchController {
   private commit(b: Builder): boolean {
     if (b.entities.length === 0 && b.constraints.length === 0) return false;
     return this.host.execute({ type: 'addSketchItems', featureId: this.host.featureId, entities: b.entities, constraints: b.constraints });
+  }
+
+  autoDatums(): Id[] {
+    const solved = this.host.solved();
+    return solved ? autoDimensionDatums(this.sketch(), solved.geometry) : [SKETCH_ORIGIN];
+  }
+
+  clearAutoDimensions(): void {
+    this.autoRequest++;
+    this.autoPlan = null;
+    this.changed();
+  }
+
+  previewAutoDimensions(datum: Id, preferences: AutoDimensionPreferences): void {
+    const baseline = this.host.solved();
+    if (this.tool !== 'autoDimension' || this.busy || !baseline) return;
+    const doc = this.host.doc();
+    const sketch = this.sketch();
+    const initial = this.analysisInitial();
+    const candidates = autoDimensionCandidates(sketch, baseline, datum, preferences, this.allocator());
+    const request = ++this.autoRequest;
+    const active = () => this.tool === 'autoDimension' && request === this.autoRequest && doc === this.host.doc();
+    this.autoPlan = null;
+    this.busy = true;
+    this.changed();
+    this.pending = trialAutoDimensions(candidates, baseline, constraints =>
+      this.host.trial({ ...sketch, constraints: [...sketch.constraints, ...constraints] }, doc, { initial, drag: {} }), active)
+      .then(rows => {
+        if (active()) this.autoPlan = { doc, baseline, rows: rows.map(row => ({ ...row, checked: row.accepted })) };
+      })
+      .catch((error: unknown) => {
+        if (active()) this.host.notify(t('sketch.opFailed', { reason: String(error) }), 'error');
+      })
+      .finally(() => { this.busy = false; this.changed(); });
+  }
+
+  toggleAutoDimension(id: Id, checked: boolean): void {
+    const plan = this.autoPlan;
+    if (!plan || plan.doc !== this.host.doc() || this.busy) return;
+    this.autoPlan = { ...plan, rows: plan.rows.map(row => row.dimension.id === id && row.accepted ? { ...row, checked } : row) };
+    this.changed();
+  }
+
+  applyAutoDimensions(): void {
+    const plan = this.autoPlan;
+    if (!plan || plan.doc !== this.host.doc() || this.tool !== 'autoDimension' || this.busy) return;
+    const constraints = plan.rows.filter(row => row.checked).map(row => row.dimension);
+    if (!constraints.length) return;
+    const sketch = this.sketch();
+    this.busy = true;
+    this.changed();
+    this.pending = this.host.trial({ ...sketch, constraints: [...sketch.constraints, ...constraints] }, plan.doc)
+      .then(solved => {
+        if (this.autoPlan !== plan || this.host.doc() !== plan.doc) return;
+        if (!acceptsAutoDimensions(plan.baseline, solved)) this.host.notify(t('sketch.opOverDefined'), 'error');
+        else if (this.host.execute({ type: 'addSketchItems', featureId: sketch.id, entities: [], constraints })) this.setTool('select');
+      })
+      .catch((error: unknown) => {
+        if (this.autoPlan === plan) this.host.notify(t('sketch.opFailed', { reason: String(error) }), 'error');
+      })
+      .finally(() => { this.busy = false; this.changed(); });
   }
 
   // ------------------------------------------------------------------ over-definition diagnosis (A2.5, D7.2)
@@ -2993,7 +3122,7 @@ function editPreviewShapes(edit: SketchEdit, geometry: Geometry): PreviewShape[]
     return g?.type === 'point' ? g.p : null;
   };
   /** An arc of a sketch entity: the center with the angles of its two ref points, radius as they measure. */
-  const arcOf = (c: P2 | null, start: Id | undefined, end: Id | undefined, radius?: number): PreviewShape | null => {
+  const arcOf = (c: P2 | null, start: Id | undefined, end: Id | undefined, radius?: number): Extract<PreviewShape, { kind: 'arc' }> | null => {
     if (!c || !start || !end) return null;
     const s = at(start), e = at(end);
     if (!s || !e) return null;
@@ -3010,6 +3139,14 @@ function editPreviewShapes(edit: SketchEdit, geometry: Geometry): PreviewShape[]
     } else if (en.type === 'arc') {
       const arc = arcOf(at(en.center) ?? null, en.start, en.end);
       if (arc) shapes.push(arc);
+    }
+  }
+  if (edit.openCircle) {
+    const { id, start, end } = edit.openCircle;
+    const g = geometry.get(id);
+    if (g?.type === 'circle') {
+      const arc = arcOf(g.c, start, end, g.r);
+      if (arc) shapes.push({ ...arc, role: 'change' });
     }
   }
   for (const { id, set } of edit.entities ?? []) {

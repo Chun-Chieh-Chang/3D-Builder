@@ -337,6 +337,10 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .overlay-label.measure-label .value { padding: 2px 5px; }
 .overlay-label.dimension { padding: 2px 3px; background: color-mix(in oklab, var(--card) 85%, transparent); border-radius: 2px; color: var(--text-2); }
 .overlay-label.dimension.preview { color: var(--accent); border: 1px dashed var(--accent); }
+.overlay-label.dimension.preview.over { color: var(--error); border-color: var(--error); }
+.sketch-auto-dimensions label.pm-row { min-height: 44px; font-size: 14px; }
+.sketch-auto-dimensions .pm-wrap { display: flex; flex-wrap: wrap; gap: 4px; }
+.sketch-auto-dimensions button, .sketch-auto-dimensions select { min-height: 44px; font-size: 14px; }
 .overlay-label.dimension.driven { color: var(--muted); font-style: italic; }
 .overlay-label.relation { font-size: 11px; padding: 1px 3px; background: var(--ok-soft); border: 1px solid var(--ok-line); border-radius: 2px; color: var(--ok); }
 .overlay-label.relation.related { background: var(--warn-soft); border-color: var(--warn); color: var(--warn-ink); }

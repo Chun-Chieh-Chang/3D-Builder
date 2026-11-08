@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { applyCommand, createEmptyPart, IdAllocator, idsInUse, resolveSketch, SKETCH_ORIGIN, type Command, type PartDoc, type SketchConstraint, type SketchEntity, type SketchFeature } from '@3db/model';
 import { findProfiles, PlaneGcsSolver, type SolvedSketch } from '../src/index';
-import { chamfer, extend, fillet, mirror, offset, polygon, referenceEntities, slot, trim, type OpResult } from '../src/ops';
+import { autoDimensionCandidates, trialAutoDimensions } from '../src/autoDimension';
+import { chamfer, extend, fillet, mirror, offset, polygon, referenceEntities, slot, split, trim, type OpResult } from '../src/ops';
 
 let solver: PlaneGcsSolver;
 beforeAll(async () => {
@@ -32,6 +33,115 @@ const at = (s: SolvedSketch, id: string) => {
 };
 const point = (id: string, x: number, y: number): SketchEntity => ({ id, type: 'point', x, y });
 const add = (doc: PartDoc, ...c: SketchConstraint[]) => applyCommand(doc, { type: 'addSketchItems', featureId: 's1', entities: [], constraints: c });
+
+describe('standalone split', () => {
+  it('retains a line ID and its shared endpoint while dropping the whole length', () => {
+    const doc = start([point('p1', 0, 0), point('p2', 12, 0), point('p3', 12, 5),
+      { id: 'l1', type: 'line', p1: 'p1', p2: 'p2' }, { id: 'l2', type: 'line', p1: 'p2', p2: 'p3' }],
+    [{ id: 'd1', type: 'distance', a: 'l1', value: '12' }]);
+    const geometry = solve(doc).geometry;
+    expect(split(sketchOf(doc), geometry, ids(doc), 'l1', [0, 0])).toHaveProperty('error');
+    expect(split(sketchOf(doc), geometry, ids(doc), 'l1', [5, 1])).toHaveProperty('error');
+    const next = run(doc, split(sketchOf(doc), geometry, ids(doc), 'l1', [5, 0]));
+    const result = solve(next);
+    expect(result.conflicting).toEqual([]);
+    expect(result.redundant).toEqual([]);
+    expect(result.geometry.get('l1')).toMatchObject({ type: 'line', a: [0, 0], b: [5, 0] });
+    expect(result.geometry.get('l2')).toMatchObject({ type: 'line', a: [12, 0], b: [12, 5] });
+    expect(sketchOf(next).constraints.some((c) => c.id === 'd1')).toBe(false);
+  });
+
+  it('splits a circle into two arcs while retaining its driving radius and closed profile', () => {
+    const doc = start([point('p1', 2, 3), { id: 'ci1', type: 'circle', center: 'p1', radius: 10 }],
+      [{ id: 'd1', type: 'radius', circle: 'ci1', value: '10' }]);
+    const next = run(doc, split(sketchOf(doc), solve(doc).geometry, ids(doc), 'ci1', [12, 3], [-8, 3]));
+    const result = solve(next);
+    expect(result.geometry.get('ci1')).toMatchObject({ type: 'arc', r: 10 });
+    expect(result.conflicting).toEqual([]);
+    expect(result.redundant).toEqual([]);
+    expect(findProfiles(sketchOf(next), result).regions[0]?.outer).toHaveLength(2);
+    const resized = run(next, { edit: { constraints: [{ id: 'd1', set: { value: '12' } }] } });
+    const resizedArcs = [...solve(resized).geometry.values()].filter(g => g.type === 'arc');
+    expect(resizedArcs).toHaveLength(2);
+    for (const arc of resizedArcs) expect(arc.r).toBeCloseTo(12, 7);
+  });
+
+  it('moves point-on-curve to the second arc and retains the first arc radius', () => {
+    const doc = start([point('p1', 0, 0), point('p2', 10, 0), point('p3', -10, 0), point('p4', -6, 8),
+      { id: 'a1', type: 'arc', center: 'p1', start: 'p2', end: 'p3' }],
+    [{ id: 'd1', type: 'radius', circle: 'a1', value: '10' }, { id: 'k1', type: 'pointOnCurve', point: 'p4', curve: 'a1' }]);
+    const next = run(doc, split(sketchOf(doc), solve(doc).geometry, ids(doc), 'a1', [0, 10]));
+    const copy = sketchOf(next).entities.find(e => e.type === 'arc' && e.id !== 'a1')!;
+    expect(sketchOf(next).constraints.find(c => c.id === 'k1')).toMatchObject({ curve: copy.id });
+    const result = solve(next);
+    expect(result.conflicting).toEqual([]);
+    expect(result.redundant).toEqual([]);
+    expect(result.geometry.get(copy.id)).toMatchObject({ type: 'arc', r: 10 });
+  });
+
+  it('rejects a blocked source curve', () => {
+    const doc = start([point('p1', 0, 0), point('p2', 10, 0), { id: 'l1', type: 'line', p1: 'p1', p2: 'p2' }],
+      [{ id: 'k1', type: 'block', entity: 'l1' }]);
+    expect(split(sketchOf(doc), solve(doc).geometry, ids(doc), 'l1', [5, 0])).toHaveProperty('error');
+  });
+
+  it('preserves both pieces for 120 seeded line, arc and circle splits', () => {
+    let seed = 208;
+    const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+    const variants = { line: 0, arc: 0, circle: 0 };
+    for (let i = 0; i < 120; i++) {
+      const radius = 0.1 + random() * 150;
+      const startAngle = random() * Math.PI * 2;
+      const sweep = 0.1 + random() * 6;
+      const fraction = 0.01 + random() * 0.98;
+      const x = random() * 30 - 15, y = random() * 30 - 15;
+      const atAngle = (a: number): [number, number] => [x + radius * Math.cos(a), y + radius * Math.sin(a)];
+      const [a, b] = [atAngle(startAngle), atAngle(startAngle + sweep)];
+      const type = (['line', 'arc', 'circle'] as const)[i % 3]!;
+      const entity: SketchEntity = type === 'line' ? { id: 'curve', type, p1: 'p2', p2: 'p3' }
+        : type === 'arc' ? { id: 'curve', type, center: 'p1', start: 'p2', end: 'p3' } : { id: 'curve', type, center: 'p1', radius };
+      const doc = start([point('p1', x, y), point('p2', ...a), point('p3', ...b), entity]);
+      const cut: [number, number] = type === 'line' ? [a[0] + fraction * (b[0] - a[0]), a[1] + fraction * (b[1] - a[1])] : atAngle(startAngle + sweep * fraction);
+      const next = run(doc, split(sketchOf(doc), solve(doc, { analyze: false }).geometry, ids(doc), entity.id, cut, b));
+      const result = solve(next, { analyze: false });
+      expect(result.status).toBe('under');
+      const pieces = [...result.geometry.values()].filter(g => g.type === 'line' || g.type === 'arc');
+      expect(pieces).toHaveLength(2);
+      if (type === 'circle') expect(findProfiles(sketchOf(next), result).regions[0]?.outer).toHaveLength(2);
+      if (type !== 'line') for (const g of pieces) if (g.type === 'arc') expect(g.r).toBeCloseTo(radius, 7);
+      variants[type]++;
+    }
+    expect(variants).toEqual({ line: 40, arc: 40, circle: 40 });
+  });
+});
+
+describe('auto dimensions', () => {
+  it('uses measured driving dimensions to reduce real solver DOF without moving the sketch', async () => {
+    const doc = start([point('p1', -4.1234567, 6), { id: 'ci1', type: 'circle', center: 'p1', radius: 10 }],
+      [{ id: 'd1', type: 'radius', circle: 'ci1', value: '10' }]);
+    const baseline = solve(doc);
+    const candidates = autoDimensionCandidates(sketchOf(doc), baseline, SKETCH_ORIGIN, { x: true, y: true, radial: true, angle: true }, ids(doc));
+    const result = await trialAutoDimensions(candidates, baseline, async (constraints) => solve(add(doc, ...constraints)));
+    const accepted = result.filter((r) => r.accepted).map((r) => r.dimension);
+    expect(accepted.map((c) => c.type)).toEqual(['distanceX', 'distanceY']);
+    const dimensioned = add(doc, ...accepted);
+    expect(solve(dimensioned).dof).toBe(0);
+    expect(at(solve(dimensioned), 'p1')).toEqual(at(baseline, 'p1'));
+    expect(sketchOf(doc).constraints).toHaveLength(1);
+  });
+
+  it('measures a driving angle to a construction datum using the real solver', async () => {
+    const doc = start([point('p1', 10, 20), point('p2', 15, 20), point('p3', 1, 2), point('p4', 5, 6),
+      { id: 'l1', type: 'line', p1: 'p1', p2: 'p2', construction: true }, { id: 'l2', type: 'line', p1: 'p3', p2: 'p4' }],
+    [{ id: 'k1', type: 'block', entity: 'l1' }]);
+    const baseline = solve(doc);
+    const candidates = autoDimensionCandidates(sketchOf(doc), baseline, 'l1', { x: false, y: false, radial: false, angle: true }, ids(doc));
+    const rows = await trialAutoDimensions(candidates, baseline, async constraints => solve(add(doc, ...constraints)));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ accepted: true, dimension: { type: 'angle' } });
+    expect(Number(rows[0]!.dimension.value)).toBeCloseTo(45, 10);
+  });
+});
 
 describe('slot (C1.8)', () => {
   it('draws a slot with the five freedoms of one: both centers and the width', () => {

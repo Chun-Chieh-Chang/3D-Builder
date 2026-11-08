@@ -399,16 +399,18 @@ export function buildOverlay(frame: PlaneFrame, sketch: SketchFeature, solve: Sk
   // dimensions (D6.2) laid out outside the geometry
   const pts = [...geometry.values()].flatMap((g) => (g.type === 'point' ? [g.p] : []));
   const center: P2 = pts.length ? [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length] : [0, 0];
-  for (const c of sketch.constraints) {
+  const proposed = new Map(view.autoDimensions?.filter(row => row.checked || !row.accepted).map(row => [row.dimension.id, row]));
+  for (const c of [...sketch.constraints, ...[...proposed.values()].map(row => row.dimension)]) {
     if (!isDimension(c)) continue;
     const positioned = view.dimensionDrag?.id === c.id ? { ...c, labelPosition: view.dimensionDrag.position } : c;
     const layout = layoutDimension(positioned, geometry, px, center);
     if (!layout) continue;
-    const state = selected.has(c.id) ? 'selected' : over.has(c.id) ? 'over' : '';
+    const preview = proposed.get(c.id);
+    const state = selected.has(c.id) ? 'selected' : over.has(c.id) || preview?.accepted === false ? 'over' : '';
     const color = state === 'selected' ? SKETCH_COLORS.selected : state === 'over' ? SKETCH_COLORS.over : SKETCH_COLORS.dimension;
     const text = layout.text;
-    for (const [a, b] of layout.segments) curves.push({ points: [a, b], color });
-    labels.push({ key: `dim:${c.id}`, p: text, text: dimensionLabel(c, options.values?.get(c.id), measuredText(c, geometry), options.precision), className: `dimension ${state}${c.driving === false ? ' driven' : ''}`, interactive: true, title: c.label ?? t('overlay.editDimension') });
+    for (const [a, b] of layout.segments) curves.push({ points: [a, b], color, dashed: !!preview });
+    labels.push({ key: `${preview ? 'auto-preview' : 'dim'}:${c.id}`, p: text, text: dimensionLabel(c, options.values?.get(c.id), measuredText(c, geometry), options.precision), className: `dimension ${state}${preview ? ' preview' : ''}${c.driving === false ? ' driven' : ''}`, interactive: !preview, title: preview ? undefined : c.label ?? t('overlay.editDimension') });
   }
 
   // relation symbols (C1.27, G12): the ones the selection is about are lit at both ends and take the spots beside their anchors; the ones

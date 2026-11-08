@@ -1134,6 +1134,14 @@ export const help = {
   'help.toolSketchChamfer.keywords': '草圖導角 導角 斜角 距離 角落',
 
   'help.toolSketchChamfer.see': 'tool-sketchFillet chamfer tool-trim',
+  'help.toolSplit.summary': '分割直線、圓弧或圓，保留兩段。',
+  'help.toolSplit.body': '先選曲線，再選曲線上的分割點。分割圓時需選兩個不同的點。移動游標可預覽，按 Esc 可取消。第一段保留原圖元 ID。原有的整段長度與中點拘束會移除，直線等長拘束仍作用於第一段。固定或連結模型的曲線無法分割。復原一次即可恢復原曲線及拘束。',
+  'help.toolSplit.keywords': '分割 切分 曲線 線段',
+  'help.toolSplit.see': 'tool-trim tool-extend',
+  'help.toolAutoDimension.summary': '在未完全定義的平面草圖中預覽並套用驅動尺寸。',
+  'help.toolAutoDimension.body': '選擇草圖原點，或水平／垂直建構線。建構線的起點作為水平與垂直距離的基準，方向作為角度基準。選擇尺寸類型後預覽。虛線顯示候選尺寸，紅色表示無法安全減少自由度。取消勾選不需要的尺寸，再一次套用所選尺寸。按 Esc 取消預覽。復原一次即可移除整批尺寸。預覽後仍可能保留部分自由度，例如樣條控制點與尺寸為零的位置。',
+  'help.toolAutoDimension.keywords': '自動 尺寸 基準 預覽 驅動 自由度',
+  'help.toolAutoDimension.see': 'tool-dimension sketch',
   'help.toolTrim.summary': '修剪：點線上被交點切出的一段，把它去掉。',
 
   'help.toolTrim.body':

@@ -58,3 +58,21 @@ G09：偏移限線／弧／圓；雙側、封口與自由曲線需額外操作�
 
 - C04（acceptance.md）：探針報告已交付；自由曲線 offset 的支援範圍已列。
 - G09：探針完成；精確版需 schema 擴充。
+
+## 8. Native WASM measurements and recommendation
+
+Run `npm.cmd test -- tests/phase6/sketch-free-offset-probe.test.ts --disableConsoleIntercept`. The probe uses the repository's single-threaded OCCT build, native planar curves, the OCCT self-intersector, and a parameterized B-spline fit at requested tolerance `1e-6 mm`. The straight control has analytic length 30 mm. The quadratic Bézier has vertex radius 5 mm, and the smooth wave is a native multi-knot B-spline. Native offset samples agreed with independently calculated source normals within `3.45e-15 mm` across the seven cases.
+
+| Curve and signed offset | Min. sampled offset Jacobian | Max. sampled fit deviation, 17 / 65 points (mm) | Absolute length error, 17 / 65 points (mm) |
+|---|---:|---:|---:|
+| Straight, +2 mm | 1.000 | 1.78e-15 / 0 | 0 / 0 |
+| Quadratic, +2 mm | 1.036 | 2.66e-4 / 9.43e-7 | 2.69e-5 / 1.14e-9 |
+| Quadratic, −2 mm | 0.600 | 3.08e-4 / 9.43e-7 | 2.56e-5 / 1.13e-9 |
+| Wave, +2 mm | 0.852 | 2.84e-3 / 8.83e-7 | 1.40e-4 / 1.06e-10 |
+| Wave, −2 mm | 0.852 | 2.84e-3 / 8.83e-7 | 1.40e-4 / 1.06e-10 |
+| Quadratic, −5 mm | 0 | cusp | — |
+| Quadratic, −6 mm | −0.200 | loop | — |
+
+Deviation uses 512 interior parameter samples offset from the fitting grid. Lengths use native integration. The analytic cusp at −5 mm produced zero self-intersections. The −6 mm loop produced three native intersection reports, and two distinct source parameters independently evaluated to the same point. A future implementation needs both a curvature/speed guard and self-intersection testing. The sampled guard used here does not certify every parameter interval.
+
+Keep G09 at probe status. For a future editable offset, prefer a persistent source reference and signed distance with exact native reconstruction. A separate approximation workflow could use an explicitly bounded fit with independent verification. The 17-point fit exceeded the 1e-6 mm length target on all four regular curved cases, despite the fitter's requested tolerance. The 65-point fit met the target on those cases but used 33 poles per curved result and provides no general error guarantee. This probe did not validate closed or periodic splines, discontinuities, chains, trimming, or persistent PlaneGCS driving semantics.

@@ -41,6 +41,8 @@ export interface SketchPlacement {
 
 /** What `editSketch` does to a sketch, in this order: `entities`, `constraints`, `place`, `add`, `remove`. */
 export interface SketchEdit {
+  /** Convert a circle to an arc while retaining the entity ID and its references. */
+  openCircle?: { id: Id; start: Id; end: Id };
   /** Entities whose points change (a line that now ends elsewhere). */
   entities?: { id: Id; set: EntityRefs }[];
   /** Relations and dimensions that now refer to something else, or whose value changes. */
@@ -1830,6 +1832,21 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
     }
     case 'editSketch': {
       const f = sketchOf(draft, cmd.featureId);
+      if (cmd.openCircle) {
+        const { id, start, end } = cmd.openCircle;
+        const index = f.entities.findIndex((e) => e.id === id);
+        const circle = f.entities[index];
+        if (circle?.type !== 'circle' || circle.ref || start === end) {
+          throw new CommandError(t('cmd.sketchEditField', { id, field: 'openCircle' }));
+        }
+        const name = `${f.id}:${id}`;
+        if (draft.features.some(feature => feature.type === 'sketch' && feature.id !== f.id &&
+          feature.entities.some(e => ('ref' in e && e.ref?.kind === 'sketch' && e.ref.name === name) ||
+            (e.type === 'point' && e.pierce?.kind === 'sketch' && e.pierce.name === name)))) {
+          throw new CommandError(t('sketch.splitReferencedCircle'));
+        }
+        f.entities[index] = { id, type: 'arc', center: circle.center, start, end, construction: circle.construction };
+      }
       for (const patch of cmd.entities ?? []) {
         const e = f.entities.find((x) => x.id === patch.id);
         if (!e) throw new CommandError(t('cmd.sketchItemNotFound', { id: patch.id }));

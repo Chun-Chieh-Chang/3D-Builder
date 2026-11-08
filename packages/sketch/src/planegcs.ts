@@ -195,6 +195,9 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
   // whose three points are fixed by hand may not have them on one circle, and that must still be reported.
   const fixedPoints=new Set(sketch.constraints.flatMap((c)=>(c.type==='fix'?[c.point]:[])));
   const heldArcs=new Set(sketch.entities.flatMap((e)=>(e.type==='arc'&&e.ref&&!linkedArcs.has(e.id)&&[e.center,e.start,e.end].every((p)=>fixedPoints.has(p))?[e.id]:[])));
+  // Complementary arcs from a split circle use the same center and two endpoint IDs.
+  // One arc enforces equal endpoint radii. The other still needs its own radius and angles.
+  const arcTriples = new Set<string>();
   const prims: Prim[] = [{ id: SKETCH_ORIGIN, type: 'point', x: 0, y: 0, fixed: true }];
   for (const axis of axes) {
     const [x, y] = sketchAxisDir(axis)!;
@@ -230,7 +233,10 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
           end_angle: Math.atan2(ey - cy, ex - cx),
           radius: Math.hypot(sx - cx, sy - cy),
         });
-        if(heldArcs.has(e.id))prims.push(
+        const triple = JSON.stringify([e.center, ...[e.start, e.end].sort()]);
+        const sharedRadialRule = !linkedArcs.has(e.id) && arcTriples.has(triple);
+        if (!linkedArcs.has(e.id)) arcTriples.add(triple);
+        if(heldArcs.has(e.id) || sharedRadialRule)prims.push(
           { id: `${e.id}#radius`, type: 'p2p_distance', p1_id: e.center, p2_id: e.start, distance: { o_id: e.id, prop: 'radius' } },
           { id: `${e.id}#start`, type: 'p2p_angle', p1_id: e.center, p2_id: e.start, angle: { o_id: e.id, prop: 'start_angle' } },
           { id: `${e.id}#end`, type: 'p2p_angle', p1_id: e.center, p2_id: e.end, angle: { o_id: e.id, prop: 'end_angle' } });

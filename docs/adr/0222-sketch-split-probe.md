@@ -67,3 +67,9 @@ G08 要求「獨立 Split 與參照繼承」：分割工具須定義 ID、尺寸
 
 - C05（acceptance.md）：探針報告已交付；每種參照的保留／轉移／失效策略已列於 §4。
 - G08：探針完成，可核定範圍（直線／圓弧／圓）。
+
+## 10. V1 implementation decisions
+
+Split is an independent planar sketch tool. The first click selects the curve. A line or arc takes one interior cut, and a circle takes two distinct cuts. The cursor projects to the selected curve and can snap to its intersection with another curve. This snap locates the cut. It creates no persistent relation to the intersecting curve.
+
+The original ID survives on the first piece, including when a circle becomes the first arc. An existing line equality continues to constrain that piece and may affect the solved lengths. Directional relations flow through a shared endpoint and a single parallel relation. Arcs share their center and cut point, which enforces equal radius geometrically. Complementary arcs share both endpoints, so PlaneGCS applies their common radial consistency rule once. Whole lengths and midpoints are removed, and point-on-curve constraints transfer when the solved point lies on the second piece. A Block relation, a followed model reference, or another sketch following a circle prevents the affected split. Preview and cancel leave the document intact. Confirmation submits one trial-solved edit with one undo step.

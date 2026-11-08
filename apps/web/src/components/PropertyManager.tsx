@@ -233,6 +233,8 @@ function OptionNumber({ label, value, integer = false, onChange }: { label: stri
 function ToolOptionsBox({ view, sketcher }: { view: ControllerView; sketcher: SketchController }) {
   const o = view.options;
   switch (view.tool) {
+    case 'autoDimension':
+      return <AutoDimensionOptions view={view} sketcher={sketcher} />;
     case 'polygon':
       return (
         <>
@@ -277,6 +279,57 @@ function ToolOptionsBox({ view, sketcher }: { view: ControllerView; sketcher: Sk
     default:
       return null;
   }
+}
+
+const AUTO_PREFERENCES = { x: 'dimension.distanceX', y: 'dimension.distanceY', radial: 'sketch.autoDimension.radial', angle: 'dimension.angle' } as const;
+
+function AutoDimensionOptions({ view, sketcher }: { view: ControllerView; sketcher: SketchController }) {
+  const [datum, setDatum] = useState<Id>(SKETCH_ORIGIN);
+  const [preferences, setPreferences] = useState({ x: true, y: true, radial: true, angle: true });
+  const datums = sketcher.autoDatums();
+  const rows = view.autoDimensions;
+  const busy = view.autoDimensionBusy;
+  return (
+    <div className="sketch-auto-dimensions">
+      <label className="pm-row">
+        {t('sketch.autoDimension.datum')}
+        <select name="autoDimensionDatum" value={datums.includes(datum) ? datum : SKETCH_ORIGIN} disabled={busy} onChange={event => {
+          setDatum(event.target.value);
+          sketcher.clearAutoDimensions();
+        }}>
+          {datums.map(id => <option key={id} value={id}>{id === SKETCH_ORIGIN ? t('datum.origin') : id}</option>)}
+        </select>
+      </label>
+      {(Object.keys(AUTO_PREFERENCES) as (keyof typeof AUTO_PREFERENCES)[]).map(key => (
+        <label key={key} className="pm-row checkbox">
+          <input type="checkbox" name={`autoDimension-${key}`} checked={preferences[key]} disabled={busy} onChange={event => {
+            setPreferences({ ...preferences, [key]: event.target.checked });
+            sketcher.clearAutoDimensions();
+          }} />
+          {t(AUTO_PREFERENCES[key])}
+        </label>
+      ))}
+      <div className="pm-wrap">
+        <button type="button" name="previewAutoDimensions" disabled={busy || !Object.values(preferences).some(Boolean)}
+          onClick={() => sketcher.previewAutoDimensions(datums.includes(datum) ? datum : SKETCH_ORIGIN, preferences)}>
+          {t('sketch.autoDimension.preview')}
+        </button>
+        <button type="button" name="applyAutoDimensions" disabled={busy || !rows?.some(row => row.checked)} onClick={() => sketcher.applyAutoDimensions()}>
+          {t('sketch.autoDimension.apply')}
+        </button>
+      </div>
+      {busy && <p className="hint" role="status">{t('pm.solving')}</p>}
+      {rows?.length === 0 && <p className="hint" role="status">{t('sketch.autoDimension.empty')}</p>}
+      {rows?.map(({ dimension, accepted, checked }) => (
+        <label className={`pm-row checkbox${accepted ? '' : ' error-text'}`} key={dimension.id}>
+          <input type="checkbox" checked={checked} disabled={busy || !accepted}
+            onChange={event => sketcher.toggleAutoDimension(dimension.id, event.target.checked)} />
+          {DIMENSION_LABEL[dimension.type]} {dimensionText(dimension)}
+          {!accepted && <span className="error-text">{t('sketch.autoDimension.rejected')}</span>}
+        </label>
+      ))}
+    </div>
+  );
 }
 
 /** A value of a transform tool exactly as typed: an empty or unreadable field is NaN, which the operation refuses and says why (ADR 0178, AGENTS.md §2.1). */

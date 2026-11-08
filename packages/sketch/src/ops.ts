@@ -20,6 +20,7 @@ import {
 import { closestOn, geometryOf, pointOf } from './interact';
 import { textContours } from './font';
 import type { P2, SolvedGeometry } from './types';
+export { acceptsAutoDimensions, autoDimensionCandidates, autoDimensionDatums, trialAutoDimensions, type AutoDimensionPreferences, type AutoDimensionRow } from './autoDimension';
 
 /**
  * Sketch operations that build or change several entities at once (C1.8, C1.9, C1.15, C1.16, C1.17, C1.19): slot, polygon,
@@ -836,6 +837,67 @@ export function trim(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, ge
     dropEnd(first);
   }
   return { edit: { entities, add: b.added, remove } };
+}
+
+/** Keep both pieces and preserve the original curve ID. Circles require two distinct cuts. */
+export function split(
+  sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometry: Geometry, ids: IdAllocator,
+  id: Id, first: P2, second?: P2,
+): OpResult {
+  const e = sketch.entities.find((entity) => entity.id === id);
+  const g = geometry.get(id);
+  if (!e || (e.type !== 'line' && e.type !== 'arc' && e.type !== 'circle') || !isCurve(g)) return error('sketch.splitNotCurve');
+  const refs = new Set([id, ...refsOf(e)]);
+  if (sketch.entities.some((entity) => refs.has(entity.id) && followsModel(entity))) return error('sketch.xformFollowsModel');
+  if (sketch.constraints.some((k) => k.type === 'block' && k.entity === id)) return error('sketch.splitBlocked');
+
+  const valid = (p: P2): boolean => {
+    if (!p.every(Number.isFinite)) return false;
+    const projected = closestOn(g, p);
+    if (!projected || dist(p, projected) > SAME) return false;
+    if (g.type === 'circle') return g.r > SAME;
+    const u = along(g, p);
+    const margin = g.type === 'arc' ? SAME / g.r : SAME;
+    return u > margin && u < spanOf(g) - margin;
+  };
+  if (!valid(first) || (e.type === 'circle' && (!second || !valid(second) || dist(first, second) <= SAME))) {
+    return error('sketch.splitPosition');
+  }
+
+  const b = new Parts(ids);
+  const cut = b.point(first);
+  const edit: SketchEdit = { add: b.added, constraints: [], remove: [] };
+  let copy: Id;
+  if (e.type === 'line') {
+    copy = b.line(cut, e.p2, e.construction);
+    edit.entities = [{ id, set: { p2: cut } }];
+    // A common endpoint and parallelism preserve all direction relations through the original.
+    b.relation({ type: 'parallel', a: id, b: copy });
+  } else if (e.type === 'arc') {
+    copy = b.arc(e.center, cut, e.end, e.construction);
+    edit.entities = [{ id, set: { end: cut } }];
+  } else {
+    const end = b.point(second!);
+    edit.openCircle = { id, start: cut, end };
+    copy = b.arc(e.center, end, cut, e.construction);
+  }
+  for (const k of sketch.constraints) {
+    if ((k.type === 'distance' && k.a === id && k.b === undefined) ||
+        (k.type === 'midpoint' && k.line === id) || (k.type === 'arcLength' && k.circle === id)) {
+      edit.remove!.push(k.id);
+    } else if (k.type === 'pointOnCurve' && k.curve === id) {
+      const p = pointOf(geometry, k.point);
+      if (!p || !drawn(g, p)) continue;
+      const u = along(g, p);
+      const start = along(g, first);
+      const other = g.type === 'circle'
+        ? norm(u - start) > norm(along(g, second!) - start) && dist(p, first) > SAME
+        : u > start;
+      if (other) edit.constraints!.push({ id: k.id, set: { curve: copy } });
+    }
+  }
+  const changed = edit.remove!.length > 0 || (e.type === 'line' && sketch.constraints.some((k) => k.type === 'equal' && (k.a === id || k.b === id)));
+  return { edit, ...(changed ? { message: t('sketch.splitRelations') } : {}) };
 }
 
 // ---------------------------------------------------------------- extend (C1.16)

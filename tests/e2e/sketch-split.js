@@ -1,0 +1,38 @@
+// await __sketchSplit.run();
+const here = import.meta.url.slice(0, import.meta.url.lastIndexOf('/') + 1);
+await import(here + 'phase1-demo-parts.js?' + Date.now());
+const H = window.__ui;
+const { store } = H;
+const check = (ok, message) => { if (!ok) throw new Error(message); };
+
+window.__sketchSplit = { run: async () => {
+  H.ready();
+  await H.action('檔案', '新零件');
+  await H.treeClick('前基準面');
+  await H.action('草圖', '草圖');
+  await H.frameSketch(10, 4, 10);
+  await H.tool('直線');
+  await H.sk(0, 4);
+  await H.sk(20, 4);
+  await H.solved();
+  await H.selectTool();
+  const original = H.sketch().entities.find(e => e.type === 'line');
+  await H.tool('分割圖元');
+  await H.sk(3, 4);
+  check(H.sketch().entities.filter(e => e.type === 'line').length === 1, 'choosing a target leaves the sketch intact');
+  await window.__shot?.('sketch-split-target');
+  await H.sk(8, 4);
+  await store.sketcher.settled();
+  await H.solved();
+  const lines = H.sketch().entities.filter(e => e.type === 'line');
+  const first = lines.find(e => e.id === original.id);
+  const second = lines.find(e => e.id !== original.id);
+  check(lines.length === 2 && first.p2 === second.p1 && second.p2 === original.p2, 'both pieces share the cut and preserve old IDs');
+  store.undo();
+  await H.solved();
+  check(H.sketch().entities.find(e => e.id === original.id).p2 === original.p2, 'one undo restores the full line');
+  store.redo();
+  await H.solved();
+  check(H.sketch().entities.some(e => e.id === second.id), 'redo restores the second piece');
+  return { pass: true };
+} };

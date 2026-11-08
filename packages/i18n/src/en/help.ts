@@ -1093,6 +1093,10 @@ export const help: Translation = {
   'help.toolText.keywords': 'text font emboss engrave height angle dissolve',
   'help.toolText.see': 'tool-dimension tool-line sketch extrude extrude-cut',
   'help.toolDimension.summary': 'Dimensions: pick one or two entities, click to place, type the value and press Enter.',
+  'help.toolAutoDimension.summary': 'Preview and apply driving dimensions to an under-defined planar sketch.',
+  'help.toolAutoDimension.body': 'Choose the sketch origin or a horizontal or vertical construction line. A construction line uses its start point for X and Y distances and its direction for angles. Select the kinds of dimensions to propose, then preview. Dashed dimensions show the candidates. Red candidates did not safely reduce freedom. Uncheck any accepted candidates you want to omit, then apply the checked dimensions together. Esc cancels the preview. One Undo removes the batch. The preview can leave some freedoms open, including spline control points and dimensions that would be zero.',
+  'help.toolAutoDimension.keywords': 'auto dimension define datum preview driving freedom',
+  'help.toolAutoDimension.see': 'tool-dimension sketch',
   'help.toolDimension.body': '- Pick a line for its length; a circle for its diameter and an arc for its radius (arc length: "Dimension arc length" in the panel); two lines for the angle; two points for the distance.\n- Where two lines really cross (both are drawn up to it) can be picked too: it becomes a point, with an intersection relation, only when the dimension is placed, and Esc leaves nothing behind. Where lines would meet on their extensions, and where a line crosses a circle or an arc, do not snap yet.\n- A dimension that would over-define the sketch becomes a driven dimension, shown in gray italics in parentheses, only showing what is measured; the dimension list in the panel can switch it between driven and driving.\n- Double-click a dimension to change it; the box takes an expression or an equation variable.',
   'help.toolSlot.summary': 'Draws the outline of a slot from two centers and a width.',
 
@@ -1126,6 +1130,10 @@ export const help: Translation = {
   'help.toolSketchChamfer.keywords': 'sketch chamfer bevel corner distance virtual sharp',
 
   'help.toolSketchChamfer.see': 'tool-sketchFillet chamfer tool-trim',
+  'help.toolSplit.summary': 'Split a line, arc, or circle and keep both pieces.',
+  'help.toolSplit.body': 'Select the curve, then pick a cut on it. For a circle, pick two distinct cuts. Hover to preview and press Esc to cancel. The first piece keeps the original ID. Whole lengths and midpoints are removed, and an existing line equality applies to the first piece. Blocked and model-linked curves cannot be split. Undo restores the original curve and its constraints in one step.',
+  'help.toolSplit.keywords': 'split divide break cut curve segment',
+  'help.toolSplit.see': 'tool-trim tool-extend',
   'help.toolTrim.summary': 'Trims: click a piece of a line between crossings to remove it.',
 
   'help.toolTrim.body':
