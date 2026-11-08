@@ -90,6 +90,7 @@ import {
   type ReplaceFaceFeature,
   lookupThread,
   holeSize,
+  drillPointHeight,
   validThreadTolerance,
   generateStandardThreadProfile,
   sketchAxisDir,
@@ -3324,8 +3325,8 @@ export class Regenerator {
 
   /**
    * The hole wizard (C4.8): at every free point of the sketch a tool is turned from a profile (straight, counterbored or countersunk, ending flat at
-   * its depth or past the body), and cut. Each face of a tool is named for its point and part (`<hole>:side:<sketch>.<point>.wall`, `.cbwall`,
-   * `.cbfloor`, `.cone`, `.bottom`), so every face of every hole has a name of its own.
+   * its depth, at a drill point beyond that depth, or past the body), and cut. Each face of a tool is named for its point and part
+   * (`<hole>:side:<sketch>.<point>.wall`, `.cbwall`, `.cbfloor`, `.cone`, `.bottom`, `.tip`).
    */
   private hole(f: HoleFeature, sketches: RebuildResult['sketches'], set: Bodies): BodyState[] {
     if ((f.cosmeticThread || f.threadDepth !== undefined) && (f.kind !== 'tapped' || !f.size || !lookupThread(f.size))) throw new FeatureError(t('feature.cosmeticThreadBadDimensions'));
@@ -3390,7 +3391,8 @@ export class Regenerator {
       step(R, -lead, 'top');
     }
     step(R, depth, 'wall');
-    step(0, depth, 'bottom');
+    if (f.drillPointAngle === undefined) step(0, depth, 'bottom');
+    else step(0, depth + drillPointHeight(R, evalAngle(f.drillPointAngle)), 'tip');
     edges.push('axis');
     // the loop counter-clockwise in (radius, depth)
     const area = ring.reduce((a, p, i) => a + (p[0] * ring[(i + 1) % ring.length]![1] - ring[(i + 1) % ring.length]![0] * p[1]), 0);

@@ -859,6 +859,8 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .section-clearance-button { min-height: 32px; padding: 5px 10px; font: inherit; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; }
 .section-clearance-button[aria-pressed=true] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
 @media (max-width: 768px) {
+  .floating-parameters .hole-drill-point-row,
+  .floating-parameters .hole-drill-point-row input:not([type=checkbox]) { min-height: 44px; font-size: 14px; }
   .section-clearance-fields, .section-clearance-fields .pm-group h4 { font-size: 14px; }
   .section-clearance-fields .pm-row.checkbox, .section-clearance-fields select,
   .floating-parameters .section-clearance-fields input:not([type=checkbox]):not([type=radio]), .section-clearance-fields button,

@@ -2519,6 +2519,7 @@ function HolePanel({ f }: { f: HoleFeature }) {
   void [_sketch, _id, _type, _name, _suppressed];
   const run = (patch: Partial<typeof settings>) => {
     const next = { ...settings, ...patch };
+    if (next.end.type !== 'blind') delete next.drillPointAngle;
     if (next.kind !== 'tapped' || !next.size) { delete next.cosmeticThread; delete next.threadDepth; }
     if (!validThreadTolerance(next.toleranceClass, next.kind === 'tapped' ? next.size : undefined, 'internal')) delete next.toleranceClass;
     store.execute({ type: 'setHole', featureId: f.id, hole: next });
@@ -2668,10 +2669,22 @@ function HolePanel({ f }: { f: HoleFeature }) {
         </select>
       </label>
       {f.end.type === 'blind' && (
-        <label className="pm-row">
-          <span>{t('pm.depth')}</span>
-          <ValueInput value={f.end.depth} toCommand={(depth) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, end: { type: 'blind', depth } } })} />
-        </label>
+        <>
+          <label className="pm-row">
+            <span>{t('pm.depth')}</span>
+            <ValueInput value={f.end.depth} toCommand={(depth) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, end: { type: 'blind', depth } } })} />
+          </label>
+          <label className="pm-row checkbox hole-drill-point-row">
+            <input type="checkbox" checked={f.drillPointAngle !== undefined} onChange={(e) => run({ drillPointAngle: e.target.checked ? '118deg' : undefined })} />
+            <span>{t('pm.hole.drillPoint')}</span>
+          </label>
+          {f.drillPointAngle !== undefined && (
+            <label className="pm-row hole-drill-point-row">
+              <span>{t('pm.hole.drillPointAngle')}</span>
+              <ValueInput value={f.drillPointAngle} suffix="°" toCommand={(drillPointAngle) => ({ type: 'setHole', featureId: f.id, hole: { ...settings, drillPointAngle } })} />
+            </label>
+          )}
+        </>
       )}
       <label className="pm-row checkbox">
         <input type="checkbox" checked={!!f.reverse} onChange={(e) => run({ reverse: e.target.checked ? true : undefined })} />
