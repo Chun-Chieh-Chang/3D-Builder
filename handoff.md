@@ -1,10 +1,24 @@
 # 交接與接續工作
 
-更新日期：2026-11-07。**目前狀態以本檔 §0–§1b 為準；§2 起為歷史紀錄，裡面的「下一步」「未提交」「目前版本」只代表當時狀態，不可直接拿來開工。**
+更新日期：2026-11-08。**目前狀態以本頁的最新交付摘要為準。下方各節保留當時的決策、研究與驗收紀錄。**
 
 先讀本檔、[產品現況](docs/project-state.md)、[AGENTS.md](AGENTS.md) 與 [草圖互動方案](docs/design/sketch-interaction/plan.md)。開始前執行 `git status --short --branch`、`git fetch origin`、`git log -8 --oneline`；工作區不乾淨時先辨識在途變更，不直接 pull 或覆寫。
 
-## 0b. 下一個 session 從這裡開始：兩條工作線合併後的 7 項（2026-11-06 使用者決定）
+## 最新交付（2026-11-08）
+
+本輪清單已全部驗收並交付。功能基準為 `origin/main` 的 `6fd1a6f4`。進度頁「第 7 項之後」沒有待辦，下一輪開工以新指示為準。
+
+| 交付 | 主線提交 | 實作與範圍 |
+| --- | --- | --- |
+| 第 7 項 截面間隙 | `3b6fd030` | Schema 93、雙圓弧近似、重算與取消。見 [ADR 0245](docs/adr/0245-section-clearance.md)。 |
+| 第 4、5 項 同層多個拔模角與孔精靈鑽尖角 | `7d552a77` | 同層分區獨立拔模，盲孔可編輯鑽尖角，辨識使用原生孔參數。見 [ADR 0246](docs/adr/0246-recognize-mixed-draft-layers.md) 與 [ADR 0247](docs/adr/0247-hole-wizard-drill-point.md)。 |
+| G08、G19、G09 草圖後續 | `6fd1a6f4` | 獨立分割第一版、自動標尺寸第一版、自由曲線偏移實測。G09 的交付範圍為探針與建議，見 [ADR 0228](docs/adr/0228-sketch-curve-offset-probe.md#8-native-wasm-measurements-and-recommendation)。 |
+
+- 最終主機驗證：Vitest 4,738 項通過、26 項略過、0 項失敗，瀏覽器回歸 278/278 通過。日誌位於本機 `scratch/feature-recognition/` 下的 `sketch-followups-host-vitest-final.log` 和 `sketch-followups-host-full-ui.log`。
+- 375、390、768 px 的草圖工具專項測試通過。新增的自動標尺寸面板無內部橫向溢出，既有應用外框仍可橫向捲動。
+- 依使用者指示，`scratch/feature-recognition/livewatch.py` 已由同目錄的 `live-stop` 停止。最後的 `live-tasks.json` 與 `live-data.js` 已保留。日後需要重啟監看時，先移除 `live-stop` 再啟動 watcher。
+
+## 0b. 兩條工作線合併後的 7 項（2026-11-06 使用者決定）
 
 特徵辨識（§0a，以下稱 A）與截面間隙（§0，以下稱 B）**合併成一條工作線，集中在一個 session**；同一資料夾一次只有一個 session 修改（兩邊同時寫 `DEV_LOG.md` 已互相覆寫過一次）。使用者選擇全部要做，依序：
 
