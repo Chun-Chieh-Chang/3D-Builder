@@ -156,6 +156,13 @@ Claude Code 在使用者選定下列規格後中斷，最後一步是唯讀盤�
 
 **2026-11-08 驗收更新**：第 7 項已實作（Schema 93，[ADR 0245](docs/adr/0245-section-clearance.md)）。瀏覽器全量 276/276，後續圖示與截面間隙專項複驗 4/4，行動版三視口各 1/1。最終全量 Vitest 4,717 通過、26 略過、0 失敗。交付分支為 `claude/section-module`。
 
+### 2026-11-08 第 4、5 項接續狀態
+
+- 第 7 項已合併到 `origin/main`（`3b6fd030`）。
+- 第 4 項「同層多個拔模角」在主資料夾的 `codex/mixed-draft` 工作樹，ADR 0246 草稿與程式仍為未提交變更。全量 Vitest 4,723 通過、26 略過、0 失敗，瀏覽器辨識 1/1，功能分支審查通過。提交與推送仍待處理。
+- 第 5 項「孔精靈鑽尖角」在 `.claude/worktrees/hole-drill-point` 的 `codex/hole-drill-point` 工作樹。Schema 94、ADR 0247、原生幾何、辨識重建和面板已實作，程式變更尚未提交。專項驗證包含 161 項測試、128 組原生幾何種子和三項突變。PowerShell 主機環境已通過桌面瀏覽器 2/2，孔精靈腳本於 375、390、768 px 各通過。新增欄位在三個視口無內部橫向溢出，既有應用外框仍有溢出。
+- 第 5 項全量 Vitest 在 PowerShell 主機環境重跑中，IGES fuzz 已在 39 秒內通過。若需續接，先查程序及最終 `Vitest exit code`，避免啟動重複的全量測試。日誌在主資料夾的 `scratch/feature-recognition/`，檔名為 `hole-point-host-vitest.log`、`hole-point-host-browser.log`、`hole-point-host-panel-final.log` 與 `codex-hole-drill-point-finish-en.log`。完成後更新該處 `live-tasks.json` 與工作樹的 DEV_LOG，由 watcher 產生 `live-data.js`。
+
 ### 第 3 項：崩潰後換新重算＋重新網格化（2026-11-07 完成，ADR 0242）
 
 已併入 `main`。
