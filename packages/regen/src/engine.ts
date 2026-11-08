@@ -28,6 +28,7 @@ import {
   type Draft,
   type EndCondition,
   type ExtrudeFeature,
+  type SectionClearanceFeature,
   type Feature,
   type FilletFeature,
   type Id,
@@ -102,7 +103,7 @@ import { followReferences, NO_NAMES, NO_TOPOLOGY, ReferenceProblem, type DatumSc
 import { notchOf, obroundFits, obroundRegion, type Notch } from './relief';
 import { angleStep, curveMotion, mirror, slide, turn, type Motion } from './placements';
 
-export type FeatureStatus = 'ok' | 'error' | 'suppressed' | 'rolledBack';
+export type FeatureStatus = 'ok' | 'error' | 'suppressed' | 'rolledBack' | 'incomplete';
 
 export interface Unresolved {
   ref: Ref;
@@ -620,7 +621,9 @@ export class Regenerator {
   rebuild(doc: PartDoc, options: RebuildOptions = {}): RebuildResult {
     this.releaseResult();
     const t0 = performance.now();
-    const limit = Math.min(options.until ?? doc.features.length, doc.rollbackIndex ?? doc.features.length);
+    const requestedLimit = Math.min(options.until ?? doc.features.length, doc.rollbackIndex ?? doc.features.length);
+    const stopped = doc.features.findIndex((feature) => feature.type === 'sectionClearance' && feature.incomplete && !feature.suppressed);
+    const limit = stopped >= 0 ? Math.min(requestedLimit, stopped) : requestedLimit;
     const sketches: RebuildResult['sketches'] = new Map();
     const frames: RebuildResult['frames'] = new Map();
     const results: FeatureResult[] = [];
@@ -671,6 +674,7 @@ export class Regenerator {
       };
       // a pattern's seeds are compared with the bodies as they were before the first of them
       if (firstSeeds.has(feature.id) && index < limit && !feature.suppressed) this.snapshots.set(feature.id, this.snapshot(set));
+      if (index === stopped && index < requestedLimit) return done({ status: 'incomplete', message: t('sectionClearance.incomplete') });
       if (index >= limit) {
         if (index === limit && feature.type === 'sketch') {
           try {
@@ -812,6 +816,10 @@ export class Regenerator {
           }
           case 'gear':
           case 'rack': {set=this.advance(set,this.toothedSolid(feature,set));return done({status:'ok'});}
+          case 'sectionClearance': {
+            set = this.advance(set, this.sectionClearance(feature, set));
+            return done({ status: 'ok' });
+          }
           case 'cosmeticThread': {
             this.cosmeticThread(feature, set);
             return done({ status: 'ok' });
@@ -1504,6 +1512,27 @@ export class Regenerator {
     }
     if (f.keepInside) return this.keepInside(f.id, f.sketch, tool, n, set.list);
     return this.apply(f.id, f.op, tool, { featureId: f.id, sketchId: f.sketch }, set.list, f.merge !== false);
+  }
+
+  private sectionClearance(f: SectionClearanceFeature, set: Bodies): BodyState[] {
+    const label = t('feature.sectionClearance');
+    if (f.body.kind !== 'body' || !['cut', 'merge', 'newBody'].includes(f.result)) throw new FeatureError(t('sectionClearance.invalid'));
+    if (f.dir2 && (f.dir1.type === 'midPlane' || f.dir2.type === 'midPlane')) throw new FeatureError(t('feature.mid2'));
+    const source = this.bodyByRef(set, f.body, label);
+    if (source.surface || source.curve) throw new FeatureError(t('sectionClearance.sourceRequired'));
+    const base = this.planeOf(f.plane, set, { what: label, notPlanar: t('sketch.planeOnly') });
+    const frame = { ...base, origin: add(base.origin, base.normal, f.planeOffset === undefined ? 0 : evalLength(f.planeOffset)) };
+    const { regions, approximationBound } = this.kernel.sectionClearance(source.shape, frame, evalLength(f.gap), f.side);
+    const s = { frame, profiles: { regions, problems: [] } };
+    const grow = f.result === 'cut' ? -1 : 1;
+    const spec = (d: EndCondition, direction: number) => this.sweepOf(d, scale(frame.normal, 'reverse' in d && d.reverse ? -direction : direction), s, set);
+    const first = spec(f.dir1, grow);
+    const tool = f.dir2
+      ? this.kernel.extrudeBoth(frame, regions, first, spec(f.dir2, -grow))
+      : this.kernel.extrude(frame, regions, first.vector, first.offset, first.until);
+    const result = this.apply(f.id, f.result === 'cut' ? 'cut' : 'boss', tool, { featureId: f.id }, set.list, f.result === 'merge');
+    this.info = t('sectionClearance.bound', { bound: approximationBound === 0 ? '0' : approximationBound.toExponential() });
+    return result;
   }
 
   /**

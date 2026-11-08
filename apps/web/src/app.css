@@ -856,6 +856,15 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .parameter-footer .pm-ok { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
 .parameter-footer .pm-cancel { color: var(--text); }
 .parameter-footer .pm-ok:disabled { color: var(--muted); background: var(--surface-2); border-color: var(--line); cursor: default; }
+.section-clearance-button { min-height: 32px; padding: 5px 10px; font: inherit; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; }
+.section-clearance-button[aria-pressed=true] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
+@media (max-width: 768px) {
+  .section-clearance-fields, .section-clearance-fields .pm-group h4 { font-size: 14px; }
+  .section-clearance-fields .pm-row.checkbox, .section-clearance-fields select,
+  .floating-parameters .section-clearance-fields input:not([type=checkbox]):not([type=radio]), .section-clearance-fields button,
+  .floating-parameters:has(.section-clearance-fields) .parameter-footer button { min-height: 44px; font-size: 14px; }
+  .section-clearance-fields .selection-box code { overflow-wrap: anywhere; }
+}
 @media (max-height: 650px) { .floating-parameters { top: 100px; max-height: calc(100dvh - 118px); } }
 .extrude-preview-handle { position: absolute; z-index: 8; pointer-events: none; }
 .extrude-preview-handle svg { position: absolute; left: -70px; top: -70px; overflow: visible; }

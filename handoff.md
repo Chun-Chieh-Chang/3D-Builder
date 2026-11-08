@@ -132,6 +132,30 @@
 
 **下一步：第 7 項（截面間隙進產品）。**
 
+### 第 7 項接手點（2026-11-07）
+
+Claude Code 在使用者選定下列規格後中斷，最後一步是唯讀盤點。接手時 `claude/section-module` 與 `origin/main` 同為 `beddbbba`，工作樹乾淨。第 7 項尚無產品實作。
+
+| 決定 | 使用者選擇 |
+| --- | --- |
+| 結果 | 除料、合併、新本體三選一，沿用伸長的終止型態。 |
+| 截面 | 選來源本體與基準面或模型平面，可再給平面偏移距離。 |
+| 方向 | 外擴與內縮，預設外擴。內縮若因局部細節消失而無法通過間隙檢查，明確拒絕。 |
+| 樣條 | 自動使用雙圓弧，面板與特徵顯示實際的近似誤差上界。研究擬合設定為 2e-6 mm。 |
+
+接手後的實作順序：
+
+1. 先用原生實體寫一個會失敗的截面到偏移驗收。重用 `Kernel.sectionEdges` 的平面截面與局部座標邏輯，以及 `section/loops.ts`、`section/envelope.ts`。研究探針 `tests/phase6/section-regions.ts` 直接使用 OCCT 並假定截面平行 XY，產品路徑要保留任意平面的語意，並在 kernel 內管理原生形狀所有權。
+2. 接入孔洞、多區域、成本上限、方向與上下界驗證。分別驗收樣條擬合誤差與最終偏移的間隙證明。以同心環、齒輪、大間隙、任意平面與輸入破壞覆蓋拒絕路徑，再做隨機壓力測試。
+3. 新增可儲存與編輯的特徵，串接 `schema.ts`、命令、`refs.ts`、DAG、序列化與重算。平面與本體解析以引擎的 `planeOf`、`bodyByRef` 為入口，終止與結果語意對照 `sweepOf`、`extrude`。驗證來源、取截面平面及目標參照變更後的重算。
+4. 接 PropertyManager、建立動作、雙語說明與 help 映射。依進度頁的既有待辦，設計長時間重算取消後的未完成狀態。以真實瀏覽器驗證建立、修改、重開、取消和誤差提示。ADR 與 Schema 編號在實作時取號，紅隊結果記在 DEV_LOG。
+
+本機進度頁為 `scratch/feature-recognition/live.html`，由 `livewatch.py` 讀取 `live-tasks.json` 並更新 `live-data.js`。第 7 項進度從「確認規格與設計」續接。
+
+在 `beddbbba` 以單一 worker 重跑 `section-offset-regions.test.ts` 與 `section-offset-cost.test.ts`，2 檔共 22 項全過（198.09 秒）。這是接手時的研究基準。
+
+**2026-11-08 驗收更新**：第 7 項已實作（Schema 93，[ADR 0245](docs/adr/0245-section-clearance.md)）。瀏覽器全量 276/276，後續圖示與截面間隙專項複驗 4/4，行動版三視口各 1/1。最終全量 Vitest 4,717 通過、26 略過、0 失敗。交付分支為 `claude/section-module`。
+
 ### 第 3 項：崩潰後換新重算＋重新網格化（2026-11-07 完成，ADR 0242）
 
 已併入 `main`。

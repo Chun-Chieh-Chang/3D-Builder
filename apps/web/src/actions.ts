@@ -210,6 +210,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'revolve', get label() { return t('act.revolve'); }, group: 'feature', enabled: sketchSelected, run: () => store.newRevolve('boss') },
   { id: 'sweep', get label() { return t('action.sweep'); }, group: 'feature', enabled: canSweep, run: () => store.newSweep('boss') },
   { id: 'gear', get label() { return t('feature.gear'); }, group: 'feature', enabled: partIdle, run: () => store.newGear('gear') },
+  { id: 'section-clearance', get label() { return t('feature.sectionClearance'); }, group: 'feature', enabled: hasBody, run: () => store.newSectionClearance() },
   { id: 'rack', get label() { return t('feature.rack'); }, group: 'feature', enabled: partIdle, run: () => store.newGear('rack') },
   { id: 'loft', get label() { return t('action.loft'); }, group: 'feature', enabled: loftReady, run: () => store.newLoft('boss') },
   { id: 'rib', get label() { return t('action.rib'); }, group: 'feature', enabled: (s) => sketchSelected(s) && !!s.result?.mesh, run: () => store.newRib() },

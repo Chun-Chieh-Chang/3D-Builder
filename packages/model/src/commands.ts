@@ -12,6 +12,7 @@ import { isFilePath } from './paths';
 import { DOWEL_FITS } from './dowel';
 import { mapRefs } from './refs';
 import { bodyFeature, isBodyKey, isHideable } from './visibility';
+import type { SectionClearanceFeature } from './schema';
 import { dimensionName, roleProblem, Parameters, renameInDoc, resolveDoc, variableUsers, type ExprKind } from './params';
 import type { NameRef } from './expr';
 import { isDimension } from './schema';
@@ -70,6 +71,7 @@ export interface CircleRadius {
 export type Command =
   /** Inserts a feature at `index` (at or above the rollback bar), like SolidWorks inserting at the bar. */
   | { type: 'insertFeature'; feature: Feature; index: number }
+  | { type: 'setSectionClearance'; featureId: Id; params: Partial<Pick<SectionClearanceFeature, 'body' | 'plane' | 'planeOffset' | 'gap' | 'side' | 'result' | 'dir1' | 'dir2' | 'incomplete'>> }
   | { type:'applySketchFix'; featureId:Id; changes:{id:Id;kind:'delete'|'driven'}[] }
   | { type:'setEllipseAxes'; featureId:Id; constraintId:Id; majorRadius:Expr; minorRadius:Expr }
   | { type: 'setLengthRatio'; featureId:Id; constraintId:Id; ratio:Expr }
@@ -627,6 +629,19 @@ function validateNewFeature(doc: PartDoc, f: Feature, index: number): void {
       endCondition(f.dir1);
       if (f.dir2) endCondition(f.dir2);
       return;
+    case 'sectionClearance':
+      if (f.body.kind !== 'body' || !doc.features.slice(0, index).some((parent) => parent.id === bodyFeature(f.body.name))) {
+        throw new CommandError(t('sectionClearance.sourceRequired'));
+      }
+      if ((f.side !== undefined && f.side !== 'out' && f.side !== 'in') || !['cut', 'merge', 'newBody'].includes(f.result) ||
+          (f.incomplete !== undefined && f.incomplete !== true)) {
+        throw new CommandError(t('sectionClearance.invalid'));
+      }
+      planeRef(doc, f.plane, index);
+      endCondition(f.dir1);
+      if (f.dir2) endCondition(f.dir2);
+      refuseMid2(f);
+      return;
     case 'revolve':
       revolveAxis(sketchBefore(doc, f.sketch, index, t('feature.revolve')), f.axis);
       return;
@@ -887,6 +902,16 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
   switch (cmd.type) {
     case 'insertFeature':
       return insert(draft, cmd.feature, cmd.index);
+    case 'setSectionClearance': {
+      const f = feature(draft, cmd.featureId);
+      const allowed = ['body', 'plane', 'planeOffset', 'gap', 'side', 'result', 'dir1', 'dir2', 'incomplete'];
+      if (f.type !== 'sectionClearance' || Object.keys(cmd.params).some((key) => !allowed.includes(key))) throw new CommandError(t('sectionClearance.invalid'));
+      const next = { ...f, ...cmd.params };
+      validateNewFeature(draft as PartDoc, next, draft.features.indexOf(f));
+      Object.assign(f, cmd.params);
+      checkExprs(draft as PartDoc, f);
+      return;
+    }
     case 'importBody': {
       const { blob, feature } = cmd;
       if (!/^[0-9a-f]{64}$/.test(blob.sha256)) throw new CommandError(t('cmd.importHashInvalid'));

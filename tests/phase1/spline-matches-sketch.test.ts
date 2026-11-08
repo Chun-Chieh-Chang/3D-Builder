@@ -231,12 +231,13 @@ it('200 random stars: every one is a valid solid on the drawn curve (the fitted 
 }, 280_000);
 
 describe('a file saved before this says so when it opens', () => {
+  const versionBeforeSplineRedraw = 91;
   const sketch = (entities: unknown[], name = '草圖1') => ({ id: 'sketch1', type: 'sketch', name, suppressed: false, plane: { kind: 'datum', name: 'plane:front' }, entities, constraints: [] });
   const old = (features: unknown[], version: number) => JSON.stringify({ ...JSON.parse(serializePart(createEmptyPart())), schemaVersion: version, features });
   const point = (id: string) => ({ id, type: 'point', x: 0, y: 0 });
 
   it('an older file with a spline: named, and the document comes up to date', () => {
-    const text = old([sketch([point('p1'), point('p2'), { id: 's1', type: 'spline', points: ['p1', 'p2'] }])], SCHEMA_VERSION - 1);
+    const text = old([sketch([point('p1'), point('p2'), { id: 's1', type: 'spline', points: ['p1', 'p2'] }])], versionBeforeSplineRedraw);
     expect(splinesRedrawn(text)).toEqual(['草圖1']);
     const file = readOldPartFile(new TextEncoder().encode(text));
     expect(file.warnings.join()).toContain('草圖1');
@@ -245,7 +246,7 @@ describe('a file saved before this says so when it opens', () => {
   });
 
   it('the same through a .3dbx archive', async () => {
-    const text = old([sketch([{ id: 's1', type: 'spline', points: [] }], '外形')], SCHEMA_VERSION - 1);
+    const text = old([sketch([{ id: 's1', type: 'spline', points: [] }], '外形')], versionBeforeSplineRedraw);
     const file = await readPartFile(await writeZip([{ name: 'document.json', data: new TextEncoder().encode(text) }]));
     expect(file.warnings.join()).toContain('外形');
   });
@@ -253,9 +254,10 @@ describe('a file saved before this says so when it opens', () => {
   it('nothing said when nothing changes: a file of this version, no spline, a Bézier, a construction line', () => {
     const spline = { id: 's1', type: 'spline', points: [] };
     expect(splinesRedrawn(old([sketch([spline])], SCHEMA_VERSION))).toEqual([]);
-    expect(splinesRedrawn(old([sketch([point('p1')])], SCHEMA_VERSION - 1))).toEqual([]);
-    expect(splinesRedrawn(old([sketch([{ ...spline, bezier: true }])], SCHEMA_VERSION - 1))).toEqual([]);
-    expect(splinesRedrawn(old([sketch([{ ...spline, construction: true }])], SCHEMA_VERSION - 1))).toEqual([]);
+    expect(splinesRedrawn(old([sketch([spline])], 92))).toEqual([]);
+    expect(splinesRedrawn(old([sketch([point('p1')])], versionBeforeSplineRedraw))).toEqual([]);
+    expect(splinesRedrawn(old([sketch([{ ...spline, bezier: true }])], versionBeforeSplineRedraw))).toEqual([]);
+    expect(splinesRedrawn(old([sketch([{ ...spline, construction: true }])], versionBeforeSplineRedraw))).toEqual([]);
     const doc: PartDoc = applyCommand(createEmptyPart(), { type: 'insertFeature', index: 0, feature: sketch([point('p1')]) as never });
     expect(readOldPartFile(new TextEncoder().encode(serializePart(doc))).warnings).toEqual([]);
   });

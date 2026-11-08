@@ -23,6 +23,7 @@
     "projected-curve": "projected curve C8.2, ADR 0187; no manual item yet",
     "helix": "helix and spiral curve feature (C8.3, ADR 0168): no item of the manual yet",
     "gear": "gear/rack builder, ADR 0193; no manual item yet",
+    "section-clearance": "section clearance, ADR 0245; dedicated browser acceptance",
     "rack": "gear/rack builder, ADR 0193; no manual item yet",
     "tool-ellipse": "Sketch constraint expansion; dedicated e2e, no manual item yet",
     "tool-bezier": "Sketch constraint expansion; dedicated e2e, no manual item yet",

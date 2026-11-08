@@ -54,6 +54,7 @@ export const COMMAND_TYPES = {
   setFilletVariable: true,
   setFlatSurface: true,
   setGear: true,
+  setSectionClearance: true,
   setHelix: true,
   setHem: true,
   setHole: true,

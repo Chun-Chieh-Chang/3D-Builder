@@ -47,6 +47,7 @@ import {
   type EndCondition,
   type Draft,
   type ExtrudeFeature,
+  type SectionClearanceFeature,
   type FilletFeature,
   type FilletVariablePoint,
   type FilletKind,
@@ -1039,7 +1040,7 @@ function endCondition(type: EndCondition['type'], old: EndCondition): EndConditi
 }
 
 /** The element an end condition ends on, with a mark when the model no longer has it. */
-function EndRef({ f, d }: { f: ExtrudeFeature; d: EndCondition }) {
+function EndRef({ f, d }: { f: ExtrudeFeature | SectionClearanceFeature; d: EndCondition }) {
   const result = useStore((s) => s.result);
   // the body an extrusion goes up to is looked up in the model before the feature: once the extrusion has joined it, the final bodies no longer list it,
   // so it is the feature's own report that says it is lost
@@ -1070,10 +1071,13 @@ function EndRef({ f, d }: { f: ExtrudeFeature; d: EndCondition }) {
 }
 
 /** One direction of an extrusion (C4.1): its end condition, depth or offset, direction and draft. */
-function DirectionBox({ f, which }: { f: ExtrudeFeature; which: 'dir1' | 'dir2' }) {
+function DirectionBox({ f, which }: { f: ExtrudeFeature | SectionClearanceFeature; which: 'dir1' | 'dir2' }) {
   const d = which === 'dir1' ? f.dir1 : f.dir2!;
-  const draft = which === 'dir1' ? f.draft1 : f.draft2;
-  const set = (value: EndCondition) => store.execute({ type: 'setEndCondition', featureId: f.id, dir: which, value });
+  const draft = f.type === 'extrude' ? (which === 'dir1' ? f.draft1 : f.draft2) : undefined;
+  const command = (value: EndCondition): Command => f.type === 'extrude'
+    ? { type: 'setEndCondition', featureId: f.id, dir: which, value }
+    : { type: 'setSectionClearance', featureId: f.id, params: { [which]: value } };
+  const set = (value: EndCondition) => store.execute(command(value));
   const rev = (on: boolean) => (on ? { reverse: true } : {});
   const reverse = 'reverse' in d && !!d.reverse;
   const setDraft = (next: Draft | null) => store.execute({ type: 'setDraft', featureId: f.id, dir: which, draft: next });
@@ -1093,14 +1097,14 @@ function DirectionBox({ f, which }: { f: ExtrudeFeature; which: 'dir1' | 'dir2' 
       {'depth' in d && (
         <label className="pm-row">
           <span>{t('pm.depth')}</span>
-          <ValueInput value={d.depth} toCommand={(value) => ({ type: 'setEndCondition', featureId: f.id, dir: which, value: d.type === 'midPlane' ? { type: 'midPlane', depth: value } : { type: 'blind', depth: value, ...rev(reverse) } })} />
+          <ValueInput value={d.depth} toCommand={(value) => command(d.type === 'midPlane' ? { type: 'midPlane', depth: value } : { type: 'blind', depth: value, ...rev(reverse) })} />
         </label>
       )}
       {d.type === 'offsetFromFace' && (
         <>
           <label className="pm-row">
             <span>{t('pm.offset')}</span>
-            <ValueInput value={d.offset} toCommand={(value) => ({ type: 'setEndCondition', featureId: f.id, dir: which, value: { ...d, offset: value } })} />
+            <ValueInput value={d.offset} toCommand={(value) => command({ ...d, offset: value })} />
           </label>
           <label className="pm-row checkbox">
             <input type="checkbox" checked={!!d.beyond} onChange={(e) => set({ ...d, ...(e.target.checked ? { beyond: true } : { beyond: undefined }) })} />
@@ -1115,7 +1119,7 @@ function DirectionBox({ f, which }: { f: ExtrudeFeature; which: 'dir1' | 'dir2' 
           <span>{t('pm.reverseDirection')}</span>
         </label>
       )}
-      {d.type !== 'midPlane' && (
+      {f.type === 'extrude' && d.type !== 'midPlane' && (
         <>
           <label className="pm-row checkbox">
             <input type="checkbox" checked={!!draft} onChange={(e) => setDraft(e.target.checked ? { angle: '3deg' } : null)} />
@@ -4445,6 +4449,67 @@ function CosmeticThreadPanel({ f }: { f: CosmeticThreadFeature }) {
   );
 }
 
+function SectionClearancePanel({ f }: { f: SectionClearanceFeature }) {
+  const doc = useStore((s) => s.doc);
+  const result = useStore((s) => s.result);
+  const rebuilding = useStore((s) => s.rebuilding);
+  const planePick = useStore((s) => s.sectionPlanePick);
+  const earlier = doc.features.slice(0, doc.features.findIndex((feature) => feature.id === f.id));
+  const ids = new Set(earlier.map((feature) => feature.id));
+  const bodies = (result?.bodies ?? []).filter((body) => !body.surface && !body.curve && ids.has(body.id.split('#')[0]!));
+  const status = result?.features.find((feature) => feature.id === f.id);
+  type Patch = Extract<Command, { type: 'setSectionClearance' }>['params'];
+  const command = (params: Patch): Command => ({ type: 'setSectionClearance', featureId: f.id, params });
+  const set = (params: Patch) => store.execute(command(params));
+  return <div className="section-clearance-fields">
+    <section className="pm-group" data-section-clearance-panel>
+      <label className="pm-row"><span>{t('sectionClearance.source')}</span>
+        <select value={f.body.name} onChange={(e) => set({ body: { kind: 'body', name: e.target.value } })}>
+          {!bodies.some((body) => body.id === f.body.name) && <option value={f.body.name}>{f.body.name}</option>}
+          {bodies.map((body) => <option key={body.id} value={body.id}>{body.name}</option>)}
+        </select>
+      </label>
+      <label className="pm-row"><span>{t('sectionClearance.plane')}</span>
+        <select value={f.plane.kind === 'datum' ? f.plane.name : ''} onChange={(e) => set({ plane: { kind: 'datum', name: e.target.value } })}>
+          <option value="" disabled>{t('gear.face')}</option>
+          {(['front', 'top', 'right'] as const).map((name) => <option key={name} value={`plane:${name}`}>{t(`datum.${name}`)}</option>)}
+          {earlier.filter((feature) => feature.type === 'refPlane' || feature.type === 'coordSys').map((plane) => <option key={plane.id} value={plane.id}>{plane.name}</option>)}
+        </select>
+      </label>
+      <button className="section-clearance-button" type="button" aria-pressed={planePick} onClick={() => store.toggleSectionPlanePick()}>{t('sectionClearance.pickFace')}</button>
+      {f.plane.kind === 'face' && <ul className="selection-box"><li><code>{f.plane.name}</code></li></ul>}
+      <label className="pm-row"><span>{t('sectionClearance.planeOffset')}</span>
+        <ValueInput value={f.planeOffset ?? '0'} toCommand={(planeOffset) => command({ planeOffset })} />
+      </label>
+      <label className="pm-row"><span>{t('sectionClearance.gap')}</span>
+        <ValueInput value={f.gap} toCommand={(gap) => command({ gap })} />
+      </label>
+      <label className="pm-row"><span>{t('sectionClearance.side')}</span>
+        <select value={f.side ?? 'out'} onChange={(e) => set({ side: e.target.value as SectionClearanceFeature['side'] })}>
+          {(['out', 'in'] as const).map((side) => <option key={side} value={side}>{t(`sectionClearance.${side}`)}</option>)}
+        </select>
+      </label>
+      <label className="pm-row"><span>{t('sectionClearance.result')}</span>
+        <select value={f.result} onChange={(e) => set({ result: e.target.value as SectionClearanceFeature['result'] })}>
+          {(['cut', 'merge', 'newBody'] as const).map((mode) => <option key={mode} value={mode}>{t(`sectionClearance.${mode}`)}</option>)}
+        </select>
+      </label>
+      {status?.info && <output className="hint gap-info">{status.info}</output>}
+      {f.incomplete ? <>
+        <p role="status" className="hint">{t('sectionClearance.incomplete')}</p>
+        <button className="section-clearance-button" type="button" onClick={() => set({ incomplete: undefined })}>{t('sectionClearance.retry')}</button>
+      </> : rebuilding && <button className="section-clearance-button" type="button" onClick={() => store.stopSectionClearance()}>{t('sectionClearance.stop')}</button>}
+      <label className="pm-row checkbox">
+        <input type="checkbox" checked={!!f.dir2} disabled={f.dir1.type === 'midPlane'}
+          onChange={(e) => set({ dir2: e.target.checked ? { type: 'blind', depth: '10' } : undefined })} />
+        <span>{t('feature.dir2')}</span>
+      </label>
+    </section>
+    <DirectionBox f={f} which="dir1" />
+    {f.dir2 && <DirectionBox f={f} which="dir2" />}
+  </div>;
+}
+
 function GearPanel({f}:{f:SpurGearFeature|RackFeature}) {
   const doc=useStore(s=>s.doc),at=doc.features.findIndex(feature=>feature.id===f.id);
   const fields=['module','teeth','pressureAngle','width','backlash',f.type==='gear'?'bore':'baseHeight'] as const;
@@ -4624,6 +4689,7 @@ export function FeatureParams({ f }: { f: Feature }) {
       {f.type === 'revolve' && <RevolvePanel f={f} />}
       {f.type === 'sweep' && <SweepPanel f={f} />}
       {(f.type==='gear'||f.type==='rack')&&<GearPanel f={f}/>}
+      {f.type === 'sectionClearance' && <SectionClearancePanel f={f} />}
       {f.type === 'loft' && <LoftPanel f={f} />}
       {f.type === 'rib' && <RibPanel f={f} />}
       {f.type === 'fillet' && <FilletPanel f={f} />}

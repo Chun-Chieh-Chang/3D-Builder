@@ -180,7 +180,8 @@ export function FeatureTree() {
   const renderRow = (f: Feature, i: number, isAbsorbed = false, parentFeature?: Feature) => {
     const r = statusOf(f.id);
     const rolledBack = i >= barIndex || (parentFeature ? doc.features.indexOf(parentFeature) >= barIndex : false);
-    const warned = r?.status === 'ok' && !!r.warnings?.length;
+    const incomplete = f.type === 'sectionClearance' && !!f.incomplete;
+    const warned = incomplete || (r?.status === 'ok' && !!r.warnings?.length);
     const isParent = activeParents.has(f.id);
     const isChild = activeChildren.has(f.id);
     const isActive = activeRefId === f.id;

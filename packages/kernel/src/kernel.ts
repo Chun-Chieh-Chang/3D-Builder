@@ -6,6 +6,9 @@ import { escapeStepText } from './stepText';
 import { inheritBodySurface, sameSurface } from './sameSurface';
 import { planSectionPath } from './sectionPath';
 import { loopPoints, sweepVolumeFloor } from './sweepFloor';
+import { chainBoundary, signedLoopArea, type Seg } from './section-loops';
+import { certifyOffset, type Seg2 } from './section-envelope';
+import { approximateSection } from './section-approximation';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
   KernelError,
@@ -3511,68 +3514,207 @@ export class Kernel {
    * §3.5: no zero-growth claim); every temporary is arena-owned. A point or pole off the plane (more than 1e-7 mm from it) is an error.
    */
   sectionEdges(id: ShapeId, frame: Frame, rect: { u0: number; u1: number; v0: number; v1: number }): SectionEdge[] {
-    const oc = this.oc;
     const arena = new Arena();
     try {
       const corners: P2[] = [[rect.u0, rect.v0], [rect.u1, rect.v0], [rect.u1, rect.v1], [rect.u0, rect.v1]];
       const outer: Segment[] = corners.map((a, i) => ({ kind: 'line', a, b: corners[(i + 1) % 4]!, source: `r${i}` }));
       const face = this.profile(arena, frame, [{ outer, holes: [] }], new Map());
       const mk = this.boolOp('common', this.get(id), face, t('body.common'), arena);
-      const shape = arena.own(mk.Shape());
-      const local = (p: Vec3): P2 => {
-        const d: Vec3 = [p[0] - frame.origin[0], p[1] - frame.origin[1], p[2] - frame.origin[2]];
-        const off = dot3(d, frame.normal);
-        if (Math.abs(off) > 1e-7) throw new KernelError(t('recognize.offPlane', { distance: off.toExponential(2) }));
-        return [dot3(d, frame.xDir), dot3(d, frame.yDir)];
-      };
-      const out: SectionEdge[] = [];
-      const ex = arena.own(new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
-      for (; ex.More(); ex.Next()) {
-        const edge = arena.own(oc.TopoDS.Edge(arena.own(ex.Current())));
-        if (oc.BRep_Tool.Degenerated(edge)) continue;
-        const ad = arena.own(new oc.BRepAdaptor_Curve(edge));
-        const type = String(ad.GetType()).replace('GeomAbs_', '').toLowerCase();
-        const t0 = ad.FirstParameter();
-        const t1 = ad.LastParameter();
-        const at = (u: number) => local(this.xyz(arena.own(ad.EvalD0(u))));
-        if (type === 'line') {
-          out.push({ kind: 'line', a: at(t0), b: at(t1) });
-        } else if (type === 'circle') {
-          const c = arena.own(ad.Circle());
-          const ax = arena.own(c.Axis());
-          const normal = this.xyz(arena.own(ax.Direction()));
-          if (Math.abs(Math.abs(dot3(normal, frame.normal)) - 1) > 1e-9) {
-            out.push({ kind: 'other', curve: 'circle' });
-            continue;
-          }
-          const center = local(this.xyz(arena.own(ax.Location())));
-          const r = c.Radius();
-          const a = at(t0);
-          const b = at(t1);
-          if (Math.abs(t1 - t0 - 2 * Math.PI) < 1e-9 || (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9 && t1 - t0 > Math.PI)) out.push({ kind: 'circle', c: center, r });
-          else out.push({ kind: 'arc', c: center, r, a, b, mid: at((t0 + t1) / 2) });
-        } else if (type === 'bsplinecurve' || type === 'beziercurve') {
-          // The adaptor hands back the whole curve, with the edge's location applied but not its trim: the conversion takes the edge's own range. A Bézier becomes
-          // a one-span B-spline with the same parameter first, because an edge on one (a profile's own edge, seen in a section on its cap) can be trimmed too.
-          const spline = type === 'bsplinecurve' ? arena.own(ad.BSpline()) : arena.own(oc.GeomConvert.CurveToBSplineCurve(arena.own(ad.Bezier())));
-          const convert = arena.own(new oc.GeomConvert_BSplineCurveToBezierCurve(spline, t0, t1, 1e-12));
-          const spans: HomogeneousPole[][] = [];
-          for (let i = 1; i <= convert.NbArcs(); i++) {
-            const arc = arena.own(convert.Arc(i));
-            const poles: HomogeneousPole[] = [];
-            for (let j = 1; j <= arc.NbPoles(); j++) {
-              const [x, y] = local(this.xyz(arena.own(arc.Pole(j))));
-              const w = arc.Weight(j);
-              poles.push([x * w, y * w, 0, w]);
-            }
-            spans.push(poles);
-          }
-          out.push({ kind: 'bezier', curve: type, spans });
-        } else {
-          out.push({ kind: 'other', curve: type });
+      return this.readSectionEdges(arena.own(mk.Shape()), frame, arena);
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  private readSectionEdges(shape: TopoDS_Shape, frame: Frame, arena: Arena): SectionEdge[] {
+    const oc = this.oc;
+    const local = (p: Vec3): P2 => {
+      const d: Vec3 = [p[0] - frame.origin[0], p[1] - frame.origin[1], p[2] - frame.origin[2]];
+      const off = dot3(d, frame.normal);
+      if (Math.abs(off) > 1e-7) throw new KernelError(t('recognize.offPlane', { distance: off.toExponential(2) }));
+      return [dot3(d, frame.xDir), dot3(d, frame.yDir)];
+    };
+    const out: SectionEdge[] = [];
+    const ex = arena.own(new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
+    for (; ex.More(); ex.Next()) {
+      const edge = arena.own(oc.TopoDS.Edge(arena.own(ex.Current())));
+      if (oc.BRep_Tool.Degenerated(edge)) continue;
+      const ad = arena.own(new oc.BRepAdaptor_Curve(edge));
+      const type = String(ad.GetType()).replace('GeomAbs_', '').toLowerCase();
+      const t0 = ad.FirstParameter();
+      const t1 = ad.LastParameter();
+      const at = (u: number) => local(this.xyz(arena.own(ad.EvalD0(u))));
+      if (type === 'line') {
+        out.push({ kind: 'line', a: at(t0), b: at(t1) });
+      } else if (type === 'circle') {
+        const c = arena.own(ad.Circle());
+        const ax = arena.own(c.Axis());
+        const normal = this.xyz(arena.own(ax.Direction()));
+        if (Math.abs(Math.abs(dot3(normal, frame.normal)) - 1) > 1e-9) {
+          out.push({ kind: 'other', curve: 'circle' });
+          continue;
         }
+        const center = local(this.xyz(arena.own(ax.Location())));
+        const r = c.Radius();
+        const a = at(t0);
+        const b = at(t1);
+        if (Math.abs(t1 - t0 - 2 * Math.PI) < 1e-9 || (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9 && t1 - t0 > Math.PI)) out.push({ kind: 'circle', c: center, r });
+        else out.push({ kind: 'arc', c: center, r, a, b, mid: at((t0 + t1) / 2) });
+      } else if (type === 'bsplinecurve' || type === 'beziercurve') {
+        // The adaptor hands back the whole curve, with the edge's location applied but not its trim: the conversion takes the edge's own range. A Bézier becomes
+        // a one-span B-spline with the same parameter first, because an edge on one (a profile's own edge, seen in a section on its cap) can be trimmed too.
+        const spline = type === 'bsplinecurve' ? arena.own(ad.BSpline()) : arena.own(oc.GeomConvert.CurveToBSplineCurve(arena.own(ad.Bezier())));
+        const convert = arena.own(new oc.GeomConvert_BSplineCurveToBezierCurve(spline, t0, t1, 1e-12));
+        const spans: HomogeneousPole[][] = [];
+        for (let i = 1; i <= convert.NbArcs(); i++) {
+          const arc = arena.own(convert.Arc(i));
+          const poles: HomogeneousPole[] = [];
+          for (let j = 1; j <= arc.NbPoles(); j++) {
+            const [x, y] = local(this.xyz(arena.own(arc.Pole(j))));
+            const w = arc.Weight(j);
+            poles.push([x * w, y * w, 0, w]);
+          }
+          spans.push(poles);
+        }
+        out.push({ kind: 'bezier', curve: type, spans });
+      } else {
+        out.push({ kind: 'other', curve: type });
       }
-      return out;
+    }
+    return out;
+  }
+
+  /** Offset a closed section and return sweep regions in the caller's plane coordinates. */
+  sectionClearance(id: ShapeId, frame: Frame, gap: number, side: 'out' | 'in' = 'out'): { regions: Region[]; approximationBound: number } {
+    const lowerSlack = 1e-6;
+    const upperSlack = 1e-5;
+    if (!Number.isFinite(gap) || gap <= upperSlack || gap > 1e6) throw new KernelError(t('sectionClearance.gapRange'));
+    if (side !== 'out' && side !== 'in') throw new KernelError(t('sectionClearance.invalid'));
+    const { origin, xDir, yDir, normal } = frame;
+    const axes = [xDir, yDir, normal];
+    if (![origin, ...axes].flat().every(Number.isFinite) ||
+        axes.some((axis) => Math.abs(Math.hypot(...axis) - 1) > 1e-9) ||
+        Math.abs(dot3(xDir, yDir)) > 1e-9 || Math.abs(dot3(cross3(xDir, yDir), normal) - 1) > 1e-9) {
+      throw new KernelError(t('sectionClearance.frame'));
+    }
+    const { min, max } = this.bounds(id);
+    const extent = scale3(sub3(max, min), 0.5);
+    const center = sub3(max, extent);
+    const range = (axis: Vec3) => {
+      const mid = dot3(sub3(center, origin), axis);
+      const radius = extent.reduce((sum, value, i) => sum + value * Math.abs(axis[i]!), 1);
+      return [mid - radius, mid + radius] as const;
+    };
+    const [u0, u1] = range(xDir);
+    const [v0, v1] = range(yDir);
+    const [n0, n1] = range(normal);
+    if (n0 > 0 || n1 < 0) throw new KernelError(t('sectionClearance.empty'));
+    if (![u0, u1, v0, v1, n0, n1].every(Number.isFinite) || !(u0 < u1 && v0 < v1)) {
+      throw new KernelError(t('sectionClearance.frame'));
+    }
+    const { edges: sourceEdges, approximationBound } = approximateSection(this.sectionEdges(id, frame, { u0, u1, v0, v1 }));
+
+    // OCCT operates in local XY. Full circles must have a +Z axis for outward offset.
+    const xy: Frame = { origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 1, 0], normal: [0, 0, 1] };
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const plane = arena.own(new oc.gp_Pln(this.pnt(arena, xy.origin), this.dir(arena, xy.normal)));
+      const face = (wire: TopoDS_Wire, holes: TopoDS_Wire[] = []) => {
+        const maker = arena.own(new oc.BRepBuilderAPI_MakeFace(plane, wire, true));
+        for (const hole of holes) maker.Add(hole);
+        if (!maker.IsDone()) throw new KernelError(t('kernel.noFace'));
+        const fix = arena.own(new oc.ShapeFix_Face(arena.own(maker.Face())));
+        fix.FixOrientation();
+        const shape = arena.own(fix.Face());
+        if (!arena.own(new oc.BRepCheck_Analyzer(shape, true, false, false)).IsValid()) {
+          throw new KernelError(t('sectionClearance.invalidLoop'));
+        }
+        return shape;
+      };
+      const inside = (shape: ReturnType<typeof face>, p: P2) =>
+        arena.own(new oc.BRepClass_FaceClassifier(shape, this.pnt(arena, [...p, 0]), 1e-7)).State() === oc.TopAbs_State.TopAbs_IN;
+      const distance = (a: TopoDS_Shape, b: TopoDS_Shape) => {
+        const extrema = arena.own(new (oc.BRepExtrema_DistShapeShape as unknown as new (x: TopoDS_Shape, y: TopoDS_Shape) => InstanceType<OC['BRepExtrema_DistShapeShape']>)(a, b));
+        if (!extrema.IsDone()) throw new KernelError(t('sectionClearance.distance'));
+        return extrema.Value();
+      };
+      const classify = (edges: SectionEdge[]) => {
+        const loops = chainBoundary(edges, 1e-7).map((loop, i) => {
+          const segments = clearanceSegments(loop, i);
+          const wire = this.wire(arena, xy, segments, false, new Map());
+          const first = segments[0]!;
+          const sample: P2 = first.kind === 'circle' ? [first.c[0] + first.r, first.c[1]] :
+            first.kind === 'arc' ? first.from : first.a;
+          return { loop, index: i, segments, wire, sample, face: face(wire) };
+        });
+        if (!loops.length) throw new KernelError(t('sectionClearance.empty'));
+        for (let i = 0; i < loops.length; i++) {
+          for (const other of loops.slice(i + 1)) {
+            if (distance(loops[i]!.wire, other.wire) < 1e-7) throw new KernelError(t('sectionClearance.touch'));
+          }
+        }
+        const containers = loops.map((loop) => loops.filter((other) => loop !== other && inside(other.face, loop.sample)));
+        const regions = loops.flatMap((outer, i) => {
+          const parents = containers[i]!;
+          if (parents.length % 2) return [];
+          const holes = loops.filter((_, j) => containers[j]!.length === parents.length + 1 && containers[j]!.includes(outer));
+          return [{ outer, holes, face: face(outer.wire, holes.map((h) => h.wire)) }];
+        });
+        return { loops, regions };
+      };
+      const source = classify(sourceEdges);
+      const signedGap = side === 'out' ? gap : -gap;
+      const guard = (a: TopoDS_Shape, b: TopoDS_Shape) => {
+        if (distance(a, b) < gap - lowerSlack) throw new KernelError(t('sectionClearance.minimum'));
+      };
+      const faces = source.regions.flatMap((region) => {
+        const loops = [region.outer, ...region.holes];
+        const circles = loops.map((loop) => loop.segments.length === 1 && loop.segments[0]?.kind === 'circle' ? loop.segments[0] : null);
+        // Inward native offset of a face with concentric full circles can trap the entire WASM kernel.
+        if (circles.length === 2 && circles[0] && circles[1] &&
+            Math.hypot(circles[0].c[0] - circles[1].c[0], circles[0].c[1] - circles[1].c[1]) <= 1e-9) {
+          const outer = { ...circles[0], r: circles[0].r + signedGap };
+          const hole = { ...circles[1], r: circles[1].r - signedGap };
+          if (outer.r <= 0 || hole.r >= outer.r) throw new KernelError(t('sectionClearance.vanished'));
+          const outerWire = this.wire(arena, xy, [outer], false, new Map());
+          const holes = hole.r > 0 ? [this.wire(arena, xy, [hole], false, new Map())] : [];
+          return [face(outerWire, holes)];
+        }
+        if (side === 'in' && circles.some((c, i) => c && circles.slice(i + 1).some((d) =>
+          d && Math.hypot(c.c[0] - d.c[0], c.c[1] - d.c[1]) <= 1e-9 * Math.max(1, c.r, d.r)))) {
+          throw new KernelError(t('sectionClearance.concentric'));
+        }
+        const offset = arena.own(new oc.BRepOffsetAPI_MakeOffset(region.face, oc.GeomAbs_JoinType.GeomAbs_Arc, false));
+        offset.Perform(signedGap);
+        if (!offset.IsDone()) throw new KernelError(t('sectionClearance.offsetFailed'));
+        const shape = arena.own(offset.Shape());
+        guard(this.compound(loops.map((l) => l.wire), arena), shape);
+        return classify(this.readSectionEdges(shape, xy, arena)).regions.map((r) => r.face);
+      });
+      let resultShape: TopoDS_Shape = this.compound(faces, arena);
+      if (side === 'out' && faces.length > 1) {
+        resultShape = faces.slice(1).reduce<TopoDS_Shape>((a, b) => arena.own(this.boolOp('fuse', a, b, t('body.common'), arena).Shape()), faces[0]!);
+        const unify = arena.own(new oc.ShapeUpgrade_UnifySameDomain(resultShape, true, true, false));
+        unify.Build();
+        resultShape = arena.own(unify.Shape());
+      }
+      const resultEdges = this.readSectionEdges(resultShape, xy, arena);
+      const result = classify(resultEdges);
+      const resultWires = this.compound(result.loops.map((loop) => loop.wire), arena);
+      guard(this.compound(source.loops.map((l) => l.wire), arena), resultWires);
+      const sourceIn = source.loops.map((l) => result.regions.some((r) => inside(r.face, l.sample)));
+      const resultIn = result.loops.map((l) => source.regions.some((r) => inside(r.face, l.sample)));
+      if (side === 'out' ? !sourceIn.every(Boolean) || resultIn.some(Boolean) : sourceIn.some(Boolean) || !resultIn.every(Boolean)) {
+        throw new KernelError(t('sectionClearance.wrongSide'));
+      }
+      const certificate = certifyOffset(clearanceEdges(sourceEdges), clearanceEdges(this.readSectionEdges(resultWires, xy, arena)), gap, upperSlack);
+      if (certificate.failures.length) throw new KernelError(t('sectionClearance.maximum'));
+      const regions = result.regions.map(({ outer, holes }) => ({
+        outer: outer.segments,
+        holes: holes.map((hole) => clearanceSegments(hole.loop, hole.index, true)),
+      }));
+      return { regions, approximationBound };
     } finally {
       arena.dispose();
     }
@@ -6260,6 +6402,31 @@ export class Kernel {
 }
 /** Sewing tolerance when a file has surfaces and no solid, in mm: more than the gaps files leave between faces, less than any feature. */
 const DEFAULT_SEW_TOLERANCE = 0.01;
+
+type SectionSegment = Extract<Segment, { kind: 'line' | 'arc' | 'circle' }>;
+
+function clearanceSegments(loop: Seg[], index: number, hole = false): SectionSegment[] {
+  const segs = (signedLoopArea(loop) >= 0) !== hole ? loop : [...loop].reverse().map((s) => {
+    if (s.kind === 'circle') return s;
+    return s.kind === 'line' ? { ...s, a: s.b, b: s.a } : { ...s, a: s.b, b: s.a, ccw: !s.ccw };
+  });
+  return segs.map((s, i) => {
+    const source = `section:${index}:${i}`;
+    return s.kind === 'arc' ? { kind: 'arc', c: s.c, r: s.r, from: s.a, to: s.b, ccw: s.ccw, source } : { ...s, source };
+  });
+}
+
+function clearanceEdges(edges: SectionEdge[]): Seg2[] {
+  return edges.map((e) => {
+    if (e.kind === 'line') return e;
+    if (e.kind === 'arc') return { kind: 'arc', c: e.c, r: e.r, a: e.a, m: e.mid, b: e.b };
+    if (e.kind === 'circle') {
+      const start: P2 = [e.c[0] + e.r, e.c[1]];
+      return { kind: 'arc', c: e.c, r: e.r, a: start, m: [e.c[0] - e.r, e.c[1]], b: start };
+    }
+    throw new KernelError(t('sectionClearance.curve', { curve: e.curve }));
+  });
+}
 
 const dot3 = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const sub3 = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];

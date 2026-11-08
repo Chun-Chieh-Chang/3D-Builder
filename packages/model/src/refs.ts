@@ -41,7 +41,8 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
       const attach = feature.attach ? { ...feature.attach, ...(feature.attach.origin ? { origin: one(feature.attach.origin) } : {}), ...(feature.attach.x ? { x: one(feature.attach.x) } : {}) } : undefined;
       return { feature: { ...feature, plane: one(feature.plane), ...(attach ? { attach } : {}), entities }, replaced };
     }
-    case 'extrude': {
+    case 'extrude':
+    case 'sectionClearance': {
       const cond = <C extends { type: string }>(c: C): C => {
         const d = c as unknown as { face?: Ref; vertex?: Ref; body?: Ref };
         if (c.type === 'upToFace' || c.type === 'offsetFromFace') return { ...c, face: one(d.face!) } as C;
@@ -50,6 +51,7 @@ export function mapRefs(feature: Feature, map: (ref: Ref) => Ref): { feature: Fe
         return c;
       };
       const next = { ...feature, dir1: cond(feature.dir1), ...(feature.dir2 ? { dir2: cond(feature.dir2) } : {}) };
+      if (next.type === 'sectionClearance') return { feature: { ...next, body: one(next.body), plane: one(next.plane) }, replaced };
       return { feature: next, replaced };
     }
     case 'chamfer':

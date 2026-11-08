@@ -104,7 +104,7 @@ async function build(bytes: Uint8Array, sources?: SourceFileData[]): Promise<Bui
   await solver.fresh();
   const result = regen.rebuild(file.doc);
   const name = (id: string) => file.doc.features.find((f) => f.id === id)?.name ?? id;
-  const failed = result.features.filter((f) => f.status === 'error').map((f) => `${name(f.id)}: ${f.message ?? t('worker.failedShort')}`);
+  const failed = result.features.filter((f) => f.status === 'error' || f.status === 'incomplete').map((f) => `${name(f.id)}: ${f.message ?? t('worker.failedShort')}`);
   const planes = file.doc.features.flatMap((f) => {
     const frame = f.type === 'refPlane' ? result.frames.get(f.id) : undefined;
     return frame ? [{ id: f.id, name: f.name, frame }] : [];

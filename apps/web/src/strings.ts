@@ -72,6 +72,7 @@ export const FEATURE_LABEL: Record<FeatureType, string> = labelsOf({
   cosmeticThread: 'feature.cosmeticThread',
   helix: 'feature.helix',
   gear:'feature.gear',
+  sectionClearance: 'feature.sectionClearance',
   rack:'feature.rack',
   projectedCurve: 'feature.projectedCurve',
   ruledSurface:'feature.ruledSurface',

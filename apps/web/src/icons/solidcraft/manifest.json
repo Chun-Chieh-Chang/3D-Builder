@@ -558,6 +558,7 @@
     "revolve": "revolve",
     "sweep": "sweep",
     "loft": "loft",
+    "section-clearance": "section",
     "rib": "rib",
     "gear": "gear",
     "rack": "rack_pinion",

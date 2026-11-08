@@ -17,7 +17,7 @@ import { isDimension } from './schema';
 export type ExprKind = 'length' | 'angle' | 'count';
 
 /** What a value must be for the feature to make sense: a size above zero, or an angle in the range its feature allows. */
-export type ExprRole = 'lengthRatio' | 'gearCount' | 'positive' | 'unitInterval' | 'nonNegative' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'knurlCount' | 'surfaceDistance' | 'any';
+export type ExprRole = 'lengthRatio' | 'gearCount' | 'positive' | 'unitInterval' | 'nonNegative' | 'nonZero' | 'revolveAngle' | 'chamferAngle' | 'draftAngle' | 'includedAngle' | 'planeAngle' | 'count' | 'knurlCount' | 'surfaceDistance' | 'sectionGap' | 'any';
 
 /** Why a value is not acceptable for its role (in words), or null. `expr` is what the user wrote. */
 export function roleProblem(v: number, role: ExprRole, expr: Expr): string | null {
@@ -26,6 +26,7 @@ export function roleProblem(v: number, role: ExprRole, expr: Expr): string | nul
     case 'lengthRatio': return Number.isFinite(v)&&v>=0.001&&v<=1000?null:t('sketch.ratioInvalid');
     case 'gearCount': return Number.isInteger(v)&&v>=1&&v<=200?null:t('gear.count');
     case 'surfaceDistance': return v>0 && v<=1e6 ? null : t('surfaceTools.range');
+    case 'sectionGap': return v > 1e-5 && v <= 1e6 ? null : t('sectionClearance.gapRange');
     case 'positive':
       return v > 0 ? null : t('cmd.mustBePositive', { value: expr });
     case 'unitInterval':
@@ -106,7 +107,8 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       });
       return changed ? { ...feature, constraints } : feature;
     }
-    case 'extrude': {
+    case 'extrude':
+    case 'sectionClearance': {
       const cond = <C extends { type: string }>(c: C): C => {
         const d = c as unknown as { type: string; depth?: Expr; offset?: Expr };
         let next = c;
@@ -122,6 +124,12 @@ export function mapExprs(feature: Feature, fn: (expr: Expr, kind: ExprKind, role
       };
       const dir1 = cond(feature.dir1);
       const dir2 = feature.dir2 ? cond(feature.dir2) : undefined;
+      if (feature.type === 'sectionClearance') {
+        const gap = fn(feature.gap, 'length', 'sectionGap');
+        const planeOffset = feature.planeOffset === undefined ? undefined : fn(feature.planeOffset, 'length', 'any');
+        if (gap === feature.gap && planeOffset === feature.planeOffset && dir1 === feature.dir1 && dir2 === feature.dir2) return feature;
+        return { ...feature, gap, planeOffset, dir1, dir2 };
+      }
       const draft = (d: Draft | undefined): Draft | undefined => {
         if (!d) return d;
         const angle = fn(d.angle, 'angle', 'draftAngle');

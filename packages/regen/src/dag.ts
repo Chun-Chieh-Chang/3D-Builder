@@ -29,8 +29,9 @@ export function parentsOf(feature: Feature, doc: PartDoc): Id[] {
       parents = fromRefs([feature.plane, ...(feature.attach?.origin ? [feature.attach.origin] : []), ...(feature.attach?.x ? [feature.attach.x] : []), ...feature.entities.flatMap((e) => modelRefOf(e) ?? [])]);
       break;
     case 'extrude':
+    case 'sectionClearance':
       parents = [
-        feature.sketch,
+        ...(feature.type === 'extrude' ? [feature.sketch] : [bodyFeature(feature.body.name), ...fromRefs([feature.plane])]),
         ...[feature.dir1, feature.dir2].flatMap((d) => (d?.type === 'upToFace' || d?.type === 'offsetFromFace' ? fromRefs([d.face]) : d?.type === 'upToVertex' ? fromRefs([d.vertex]) : d?.type === 'upToBody' && d.body.name ? [bodyFeature(d.body.name)] : [])),
       ];
       break;

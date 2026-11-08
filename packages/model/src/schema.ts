@@ -6,7 +6,7 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 92;
+export const SCHEMA_VERSION = 93;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
@@ -260,6 +260,20 @@ export interface ExtrudeFeature extends FeatureBase {
    * a depth would take away the material inside the contour beyond it.
    */
   keepInside?: boolean;
+}
+
+export interface SectionClearanceFeature extends FeatureBase {
+  type: 'sectionClearance';
+  /** The user stopped this computation. Rebuild stops here until the feature is retried. */
+  incomplete?: true;
+  body: Ref;
+  plane: Ref;
+  planeOffset?: Expr;
+  gap: Expr;
+  side?: 'out' | 'in';
+  result: 'cut' | 'merge' | 'newBody';
+  dir1: EndCondition;
+  dir2?: EndCondition;
 }
 
 /** Revolve end conditions (C4.3): an angle in one direction, or split evenly about the sketch plane. */
@@ -1197,6 +1211,7 @@ export type Feature =
   | RackFeature
   | SketchFeature
   | ExtrudeFeature
+  | SectionClearanceFeature
   | RevolveFeature
   | SweepFeature
   | LoftFeature

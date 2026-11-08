@@ -5,3 +5,5 @@ export { anyHit, buildBvh, nearestHit, nearestHitAt, triangleNormal, type Bvh } 
 export { forEachSample, type SampleMesh } from './sampling';
 export { planSectionPath, rightOfPolyline, turnRows, type PathPlane, type SectionPathPlan } from './sectionPath';
 export { inheritBodySurface, sameSurface } from './sameSurface';
+export * from './section-loops';
+export * from './section-envelope';

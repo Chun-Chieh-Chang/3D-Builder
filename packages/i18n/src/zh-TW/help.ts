@@ -10,6 +10,10 @@
  * (docs/help-links.json says which topics an item is about).
  */
 export const help = {
+  'help.sectionClearance.summary': '偏移實體本體的平面截面，再伸長所得的輪廓。',
+  'help.sectionClearance.body': '選擇來源實體與基準面或模型平面。帶正負號的平面偏移會沿平面法向移動截面。輸入間隙，選擇外擴或內縮，再指定伸長終止型態與結果（除料、合併或新本體）。\n\n樣條邊以雙圓弧近似，特徵會顯示算出的近似誤差上界。間隙檢查未通過時會拒絕偏移。停止計算會保留未完成的特徵，可在面板中重新計算。',
+  'help.sectionClearance.keywords': '截面 間隙 偏移 雙圓弧 樣條 section clearance',
+  'help.sectionClearance.see': 'extrude extrude-cut',
   'help.aiControl.summary': '讓本機 AI 代理經 MCP 修改目前開啟的零件。',
   'help.aiControl.body': '先啟動本機 MCP 伺服器，呼叫 live_status 取得連線碼。選「工具 → AI 控制」，貼上連線碼並按「連線」。狀態列會顯示連線狀態與已套用批次數，點它可重新開啟控制視窗。每批命令只佔一個復原步驟。開啟另一零件後，連線改為追蹤新零件。編輯中、文件版本不符、組合件或工程圖會拒絕 AI 修改。按「中斷連線」才會結束連線；單純關閉視窗會保留連線。',
   'help.aiControl.keywords': 'AI MCP 連線 代理 控制 復原',

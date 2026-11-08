@@ -438,6 +438,7 @@ export interface UiState {
   moveFacePick: 'face' | 'target';
   /** The group of faces a face picked in the view goes to while a face fillet or a full round fillet is edited. */
   filletPick: FilletGroup;
+  sectionPlanePick: boolean;
   /** The interference detection (E2.1) while its window is open. Null when closed. */
   interference: InterferenceState | null;
   /** The open drawing (Phase 5); null unless the open document is a drawing. */
@@ -714,6 +715,7 @@ class AppStore {
       shellPick: 'open',
       moveFacePick: 'face',
       filletPick: 'faces',
+      sectionPlanePick: false,
       thickness: null,
       flat: null,
       undercut: null,
@@ -2052,6 +2054,32 @@ class AppStore {
     this.openNew(type==='gear'?{...base,type,bore:'5'}:{...base,type,baseHeight:'5'},name);
   }
 
+  newSectionClearance(): void {
+    const { result, selected, selectedFace } = this.state;
+    const solids = result?.bodies.filter((body) => !body.surface && !body.curve) ?? [];
+    const selectedBody = selectedFace ? this.bodyOfFace(selectedFace.name) : selected;
+    const source = solids.find((body) => body.id === selectedBody) ?? solids.at(-1);
+    if (!source) return this.notify(t('sectionClearance.sourceRequired'), 'error');
+    const plane = selectedFace?.fingerprint?.type === 'plane'
+      ? selectedFace : { kind: 'datum' as const, name: selected && this.isPlane(selected) ? selected : 'plane:front' };
+    const name = t('feature.sectionClearance');
+    this.openNew({
+      id: this.allocator().take('sectionClearance'), type: 'sectionClearance', name: nextName(this.history.doc, name), suppressed: false,
+      body: { kind: 'body', name: source.id }, plane, gap: '0.5', result: 'newBody', dir1: { type: 'blind', depth: '10' },
+    }, name);
+  }
+
+  stopSectionClearance(): void {
+    const feature = this.editedFeature();
+    if (feature?.type !== 'sectionClearance' || !this.state.rebuilding) return;
+    this.restartWorker();
+    this.execute({ type: 'setSectionClearance', featureId: feature.id, params: { incomplete: true } });
+  }
+
+  toggleSectionPlanePick(): void {
+    this.set({ sectionPlanePick: !this.state.sectionPlanePick });
+  }
+
   newLoft(op: 'boss' | 'cut'): void {
     const sections = initialLoftSections(this.history.doc, this.state.selected);
     if (sections.length === 0) return;
@@ -2840,7 +2868,7 @@ class AppStore {
   private leaveSession(): void {
     this.sketcher = null;
     this.modelSnap = [];
-    this.set({ editing: null, sketchSolve: null, dimensionEdit: null, contourPick: null, contourHover: null, dofMotion: null, fixPreview: null, referenceProblems: {}, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
+    this.set({ editing: null, sketchSolve: null, dimensionEdit: null, contourPick: null, contourHover: null, dofMotion: null, fixPreview: null, sectionPlanePick: false, referenceProblems: {}, canUndo: this.history.canUndo, canRedo: this.history.canRedo });
     this.requestRebuild();
   }
 
@@ -2909,6 +2937,16 @@ class AppStore {
     // the plane of a sketch is being edited: a vertex, point, edge or axis is what its axes are attached to (ADR 0181)
     if (this.state.editing?.kind === 'sketchPlane') return void this.putDatumRef(ref);
     const f = this.editedFeature();
+    if (f?.type === 'sectionClearance') {
+      if (!this.state.sectionPlanePick && this.setUpToFace(ref)) return;
+      if (ref.kind === 'face' && ref.fingerprint?.type === 'plane') {
+        this.execute({ type: 'setSectionClearance', featureId: f.id, params: { plane: ref } });
+        this.set({ sectionPlanePick: false });
+      } else if (this.state.sectionPlanePick) {
+        this.notify(t('sketch.planeOnly'), 'error');
+      }
+      return;
+    }
     if((f?.type==='gear'||f?.type==='rack')&&ref.kind==='face') {this.execute({type:'setGear',featureId:f.id,params:{plane:ref}});return;}
     if(f?.type==='ruledSurface' && ref.kind==='edge') {this.execute({type:'setSurfaceTools',featureId:f.id,params:!f.first.name?{first:ref}:{second:ref}});return;}
     if(f?.type==='radiatedSurface') {if(ref.kind==='edge')this.execute({type:'setSurfaceTools',featureId:f.id,params:{edge:ref}});else if(ref.kind==='face')this.execute({type:'setSurfaceTools',featureId:f.id,params:{plane:ref}});return;}
@@ -2997,6 +3035,11 @@ class AppStore {
     }
     const f = this.editedFeature();
     if (f?.type === 'moveFace' && this.isPlane(id)) { this.setMoveFace({ kind: 'datum', name: id }); return; }
+    if (f?.type === 'sectionClearance' && this.isPlane(id)) {
+      this.execute({ type: 'setSectionClearance', featureId: f.id, params: { plane: { kind: 'datum', name: id } } });
+      this.set({ sectionPlanePick: false });
+      return;
+    }
     if ((f?.type==='gear'||f?.type==='rack') && this.isPlane(id)) {this.execute({type:'setGear',featureId:f.id,params:{plane:{kind:'datum',name:id}}});return;}
     if (f?.type === 'loft' && findFeature(this.history.doc, id)?.type === 'sketch') {
       if (!f.sections.includes(id)) this.execute({ type: 'setLoftSections', featureId: f.id, sections: [...f.sections, id] });
@@ -3026,10 +3069,10 @@ class AppStore {
   }
 
   /** 「成形至某一面」: the face picked in the graphics area ends the extrusion being edited. */
-  setUpToFace(ref: Ref): void {
+  setUpToFace(ref: Ref): boolean {
     const e = this.state.editing;
     const f = e ? findFeature(this.history.doc, e.featureId) : undefined;
-    if (f?.type !== 'extrude') return;
+    if (f?.type !== 'extrude' && f?.type !== 'sectionClearance') return false;
     /** What a click puts into an end condition, or null when this one is not waiting for that kind of element. */
     const into = (d: EndCondition): EndCondition | null => {
       if ((d.type === 'upToFace' || d.type === 'offsetFromFace') && ref.kind === 'face') return { ...d, face: ref };
@@ -3042,8 +3085,12 @@ class AppStore {
     const dirs = (['dir1', 'dir2'] as const).flatMap((dir) => (f[dir] ? [{ dir, d: f[dir]! }] : [])).sort((a, b) => Number(empty(b.d)) - Number(empty(a.d)));
     for (const { dir, d } of dirs) {
       const value = into(d);
-      if (value) return void this.execute({ type: 'setEndCondition', featureId: f.id, dir, value });
+      if (!value) continue;
+      this.execute(f.type === 'extrude' ? { type: 'setEndCondition', featureId: f.id, dir, value }
+        : { type: 'setSectionClearance', featureId: f.id, params: { [dir]: value } });
+      return true;
     }
+    return false;
   }
 
   /**

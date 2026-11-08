@@ -257,6 +257,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   90: (doc) => doc,
   // v92: a spline's solid is the curve its sketch draws (ADR 0244). The document holds the same points; the geometry they make changes, which `splinesRedrawn` tells the one opening the file.
   91: (doc) => doc,
+  // v93: a section clearance feature retains its source body and plane references.
+  92: (doc) => doc,
 };
 
 /**

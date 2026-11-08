@@ -86,6 +86,7 @@ export function absorbedSketches(f: Feature): Id[] {
     case 'knurl':
     case 'cosmeticThread':
     case 'gear':
+    case 'sectionClearance':
     case 'rack':
     case 'ruledSurface':
     case 'radiatedSurface':

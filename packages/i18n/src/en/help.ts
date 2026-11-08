@@ -2,6 +2,10 @@ import type { Translation } from '../index';
 
 /** help: English of `zh-TW/help.ts` (docs/help-plan.md). The ids a topic points to (`see`) are not translated. */
 export const help: Translation = {
+  'help.sectionClearance.summary': 'Offset a solid body’s planar section and extrude the resulting profile.',
+  'help.sectionClearance.body': 'Choose the source solid and a datum plane or a planar model face. A signed plane offset moves the section along the plane normal. Enter the clearance, choose outward or inward, and set the extrusion end condition and result (cut, merge or new body).\n\nSpline edges use a biarc approximation. The feature reports its computed error bound. An offset that fails the clearance checks is rejected. Stop computation leaves an incomplete feature that can be retried from its panel.',
+  'help.sectionClearance.keywords': 'section clearance offset biarc spline',
+  'help.sectionClearance.see': 'extrude extrude-cut',
   'help.aiControl.summary': 'Connect a local AI agent through MCP to change the open part.',
   'help.aiControl.body': 'Start the local MCP server and call live_status for a connection code. Choose Tools → AI Control, paste the code and Connect. The status bar shows the connection and applied batch count; click it to reopen the dialog. Each batch is one undo step. Opening another part makes the connection follow that part. Changes are refused during editing, on a version conflict, or in an assembly or drawing. Disconnect ends the connection; closing the dialog keeps it active.',
   'help.aiControl.keywords': 'AI MCP connection agent control undo',

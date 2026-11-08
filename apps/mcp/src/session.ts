@@ -214,7 +214,7 @@ export class CadSession {
       committed,
       ...(dryRun ? { dryRun } : {}),
       features: summary.features.length,
-      failed: summary.features.filter((f) => f.status === 'error').map((f) => f.id),
+      failed: summary.features.filter((f) => f.status === 'error' || f.status === 'incomplete').map((f) => f.id),
       volume: summary.mass?.volume ?? null,
       ms: summary.rebuildMs,
     };
@@ -390,7 +390,7 @@ export class CadSession {
       await this.rebuild(before);
       return { committed: false, dryRun, error: { message: `rebuild failed: ${messageOf(e)}` }, broken: [], after: this.summary(), volumeChange: 0 };
     }
-    const broken = r.features.filter((f) => f.status === 'error' && (statusBefore.get(f.id) ?? 'ok') !== 'error').map((f) => this.row(next, f));
+    const broken = r.features.filter((f) => (f.status === 'error' || f.status === 'incomplete') && statusBefore.get(f.id) !== f.status).map((f) => this.row(next, f));
     const after = this.summary(next);
     const volumeChange = this.ownVolume() - volumeBefore;
     // the preview sees the part as the batch leaves it, before it is kept or put back (a refused batch too: the picture shows what went wrong)

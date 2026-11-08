@@ -48,7 +48,8 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
   const want = datum ? pickable(datum) : null;
   const slots = datum ? { ...chosen(datum), prompt: prompt(datum) } : null;
   // the end of an extrusion that is a face, a vertex or a body: what is clicked on the model goes to the direction that is waiting for it
-  const ends = feature?.type === 'extrude' ? [feature.dir1, feature.dir2].flatMap((d) => (d ? [d] : [])) : [];
+  const sectionClearance = feature?.type === 'sectionClearance';
+  const ends = feature?.type === 'extrude' || sectionClearance ? [feature.dir1, feature.dir2].flatMap((d) => (d ? [d] : [])) : [];
   const endFaces = ends.flatMap((d) => (d.type === 'upToFace' || d.type === 'offsetFromFace' ? [d.face] : []));
   const endVertices = ends.flatMap((d) => (d.type === 'upToVertex' ? [d.vertex] : []));
   const endBody = ends.some((d) => d.type === 'upToBody');
@@ -58,7 +59,7 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
   const byGroups = feature?.type === 'fillet' && !!feature.kind && feature.kind !== 'constant';
   const faceFeature = feature?.type === 'deleteFace' || feature?.type === 'moveFace' || feature?.type === 'shell' || feature?.type === 'draft' || feature?.type === 'offsetSurface' || feature?.type === 'splitLine' || feature?.type === 'trimSurface' || feature?.type === 'mutualTrim' || feature?.type === 'lipGroove' ? feature : null;
   const surfaceEdges=feature?.type==='ruledSurface'||feature?.type==='radiatedSurface';
-  const surfaceFaces=feature?.type==='gear'||feature?.type==='rack'||feature?.type==='replaceFace'||feature?.type==='radiatedSurface';
+  const surfaceFaces=sectionClearance||feature?.type==='gear'||feature?.type==='rack'||feature?.type==='replaceFace'||feature?.type==='radiatedSurface';
   const projection = feature?.type === 'projectedCurve' && feature.mode === 'sketchOnFaces' ? feature : null;
   const combine = feature?.type === 'combine' || feature?.type === 'knit' || feature?.type === 'thicken' || feature?.type === 'cutWithSurface';
   const prompt_ = combine
@@ -83,7 +84,7 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
     /** Default and reference planes, axes and points the geometry being defined is based on: they are drawn while they are used. */
     referenceDatums: slots?.datums ?? [],
     /** A shown plane takes the click when nothing is being edited or measured (it becomes the selection), or when a box of a reference geometry wants one (ADR 0127). */
-    planes: (!editing && !measuring) || (want?.planes ?? false) || modelTool === 'convert',
+    planes: sectionClearance || (!editing && !measuring) || (want?.planes ?? false) || modelTool === 'convert',
     /** The same for an axis, a point or a coordinate system: their boxes, or nothing going on at all (ADR 0127). */
     datums: (!editing && !measuring) || (want?.edges ?? false) || (want?.vertices ?? false) || modelTool === 'convert',
     prompt: projection ? t('projection.hint') : measuring ? t('measure.prompt') : prompt_,
