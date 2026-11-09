@@ -1290,7 +1290,8 @@ function loftBase(kernel: Kernel, shape: ShapeId, topo: Topology, odd: number[],
   let edges: SectionEdge[];
   try {
     edges = kernel.sectionEdges(shape, midFrame, sectionRect(midFrame, box, false));
-  } catch {
+  } catch (e) {
+    if (!(e instanceof KernelError)) throw e;
     return null;
   }
   if (edges.length === 0) return null;
