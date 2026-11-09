@@ -58,6 +58,7 @@ export interface FilletRecord {
   type: 'fillet';
   radius: number;
   edges: SharpEdge[];
+  convex?: boolean;
 }
 
 export interface ChamferRecord {
@@ -93,6 +94,8 @@ export interface HoleRecord {
 export interface PlanarProfile {
   frame: Frame;
   loops: Loop[];
+  /** Override operation for this profile within a multi-profile layer (e.g. an inner cavity cut drafted differently from the outer boss). */
+  op?: 'boss' | 'cut';
   /** Drafted walls (an extrusion layer only): the angle (radians) they lean by, and whether the profile narrows along the extrusion. */
   draft?: { angle: number; inward: boolean };
 }
@@ -102,6 +105,7 @@ export const MAX_DRAFT = (30 * Math.PI) / 180;
 
 export type BaseRecord =
   | { type: 'revolve'; axis: { origin: Vec3; dir: Vec3 }; profile: PlanarProfile }
+  | { type: 'loft'; dir: Vec3; levels: number[]; sections: PlanarProfile[] }
   /** Profiles per layer, bottom up: layer i is extruded from `levels[i]` to `levels[i + 1]` along `dir`. */
   | { type: 'extrude'; dir: Vec3; levels: number[]; layers: PlanarProfile[][] }
   /**
@@ -162,6 +166,7 @@ interface BlendCandidate {
   /** The two faces it joins. */
   supports: [number, number];
   radius?: number;
+  convex?: boolean;
   /** For a chamfer: its boundary edges on each support. */
   rims?: [number[], number[]];
   /** For a round: the faces it is tangent to. */
@@ -185,21 +190,23 @@ function blendCandidates(topo: Topology, smooth: boolean[], adj: Map<number, num
       const tangent = across.filter(([, edges]) => edges.some((e) => smooth[e] && along(e))).map(([n]) => n);
       if (tangent.length < 2) return;
       const radius = g.type === 'torus' ? g.minor : g.radius;
-      out.push({ face: i, type: 'fillet', supports: [-1, -1], radius, tangent });
+      out.push({ face: i, type: 'fillet', supports: [-1, -1], radius, convex: g.convex, tangent });
       return;
     }
-    if (across.some(([, edges]) => edges.some((e) => smooth[e]))) return;
     if (g?.type === 'cone' && g.convex) {
-      // a chamfer on a round edge: the cone between a plane square to its axis and a cylinder about it
-      const planes = across.filter(([n]) => {
+      // a chamfer on a round edge: the cone between a plane square to its axis and a cylinder about it (may meet adjacent chamfers along smooth straight generator lines)
+      const planes = across.filter(([n, edges]) => {
         const h = topo.faces[n]!.geometry;
-        return h?.type === 'plane' && parallel(h.normal, g.axis);
+        return h?.type === 'plane' && parallel(h.normal, g.axis) && !edges.some((e) => smooth[e]);
       });
-      const cyls = across.filter(([n]) => {
+      const cyls = across.filter(([n, edges]) => {
         const h = topo.faces[n]!.geometry;
-        return h?.type === 'cylinder' && h.convex && coaxial(h.origin, h.axis, g.apex, g.axis);
+        return h?.type === 'cylinder' && h.convex && coaxial(h.origin, h.axis, g.apex, g.axis) && !edges.some((e) => smooth[e]);
       });
-      if (planes.length === 1 && cyls.length === 1 && across.length === 2) out.push({ face: i, type: 'chamfer', supports: [planes[0]![0], cyls[0]![0]], rims: [planes[0]![1], cyls[0]![1]] });
+      const others = across.filter(([n]) => n !== planes[0]?.[0] && n !== cyls[0]?.[0]);
+      if (planes.length === 1 && cyls.length === 1 && others.every(([, edges]) => edges.every((e) => smooth[e] && topo.edges[e]!.curve === 'line'))) {
+        out.push({ face: i, type: 'chamfer', supports: [planes[0]![0], cyls[0]![0]], rims: [planes[0]![1], cyls[0]![1]] });
+      }
       return;
     }
     if (g?.type !== 'plane') return;
@@ -223,6 +230,7 @@ function blendCandidates(topo: Topology, smooth: boolean[], adj: Map<number, num
     const g1 = topo.faces[s1]!.geometry;
     const g2 = topo.faces[s2]!.geometry;
     if (g1?.type !== 'plane' || g2?.type !== 'plane' || parallel(g1.normal, g2.normal) || parallel(g1.normal, g.normal) || parallel(g2.normal, g.normal)) return;
+    if (Math.abs(dot(g1.normal, g2.normal)) > Math.cos(MAX_DRAFT)) return;
     // where the two support planes meet: must be on the outside of the strip (a convex chamfer)
     const dir = unit(cross(g1.normal, g2.normal));
     const corner = planesMeet(g1, g2, dir);
@@ -235,6 +243,8 @@ function blendCandidates(topo: Topology, smooth: boolean[], adj: Map<number, num
     };
     const rim1 = adj[i]!.get(s1)!;
     const rim2 = adj[i]!.get(s2)!;
+    if (rim1.some((e) => smooth[e]) || rim2.some((e) => smooth[e])) return;
+    if (across.some(([n, edges]) => n !== s1 && n !== s2 && edges.some((e) => smooth[e] && topo.edges[e]!.curve !== 'line'))) return;
     if (!keeps(s1, rim1) || !keeps(s2, rim2)) return;
     // a chamfer is narrower than either face it joins (every face of a box is a strip between two others: only the narrow one is a chamfer)
     const lineOf = (ei: number) => ({ o: topo.edges[ei]!.mid, d: unit(topo.edges[ei]!.dir!) });
@@ -313,8 +323,67 @@ function imagesOf(origins: { rel: string; kind?: string; index?: number }[][], i
   return origins.flatMap((list, j) => (list.some((o) => (o.rel === 'same' || o.rel === 'modified') && o.kind === 'face' && o.index === i) ? [j] : []));
 }
 
-function removeBlends(kernel: Kernel, shape: ShapeId, topo: Topology, cands: BlendCandidate[]): { shape: ShapeId; records: BlendRecord[]; removed: number } | null {
+function analyticSharpOf(topo: Topology, c: BlendCandidate): SharpEdge | null {
+  if (c.supports[0] < 0 || c.supports[1] < 0) return null;
+  const g1 = topo.faces[c.supports[0]]!.geometry;
+  const g2 = topo.faces[c.supports[1]]!.geometry;
+  const gf = topo.faces[c.face]!.geometry;
+  if (g1?.type === 'plane' && g2?.type === 'plane' && !parallel(g1.normal, g2.normal) && (gf?.type === 'cylinder' || gf?.type === 'plane')) {
+    const dir = unit(cross(g1.normal, g2.normal));
+    const origin = planesMeet(g1, g2, dir);
+    const vs = topo.vertices.filter((v) => v.faces.includes(c.face)).map((v) => dot(sub(v.point, origin), dir));
+    if (vs.length < 2) return null;
+    const t0 = Math.min(...vs);
+    const t1 = Math.max(...vs);
+    if (t1 <= t0 + TOL) return null;
+    return { kind: 'line', origin, dir, ends: [addv(origin, dir, t0), addv(origin, dir, t1)] };
+  }
+  if (gf?.type === 'torus') {
+    const plane = g1?.type === 'plane' ? g1 : g2?.type === 'plane' ? g2 : null;
+    const cyl = g1?.type === 'cylinder' ? g1 : g2?.type === 'cylinder' ? g2 : null;
+    if (plane && cyl && parallel(plane.normal, cyl.axis)) {
+      const n = unit(plane.normal);
+      const center = addv(cyl.origin, n, dot(sub(plane.origin, cyl.origin), n));
+      return { kind: 'circle', center, normal: n, radius: cyl.radius };
+    }
+  }
+  return null;
+}
+
+function removeBlends(
+  kernel: Kernel,
+  shape: ShapeId,
+  topo: Topology,
+  cands: BlendCandidate[],
+  skipDeleteFaces = false,
+): { shape: ShapeId; records: BlendRecord[]; removed: number; analyticOnly?: boolean } | null {
   if (cands.length === 0) return null;
+  if (skipDeleteFaces) {
+    const analyticSh = cands.filter((c) => c.supports[0] >= 0).map((c) => ({ c, s: analyticSharpOf(topo, c) }));
+    if (analyticSh.length > 0 && analyticSh.every((x) => x.s !== null)) {
+      const fillets = new Map<string, FilletRecord>();
+      const chamfer: ChamferRecord = { type: 'chamfer', edges: [] };
+      for (const { c, s } of analyticSh) {
+        if (c.type === 'fillet') {
+          const key = `${c.convex === false ? '0' : '1'}:${c.radius!.toPrecision(12)}`;
+          const rec = fillets.get(key) ?? { type: 'fillet' as const, radius: c.radius!, edges: [], convex: c.convex };
+          rec.edges.push(s!);
+          fillets.set(key, rec);
+        } else {
+          const g1 = topo.faces[c.supports[0]]!.geometry!;
+          const g2 = topo.faces[c.supports[1]]!.geometry!;
+          const d1 = Math.max(...c.rims![0].map((e) => distanceToSharp(topo.edges[e]!.mid, s!)));
+          const d2 = Math.max(...c.rims![1].map((e) => distanceToSharp(topo.edges[e]!.mid, s!)));
+          chamfer.edges.push({ edge: s!, distances: [d1, d2], supports: [g1, g2] });
+        }
+      }
+      const records: BlendRecord[] = [
+        ...(chamfer.edges.length ? [chamfer] : []),
+        ...[...fillets.values()].sort((x, y) => (x.convex === false ? 0 : 1) - (y.convex === false ? 0 : 1) || y.radius - x.radius),
+      ];
+      return { shape, records, removed: cands.length, analyticOnly: true };
+    }
+  }
   let kept = cands;
   let r: ReturnType<Kernel['deleteFaces']> | null = null;
   try {
@@ -348,13 +417,19 @@ function removeBlends(kernel: Kernel, shape: ShapeId, topo: Topology, cands: Ble
       return fs.length === 2 && ((a.has(fs[0]!) && b.has(fs[1]!)) || (a.has(fs[1]!) && b.has(fs[0]!))) && isNew(ei) ? [ei] : [];
     });
     const sharp = edges.map((ei) => sharpOf(after, ei));
+    if (sharp.length === 0 && c.type === 'chamfer') {
+      // The support planes still define the edge when the removal history does not identify it.
+      // Reconstruction must find that edge on the rebuilt base and pass the solid comparison.
+      const analytic = analyticSharpOf(topo, c);
+      if (analytic) sharp.push(analytic);
+    }
     if (sharp.length === 0 || sharp.some((s) => !s)) {
       kernel.release(r.shape);
       throw new RecognizeError(t('recognize.blendNoEdge', { faces: describe(topo, [c.face]) }));
     }
     if (c.type === 'fillet') {
-      const key = c.radius!.toPrecision(12);
-      const rec = fillets.get(key) ?? { type: 'fillet' as const, radius: c.radius!, edges: [] };
+      const key = `${c.convex === false ? '0' : '1'}:${c.radius!.toPrecision(12)}`;
+      const rec = fillets.get(key) ?? { type: 'fillet' as const, radius: c.radius!, edges: [], convex: c.convex };
       rec.edges.push(...(sharp as SharpEdge[]));
       fillets.set(key, rec);
     } else {
@@ -367,13 +442,16 @@ function removeBlends(kernel: Kernel, shape: ShapeId, topo: Topology, cands: Ble
       }
     }
   }
-  const records: BlendRecord[] = [...(chamfer.edges.length ? [chamfer] : []), ...[...fillets.values()].sort((x, y) => y.radius - x.radius)];
+  const records: BlendRecord[] = [
+    ...(chamfer.edges.length ? [chamfer] : []),
+    ...[...fillets.values()].sort((x, y) => (x.convex === false ? 0 : 1) - (y.convex === false ? 0 : 1) || y.radius - x.radius),
+  ];
   return { shape: r.shape, records, removed: kept.length };
 }
 
 // ------------------------------------------------------------------ holes
 
-function findHoles(topo: Topology, adj: Map<number, number[]>[]): { record: HoleRecord; faces: number[] }[] {
+function findHoles(topo: Topology, adj: Map<number, number[]>[], unremovedBlends?: Set<number>): { record: HoleRecord; faces: number[] }[] {
   const out: { record: HoleRecord; faces: number[] }[] = [];
   const taken = new Set<number>();
   topo.faces.forEach((f, i) => {
@@ -411,11 +489,14 @@ function findHoles(topo: Topology, adj: Map<number, number[]>[]): { record: Hole
     const rims: { z: number; r: number; face: number; center: Vec3 }[] = [];
     const z = (p: Vec3) => dot(sub(p, axis.origin), axis.dir);
     for (const k of faces) for (const [n, edges] of adj[k]!) {
-      if (group.has(n)) continue;
+      if (group.has(n) || unremovedBlends?.has(n)) continue;
       for (const e of edges) {
         const c = topo.edges[e]!.geometry;
         if (c?.type !== 'circle') return;
-        rims.push({ z: z(c.center), r: c.radius, face: n, center: c.center });
+        const nGeom = topo.faces[n]!.geometry;
+        const rimZ = nGeom?.type === 'plane' && parallel(nGeom.normal, axis.dir) ? z(nGeom.origin) : z(c.center);
+        const rimCenter = nGeom?.type === 'plane' && parallel(nGeom.normal, axis.dir) ? addv(axis.origin, axis.dir, rimZ) : c.center;
+        rims.push({ z: rimZ, r: c.radius, face: n, center: rimCenter });
       }
     }
     const levels = [...new Map(rims.map((r) => [r.z.toFixed(6), r])).values()];
@@ -426,6 +507,18 @@ function findHoles(topo: Topology, adj: Map<number, number[]>[]): { record: Hole
     for (const k of faces) {
       const circles = topo.edges.filter((e) => e.faces.includes(k) && e.geometry?.type === 'circle').map((e) => e.geometry as Extract<typeof e.geometry, { type: 'circle' }>);
       const zs = circles.map((c) => ({ z: z(c.center), r: c.radius }));
+      if (unremovedBlends?.size && topo.faces[k]!.geometry?.type === 'cylinder') {
+        for (const [n, edges] of adj[k]!) {
+          if (group.has(n) || unremovedBlends.has(n)) continue;
+          const nGeom = topo.faces[n]!.geometry;
+          if (nGeom?.type === 'plane' && parallel(nGeom.normal, axis.dir)) {
+            for (const e of edges) {
+              const c = topo.edges[e]!.geometry;
+              if (c?.type === 'circle') zs.push({ z: z(nGeom.origin), r: c.radius });
+            }
+          }
+        }
+      }
       // the point of a drill: a cone with one circle, its other end its apex (on the axis, radius 0)
       const g = topo.faces[k]!.geometry!;
       if (g.type === 'cone' && zs.length === 1 && lineDistance(g.apex, axis.origin, axis.dir) <= TOL) zs.push({ z: z(g.apex), r: 0 });
@@ -446,11 +539,17 @@ function findHoles(topo: Topology, adj: Map<number, number[]>[]): { record: Hole
       // the hole enters through a face that faces out against the way it is drilled (the material is behind it)
       if (dot(ef.normal, down) > -0.5) continue;
       const depthOf = (zz: number) => (zz - entranceAt.z) * sign;
-      const walls = pieces.filter((p) => !p.plane).map((p) => {
+      const wallsRaw = pieces.filter((p) => !p.plane).map((p) => {
         const a = { d: depthOf(p.z0), r: p.r0 };
         const b = { d: depthOf(p.z1), r: p.r1 };
         return a.d < b.d ? { d0: a.d, d1: b.d, r0: a.r, r1: b.r } : { d0: b.d, d1: a.d, r0: b.r, r1: a.r };
       }).sort((p, q) => p.d0 - q.d0);
+      const walls: typeof wallsRaw = [];
+      for (const w of wallsRaw) {
+        const prev = walls[walls.length - 1];
+        if (prev && Math.abs(prev.d0 - w.d0) <= TOL && Math.abs(prev.d1 - w.d1) <= TOL && Math.abs(prev.r0 - w.r0) <= TOL && Math.abs(prev.r1 - w.r1) <= TOL) continue;
+        walls.push(w);
+      }
       const floors = pieces.filter((p) => p.plane).map((p) => ({ d: depthOf(p.z0), rIn: p.r0, rOut: p.r1 }));
       // the walls follow one another from the entrance down
       if (walls.length === 0 || Math.abs(walls[0]!.d0) > TOL) continue;
@@ -477,7 +576,8 @@ function findHoles(topo: Topology, adj: Map<number, number[]>[]): { record: Hole
       // disc), and anything standing in it (a pin) is a second rim, which makes the group not a blind hole (mutation-checked, DEV_LOG 2026-11-06)
       const cyl = (w: (typeof walls)[number]) => Math.abs(w.r0 - w.r1) <= TOL;
       const center = addv(axis.origin, axis.dir, entranceAt.z);
-      const depth = through ? null : last.d1;
+      const maxAlongDown = Math.max(...topo.vertices.map((v) => dot(sub(v.point, center), down)));
+      const depth = through && maxAlongDown <= last.d1 + TOL ? null : last.d1;
       let record: HoleRecord | null = null;
       if (walls.length === 1 && cyl(walls[0]!) && floors.length === bottom) {
         record = { kind: 'straight', entrance: center, down, radius: walls[0]!.r0, depth };
@@ -515,14 +615,12 @@ function asBiarcs(edges: SectionEdge[], approx: SplineApproximation): SectionEdg
   return edges.flatMap((e): SectionEdge[] => {
     if (e.kind !== 'bezier') return [e];
     approx.used = true;
-    return e.spans.flatMap((span) => {
-      const { pieces, maxBound } = biarcEnvelope(span, approx.tolerance);
-      approx.bound = Math.max(approx.bound, maxBound);
-      return pieces.map((p): SectionEdge => {
-        const [a, b]: [P2, P2] = [[p.from[0], p.from[1]], [p.to[0], p.to[1]]];
-        const c = p.kind === 'arc' ? circleThrough(p.from, p.mid, p.to) : null;
-        return c ? { kind: 'arc', c, r: Math.hypot(a[0] - c[0], a[1] - c[1]), a, b, mid: [p.mid[0], p.mid[1]] } : { kind: 'line', a, b };
-      });
+    const pieces = e.spans.flatMap((span) => biarcEnvelope(span, approx.tolerance).pieces);
+    return pieces.map((p): SectionEdge => {
+      approx.bound = Math.max(approx.bound, p.bound);
+      const [a, b]: [P2, P2] = [[p.from[0], p.from[1]], [p.to[0], p.to[1]]];
+      const c = p.kind === 'arc' ? circleThrough(p.from, p.mid, p.to) : null;
+      return c ? { kind: 'arc', c, r: Math.hypot(a[0] - c[0], a[1] - c[1]), a, b, mid: [p.mid[0], p.mid[1]] } : { kind: 'line', a, b };
     });
   });
 }
@@ -596,12 +694,29 @@ function wallLean(f: FaceInfo, d: Vec3): number | null {
 type FreeWall = (face: number, d: Vec3) => boolean;
 
 function freeWalls(kernel: Kernel, shape: ShapeId, approx?: SplineApproximation): FreeWall | undefined {
-  return approx ? (face, d) => kernel.faceRuledAlong(shape, face, d) : undefined;
+  if (!approx) return undefined;
+  const cache = new Map<string, boolean>();
+  return (face, d) => {
+    const u = canonical(d);
+    const key = `${face}:${u[0].toFixed(6)},${u[1].toFixed(6)},${u[2].toFixed(6)}`;
+    let v = cache.get(key);
+    if (v === undefined) {
+      v = kernel.faceRuledAlong(shape, face, u);
+      cache.set(key, v);
+    }
+    return v;
+  };
 }
+
+const unremovedFacesRef = new WeakMap<Topology, Set<number>>();
+const unremovedHolesRef = new WeakMap<Topology, HoleRecord[]>();
+const unremovedChamfersRef = new WeakMap<Topology, ChamferRecord['edges']>();
 
 /** Faces that keep a direction from being an extrusion direction. */
 function blockers(topo: Topology, d: Vec3, free?: FreeWall): number[] {
+  const skip = unremovedFacesRef.get(topo);
   return topo.faces.flatMap((f, i) => {
+    if (skip?.has(i)) return [];
     const g = f.geometry;
     if (g?.type === 'plane' && parallel(g.normal, d)) return [];
     if (wallLean(f, d) !== null) return [];
@@ -662,11 +777,92 @@ function uniformLean(leans: number[]): number | undefined {
   return leans.every((x) => Math.abs(x - angle) <= 1e-7) ? angle : undefined;
 }
 
-function layerProfile(kernel: Kernel, shape: ShapeId, frame: Frame, d: Vec3, height: number, lean: number, budget?: Budget, approx?: SplineApproximation): PlanarProfile | null {
+function unchopSegmentLoops(loops: Loop[], frame: Frame, chamfers: ChamferRecord['edges'] | undefined, holes: HoleRecord[] | undefined, zLo: number, zHi: number, d: Vec3): Loop[] {
+  let out = loops;
+  if (holes?.length) {
+    const holeCenters2D: { c: P2; r: number }[] = [];
+    for (const h of holes) {
+      if (!parallel(h.down, d)) continue;
+      const zEnt = dot(h.entrance, d);
+      const sign = dot(h.down, d) > 0 ? 1 : -1;
+      const zEnd = h.depth === null ? sign * Infinity : zEnt + sign * h.depth;
+      const [h0, h1] = zEnt < zEnd ? [zEnt, zEnd] : [zEnd, zEnt];
+      if (h0 < zHi - TOL && h1 > zLo + TOL) {
+        const v = sub(h.entrance, frame.origin);
+        holeCenters2D.push({ c: [dot(v, frame.xDir), dot(v, frame.yDir)], r: h.radius });
+      }
+    }
+    if (holeCenters2D.length) {
+      out = out.filter((l) => {
+        if (l.segs.length !== 1 || l.segs[0]!.kind !== 'circle') return true;
+        const cSeg = l.segs[0]!;
+        return !holeCenters2D.some((hc) => Math.hypot(cSeg.c[0] - hc.c[0], cSeg.c[1] - hc.c[1]) <= TOL * 10 && Math.abs(cSeg.r - hc.r) <= TOL * 10);
+      });
+    }
+  }
+  if (chamfers?.length) {
+    const corners2D: P2[] = [];
+    for (const ch of chamfers) {
+      if (ch.edge.kind !== 'line' || !parallel(ch.edge.dir, d)) continue;
+      const z0 = dot(ch.edge.ends[0], d);
+      const z1 = dot(ch.edge.ends[1], d);
+      if (Math.min(z0, z1) < zHi - TOL && Math.max(z0, z1) > zLo + TOL) {
+        const v = sub(ch.edge.origin, frame.origin);
+        corners2D.push([dot(v, frame.xDir), dot(v, frame.yDir)]);
+      }
+    }
+    if (corners2D.length) {
+      out = out.map((l) => {
+        if (l.segs.length < 4 || l.segs.some((s) => s.kind !== 'line')) return l;
+        const segs = l.segs.map((s) => ({ ...(s as Extract<Loop['segs'][number], { kind: 'line' }>) }));
+        for (const corner of corners2D) {
+          const idx = segs.findIndex((s, i) => {
+            const prev = segs[(i + segs.length - 1) % segs.length]!;
+            const next = segs[(i + 1) % segs.length]!;
+            // check if prev and next lines meet at `corner`
+            const dPrev = Math.hypot(prev.b[0] - prev.a[0], prev.b[1] - prev.a[1]);
+            const dNext = Math.hypot(next.b[0] - next.a[0], next.b[1] - next.a[1]);
+            if (dPrev <= TOL || dNext <= TOL) return false;
+            const distPrev = Math.abs((corner[0] - prev.a[0]) * (-(prev.b[1] - prev.a[1]) / dPrev) + (corner[1] - prev.a[1]) * ((prev.b[0] - prev.a[0]) / dPrev));
+            const distNext = Math.abs((corner[0] - next.a[0]) * (-(next.b[1] - next.a[1]) / dNext) + (corner[1] - next.a[1]) * ((next.b[0] - next.a[0]) / dNext));
+            return distPrev <= TOL * 10 && distNext <= TOL * 10 && Math.hypot(s.a[0] - corner[0], s.a[1] - corner[1]) < 20;
+          });
+          if (idx >= 0) {
+            const prev = segs[(idx + segs.length - 1) % segs.length]!;
+            const next = segs[(idx + 1) % segs.length]!;
+            prev.b = corner;
+            next.a = corner;
+            segs.splice(idx, 1);
+          }
+        }
+        return { ...l, segs };
+      });
+    }
+  }
+  return out;
+}
+
+function layerProfile(
+  kernel: Kernel,
+  shape: ShapeId,
+  frame: Frame,
+  d: Vec3,
+  height: number,
+  lean: number,
+  budget?: Budget,
+  approx?: SplineApproximation,
+  fOverride?: number,
+  topo?: Topology,
+  zLo = 0,
+  zHi = 0,
+): PlanarProfile | null {
   const box = kernel.bounds(shape);
   const cut = (f: number) => section(kernel, shape, { ...frame, origin: addv(frame.origin, d, height * f) }, box, false, budget, approx);
   if (lean === 0) {
-    const loops = cut(0.5);
+    let loops = cut(fOverride ?? 0.5);
+    if (topo) {
+      loops = unchopSegmentLoops(loops, frame, unremovedChamfersRef.get(topo), unremovedHolesRef.get(topo), zLo, zHi, d);
+    }
     return loops.length ? { frame, loops } : null;
   }
   // Drafted walls change linearly with the height. Extrapolate the two interior sections to the bottom cap.
@@ -710,7 +906,75 @@ function bottomLoops(topo: Topology, frame: Frame, d: Vec3): Loop[] | null {
   }
 }
 
-/** The slab removes connections through other layers. Each remaining solid must have its own uniform draft. */
+/** Decompose a single solid piece whose outer and inner loops have different uniform draft angles into ordered boss/cut profiles. */
+function decomposeNestedDraftPiece(
+  kernel: Kernel,
+  pieceShape: ShapeId,
+  frame: Frame,
+  d: Vec3,
+  height: number,
+  pieceLeans: number[],
+  refusal: RecognizeError,
+  budget?: Budget,
+  approx?: SplineApproximation,
+): PlanarProfile[] {
+  const box = kernel.bounds(pieceShape);
+  const cut = (f: number) => section(kernel, pieceShape, { ...frame, origin: addv(frame.origin, d, height * f) }, box, false, budget, approx);
+  const [q1, q3] = [cut(0.25), cut(0.75)];
+  if (q1.length < 2 || q1.length !== q3.length) throw refusal;
+  const mid = (g: Loop['segs'][number]): P2 => (g.kind === 'circle' ? g.c : g.kind === 'arc' ? g.c : [(g.a[0] + g.b[0]) / 2, (g.a[1] + g.b[1]) / 2]);
+  const used = new Set<Loop>();
+  const items: { depth: number; profile: PlanarProfile }[] = [];
+  for (const l1 of q1) {
+    const l3 = q3
+      .filter((x) => !used.has(x) && x.depth === l1.depth && x.segs.length === l1.segs.length)
+      .sort((x, y) => Math.hypot(...sub2(mid(x.segs[0]!), mid(l1.segs[0]!))) - Math.hypot(...sub2(mid(y.segs[0]!), mid(l1.segs[0]!))))[0];
+    if (!l3) throw refusal;
+    used.add(l3);
+    const deltas: number[] = [];
+    for (const s1 of l1.segs) {
+      const s3 = l3.segs
+        .filter((h) => h.kind === s1.kind)
+        .sort((x, y) => Math.hypot(...sub2(mid(x), mid(s1))) - Math.hypot(...sub2(mid(y), mid(s1))))[0];
+      if (!s3) throw refusal;
+      if (s1.kind === 'line' && s3.kind === 'line') {
+        const dx = s3.b[0] - s3.a[0];
+        const dy = s3.b[1] - s3.a[1];
+        const l = Math.hypot(dx, dy);
+        if (l <= TOL) throw refusal;
+        const m1 = mid(s1);
+        deltas.push(Math.abs((m1[0] - s3.a[0]) * (-dy / l) + (m1[1] - s3.a[1]) * (dx / l)));
+      } else if ((s1.kind === 'arc' && s3.kind === 'arc') || (s1.kind === 'circle' && s3.kind === 'circle')) {
+        if (Math.hypot(...sub2(s1.c, s3.c)) > 1e-4) throw refusal;
+        deltas.push(Math.abs(s3.r - s1.r));
+      } else {
+        throw refusal;
+      }
+    }
+    if (!deltas.length || Math.max(...deltas) - Math.min(...deltas) > 1e-4) throw refusal;
+    const avgDelta = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+    const rawAngle = Math.atan(avgDelta / (0.5 * height));
+    const matchedLean = pieceLeans.find((pl) => Math.abs(Math.abs(pl) - rawAngle) <= 1e-4);
+    if (matchedLean === undefined) throw refusal;
+    const angle = Math.abs(matchedLean);
+    const bottom = angle <= 1e-9 ? [l1] : extrapolate([l3], [l1], 0.5);
+    if (!bottom?.length) throw refusal;
+    const op: 'boss' | 'cut' = l1.depth % 2 === 0 ? 'boss' : 'cut';
+    items.push({
+      depth: l1.depth,
+      profile: {
+        frame,
+        loops: bottom.map((b) => ({ ...b, depth: 0 })),
+        op,
+        ...(angle > 1e-9 ? { draft: { angle, inward: Math.abs(l3.area) < Math.abs(l1.area) } } : {}),
+      },
+    });
+  }
+  items.sort((a, b) => a.depth - b.depth);
+  return items.map((x) => x.profile);
+}
+
+/** The slab removes connections through other layers. Each remaining solid must have its own uniform draft (or nested loops with uniform drafts). */
 function mixedLayer(kernel: Kernel, shape: ShapeId, frame: Frame, d: Vec3, height: number, leans: number[], budget?: Budget, approx?: SplineApproximation): PlanarProfile[] {
   const deg = [...new Set(leans.map((x) => ((x * 180) / Math.PI).toFixed(2)))].join('°, ');
   const refusal = new RecognizeError(t('recognize.mixedDraft', { angles: `${deg}°` }));
@@ -727,22 +991,25 @@ function mixedLayer(kernel: Kernel, shape: ShapeId, frame: Frame, d: Vec3, heigh
     made.push(clipped);
     const pieces = kernel.splitSolids({ shape: clipped, faceOrigins: [] });
     made.push(...pieces.map((p) => p.shape));
-    if (pieces.length < 2) throw refusal;
-    return pieces.map((p) => {
+    if (pieces.length === 0) throw refusal;
+    return pieces.flatMap((p) => {
       budget?.check();
       const topo = kernel.topology(p.shape);
       const free = freeWalls(kernel, p.shape, approx);
       if (blockers(topo, d, free).length) throw refusal;
-      const lean = uniformLean(topo.faces.flatMap((f, i) => {
+      const pieceLeans = topo.faces.flatMap((f, i) => {
         const lean = wallLean(f, d);
         return lean !== null ? [lean] : !f.geometry && free?.(i, d) ? [0] : [];
-      }));
-      if (lean === undefined) throw refusal;
+      });
+      const lean = uniformLean(pieceLeans);
+      if (lean === undefined) {
+        return decomposeNestedDraftPiece(kernel, p.shape, frame, d, height, pieceLeans, refusal, budget, approx);
+      }
       const loops = bottomLoops(topo, frame, d);
-      if (loops?.length) return { frame, loops, ...(lean !== 0 ? { draft: { angle: Math.abs(lean), inward: lean > 0 } } : {}) };
+      if (loops?.length) return [{ frame, loops, ...(lean !== 0 ? { draft: { angle: Math.abs(lean), inward: lean > 0 } } : {}) }];
       if (approx && free) {
         const profile = layerProfile(kernel, p.shape, frame, d, height, lean, budget, approx);
-        if (profile) return profile;
+        if (profile) return [profile];
       }
       throw refusal;
     });
@@ -776,10 +1043,43 @@ function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameF
     rethrowTrap(first);
     if (!(first instanceof RecognizeError) || depth >= MAX_SIDE_DEPTH) throw first;
     const best = bestDirection(topo, freeWalls(kernel, shape, approx));
-    if (!best || best.blocking.length === 0) throw first;
-    // the faces in the way, and every face that only they (and faces already taken) surround: the end of a boss, the floor of a pocket
+    if (!best) throw first;
     const adj = adjacency(topo);
-    const group = new Set(best.blocking);
+    let initialBlocking = best.blocking;
+    if (initialBlocking.length === 0) {
+      // Check for a side-extruded overhang wedge (e.g. a snap-hook nose): an intermediate planar cap along `best.d`
+      // that borders a single sloped ramp face (`|wallLean| > 1e-7`) while all other neighboring walls of both are straight (`wallLean === 0`).
+      const hs = topo.vertices.map((v) => dot(v.point, best.d));
+      const minH = Math.min(...hs);
+      const maxH = Math.max(...hs);
+      const wedgeFaces: number[] = [];
+      topo.faces.forEach((f, capIdx) => {
+        if (f.geometry?.type !== 'plane' || !parallel(f.geometry.normal, best.d)) return;
+        const h = dot(f.center, best.d);
+        if (h <= minH + TOL || h >= maxH - TOL) return;
+        const neighbors = [...adj[capIdx]!.keys()];
+        const sloped = neighbors.filter((n) => {
+          const wl = wallLean(topo.faces[n]!, best.d);
+          return wl !== null && Math.abs(wl) > 1e-7;
+        });
+        if (sloped.length !== 1) return;
+        const rampIdx = sloped[0]!;
+        if (!neighbors.every((n) => n === rampIdx || wallLean(topo.faces[n]!, best.d) === 0)) return;
+        const rampNeighbors = [...adj[rampIdx]!.keys()];
+        if (
+          rampNeighbors.every((n) => {
+            const nf = topo.faces[n]!;
+            return (nf.geometry?.type === 'plane' && parallel(nf.geometry.normal, best.d)) || wallLean(nf, best.d) === 0;
+          })
+        ) {
+          wedgeFaces.push(capIdx, rampIdx);
+        }
+      });
+      initialBlocking = [...new Set(wedgeFaces)];
+    }
+    if (initialBlocking.length === 0) throw first;
+    // the faces in the way, and every face that only they (and faces already taken) surround: the end of a boss, the floor of a pocket
+    const group = new Set(initialBlocking);
     for (let grown = true; grown; ) {
       grown = false;
       topo.faces.forEach((_, i) => {
@@ -852,6 +1152,7 @@ function bestDirection(topo: Topology, free?: FreeWall): { d: Vec3; blocking: nu
 
 function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameFor, budget?: Budget, approx?: SplineApproximation): BaseRecord {
   const free = freeWalls(kernel, shape, approx);
+  const skip = unremovedFacesRef.get(topo);
   const candidates: Vec3[] = [];
   const addCandidate = (d: Vec3) => {
     const c = canonical(d);
@@ -863,22 +1164,40 @@ function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: F
     if (f.geometry?.type === 'cylinder') addCandidate(f.geometry.axis);
   }
   type Option = { d: Vec3; levels: number[]; cap: number; blocking: number[]; rank: number };
-  const options: Option[] = candidates.map((d) => {
-    const caps = topo.faces.filter((f) => f.geometry?.type === 'plane' && parallel(f.geometry.normal, d));
+  const analyticBlockers = (d: Vec3): number[] =>
+    topo.faces.flatMap((f, i) => {
+      if (skip?.has(i)) return [];
+      const g = f.geometry;
+      if (!g) return [];
+      if (g.type === 'plane' && parallel(g.normal, d)) return [];
+      if (wallLean(f, d) !== null) return [];
+      return [i];
+    });
+  const preOptions = candidates.map((d) => {
+    const caps = topo.faces.filter((f, i) => !skip?.has(i) && f.geometry?.type === 'plane' && parallel(f.geometry.normal, d));
     const levels = [...new Set(caps.map((f) => dot(f.center, d).toFixed(7)))].map(Number).sort((a, b) => a - b);
     const rank = CANONICAL.findIndex((c) => parallel(c, d));
-    return { d, levels, cap: caps.reduce((a, f) => a + f.area, 0), blocking: blockers(topo, d, free), rank: rank < 0 ? 9 : rank };
+    return { d, levels, cap: caps.reduce((a, f) => a + f.area, 0), analyticBlocking: analyticBlockers(d), rank: rank < 0 ? 9 : rank };
   });
-  const valid = options.filter((o) => o.blocking.length === 0 && o.levels.length >= 2);
+  const zeroAnalytic = preOptions.filter((o) => o.analyticBlocking.length === 0 && o.levels.length >= 2);
+  let valid: Option[] = [];
+  for (const o of zeroAnalytic) {
+    const blocking = blockers(topo, o.d, free);
+    if (blocking.length === 0) valid.push({ d: o.d, levels: o.levels, cap: o.cap, blocking, rank: o.rank });
+  }
   if (valid.length === 0) {
-    const best = options.reduce((a, b) => (b.blocking.length < a.blocking.length ? b : a));
-    throw new RecognizeError(t('recognize.noBase', { n: best.blocking.length, faces: describe(topo, best.blocking) }));
+    const options: Option[] = preOptions.map((o) => ({ d: o.d, levels: o.levels, cap: o.cap, blocking: blockers(topo, o.d, free), rank: o.rank }));
+    valid = options.filter((o) => o.blocking.length === 0 && o.levels.length >= 2);
+    if (valid.length === 0) {
+      const best = options.reduce((a, b) => (b.blocking.length < a.blocking.length ? b : a));
+      throw new RecognizeError(t('recognize.noBase', { n: best.blocking.length, faces: describe(topo, best.blocking) }));
+    }
   }
   valid.sort((a, b) => a.levels.length - b.levels.length || b.cap - a.cap || a.rank - b.rank);
   const { d, levels } = valid[0]!;
   // exact heights of the caps (the rounding above only grouped them)
   const exact = levels.map((l) => {
-    const hs = topo.faces.filter((f) => f.geometry?.type === 'plane' && parallel(f.geometry.normal, d)).map((f) => dot(f.center, d)).filter((h) => Math.abs(h - l) <= 1e-6);
+    const hs = topo.faces.filter((f, i) => !skip?.has(i) && f.geometry?.type === 'plane' && parallel(f.geometry.normal, d)).map((f) => dot(f.center, d)).filter((h) => Math.abs(h - l) <= 1e-6);
     return hs.reduce((a, b) => a + b, 0) / hs.length;
   });
   const extent = extentAlong(topo, d);
@@ -887,6 +1206,7 @@ function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: F
     const frame = frameFor(d, [d[0] * h, d[1] * h, d[2] * h]);
     // The walls of this layer, and how they lean.
     const leans = topo.faces.flatMap((f, k) => {
+      if (skip?.has(k)) return [];
       const [lo, hi] = extent[k]!;
       if (!(lo < top - 1e-7 && hi > h + 1e-7)) return [];
       const lean = wallLean(f, d);
@@ -895,7 +1215,23 @@ function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: F
     });
     const angle = uniformLean(leans);
     if (angle === undefined) return mixedLayer(kernel, shape, frame, d, top - h, leans, budget, approx);
-    const profile = layerProfile(kernel, shape, frame, d, top - h, angle, budget, approx);
+    let fOverride: number | undefined;
+    if (skip?.size) {
+      let loValid = h;
+      let hiValid = top;
+      for (const fi of skip) {
+        const gf = topo.faces[fi]!.geometry;
+        if (gf?.type === 'plane' || (gf?.type === 'cylinder' && !gf.convex)) continue;
+        const [z0, z1] = extent[fi]!;
+        if (z1 <= h + TOL || z0 >= top - TOL) continue;
+        if (Math.abs(z0 - h) <= TOL && z1 < hiValid) loValid = Math.max(loValid, z1);
+        else if (Math.abs(z1 - top) <= TOL && z0 > loValid) hiValid = Math.min(hiValid, z0);
+      }
+      if (hiValid > loValid + TOL && (loValid > h + TOL || hiValid < top - TOL)) {
+        fOverride = ((loValid + hiValid) / 2 - h) / (top - h);
+      }
+    }
+    const profile = layerProfile(kernel, shape, frame, d, top - h, angle, budget, approx, fOverride, topo, h, top);
     return profile ? [profile] : [];
   });
   return { type: 'extrude', dir: d, levels: exact, layers };
@@ -930,6 +1266,68 @@ export function planeThroughAxis(dir: Vec3): Vec3 {
 
 // ------------------------------------------------------------------ the whole
 
+/** Coaxial circular loft between two parallel planar circular caps with a circular mid-section. */
+function loftBase(kernel: Kernel, shape: ShapeId, topo: Topology, odd: number[], frameFor: FrameFor, budget?: Budget): BaseRecord | null {
+  if (odd.length !== 1 || topo.faces.length !== 3) return null;
+  const caps = topo.faces.flatMap((f, i) => (i !== odd[0] && f.geometry?.type === 'plane' ? [{ i, normal: f.geometry.normal, center: f.center, area: f.area }] : []));
+  if (caps.length !== 2 || !parallel(caps[0]!.normal, caps[1]!.normal)) return null;
+  const d = canonical(caps[0]!.normal);
+  if (!coaxial(caps[0]!.center, d, caps[1]!.center, d)) return null;
+  const capRadii = caps.map((c) => {
+    const r = Math.sqrt(c.area / Math.PI);
+    const perim = topo.edges.filter((e) => e.faces.includes(c.i)).reduce((s, e) => s + e.length, 0);
+    return Math.abs(perim - 2 * Math.PI * r) <= 1e-3 * r ? r : null;
+  });
+  if (capRadii[0] === null || capRadii[1] === null) return null;
+  const axisOrigin = caps[0]!.center;
+  const h0 = dot(caps[0]!.center, d);
+  const h1 = dot(caps[1]!.center, d);
+  const [lo, hi] = h0 < h1 ? [{ h: h0, r: capRadii[0] }, { h: h1, r: capRadii[1] }] : [{ h: h1, r: capRadii[1] }, { h: h0, r: capRadii[0] }];
+  const hMid = (lo.h + hi.h) / 2;
+  const midFrame = frameFor(d, [d[0] * hMid, d[1] * hMid, d[2] * hMid]);
+  budget?.check();
+  const box = kernel.bounds(shape);
+  let edges: SectionEdge[];
+  try {
+    edges = kernel.sectionEdges(shape, midFrame, sectionRect(midFrame, box, false));
+  } catch {
+    return null;
+  }
+  if (edges.length === 0) return null;
+  const v = sub(axisOrigin, midFrame.origin);
+  const center2D: P2 = [dot(v, midFrame.xDir), dot(v, midFrame.yDir)];
+  const samplePts: P2[] = [];
+  for (const e of edges) {
+    if (e.kind === 'circle') samplePts.push([e.c[0] + e.r, e.c[1]]);
+    else if (e.kind === 'arc') samplePts.push(e.a, e.b, e.mid);
+    else if (e.kind === 'line') samplePts.push(e.a, e.b);
+    else if (e.kind === 'bezier') {
+      for (const s of e.spans) {
+        for (const pole of [s[0], s[s.length - 1]]) {
+          if (pole) samplePts.push([pole[0] / pole[3], pole[1] / pole[3]]);
+        }
+      }
+    }
+  }
+  if (samplePts.length === 0) return null;
+  const dists = samplePts.map((p) => Math.hypot(p[0] - center2D[0], p[1] - center2D[1]));
+  const rMid = dists.reduce((a, b) => a + b, 0) / dists.length;
+  if (dists.some((dist) => Math.abs(dist - rMid) > 1e-3)) return null;
+  const levels = [lo.h, hMid, hi.h];
+  const radii = [lo.r, rMid, hi.r];
+  const sections: PlanarProfile[] = levels.map((h, idx) => {
+    const frame = frameFor(d, [d[0] * h, d[1] * h, d[2] * h]);
+    const dv = sub(axisOrigin, frame.origin);
+    const c: P2 = [dot(dv, frame.xDir), dot(dv, frame.yDir)];
+    const r = radii[idx]!;
+    return {
+      frame,
+      loops: [{ segs: [{ kind: 'circle', c, r }], area: Math.PI * r * r, depth: 0 }],
+    };
+  });
+  return { type: 'loft', dir: d, levels, sections };
+}
+
 /**
  * Takes `shape` apart. The shapes made on the way are released; `shape` is not. Throws `RecognizeError` with a message for the user when some part of
  * the body is none of the features this recognizes.
@@ -941,50 +1339,126 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
     const topo0 = kernel.topology(shape);
     const odd = topo0.faces.flatMap((f, i) => (ANALYTIC.has(f.surface) && f.geometry ? [] : [i]));
     if (odd.length) {
+      const loft = loftBase(kernel, shape, topo0, odd, frameFor, budget);
+      if (loft) {
+        return {
+          base: loft,
+          holes: [],
+          blends: [],
+          counts: { faces: topo0.faces.length, blendFaces: 0, holeFaces: 0, baseFaces: topo0.faces.length },
+        };
+      }
       // asked to, faces like these may be the walls of an extrusion; they must all be walls along one direction, the direction some plane of the body faces
       const free = freeWalls(kernel, shape, approx);
       const along = (d: Vec3) => odd.every((i) => !!free?.(i, d));
-      const walls = free && topo0.faces.some((f) => f.geometry?.type === 'plane' && along(f.geometry.normal));
+      const planeDirs: Vec3[] = [];
+      for (const c of CANONICAL) {
+        if (topo0.faces.some((f) => f.geometry?.type === 'plane' && parallel(f.geometry.normal, c))) planeDirs.push(c);
+      }
+      for (const f of topo0.faces) {
+        if (f.geometry?.type === 'plane') {
+          const c = canonical(f.geometry.normal);
+          if (!planeDirs.some((x) => parallel(x, c))) planeDirs.push(c);
+        }
+      }
+      const oddSet = new Set(odd);
+      const zeroAnalyticDirs = planeDirs.filter((d) =>
+        topo0.faces.every((f, i) => oddSet.has(i) || !f.geometry || (f.geometry.type === 'plane' && parallel(f.geometry.normal, d)) || wallLean(f, d) !== null),
+      );
+      const checkDirs = zeroAnalyticDirs.length > 0 ? [...zeroAnalyticDirs, ...planeDirs.filter((d) => !zeroAnalyticDirs.includes(d))] : planeDirs;
+      const walls = free && checkDirs.some((d) => along(d));
       if (!walls) throw new RecognizeError(`${t('recognize.freeform', { n: odd.length, faces: describe(topo0, odd) })}${approx ? '' : ` ${t('recognize.freeformHint')}`}`);
     }
-    const smooth = kernel.smoothEdges(shape, topo0.edges.map((_, i) => i));
-    const cands = blendCandidates(topo0, smooth, adjacency(topo0));
-    const blends = removeBlends(kernel, shape, topo0, cands);
     let current = shape;
-    if (blends) made.push((current = blends.shape));
-    const topo1 = kernel.topology(current);
-    let holes = findHoles(topo1, adjacency(topo1));
-    let holeFaces = 0;
-    if (holes.length) {
-      let r: ReturnType<Kernel['deleteFaces']> | null = null;
-      try {
-        r = kernel.deleteFaces(current, holes.flatMap((h) => h.faces));
-      } catch (e) {
-        if (!(e instanceof KernelError)) throw e;
-        holes = holes.filter((h) => {
-          try {
-            kernel.release(kernel.deleteFaces(current, h.faces).shape);
-            return true;
-          } catch (err) {
-            if (err instanceof KernelError) return false;
-            throw err;
-          }
-        });
-        if (holes.length) r = kernel.deleteFaces(current, holes.flatMap((h) => h.faces));
+    const allBlends: BlendRecord[] = [];
+    let totalBlendFaces = 0;
+    const analyticUnremoved = new Set<number>();
+    const skipDeleteFaces = topo0.faces.length > 500;
+    for (let pass = 0; pass < 4; pass++) {
+      const topoPass = pass === 0 ? topo0 : kernel.topology(current);
+      const smooth = kernel.smoothEdges(current, topoPass.edges.map((_, i) => i));
+      const allCands = blendCandidates(topoPass, smooth, adjacency(topoPass));
+      if (allCands.length === 0) break;
+      const supportedByOther = new Set(allCands.flatMap((c) => c.supports.filter((s) => s >= 0)));
+      const outerCands = allCands.filter((c) => !supportedByOther.has(c.face));
+      const cands = outerCands.length > 0 ? outerCands : allCands;
+      const res = removeBlends(kernel, current, topoPass, cands, skipDeleteFaces);
+      if (!res) break;
+      if (res.analyticOnly) {
+        for (const c of allCands) analyticUnremoved.add(c.face);
+      } else {
+        made.push((current = res.shape));
       }
-      if (r) {
-        made.push((current = r.shape));
-        holeFaces = holes.reduce((a, h) => a + h.faces.length, 0);
+      allBlends.unshift(...res.records);
+      totalBlendFaces += res.removed;
+      // A failed batch can leave some candidates on the new body. Reclassify those against its restored faces.
+      if (res.analyticOnly || res.removed === allCands.length) break;
+    }
+    const topo1 = current === shape ? topo0 : kernel.topology(current);
+    const adj1 = adjacency(topo1);
+    if (analyticUnremoved.size) {
+      // Connect support faces across analytically unremoved blends so findHoles sees through-hole entrance/exit rims.
+      const smooth1 = kernel.smoothEdges(current, topo1.edges.map((_, i) => i));
+      const cands1 = blendCandidates(topo1, smooth1, adj1);
+      for (const c of cands1) {
+        if (c.supports[0] >= 0 && c.supports[1] >= 0) {
+          const [s0, s1] = c.supports;
+          const e0 = adj1[c.face]!.get(s0) ?? [];
+          const e1 = adj1[c.face]!.get(s1) ?? [];
+          // Pick the rim edges on the cylinder side (smaller radius or shared with cylinder)
+          const cylSide = topo1.faces[s0]!.geometry?.type === 'cylinder' ? s0 : s1;
+          const planeSide = cylSide === s0 ? s1 : s0;
+          const rimEdges = adj1[c.face]!.get(cylSide) ?? [...e0, ...e1];
+          adj1[cylSide]!.set(planeSide, [...(adj1[cylSide]!.get(planeSide) ?? []), ...rimEdges]);
+          adj1[planeSide]!.set(cylSide, [...(adj1[planeSide]!.get(cylSide) ?? []), ...rimEdges]);
+        }
       }
     }
-    const topo2 = kernel.topology(current);
+    let holes = findHoles(topo1, adj1, analyticUnremoved.size ? analyticUnremoved : undefined);
+    let holeFaces = 0;
+    if (holes.length) {
+      if (analyticUnremoved.size) {
+        for (const h of holes) for (const fi of h.faces) analyticUnremoved.add(fi);
+        holeFaces = holes.reduce((a, h) => a + h.faces.length, 0);
+        // Straight holes parallel to Z are kept directly as circular loops in the extruded layer sketch!
+        holes = holes.filter((h) => !(h.record.kind === 'straight' && parallel(h.record.down, [0, 0, 1])));
+      } else {
+        let r: ReturnType<Kernel['deleteFaces']> | null = null;
+        try {
+          r = kernel.deleteFaces(current, holes.flatMap((h) => h.faces));
+        } catch (e) {
+          if (!(e instanceof KernelError)) throw e;
+          holes = holes.filter((h) => {
+            try {
+              kernel.release(kernel.deleteFaces(current, h.faces).shape);
+              return true;
+            } catch (err) {
+              if (err instanceof KernelError) return false;
+              throw err;
+            }
+          });
+          if (holes.length) r = kernel.deleteFaces(current, holes.flatMap((h) => h.faces));
+        }
+        if (r) {
+          made.push((current = r.shape));
+          holeFaces = holes.reduce((a, h) => a + h.faces.length, 0);
+        }
+      }
+    }
+    const topo2 = current === shape ? topo0 : kernel.topology(current);
+    if (analyticUnremoved.size) {
+      unremovedFacesRef.set(topo2, analyticUnremoved);
+      unremovedHolesRef.set(topo2, holes.map((h) => h.record));
+      const chRec = allBlends.find((b): b is ChamferRecord => b.type === 'chamfer');
+      if (chRec) unremovedChamfersRef.set(topo2, chRec.edges);
+    }
     const axis = revolveAxis(topo2);
     const base = axis ? revolveBase(kernel, current, axis, planeThroughAxis(axis.dir), frameFor, budget) : baseOf(kernel, current, topo2, frameFor, 0, budget, approx);
     return {
       base,
       holes: holes.map((h) => h.record),
-      blends: blends?.records ?? [],
-      counts: { faces: topo0.faces.length, blendFaces: blends?.removed ?? 0, holeFaces, baseFaces: topo2.faces.length },
+      blends: allBlends,
+      counts: { faces: topo0.faces.length, blendFaces: totalBlendFaces, holeFaces, baseFaces: topo2.faces.length - analyticUnremoved.size },
     };
   } finally {
     for (const id of made) kernel.release(id);

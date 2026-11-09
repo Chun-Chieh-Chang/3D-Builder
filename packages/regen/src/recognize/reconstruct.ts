@@ -256,6 +256,15 @@ class Builder {
       this.feature({ id: this.ids.take('revolve'), type: 'revolve', name: this.name('revolve'), suppressed: false, sketch: id, axis: centerline!, op: 'boss', ...(merge === false ? { merge: false } : {}), dir1: { type: 'blind', angle: '360deg' } });
       return;
     }
+    if (b.type === 'loft') {
+      const sectionIds = b.sections.map((sec, i) => {
+        const h = b.levels[i]!;
+        const plane = this.plane(b.dir, [b.dir[0] * h, b.dir[1] * h, b.dir[2] * h]);
+        return this.sketch(plane.ref, sec.loops).id;
+      });
+      this.feature({ id: this.ids.take('loft'), type: 'loft', name: this.name('extrude'), suppressed: false, sections: sectionIds, op: 'boss', ...(merge === false ? { merge: false } : {}) });
+      return;
+    }
     if (b.type === 'composite') {
       this.base({ ...rec, base: b.base }, merge);
       for (const extra of b.extras) this.layers(extra.rec, extra.op, undefined);
@@ -273,6 +282,7 @@ class Builder {
       const plane = this.plane(b.dir, [b.dir[0] * h, b.dir[1] * h, b.dir[2] * h]);
       const depth = b.levels[i + 1]! - h;
       for (const layer of profiles) {
+        const layerOp = layer.op ?? op;
         const { id } = this.sketch(plane.ref, layer.loops);
         this.feature({
           id: this.ids.take('extrude'),
@@ -280,10 +290,10 @@ class Builder {
           name: this.name('extrude'),
           suppressed: false,
           sketch: id,
-          op,
-          ...(op === 'boss' && first && merge === false ? { merge: false } : {}),
+          op: layerOp,
+          ...(layerOp === 'boss' && first && merge === false ? { merge: false } : {}),
           // a boss goes along the sketch's normal, a cut against it (into the material): either way the layer runs along `dir`
-          dir1: { type: 'blind', depth: num(depth), ...((op === 'boss' ? plane.flipped : !plane.flipped) ? { reverse: true } : {}) },
+          dir1: { type: 'blind', depth: num(depth), ...((layerOp === 'boss' ? plane.flipped : !plane.flipped) ? { reverse: true } : {}) },
           ...(layer.draft ? { draft1: { angle: `${num((layer.draft.angle * 180) / Math.PI)}deg`, ...(layer.draft.inward ? { inward: true } : {}) } } : {}),
         });
         first = false;
@@ -444,7 +454,7 @@ export function approximateReport(kernel: Kernel, whole: ShapeId, rebuilt: Shape
 
 function arcsOf(b: BaseRecord): number {
   if (b.type === 'composite') return arcsOf(b.base) + b.extras.reduce((n, x) => n + arcsOf(x.rec), 0);
-  const profiles = b.type === 'revolve' ? [b.profile] : b.layers.flat();
+  const profiles = b.type === 'revolve' ? [b.profile] : b.type === 'loft' ? b.sections : b.layers.flat();
   return profiles.reduce((n, p) => n + p.loops.reduce((m, l) => m + l.segs.filter((s) => s.kind === 'arc').length, 0), 0);
 }
 

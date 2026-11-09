@@ -59,6 +59,24 @@ async function roundTrip(shape: ShapeId) {
 }
 
 describe('a corner where three chamfers meet', () => {
+  it('recovers a planar chamfer from its support planes when removal history misses the edge', async () => {
+    const b = box(40, 30, 20);
+    const s = chamfered(b, 2, (m) => m[0] === 40 && m[1] === 30);
+    const remove = kernel.deleteFaces.bind(kernel);
+    vi.spyOn(kernel, 'deleteFaces').mockImplementation((target, faces) => {
+      const result = remove(target, faces);
+      return { ...result, faceOrigins: result.faceOrigins.map(() => []) };
+    });
+    try {
+      const result = await roundTrip(s);
+      expect(result.types).toContain('chamfer');
+      expect(result.difference).toBeLessThan(1e-6);
+    } finally {
+      kernel.release(s);
+      kernel.release(b);
+    }
+  });
+
   it('comes off with them and is made again by them', async () => {
     const b = box(40, 30, 20);
     const s = chamfered(b, 2, (m) => (m[0] === 40 && m[1] === 30) || (m[1] === 30 && m[2] === 20) || (m[0] === 40 && m[2] === 20));
@@ -131,7 +149,7 @@ describe('a corner where three chamfers meet', () => {
 });
 
 describe('blends that come off alone but not together', () => {
-  it('stay in the body instead of leaking the kernel error, and leave no shape behind', async () => {
+  it('retries the remaining round on the partially stripped body and leaves no shape behind', async () => {
     const b = box(40, 30, 20);
     const edge = (x: number, y: number) => kernel.topology(b).edges.findIndex((e) => e.mid[0] === x && e.mid[1] === y);
     const s = kernel.fillet(b, [edge(40, 30), edge(0, 0)], 3).shape;
@@ -143,22 +161,16 @@ describe('blends that come off alone but not together', () => {
       return real(target, faces);
     });
     const live = kernel.liveShapes;
-    let answered = false;
     try {
       const r = await roundTrip(s);
       expect(r.difference).toBeLessThan(1e-6);
-      answered = true;
-    } catch (e) {
-      expect(e).toBeInstanceOf(RecognizeError);
-      answered = true;
+      expect(r.types.filter((type) => type === 'fillet')).toHaveLength(2);
+      expect(sets).toEqual([2, 1, 2, 1]);
+      expect(kernel.liveShapes).toBe(live);
+    } finally {
+      kernel.release(s);
+      kernel.release(b);
     }
-    expect(answered).toBe(true);
-    // the case really happened: both together was tried, and refused
-    expect(sets.some((n) => n > 1)).toBe(true);
-    expect(sets.some((n) => n === 1)).toBe(true);
-    expect(kernel.liveShapes).toBe(live);
-    kernel.release(s);
-    kernel.release(b);
   }, 60_000);
 
   it('as many as still come off together do, each step letting go of the one before', async () => {

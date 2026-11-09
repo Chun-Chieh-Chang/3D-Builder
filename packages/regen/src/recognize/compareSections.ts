@@ -60,10 +60,13 @@ export function boundaryLines(edges: readonly SectionEdge[]): Line[] | null {
   const out: Line[] = [];
   for (const e of edges) {
     if (e.kind === 'line') out.push([e.a, e.b]);
-    else if (e.kind === 'arc') out.push(...arcLines(e.a, e.mid, e.b, e.c, e.r));
-    else if (e.kind === 'circle') out.push(...circleLines(e.c, e.r));
-    else if (e.kind === 'bezier') for (const span of e.spans) out.push(...bezierLines(span));
-    else return null;
+    else if (e.kind === 'arc') {
+      for (const l of arcLines(e.a, e.mid, e.b, e.c, e.r)) out.push(l);
+    } else if (e.kind === 'circle') {
+      for (const l of circleLines(e.c, e.r)) out.push(l);
+    } else if (e.kind === 'bezier') {
+      for (const span of e.spans) for (const l of bezierLines(span)) out.push(l);
+    } else return null;
   }
   return out;
 }
@@ -155,10 +158,20 @@ export function sectionsClose(c: SectionComparison, distance: number): boolean {
 export function compareSections(a: readonly SectionEdge[], b: readonly SectionEdge[]): SectionComparison | null {
   const [la, lb] = [boundaryLines(a), boundaryLines(b)];
   if (!la || !lb) return null;
-  const ys = [...la, ...lb].flatMap((l) => [l[0][1], l[1][1]]);
-  const xs = [...la, ...lb].flatMap((l) => [l[0][0], l[1][0]]);
-  if (ys.length === 0) return { areaA: 0, areaB: 0, notShared: 0, perimeter: 0, distance: 0 };
-  const [y0, y1] = [Math.min(...ys), Math.max(...ys)];
+  if (la.length === 0 && lb.length === 0) return { areaA: 0, areaB: 0, notShared: 0, perimeter: 0, distance: 0 };
+  let [x0, x1, y0, y1] = [Infinity, -Infinity, Infinity, -Infinity];
+  for (const list of [la, lb]) {
+    for (const [p, q] of list) {
+      if (p[0] < x0) x0 = p[0];
+      if (p[0] > x1) x1 = p[0];
+      if (q[0] < x0) x0 = q[0];
+      if (q[0] > x1) x1 = q[0];
+      if (p[1] < y0) y0 = p[1];
+      if (p[1] > y1) y1 = p[1];
+      if (q[1] < y0) y0 = q[1];
+      if (q[1] > y1) y1 = q[1];
+    }
+  }
   const dy = (y1 - y0) / ROWS;
   let [areaA, areaB, notShared] = [0, 0, 0];
   for (let i = 0; i < ROWS; i++) {
@@ -168,7 +181,7 @@ export function compareSections(a: readonly SectionEdge[], b: readonly SectionEd
     areaB += q * dy;
     notShared += r * dy;
   }
-  const size = Math.max(Math.max(...xs) - Math.min(...xs), y1 - y0);
+  const size = Math.max(x1 - x0, y1 - y0);
   const cell = Math.max(size / 200, 1e-6);
   return {
     areaA,
