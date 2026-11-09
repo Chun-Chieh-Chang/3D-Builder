@@ -75,6 +75,11 @@ jobs:
         with:
           node-version: '26'
           cache: npm
-      - run: npm ci
+      - id: install
+        run: npm ci
+      # This cost probe measures OCCT wall time. Run it alone so it does not compete with the suite's workers.
+      - name: Section offset cost, alone
+        run: npm test -- --no-file-parallelism tests/phase6/section-offset-cost.test.ts
       - name: Full unit suite (nightly)
-        run: npm test -- --maxWorkers 2
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm test -- --maxWorkers 2 --exclude tests/phase6/section-offset-cost.test.ts
