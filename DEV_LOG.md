@@ -1,5 +1,12 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-09 — STEP chamfers with three planes meeting at a point
+
+- Input boundaries. Recognition only tries the repair after the exact comparison fails and the generated features are at the end of the tree. The cap must be a planar triangle bounded by three different planar faces from recognized chamfers. The source must contain a vertex shared by those same three planes.
+- Geometry. An independently clipped block reproduced the corner without a triangular cap. A STEP round trip recovered it with an editable chamfer followed by a native Delete Face repair. Existing tests cover genuine capped corners and 100 seeded chamfered blocks. The repaired result still has to pass volume, surface area and symmetric difference checks at 1e-6.
+- References. The repair uses the existing face naming and fingerprint system and the existing Delete Face feature. A serialized part rebuilt after its chamfer distance changed. A failed candidate cannot replace the import because the command list is only returned after acceptance.
+- Ground truth. The real assembly's second component passed all seven placement and import comparisons. Each result was saved and reopened before changing the chamfer from 0.50 to 0.45 mm. All seven edits rebuilt valid solids. At the original assembly placement, relative symmetric difference was 3.92e-13.
+
 ## 2026-11-08 — Mixed draft recognition (item 4, ADR 0246)
 
 - Input boundaries. Preserved the 30° wall limit, the existing angular grouping tolerance, the 1e-6 exact solid gate and the recognition budget. Tested shallow and near-limit drafts, straight walls and opposing taper directions.

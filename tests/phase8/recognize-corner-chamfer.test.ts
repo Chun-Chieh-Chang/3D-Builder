@@ -4,11 +4,11 @@
  * for the random boxes' heap (AGENTS §3.5).
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { applyCommand, createEmptyPart } from '@3db/model';
-import { sha256Hex } from '@3db/io';
+import { applyCommand, createEmptyPart, type PartDoc } from '@3db/model';
+import { readPartFile, sha256Hex, writePartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
-import { Kernel, KernelError, type Frame, type Region, type ShapeId } from '@3db/kernel';
-import { reconstructImported, RecognizeError, Regenerator } from '@3db/regen';
+import { Kernel, KernelError, type Frame, type Region, type ShapeId, type Vec3 } from '@3db/kernel';
+import { frameFor, reconstructImported, RecognizeError, Regenerator } from '@3db/regen';
 
 let kernel: Kernel;
 let solver: PlaneGcsSolver;
@@ -39,7 +39,7 @@ const corners = (shape: ShapeId) => {
 };
 
 /** Through STEP and recognition: the symmetric difference of the rebuilt solid and this one, and the features it became. */
-async function roundTrip(shape: ShapeId) {
+async function roundTrip(shape: ShapeId, verify?: (doc: PartDoc, regen: Regenerator) => Promise<void>) {
   const bytes = new TextEncoder().encode(kernel.exportStep(shape, 'part'));
   const sha = await sha256Hex(bytes);
   const doc = applyCommand(createEmptyPart(), { type: 'importBody', blob: { id: 'blob1', sha256: sha, kind: 'step', fileName: 'f.step' }, index: 0, feature: { id: 'imp1', type: 'importedBody', name: 'i', suppressed: false, blob: 'blob1' } } as never);
@@ -52,6 +52,7 @@ async function roundTrip(shape: ShapeId) {
     const v1 = kernel.massProps(res.body!.shape).volume;
     const shared = kernel.common(shape, res.body!.shape, 0);
     if (shared.shape !== null) kernel.release(shared.shape);
+    await verify?.(out.doc, regen);
     return { difference: (v0 + v1 - 2 * shared.volume) / v0, types: out.doc.features.map((f) => f.type) };
   } finally {
     regen.dispose();
@@ -59,6 +60,47 @@ async function roundTrip(shape: ShapeId) {
 }
 
 describe('a corner where three chamfers meet', () => {
+  it('rebuilds an uncapped planar corner and keeps its chamfer editable after saving', async () => {
+    const size = 24;
+    const distance = 0.8;
+    const u = Math.SQRT1_2;
+    const planes: [Vec3, Vec3][] = [
+      [[u, u, 0], [size - distance, size, 0]],
+      [[u, 0, u], [size - distance, 0, size]],
+      [[0, u, u], [0, size - distance, size]],
+    ];
+    let shape = box(size, size, size);
+    try {
+      for (const [normal, point] of planes) {
+        const frame = frameFor(normal, point);
+        frame.origin = frame.origin.map((x, i) => x - 80 * (frame.xDir[i]! + frame.yDir[i]!)) as Vec3;
+        const tool = kernel.extrude(frame, [rect(160, 160)], normal.map((n) => n * 80) as Vec3).shape;
+        try {
+          const cut = kernel.boolean('cut', shape, tool).shape;
+          kernel.release(shape);
+          shape = cut;
+        } finally {
+          kernel.release(tool);
+        }
+      }
+      expect(corners(shape)).toBe(0);
+      const result = await roundTrip(shape, async (doc, regen) => {
+        const reopened = await readPartFile(await writePartFile(doc));
+        const chamfer = reopened.doc.features.find((feature) => feature.type === 'chamfer')!;
+        const edited = applyCommand(reopened.doc, { type: 'setChamfer', featureId: chamfer.id, value: { mode: 'distanceDistance', distance: '1.1', second: '1.1' } });
+        const after = regen.rebuild(edited);
+        expect(after.features.every((feature) => feature.status === 'ok')).toBe(true);
+        expect(kernel.check(after.body!.shape).valid).toBe(true);
+        expect(corners(after.body!.shape)).toBe(0);
+        expect(kernel.massProps(after.body!.shape).volume).toBeLessThan(kernel.massProps(shape).volume);
+      });
+      expect(result.types).toContain('deleteFace');
+      expect(result.difference).toBeLessThan(1e-6);
+    } finally {
+      kernel.release(shape);
+    }
+  });
+
   it('recovers a planar chamfer from its support planes when removal history misses the edge', async () => {
     const b = box(40, 30, 20);
     const s = chamfered(b, 2, (m) => m[0] === 40 && m[1] === 30);

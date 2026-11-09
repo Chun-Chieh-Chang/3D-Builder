@@ -4,7 +4,7 @@
  * same solid is a `RecognizeError`, and the document is not changed.
  */
 import { t } from '@3db/i18n';
-import type { Frame, Kernel, ShapeId, SurfaceGeometry, Vec3 } from '@3db/kernel';
+import type { Frame, Kernel, ShapeId, SurfaceGeometry, Topology, Vec3 } from '@3db/kernel';
 import {
   applyCommand,
   createEmptyPart,
@@ -25,7 +25,7 @@ import {
   type SketchEntity,
   type SketchFeature,
 } from '@3db/model';
-import { edgeFingerprint } from '@3db/naming';
+import { edgeFingerprint, faceFingerprint, ownerFeatures } from '@3db/naming';
 import type { SketchSolver } from '@3db/sketch';
 import { RECOGNIZE_LIMITS, startBudget, type BudgetLimits } from '../budget';
 import type { Regenerator, RebuildResult } from '../engine';
@@ -367,6 +367,27 @@ function sameSurface(a: SurfaceGeometry | undefined, b: SurfaceGeometry): boolea
   return false;
 }
 
+/** A generated triangular cap is redundant when its three chamfer planes already meet at a vertex in the source. */
+function extraChamferCaps(body: NonNullable<RebuildResult['body']>, source: Topology, chamfers: Set<Id>): Ref[] {
+  const { topology, names } = body;
+  const fromChamfer = names.faces.map((name) => ownerFeatures(name).some((id) => chamfers.has(id)));
+  return topology.faces.flatMap((face, i) => {
+    const cap = face.geometry;
+    if (!fromChamfer[i] || cap?.type !== 'plane') return [];
+    const boundary = topology.edges.filter((edge) => edge.faces.includes(i));
+    if (boundary.length !== 3 || boundary.some((edge) => edge.curve !== 'line' || edge.faces.length !== 2)) return [];
+    const neighbors = [...new Set(boundary.map((edge) => edge.faces.find((j) => j !== i)!))];
+    if (neighbors.length !== 3 || neighbors.some((j) => !fromChamfer[j])) return [];
+    const planes = neighbors.map((j) => topology.faces[j]!.geometry);
+    if (planes.some((plane) => plane?.type !== 'plane') || source.faces.some((f) => sameSurface(f.geometry, cap))) return [];
+    const meetsInSource = source.vertices.some((vertex) => planes.every((plane) =>
+      vertex.faces.some((j) => sameSurface(source.faces[j]!.geometry, plane!)),
+    ));
+    if (!meetsInSource) return [];
+    return [{ kind: 'face', name: names.faces[i]!, fingerprint: faceFingerprint(topology, i) }];
+  });
+}
+
 function blendFeature(rec: BlendRecord, r: RebuildResult, ids: IdAllocator, b: Builder): Feature[] {
   const body = r.body!;
   const ref = (i: number): Ref => ({ kind: 'edge', name: body.names.edges[i]!, fingerprint: edgeFingerprint(body.topology, i) });
@@ -536,17 +557,34 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
       return { doc: next, commands, report };
     }
     const m0 = kernel.massProps(whole);
-    const m1 = kernel.massProps(after.body.shape);
-    const shared = kernel.common(whole, after.body.shape, 0);
-    if (shared.shape !== null) kernel.release(shared.shape);
-    const volumeError = Math.abs(m1.volume - m0.volume) / m0.volume;
-    const areaError = Math.abs(m1.area - m0.area) / m0.area;
-    const difference = Math.max(0, m0.volume + m1.volume - 2 * shared.volume) / m0.volume;
-    const report: ReconstructReport = { features: { ...b.counts }, faces: [facesBefore, after.body.topology.faces.length], volume: m0.volume, volumeError, areaError, difference };
-    if (!(volumeError <= RECOGNIZE_TOLERANCE && areaError <= RECOGNIZE_TOLERANCE && difference <= RECOGNIZE_TOLERANCE)) {
-      throw new RecognizeError(t('recognize.notSame', { volume: volumeError.toExponential(2), area: areaError.toExponential(2), difference: difference.toExponential(2) }));
+    const compare = (body: NonNullable<RebuildResult['body']>): ReconstructReport => {
+      budget.check();
+      const m1 = kernel.massProps(body.shape);
+      const shared = kernel.common(whole, body.shape, 0);
+      if (shared.shape !== null) kernel.release(shared.shape);
+      const volumeError = Math.abs(m1.volume - m0.volume) / m0.volume;
+      const areaError = Math.abs(m1.area - m0.area) / m0.area;
+      const difference = Math.max(0, m0.volume + m1.volume - 2 * shared.volume) / m0.volume;
+      return { features: { ...b.counts }, faces: [facesBefore, body.topology.faces.length], volume: m0.volume, volumeError, areaError, difference };
+    };
+    const matches = (r: ReconstructReport) => [r.volumeError, r.areaError, r.difference].every((error) => error <= RECOGNIZE_TOLERANCE);
+    const report = compare(after.body);
+    if (matches(report)) return { doc: next, commands, report };
+    if (end === next.features.length && b.counts.chamfer > 0) {
+      const chamfers = new Set(next.features.filter((f) => f.type === 'chamfer' && made.includes(f.id)).map((f) => f.id));
+      const faces = extraChamferCaps(after.body, kernel.topology(whole), chamfers);
+      if (faces.length) {
+        const id = ids.take('deleteFace');
+        const cmd: Command = { type: 'insertFeature', index: end, feature: { id, type: 'deleteFace', name: t('feature.deleteFace'), suppressed: false, faces } };
+        const candidate = applyCommand(next, cmd);
+        const rebuilt = regen.rebuild(candidate);
+        if (rebuilt.body && !failedOf(rebuilt, [...made, id, ...okBefore.filter((f) => f !== featureId)])) {
+          const repaired = compare(rebuilt.body);
+          if (matches(repaired)) return { doc: candidate, commands: [...commands, cmd], report: repaired };
+        }
+      }
     }
-    return { doc: next, commands, report };
+    throw new RecognizeError(t('recognize.notSame', { volume: report.volumeError.toExponential(2), area: report.areaError.toExponential(2), difference: report.difference.toExponential(2) }));
   } finally {
     for (const id of keep) kernel.release(id);
   }
