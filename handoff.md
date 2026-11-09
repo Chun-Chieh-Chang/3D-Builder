@@ -69,7 +69,7 @@
    - 使用者裁決採 **方案 A**：所有 STEP 實體必須重建為可編輯的原生參數化特徵樹（`sketch`、`extrude`、`revolve`、`loft`、`hole`、`fillet`、`chamfer`、`datum`），移除 `importedBody` 匯入塊，且維持 `RECOGNIZE_TOLERANCE = 1e-6` 與 `RECOGNIZE_LIMITS = { ms: 120_000, heapGrowth: 512 * 1024 * 1024 }` 零妥協。
    - 遵循本檔「STEP 辨識的長期產品要求」：所有辨識與重建規則皆基於可泛化的幾何與拓樸條件，禁止以檔名、樣品尺寸或固定面序號特判。
 3. **即時 HTML + 動態 SVG 進度儀表板（每 30 秒自動更新）**：
-   - 專案內進度檔：[`scratch/feature-recognition/live.html`](scratch/feature-recognition/live.html)（由 `scratch/feature-recognition/livewatch.mjs` 每 30 秒重新生成內嵌最新狀態與 22 個細分子項進度條，並同步寫入 `scratch/feature-recognition/live-data.js`）。
+   - 本機進度頁為 `scratch/feature-recognition/live.html`。`livewatch.py` 約每 30 秒更新 `live-data.js`，供頁面讀取。這些檔案保存在本機的 `scratch/` 目錄。
    - 狀態更新指令：每完成或切換一個細分子項，執行：
      ```powershell
      node scratch/feature-recognition/setstep.mjs <stepId>=<todo|doing|done> @done=<已通過顆數> "@note=<進度說明>"
