@@ -240,3 +240,11 @@
 - **2026-11-08（CI 雲端排程 Nightly 單元測試超時）**：
   1. **虛擬機核心數與平行 Worker 搶佔**：GitHub Actions 標準 runner 只有 2 顆 vCPU，而 `vitest.config.ts` 原硬編碼 `maxWorkers: 4`。在 2 核心機器上跑 4 個 OCCT/WASM Worker 造成嚴重 CPU 飢餓，導致三個重型 Fuzz/壓測逾時（`gear-fuzz`、`section-offset-cost`、`recognize-approximate-fuzz`），而其餘 4,734 項測試全過。修法：引入 `availableParallelism()` 動態將 `maxWorkers` 限制在 `Math.min(4, Math.max(1, cores))`，並在 CI Nightly 顯式指定 `--maxWorkers 2`，消除過度平行造成的虛假超時。
   2. **重型 Fuzz 測試時間預算必須顯式宣告**：`gear-fuzz.test.ts` 執行 100 顆漸開線齒輪實體生成與拓樸求值，漏設時間預算而退化為全域的 60 秒上限（本機跑需 36 秒，CI 核心受搶佔時即超時）。比照 `knurl-fuzz` 與 `thread-fuzz`，重型 Fuzz 必須顯式指定合理的執行預算（設為 120 秒）。
+
+- **2026-11-10（C2 精確滾球圓角，Heap 量測與 Embind 回傳值配置）**：
+  1. **迴圈內高頻微分禁止使用 Embind 值回傳綁定（`EvalD1`）**：在 Newton 求腳點與截面疊代中呼叫 `BRepAdaptor_Surface.EvalD1(u, v)`，即使每次都對回傳的 `Point`、`D1U`、`D1V` 執行 `.delete()`，Embind 封裝結構體回傳值的配置仍會使 WASM Heap 在 6 次重建內從 128.0 暴增至 265.5 MiB。改用 `ad.D1(u, v, point, tangentU, tangentV)` 寫入 Arena 擁有的重用緩衝區後，6 次重建維持 128.0 MiB（由 `exact-round-heap.test.ts` 守門，且暫改回 `EvalD1` 對照實測會紅燈失敗）。
+  2. **180 極點 B-spline 投影器禁止重複建構**：`GeomAPI_ProjectPointOnSurf`（或 `Init`、`Extrema_ExtPS`）在多極點 B-spline 上每次新建永久佔用約 16 MB Heap（100 次 +1.6 GB）；同一個支撐面必須重用單一投影器實例（100 次 Perform 為 +0），或由已知頂點／pcurve 參數起算阻尼 Newton。
+  3. **跨批次與單件重複的餘裕陷阱（§3.5 再確認）**：批次量測逐件窗口多顯示 `+0.0`，僅少數種子（如 31、38、41）跳升 +44～64 MiB，且約一半成長延遲到下一件建構本體時才觸發擴張；單獨抽種子 41 跑 6 次看似持平 128.0 MiB，但拉長到 40 次即見前 10 次持平、第 11 次起階梯上升至 550.7 MiB（平均約 10 MiB／次）。**硬性約束**：不得因批次中某個種子跳升就認定只有該形狀特殊，也不得以 6 次「+0.0」宣告無洩漏；單件隔離與分段截斷實驗必須跑到跨過 Heap 餘裕（例如 N ≥ 40）。
+  4. **曲線的 `EvalD1`／`EvalD2` 與曲面相同，熱迴圈一律寫入重用輸出（C2.14d）**：`exactRound.ts` 全部改經 `sD1`/`sD2`/`cD1`/`cD2`（每個模組一組 `gp_Pnt`/`gp_Vec`）。種子 41 重建 40 次 128 → 153.6 MiB（修前 550.7）。`exact-round-heap.test.ts` 改為 40 次，改回 `EvalD1` 的對照為 550.7 MiB 並失敗。`kernel.ts` 其餘 `EvalD1` 多為單次呼叫；新寫的迴圈不得再用值回傳的微分綁定。
+  5. **「OCCT 對照 0」也受餘裕影響，刪乾淨的形狀在本建置也不會全部歸還**：同一顆 OCCT 圓角重建 40 次 128.0，1500 次 128 → 458.9 MiB（前 200 次持平）；`BRepPrimAPI_MakeBox` 完整 `delete` 兩萬次 128 → 221 MiB；B-spline 面約 17 KB／個；`BRepBuilderAPI_Copy` 約 50 KB／次。所以「OCCT 對照為 0」只能證明在那個次數內看不見，比較兩條路徑時，對照也要跑到看得見成長。精確圓角殘餘約 2.1 MiB／次，分布在每個建幾何的階段，屬此類（不是缺 `delete`：刪除陣列與暫存點的對照沒有可量的差異），由 ADR 0126 承擔。
+  6. **CRLF 檔案以編輯工具刪整行時，`\r` 會留下而把兩行接起來**：`kernel.ts` 是 CRLF，刪除暫時插入的行後 `git diff` 出現行被接起來；刪除暫時程式碼後一律以 `git diff` 核對，該檔原本無在途修改時直接 `git checkout --` 還原。

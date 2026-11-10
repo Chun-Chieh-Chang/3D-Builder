@@ -10,16 +10,43 @@
 
 > **2026-11-10 晚（Claude Code）C2.7f 產品路徑。** 精確滾球圓角已接進 `Kernel.fillet`（新檔 `packages/kernel/src/exactRound.ts`、測試 `packages/kernel/test/exact-round.test.ts` 9 項通過、型別與 `lint:rules` 通過），工作樹未 commit。代價：含 B-spline 支撐面時每個圓角約 2.8 秒，`surface-spike` 由 8.6 s／0.87 GB 變 39 s／2.5 GB。**使用者裁定只用於辨識重建**：`FilletFeature.exact`（v95，選填）由辨識重建設定，`Kernel.fillet` 預設關；使用者自己做的圓角速度不變（DEV_LOG 2026-11-10）。之後：C2.11 角落、C2.14 fuzz＋heap、C2.8～C2.10 辨識端。
 
-> **2026-11-10 夜（Claude Code）C2.11 完成、C2.14 進行中（工作樹未 commit，接續請先讀這段）。**
+> **2026-11-10 深夜（Claude Code CLI，Windows）C2.14d 完成，接手從這段開始。工作樹未 commit，未推送。**
+> - **改動**：`packages/kernel/src/exactRound.ts` 全部 `EvalD1`/`EvalD2` 改經 `sD1`/`sD2`/`cD1`/`cD2`（重用輸出）；`chainCurve` 改提供 `d1`；`ballSections` 加 `oc` 參數；三個未釋放的 adaptor 改為 delete。`packages/kernel/test/exact-round-heap.test.ts` 改為種子 41、40 次，門檻仍為 +32 MiB。`kernel.ts` 沒有改。
+> - **量測**：種子 41 N=40 128 → 153.6 MiB（修前 550.7）；N=120 128 → 382.4，約 2.1 MiB／次（修前約 10）。批次 1–60 128 → 265.5（修前 458.9）。對照：改回 `EvalD1` 為 550.7 MiB，測試失敗。
+> - **殘餘的判定**：分段截斷顯示成長分布在每個建幾何的階段。OCCT 自身圓角 1500 次 128 → 458.9；`MakeBox`、B-spline 面、`Copy` 完整 delete 後仍佔 heap。據此判定殘餘屬 §3.5 類，由 ADR 0126 承擔。刪除陣列的嘗試沒有可量的差異，已還原。細節見 DEV_LOG 同日 C2.14d 條目、AGENTS §4 2026-11-10 第 4～6 條。
+> - **驗證**：`typecheck`、`lint:rules` 通過；exact-round 3 檔＋fuzz 1–6 共 9 檔 149 項通過。辨識 `tests/phase8/recognize*.test.ts` 9 檔 48 項中 46 項通過；`recognize-approximate` 的兩項（S 曲線、封閉樣條；草圖求解器記憶體不足，68／82 段圓弧）在乾淨 HEAD 以相同訊息失敗，屬既有問題，本機 Windows 亦重現。
+> - **下一步**：使用者核准後 commit（`git add`／`commit` 需在沙箱外執行）；推送前仍須完整 `npm run verify:ui` 與全量單元測試（見下方 `3b1ba1f6` 段）。之後 C2.8～C2.10 辨識端。`recognize-approximate` 兩項的草圖求解預算另立一項。
+> - 量測腳本：`scratch/ff/heaprep.test.ts`（`TMO` 可設時限）、`heap2.test.ts`、`brcheck.test.ts`、`pin.test.ts`（`W=box|bspl|copyonly|…`）、`projcurve.test.ts`、`dprobe.test.ts`、`mutate-evald.mjs`；結果記錄在 `scratch/ff/*.log`。
+
+> **2026-11-10 深夜（Claude Code，Linux VM，改由 CLI 接手）heap 剩餘洩漏的根因與基準。工作樹程式碼未改（VM 上的改寫未寫回）。**
+> - **基準（commit `3b1ba1f6`，種子 41，`heaprep.test.ts` N=40）**：OCCT 40 次全為 128.0；exact 前 10 次 128.0，之後 153.6 → … → 550.7 MiB，重現 Windows 的量測。
+> - **根因（隔離實驗，`scratch/ff/evald-leak.test.ts`，`W=evald1|d1|value`）**：在圓錐 `GeomAdaptor_Surface` 上 200 萬次：`EvalD1` 128 → 184.4 MiB（回傳的結構本身留在 heap，即使逐一 `delete` 其 Point/D1U/D1V；結構沒有 `delete`）；同樣次數改用 `D1(u, v, P, U, V)` 寫入重用的輸出為 128 → 128；`Value` 加 `delete` 也是 128。`supportOf` 已改（commit 內），但 `exactRound.ts` 其餘熱點仍用 `EvalD1`/`EvalD2`：`ballSections` 的曲線 `E`（每個 Newton 步數次）、`accuracy` 的 `ga.EvalD1`、`deviation`、`signedNear` 的 `D2`（`EvalD2`）、`footOnRound`、`uOnIso`（曲線 `EvalD2`）、`recut` 的 `ev` 與 `gc.EvalD1`、`chainCurve` 的 `EvalD1`。另在 VM 截斷量測（種子 80）中，除去 `accuracy` 的求腳點後成長消失，與此一致。
+> - **建議修法（VM 上已寫到一半，未寫回）**：在 `exactRound.ts` 加一組共用輸出的求值函式，例如 `sD1(oc, ad, u, v)`／`sD2`（曲面 `ad.D1`/`ad.D2`）與 `cD1(oc, c, t)`／`cD2`（曲線 `c.D1`/`c.D2`；`chainCurve` 物件改提供回傳 JS 陣列的 `d1(T)`，`cD1` 遇到 `c.composite` 時呼叫它），每個 `oc` 一組 `gp_Pnt`/`gp_Vec`（以 `WeakMap` 快取），再把上列各處改用它們。改完以種子 41 N=40 驗證應持平，並把 `exact-round-heap.test.ts` 次數提高到能跨過 heap 餘裕（≥40），保留「改回 `EvalD1` 就失敗」的對照。`kernel.ts` 其他既有程式也有 26 處 `EvalD`，熱迴圈中的同樣受影響，宜另立一項檢查（記入 AGENTS §3.5）。
+
+> **2026-11-10 夜（接續）C1＋C2 已本機 commit `3b1ba1f6`（未推送）；C2.14d heap 仍有一個真實的逐次洩漏未解。接手從這段開始。**
+> - **狀態**：`main` 比 `origin/main` 多一個本機 commit `3b1ba1f6`（43 檔，C1 精確 NURBS 草圖＋C2 精確滾球圓角）。commit 前在 Windows 通過：`typecheck`、`lint:deps/rules/i18n/repo`、exact-round 3 檔 17 項、exact-round fuzz 1–6 共 132 項、辨識回歸 5 檔 54 項。fuzz 1–6 的斷言都在 `exact-round-fuzz.kit.ts` 的 `fuzzFile`，各檔加註 `// no-assertions-ok` 說明（`lint:rules` 原本誤判為零斷言）。
+> - **推送前必做（尚未做）**：完整 `npm run verify:ui`，因為 commit 含 `apps/web/src/sketcher/controller.ts` 的變換預覽改動：Bézier／B-spline 改畫曲線，不再畫控制多邊形（AGENTS §4，2026-10-19～20 第 7 條）；全量單元測試；之後向使用者回報並取得推送許可。
+> - **heap：最新量測（推翻前面「單件已 128.0 持平」的解讀）**：`scratch/ff/heaprep.test.ts`（單一種子在全新 Heap 重建 N 次；`SEED`、`N`、`XMODE=occt|exact`，以 `scratch/ff/ff.config.mts` 執行）：
+>   - 種子 31／38／41，exact 與 OCCT，各 N=6：全部持平 128.0。
+>   - **種子 41 exact，N=40：前 10 次持平 128.0，之後階梯成長到 550.7 MiB，平均約 10 MiB／次**。也就是 6 次的「持平」是 Heap 餘裕吸收（AGENTS §3.5 量測陷阱）；洩漏在單一形狀的每次 exact 重建都有，與批次無關。
+>   - 批次（`scratch/ff/heap2.test.ts`，`XMODE=exact REL=1`）：種子 1–20 128→184.4（修 `EvalD1` 前 551），1–60 128→458.9；OCCT 對照 1–20 為 128→128。批次裡逐件窗口大多 +0.0、只在 31/38/41 跳升，也是同一個陷阱的表現，不代表那三個形狀特別。
+>   - **`EvalD1` 修正仍成立**（同為 6 次，修前 265.5、修後 128.0，對照可重現）。但 `exact-round-heap.test.ts` 只跑 6 次，只能攔住那個大洩漏，**不能證明沒有剩下的洩漏**；找到並修好剩下的洩漏後，應把該測試的次數提高到能跨過餘裕（例如 40 次），並保留「改回舊程式就失敗」的對照。
+> - **接手順序（heap）**：
+>   1. 種子 41 OCCT 對照 N=40（尚未跑），確認 OCCT 單獨不成長。
+>   2. 用 N=40 逐段截斷 exact 路徑（截面建立、`accuracy`、曲面建構、替換、BRepCheck、`UpdateTolerances`），每段各自全新 Heap，找到成長的那一段。注意：每段至少要跑到看得見成長（N≥40），不得以 N=6 的 0 下結論。
+>   3. 嫌疑：其餘的值回傳綁定（`ballSections` 的曲線 `EvalD1`、`accuracy`／端邊取樣的 `EvalD1`、`new oc.GeomAdaptor_*` 未 delete，例如第 428、515 行的臨時物件），以及每次替換時新建的 B-spline 與布林（後者若為 OCCT 內部，比照 §3.5 記為已知限制，由 ADR 0126 的 Worker 高水位重啟承擔）。
+>   4. 限時：使用者同意約 1 小時判定。若確認在 OCCT 內部，記入 AGENTS §3.5 並轉 C2.8～C2.10 辨識端。
+> - **Windows 主機工具**：沙箱內沒有 Python，進度頁改用 `node scratch/claude-takeover/tools/prog.mjs`（參數同 `prog.py`，另有 `find <文字>` 查項目序號）。`git add`／`commit` 在沙箱內無法寫 `.git`，需使用者核准在沙箱外執行。
+
+> **2026-11-10 夜（Claude Code）C2.11 完成、C2.14 進行中（以下為歷史紀錄，最新狀態見上一段）。**
 > - **實件量測先於設計**：part-3/4、E13、MT17203 都沒有「三圓角交會的球面補面」。實際的角落是兩種：(1) **兩條圓角互切**（part-4 共 20 處，透鏡尖端型）；(2) **支撐面沿鏈改變**（part-3：同一條圓角下的牆由圓環→圓錐→… G1 相接）。C2.11 只做這兩種，球面補面不做（無實件需要）。量測腳本與結果：`scratch/claude-takeover/tools/ff/corners.test.ts`、`scratch/claude-takeover/ff/c-*.json`。
 > - **修掉 C2.7f 的既有缺陷**：被拒的輪廓替換會就地改動與實體共用的頂點與邊，使回傳的「OCCT 原樣」其實已損壞（透鏡樣本回傳無效實體）。現在每次嘗試都在 `BRepBuilderAPI_Copy` 上做，被拒時 `current` 不變；測試「被拒鏈原樣保留」鎖住這點。
 > - **`exactRound.ts` 新能力**：端點由多段端邊組成（角落頂點在「圓角 ∩ 另兩面共用邊」上以 Newton 求解）；端邊取樣數自適應並檢查曲線與 pcurve 間隙；移動頂點超出 OCCT pcurve 定義域時重建 pcurve；第二條圓角把角落移過已精確的邊時，以兩面求交重建該邊（`recut`）；`pjoint`：鏈中相鄰段的接縫是「接觸點落在支撐面邊界上」的球截面，兩段各自求得同一顆球。`kernel.ts exactRounds` 依支撐面把鏈分段（stretches），同一鏈各段在同一份副本上依序替換、整條成敗一致；圓角面依其實際相鄰支撐歸段（OCCT 的 Generated 歷史不可靠）。每次替換後將移動過的頂點容差重設再 `BRepLib.UpdateTolerances`。新增 `Kernel.exactRoundLog`（每個輪廓的結果或保留原因）。
 > - **heap 根因（重要，AGENTS §3.5 類）**：每次新建 `GeomAPI_ProjectPointOnSurf`（或 `Init`、或直接 `Extrema_ExtPS`）於 180 極點 B-spline 上永久佔約 16 MB（100 次 +1.6 GB）；同一物件 Init 一次後 Perform 100 次為 0。已改為：`projector()` 重用、`signedNear` 由頂點參數（`BRep_Tool.Parameters`）或舊 pcurve 起算的阻尼 Newton、有界曲面的備援起點用整張曲面的格點而非投影、`uOnIso` 改 Newton。透鏡件單次精確圓角 1.65 GB → 0。**仍未解**：批次中每件約 25 MiB 的累積成長（20 件 128→551 MiB；OCCT 單獨 0），最後量到發生在 `exactify` 的 `build()`（`exactRound` 建截面與 `accuracy`）。`release` 形狀無效、改無幾何複製無效。下一步從 `exactRound`/`accuracy` 內的 `BRepAdaptor`/`GeomAdaptor` 與 Support 投影器數量查起；量測腳本 `scratch/claude-takeover/tools/ff/heap.test.ts`（單件重複）、`heap2.test.ts`（種子批次，`XMODE=exact A= B=`）、`proj.test.ts`（投影器隔離實驗）。
 > - **heap 根因二（2026-11-10 22:17，Windows）**：種子 80 完整 exact 路徑重跑 6 次 128.0→265.5 MiB（OCCT 對照 6 次皆 128.0）。平面與圓錐各 50 萬次原生微分不成長；以實測精度值重播自適應取樣、單獨移除求腳點，把成本縮到 `Support.foot`／`ev` 的 `BRepAdaptor_Surface.EvalD1`，擴張堆疊落在 Embind 封裝其回傳值的配置。`supportOf` 改用 `ad.D1(u, v, point, tangentU, tangentV)` 寫入 arena 擁有的重用輸出：同測 128.0→128.0 MiB，精度與圓角結果不變。回歸測試 `packages/kernel/test/exact-round-heap.test.ts`（門檻 +32 MiB，印出成長）；**對照已驗**：暫時改回 `EvalD1` 時同測量到 265.5 MiB 並失敗。其餘 `EvalD1`（`ballSections` 的曲線 `E`、`accuracy`、端邊取樣等）未改，是否也累積待批次量測決定，不預先改。
-> - **此修正後已重跑（Windows）**：exact-round 3 檔 17 項、fuzz 1–6 共 132 項、辨識回歸 5 檔 54 項全部通過。批次（`scratch/ff/heap2.test.ts`，`XMODE=exact REL=1`）：種子 1–20 由 128→551 降為 128→184.4 MiB（OCCT 對照 128→128）；種子 1–60 為 128→458.9 MiB，約 7 MiB/件，**仍未解**。逐件窗口多為 +0.0，只有種子 31/38/41 為 +44～64 MiB，其餘約一半的成長出現在窗口外（下一件建本體時才擴張），所以不能只看逐件窗口；下一步以總成長二分種子區間，並在窗口外加量測點。
-> - **Windows 主機進度頁**：沙箱內沒有 Python，改用 `node scratch/claude-takeover/tools/prog.mjs`（參數同 `prog.py`，另有 `find <文字>` 查項目序號）。
-> - **驗證（Linux VM 副本）**：`tsc` 通過；`packages/kernel/test/exact-round.test.ts` 9 項、新 `exact-round-corners.test.ts` 7 項通過；辨識回歸 5 檔 54 項（feature-recognition、corner-chamfer、mixed-draft、budget、nurbs-walls）在 heap 修正前通過，**修正後未重跑**。fuzz（`exact-round-fuzz-1..6.test.ts`，每檔 20 種子、共 120）：1–4 檔曾通過（4 檔於最終程式碼通過：14 全精確、2 保留、4 OCCT 本身失敗；1–3 檔通過於阻尼 Newton 之前，需重跑），**5、6 檔尚未跑**。未跑 lint 全套與全量測試。
-> - **接手順序**：重跑 fuzz 1–6（每檔一次 shell 呼叫約 90 s）與辨識回歸 → 追 25 MiB/件的成長 → 寫入 DEV_LOG 的紅隊四問已記，補 ADR（若需要）→ commit（C1＋C2 一起，工作樹仍含 C1 未 commit 的改動）→ C2.8～C2.10 辨識端。進度頁 `scratch/claude-takeover/dev/index.html` 已標為停止。
+> - **此修正後已重跑（Windows）**：exact-round 3 檔 17 項、fuzz 1–6 共 132 項、辨識回歸 5 檔 54 項全部通過。批次量測與後續結論見本節最上方「接續」段。
+> - **驗證（Linux VM 副本，歷史）**：`tsc` 通過；`packages/kernel/test/exact-round.test.ts` 9 項、新 `exact-round-corners.test.ts` 7 項通過；辨識回歸與 fuzz 已於 Windows 在最終程式碼重跑通過（見上）。
+> - **接手順序（歷史，已被上方取代）**：重跑 fuzz 與辨識回歸（已完成）→ 追 heap（進行中）→ commit（已完成，`3b1ba1f6`）→ C2.8～C2.10 辨識端。
 
 > **新工作階段的環境重建。** 本機 `node_modules` 是 Windows 版，Linux VM 無法執行；每個工作階段的 VM 家目錄不同，前一階段的副本不會留下。重建：`mkdir ~/3db-linux && cd <repo> && git ls-files -z | tar --null -T - -cf - | (cd ~/3db-linux && tar -xf -)`，再把 `git status` 列出的未提交檔案（含未追蹤的新檔）複製過去，`cd ~/3db-linux && npm ci`（約 3 分鐘，勿複製 `apps/desktop/src-tauri/target`，會塞滿磁碟）。每次 shell 呼叫上限 180 秒且結束時會終止背景程序，長工作要分段。量測腳本放進 `~/3db-linux/scratch/ff/` 並以 `tools/ff/ff.config.mts` 執行；全量實件稽核用 `tools/run-audit.py`（需 `tools/probe-all-3db-steps.test.ts` 與 `all.config.mts` 放到 `~/3db-linux/scratch/feature-recognition/`，以 `AUDIT_OUT` 指定輸出資料夾，每次呼叫跑一檔）；進度頁 `scratch/claude-takeover/dev/index.html` 讀同資料夾的 `data.js`，用 `tools/prog.py` 更新（`item <階段> <序號> <ok|run|wait> [比例] [說明]`、`now`、`log`、`target`）。治具全流程約 95 秒，可編輯性檢查要另外跑。本機進度頁 `scratch/claude-takeover/dev/index.html`、C1 後全量稽核 `scratch/claude-takeover/step-audit-c1/index.html`、量測腳本、稽核與進度頁工具已備份於 `scratch/claude-takeover/tools/`（Linux VM 副本須在新工作階段重建，見下方）。
 

@@ -85,6 +85,28 @@ export function projector(oc: any, S: any) {
 const xyz = (p: any): V3 => [p.X(), p.Y(), p.Z()];
 /** read a point or vector the bindings handed back, and free it */
 const take = (p: any): V3 => { const o = xyz(p); p.delete(); return o; };
+/**
+ * Derivatives written into outputs made once per module and reused (C2.14d). EvalD1/EvalD2 hand back a struct that Embind allocates and that stays in
+ * the heap even when its points and vectors are deleted (measured on a cone, 2e6 calls: EvalD1 128 → 184 MiB; D1 into reused outputs 128 → 128).
+ * Every value is copied out before returning, so nested calls do not clobber each other.
+ */
+const outputs = new WeakMap<object, any[]>();
+const outs = (oc: any): any[] => {
+  let o = outputs.get(oc);
+  if (!o) { o = [new oc.gp_Pnt(), new oc.gp_Vec(), new oc.gp_Vec(), new oc.gp_Vec(), new oc.gp_Vec(), new oc.gp_Vec()]; outputs.set(oc, o); }
+  return o;
+};
+/** point and first derivatives of a surface adaptor at (u, v) */
+export function sD1(oc: any, ad: any, u: number, v: number) { const [P, U, V] = outs(oc); ad.D1(u, v, P, U, V); return { p: xyz(P), du: xyz(U), dv: xyz(V) }; }
+/** point, first and second derivatives of a surface adaptor at (u, v) */
+export function sD2(oc: any, ad: any, u: number, v: number) {
+  const [P, U, V, UU, VV, UV] = outs(oc); ad.D2(u, v, P, U, V, UU, VV, UV);
+  return { p: xyz(P), u: xyz(U), v: xyz(V), uu: xyz(UU), vv: xyz(VV), uv: xyz(UV) };
+}
+/** point and tangent of a curve adaptor (or of a `chainCurve`) at t */
+export function cD1(oc: any, c: any, t: number): { p: V3; d: V3 } { if (c.composite) return c.d1(t); const [P, D] = outs(oc); c.D1(t, P, D); return { p: xyz(P), d: xyz(D) }; }
+/** point, first and second derivatives of a curve adaptor at t */
+export function cD2(oc: any, c: any, t: number) { const [P, D, DD] = outs(oc); c.D2(t, P, D, DD); return { p: xyz(P), d: xyz(D), dd: xyz(DD) }; }
 export function supportOf(oc: any, face: any): Support {
   const arena = new Arena();
   const ad = arena.own(new oc.BRepAdaptor_Surface(face, true));
@@ -125,8 +147,8 @@ export function supportOf(oc: any, face: any): Support {
  * The ball of radius r touching supports a and b with its center in the normal plane of `ca` at t: Newton on both supports' parameters (x = ua, va, ub, vb).
  * `f` is the residual, `c` the center, `p1`/`p2` the contact points.
  */
-export function ballSections(a: Support, b: Support, ca: any, r: number, sgn: number) {
-  const E = (tt: number) => { const d = ca.EvalD1(tt); const out = { p: xyz(d.Point), d: xyz(d.D1) }; d.Point.delete(); d.D1.delete(); return out; };
+export function ballSections(oc: any, a: Support, b: Support, ca: any, r: number, sgn: number) {
+  const E = (tt: number) => cD1(oc, ca, tt);
   const F = (x: number[], tt: number) => {
     const A = a.ev(x[0]!, x[1]!), B = b.ev(x[2]!, x[3]!);
     const c1 = add(A.p, mul(A.n, sgn * r)), c2 = add(B.p, mul(B.n, sgn * r));
@@ -164,7 +186,7 @@ export function ballSections(a: Support, b: Support, ca: any, r: number, sgn: nu
  */
 export function exactRound(oc: any, a: Support, b: Support, ca: any, r: number, sgn: number, NS = ROUND_SECTIONS, P = 5, tStart?: number, pin?: { index: number; value: number; period: number }) {
   const tf = ca.FirstParameter(), t1f = ca.LastParameter(); let t0 = tStart ?? tf, t1 = t0 + (t1f - tf); let pinned: number | null = null;
-  const sectionAt = ballSections(a, b, ca, r, sgn);
+  const sectionAt = ballSections(oc, a, b, ca, r, sgn);
   // optional: move the start so that one support parameter takes a given value (a vertex of that support's own seam)
   if (pin) {
     const per = pin.period; const wrap = (d: number) => (per > 0 ? d - per * Math.round(d / per) : d);
@@ -216,7 +238,7 @@ export function exactRound(oc: any, a: Support, b: Support, ca: any, r: number, 
       for (let i = 0; i < n; i++) {
         const u = sp[0]! + ((sp[sp.length - 1]! - sp[0]!) * (i + 0.5)) / n; const ga0 = uv(pa, u), gb0 = uv(pb, u);
         for (const v of [0.31, 0.5, 0.69]) {
-          const d = ga.EvalD1(u, v); const q = xyz(d.Point); const nn = unit(cross(xyz(d.D1U), xyz(d.D1V))); d.Point.delete(); d.D1U.delete(); d.D1V.delete();
+          const d = sD1(oc, ga, u, v); const q = d.p; const nn = unit(cross(d.du, d.dv));
           let best = Infinity; for (const sg of [1, -1]) { const c = add(q, mul(nn, sg * r)); best = Math.min(best, Math.max(Math.abs(a.foot(c, ga0) - r), Math.abs(b.foot(c, gb0) - r))); }
           dev = Math.max(dev, best);
         }
@@ -232,12 +254,14 @@ export function deviation(oc: any, face: any, sup: Support[], r: number, n = 40)
   const ad = new oc.BRepAdaptor_Surface(face, true);
   const u0 = ad.FirstUParameter(), u1 = ad.LastUParameter(), v0 = ad.FirstVParameter(), v1 = ad.LastVParameter();
   let dev = 0;
-  for (let i = 0; i <= n; i++) for (let j = 1; j < 8; j++) {
-    const d = ad.EvalD1(u0 + ((u1 - u0) * i) / n, v0 + ((v1 - v0) * j) / 8); const p = take(d.Point);
-    const nn = unit(cross(take(d.D1U), take(d.D1V)));
-    let best = Infinity; for (const sg of [1, -1]) { const c = add(p, mul(nn, sg * r)); best = Math.min(best, Math.max(...sup.map((S) => Math.abs(S.dist(c) - r)))); }
-    dev = Math.max(dev, best);
-  }
+  try {
+    for (let i = 0; i <= n; i++) for (let j = 1; j < 8; j++) {
+      const d = sD1(oc, ad, u0 + ((u1 - u0) * i) / n, v0 + ((v1 - v0) * j) / 8); const p = d.p;
+      const nn = unit(cross(d.du, d.dv));
+      let best = Infinity; for (const sg of [1, -1]) { const c = add(p, mul(nn, sg * r)); best = Math.min(best, Math.max(...sup.map((S) => Math.abs(S.dist(c) - r)))); }
+      dev = Math.max(dev, best);
+    }
+  } finally { ad.delete(); }
   return dev;
 }
 
@@ -271,7 +295,7 @@ export function curve2(oc: any, s: number[], pts: number[][], P: number) {
 function signedNear(oc: any, face: any, keep: { release(): void }[]) {
   const S = oc.BRep_Tool.Surface(face); const ad = new oc.BRepAdaptor_Surface(face, false); const PJ = projector(oc, S); keep.push(PJ);
   const U0 = ad.FirstUParameter(), U1 = ad.LastUParameter(), V0 = ad.FirstVParameter(), V1 = ad.LastVParameter(); const du0 = U1 - U0, dv0 = V1 - V0;
-  const D2 = (u: number, v: number) => { const d = ad.EvalD2(u, v); const o = { p: take(d.Point), u: take(d.D1U), v: take(d.D1V), uu: take(d.D2U), vv: take(d.D2V), uv: take(d.D2UV) }; return o; };
+  const D2 = (u: number, v: number) => sD2(oc, ad, u, v);
   let last: [number, number] | null = null;
   // a start with none given: on a bounded surface (a B-spline: a round, OCCT's or exact) the nearest of a grid over the whole surface, with no GeomAPI projection
   // (each keeps heap, see `projector`); on an analytic surface (no such cost) the projection
@@ -314,7 +338,7 @@ function footOnRound(oc: any, S: any, q: V3, u0: number, u1: number) {
   for (let i = 0; i <= 64; i++) for (let j = 0; j <= 4; j++) { const u = u0 + ((u1 - u0) * i) / 64, v = j / 4; const d = len(sub(take(A.Value(u, v)), q)); if (d < best) { best = d; bu = u; bv = v; } }
   let u = bu, v = bv;
   for (let it = 0; it < 30; it++) {
-    const d = A.EvalD2(u, v); const e = { p: take(d.Point), u: take(d.D1U), v: take(d.D1V), uu: take(d.D2U), vv: take(d.D2V), uv: take(d.D2UV) }; const w = sub(e.p, q);
+    const e = sD2(oc, A, u, v); const w = sub(e.p, q);
     const F = [dot(w, e.u), dot(w, e.v)]; const J = [[dot(e.u, e.u) + dot(w, e.uu), dot(e.u, e.v) + dot(w, e.uv)], [dot(e.u, e.v) + dot(w, e.uv), dot(e.v, e.v) + dot(w, e.vv)]];
     const det = J[0]![0]! * J[1]![1]! - J[0]![1]! * J[1]![0]!; if (!(Math.abs(det) > 0)) break;
     const a = (F[0]! * J[1]![1]! - F[1]! * J[0]![1]!) / det, b = (J[0]![0]! * F[1]! - J[1]![0]! * F[0]!) / det; u -= a; v -= b; if (Math.abs(a) + Math.abs(b) < 1e-15) break;
@@ -382,7 +406,7 @@ export function exactify(oc: any, shape: any, FoldIn: any, supFaces: any[], shar
   };
   const sharpEdgeOf = (c: any) => c.Edge();
   let span: [number, number] | undefined;
-  if (!closed) { const a = sharp.FirstParameter(), b = sharp.LastParameter(); const sp = len(pt(sharp.EvalD1((a + b) / 2).D1)); const d = (4 * r) / sp; span = [a - d, b + d]; }
+  if (!closed) { const a = sharp.FirstParameter(), b = sharp.LastParameter(); const sp = len(cD1(oc, sharp, (a + b) / 2).d); const d = (4 * r) / sp; span = [a - d, b + d]; }
   // where the round joins the round of the next stretch of the chain, on another support (the wall turns from one face to the next, smoothly): the
   // section of the ball whose contact on the support that changes is on the edge between its two faces (C2.11). Both stretches find the same ball there.
   const othersEdges = others.flatMap((N) => list(N, EDGE));
@@ -401,7 +425,7 @@ export function exactify(oc: any, shape: any, FoldIn: any, supFaces: any[], shar
   if (pjoints.length) {
     if (closed || !span) throw new Error('round joint on a closed round');
     const a = sharp.FirstParameter(), b = sharp.LastParameter();
-    const sec = ballSections(sup[0]!, sup[1]!, sharp, r, sgn);
+    const sec = ballSections(oc, sup[0]!, sup[1]!, sharp, r, sgn);
     for (const j of pjoints) {
       const Bcrv = oc.BRep_Tool.Curve(j.B, 0, 0); const BG = Bcrv.returnValue ?? Bcrv;
       // start from the sharp edge's point nearest OCCT's joint
@@ -423,10 +447,10 @@ export function exactify(oc: any, shape: any, FoldIn: any, supFaces: any[], shar
   let ex = build(undefined, undefined, span);
   {
     const ad = new oc.BRepAdaptor_Surface(Fold, true); const um = (ad.FirstUParameter() + ad.LastUParameter()) / 2, vm = (ad.FirstVParameter() + ad.LastVParameter()) / 2;
-    const d = ad.EvalD1(um, vm); const n0 = unit(cross(pt(d.D1U), pt(d.D1V)));
-    const o1 = footOnRound(oc, ex.surf, pt(d.Point), ex.u0, ex.u1);
-    const e1 = new oc.GeomAdaptor_Surface(ex.surf).EvalD1(o1[0], o1[1]);
-    if (dot(n0, unit(cross(pt(e1.D1U), pt(e1.D1V)))) < 0) { sup = [sup[1]!, sup[0]!]; sF = [sF[1], sF[0]]; ex = build(undefined, undefined, span); info.swapped = true; }
+    const d = sD1(oc, ad, um, vm); ad.delete(); const n0 = unit(cross(d.du, d.dv));
+    const o1 = footOnRound(oc, ex.surf, d.p, ex.u0, ex.u1);
+    const gs = new oc.GeomAdaptor_Surface(ex.surf); const e1 = sD1(oc, gs, o1[0], o1[1]); gs.delete();
+    if (dot(n0, unit(cross(e1.du, e1.dv))) < 0) { sup = [sup[1]!, sup[0]!]; sF = [sF[1], sF[0]]; ex = build(undefined, undefined, span); info.swapped = true; }
   }
   const kinds = Fedges.map(kindOf); info.kinds = kinds;
   if (closed) {
@@ -449,9 +473,9 @@ export function exactify(oc: any, shape: any, FoldIn: any, supFaces: any[], shar
   // curve of hundreds of poles keeps heap as one onto a surface does)
   const isoA = iso.map((c: any) => new oc.GeomAdaptor_Curve(c));
   const uOnIso = (k: number, p: any) => {
-    const q = pt(p); const A2 = isoA[k]; const a = A2.FirstParameter(), b = A2.LastParameter(); let best = Infinity, u = a;
+    const q: V3 = Array.isArray(p) ? (p as V3) : pt(p); const A2 = isoA[k]; const a = A2.FirstParameter(), b = A2.LastParameter(); let best = Infinity, u = a;
     for (let i = 0; i <= 256; i++) { const x = a + ((b - a) * i) / 256; const d = len(sub(take(A2.Value(x)), q)); if (d < best) { best = d; u = x; } }
-    for (let it = 0; it < 30; it++) { const d = A2.EvalD2(u); const P = take(d.Point), D1 = take(d.D1), D2 = take(d.D2); const w = sub(P, q); const f = dot(w, D1), df = dot(D1, D1) + dot(w, D2); if (!(Math.abs(df) > 0)) break; const du = f / df; u -= du; if (Math.abs(du) < 1e-15 * (1 + Math.abs(u))) break; }
+    for (let it = 0; it < 30; it++) { const d = cD2(oc, A2, u); const P = d.p, D1 = d.d, D2 = d.dd; const w = sub(P, q); const f = dot(w, D1), df = dot(D1, D1) + dot(w, D2); if (!(Math.abs(df) > 0)) break; const du = f / df; u -= du; if (Math.abs(du) < 1e-15 * (1 + Math.abs(u))) break; }
     return u;
   };
   const periodOf = (f: any) => { const a = new oc.BRepAdaptor_Surface(f, true); return [a.IsUPeriodic() ? a.UPeriod() : 0, a.IsVPeriodic() ? a.VPeriod() : 0] as [number, number]; };
@@ -511,8 +535,8 @@ export function exactify(oc: any, shape: any, FoldIn: any, supFaces: any[], shar
       setV(V0, Sv(0, 0)); setV(V1, Sv(0, 1));
     } else if (kinds[ei] === 'c0' || kinds[ei] === 'c1') {
       const k = kinds[ei] === 'c0' ? 0 : 1;
-      const d = ca.EvalD1((a0 + a1) / 2); const um = uOnIso(k, d.Point);
-      flips[ei] = dot(pt(d.D1), pt(new oc.GeomAdaptor_Curve(iso[k]).EvalD1(um).D1)) < 0;
+      const d = cD1(oc, ca, (a0 + a1) / 2); const um = uOnIso(k, d.p);
+      { const gi = new oc.GeomAdaptor_Curve(iso[k]); flips[ei] = dot(d.d, cD1(oc, gi, um).d) < 0; gi.delete(); }
       let ua: number, ub: number, Va: any, Vb: any;
       if (closed) { ua = 0; ub = L; Va = Vb = Vf; }
       else {
@@ -645,15 +669,15 @@ export function exactify(oc: any, shape: any, FoldIn: any, supFaces: any[], shar
   const recut = (ed: any, two: any[], vs: any[], hit: { V: any; p: V3 }[]) => {
     const C0 = oc.BRep_Tool.Curve(ed, 0, 0); const crv = C0.returnValue ?? C0; const gc = new oc.GeomAdaptor_Curve(crv);
     const c = new oc.BRepAdaptor_Curve(ed); const f0 = c.FirstParameter(), f1 = c.LastParameter();
-    const ends = vs.map((v: any) => { const k = hit.find((h) => h.V.IsSame(v)); const P = k ? k.p : pt(oc.BRep_Tool.Pnt(oc.TopoDS.Vertex(v))); const old = v.Orientation() === FWD ? f0 : f1; const d = gc.EvalD1(old); const T = pt(d.D1); const par = old + dot(sub(P, pt(d.Point)), T) / dot(T, T); return { v: oc.TopoDS.Vertex(v.Oriented(FWD)), fwd: v.Orientation() === FWD, P, par }; });
+    const ends = vs.map((v: any) => { const k = hit.find((h) => h.V.IsSame(v)); const P = k ? k.p : pt(oc.BRep_Tool.Pnt(oc.TopoDS.Vertex(v))); const old = v.Orientation() === FWD ? f0 : f1; const d = cD1(oc, gc, old); const T = d.d; const par = old + dot(sub(P, d.p), T) / dot(T, T); return { v: oc.TopoDS.Vertex(v.Oriented(FWD)), fwd: v.Orientation() === FWD, P, par }; });
     const a = ends.find((x: any) => x.fwd), b = ends.find((x: any) => !x.fwd); if (!a || !b || !(b.par > a.par)) return null;
     const S = two.map((f: any) => new oc.GeomAdaptor_Surface(oc.BRep_Tool.Surface(f)));
     // Newton marches from the first vertex's own parameters on both faces, each sample from the last
     let prev: number[] = two.flatMap((f: any) => { const q = oc.BRep_Tool.Parameters(a.v, f); const o = [q.X(), q.Y()]; q.delete(); return o; });
-    const ev = (k: number, u: number, v: number) => { const d = S[k].EvalD1(u, v); return { p: take(d.Point), du: take(d.D1U), dv: take(d.D1V) }; };
+    const ev = (k: number, u: number, v: number) => sD1(oc, S[k], u, v);
     const N = 40; const ss: number[] = [], P3: V3[] = [], uv: number[][][] = [[], []]; let gap = 0;
     for (let j = 0; j <= N; j++) {
-      const q = a.par + ((b.par - a.par) * j) / N; const d = gc.EvalD1(q); const g = j === 0 ? a.P : j === N ? b.P : pt(d.Point); const T = unit(pt(d.D1));
+      const q = a.par + ((b.par - a.par) * j) / N; const d = cD1(oc, gc, q); const g = j === 0 ? a.P : j === N ? b.P : d.p; const T = unit(d.d);
       let x = [...prev];
       const F = (y: number[]) => { const A2 = ev(0, y[0]!, y[1]!).p, B2 = ev(1, y[2]!, y[3]!).p; return [...sub(A2, B2), dot(sub(A2, g), T)]; };
       for (let it = 0; it < 30; it++) {
@@ -737,7 +761,7 @@ export function exactify(oc: any, shape: any, FoldIn: any, supFaces: any[], shar
       const P0 = new oc.gp_Pnt(k.p[0], k.p[1], k.p[2]); const pr = new oc.GeomAPI_ProjectPointOnCurve(P0, crv);
       let par: number;
       if (pr.NbPoints() > 0) par = pr.LowerDistanceParameter();
-      else { const gc = new oc.GeomAdaptor_Curve(crv); par = gc.Value(f0).Distance(P0) < gc.Value(f1).Distance(P0) ? f0 : f1; par = root((x) => { const d = gc.EvalD1(x); return dot(sub(pt(d.Point), k.p), pt(d.D1)); }, par, 1e-6 * (f1 - f0)); (info.projFallback ??= []).push(oc.Standard_Type ? '' : 'nearest'); }
+      else { const gc = new oc.GeomAdaptor_Curve(crv); par = gc.Value(f0).Distance(P0) < gc.Value(f1).Distance(P0) ? f0 : f1; par = root((x) => { const d = cD1(oc, gc, x); return dot(sub(d.p, k.p), d.d); }, par, 1e-6 * (f1 - f0)); (info.projFallback ??= []).push(oc.Standard_Type ? '' : 'nearest'); }
       let off = new oc.GeomAdaptor_Curve(crv).Value(par).Distance(new oc.gp_Pnt(k.p[0], k.p[1], k.p[2])); info.offOtherEdge = Math.max(info.offOtherEdge ?? 0, off);
       { const gc = new oc.GeomAdaptor_Curve(crv); const old = v.Orientation() === FWD ? f0 : f1; if (gc.IsPeriodic()) { const T = gc.Period(); par += T * Math.round((old - par) / T); } (info.rangeEdits ??= []).push([+(par - old).toExponential(2), gc.IsPeriodic()]); }
       { const C3 = oc.BRep_Tool.Curve(ed, 0, 0); const crv3 = C3.returnValue ?? C3; const gc = new oc.GeomAdaptor_Curve(crv3); if (!gc.IsPeriodic()) { const d0 = gc.FirstParameter(), d1 = gc.LastParameter(); if (par < d0 || par > d1) { const cl = Math.min(d1, Math.max(d0, par)); const gap = gc.Value(cl).Distance(P0); (info.clamped ??= []).push(+gap.toExponential(2)); par = cl; off = Math.max(off, gap); } } }
@@ -811,7 +835,8 @@ export function chainCurve(oc: any, edges: any[]) {
     composite: true,
     FirstParameter: () => lo, LastParameter: () => hi,
     Value: (T: number) => { const { p, t } = at(T); return p.c.Value(t); },
-    EvalD1: (T: number) => { const { p, t, sg } = at(T); const d = p.c.EvalD1(t); const v = new oc.gp_Vec(sg * d.D1.X(), sg * d.D1.Y(), sg * d.D1.Z()); d.D1.delete(); return { Point: d.Point, D1: v }; },
+    // point and tangent as JS arrays (see `cD1`, which calls it for a chain)
+    d1: (T: number) => { const { p, t, sg } = at(T); const o = cD1(oc, p.c, t); return { p: o.p, d: mul(o.d, sg) }; },
     extended: (a: number, b: number) => make(a, b),
     order, cum, closedChain: closed,
   });
