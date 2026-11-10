@@ -191,6 +191,13 @@ export type SectionEdge =
   | { kind: 'bezier'; curve: string; spans: HomogeneousPole[][] }
   | { kind: 'other'; curve: string };
 
+/**
+ * A section through a wall that is a curve carried straight along the section plane's normal (an extrusion of a B-spline): that curve itself, exactly,
+ * read from the wall's surface rather than from the plane's intersection with it (which comes back as an approximation). Clamped, so it starts at its
+ * first pole `a` and ends at its last `b`; `weights` only when rational.
+ */
+export type NurbsSectionEdge = { kind: 'nurbs'; degree: number; poles: [number, number][]; weights?: number[]; knots: number[]; mults: number[]; a: [number, number]; b: [number, number] };
+
 export interface OpResult {
   shape: ShapeId;
   /** faceOrigins[i] lists the origins of output face i. */

@@ -15,6 +15,42 @@ export function bezierPoint(points:readonly P2[],t:number):P2 {
   const work=points.map(p=>[...p] as P2);for(let n=work.length-1;n>0;n--)for(let i=0;i<n;i++)work[i]=[work[i]![0]*(1-t)+work[i+1]![0]*t,work[i]![1]*(1-t)+work[i+1]![1]*t];return work[0]??[0,0];
 }
 
+/** A clamped (rational) B-spline of `poles` at `t` from 0 (its first pole) to 1 (its last): de Boor's algorithm in homogeneous coordinates. */
+export function nurbsPoint(poles: readonly P2[], n: { degree: number; knots: readonly number[]; mults: readonly number[]; weights?: readonly number[] }, t: number): P2 {
+  const p = n.degree;
+  const U = n.knots.flatMap((k, i) => Array<number>(n.mults[i]!).fill(k));
+  const u = n.knots[0]! + (n.knots[n.knots.length - 1]! - n.knots[0]!) * Math.min(1, Math.max(0, t));
+  // the span: the last knot interval [U[k], U[k + 1]) holding u, the curve's end in the last one
+  let k = p;
+  while (k < poles.length - 1 && U[k + 1]! <= u) k++;
+  const d = Array.from({ length: p + 1 }, (_, j) => {
+    const q = poles[k - p + j]!;
+    const w = n.weights?.[k - p + j] ?? 1;
+    return [q[0] * w, q[1] * w, w];
+  });
+  for (let r = 1; r <= p; r++) {
+    for (let j = p; j >= r; j--) {
+      const i = k - p + j;
+      const den = U[i + p - r + 1]! - U[i]!;
+      const a = den > 0 ? (u - U[i]!) / den : 0;
+      d[j] = [d[j - 1]![0]! * (1 - a) + d[j]![0]! * a, d[j - 1]![1]! * (1 - a) + d[j]![1]! * a, d[j - 1]![2]! * (1 - a) + d[j]![2]! * a];
+    }
+  }
+  const h = d[p]!;
+  return [h[0]! / h[2]!, h[1]! / h[2]!];
+}
+
+/** A spline drawn by its poles (a Bézier, or a B-spline with `nurbs`) at `t` from 0 to 1. */
+export function controlPoint(points: readonly P2[], nurbs: Parameters<typeof nurbsPoint>[1] | undefined, t: number): P2 {
+  return nurbs ? nurbsPoint(points, nurbs, t) : bezierPoint(points, t);
+}
+
+/** Enough points along such a spline to draw it: 64 steps for a Bézier, 16 for each span of a B-spline. */
+export function controlSamples(points: readonly P2[], nurbs: Parameters<typeof nurbsPoint>[1] | undefined, reverse = false): P2[] {
+  const steps = nurbs ? 16 * (nurbs.knots.length - 1) : 64;
+  return Array.from({ length: steps + 1 }, (_, i) => controlPoint(points, nurbs, reverse ? 1 - i / steps : i / steps));
+}
+
 // ---------------------------------------------------------------- 2D math
 
 export const add = (a: P2, b: P2): P2 => [a[0] + b[0], a[1] + b[1]];
@@ -157,19 +193,19 @@ function catmullRom(p0: P2, p1: P2, p2: P2, p3: P2, t: number): P2 {
  * curve (the same Catmull-Rom evaluation, or the Bezier `bezierPoint` where the spline is a Bezier) and refines the best coarse step.
  */
 export function splineNearest(g: Extract<SolvedGeometry, { type: 'spline' }>, p: P2): P2 {
-  if (g.bezier) {
-    const f = (t: number) => dist2(bezierPoint(g.points, t), p);
-    const step = 1 / 256;
+  if (g.bezier || g.nurbs) {
+    const f = (t: number) => dist2(controlPoint(g.points, g.nurbs, t), p);
+    const step = 1 / (g.nurbs ? 64 * (g.nurbs.knots.length - 1) : 256);
     let best = 0;
     let bestValue = Infinity;
-    for (let i = 0; i <= 256; i++) {
+    for (let i = 0; i * step <= 1 + 1e-12; i++) {
       const value = f(i * step);
       if (value < bestValue) {
         bestValue = value;
         best = i * step;
       }
     }
-    return bezierPoint(g.points, goldenMin(f, Math.max(0, best - step), Math.min(1, best + step), 1e-12));
+    return controlPoint(g.points, g.nurbs, goldenMin(f, Math.max(0, best - step), Math.min(1, best + step), 1e-12));
   }
   const n = g.points.length;
   if (n < 2) return g.points[0] ?? p;
@@ -271,7 +307,7 @@ export function sample(g: SolvedGeometry, px: number): P2[] {
       });
     }
     case 'spline': {
-      if(g.bezier)return Array.from({length:65},(_,i)=>bezierPoint(g.points,i/64));
+      if(g.bezier||g.nurbs)return controlSamples(g.points,g.nurbs);
       const n = g.points.length;
       if (n < 2) return g.points;
       const out: P2[] = [];
@@ -946,7 +982,7 @@ export function constraintsOf<C extends SketchConstraint>(constraints: readonly 
 /** Endpoint pair closest in solved geometry; normal orientation is stored so later edits do not choose another branch. */
 export function endpointTangentOffer(geometry:Geometry,a:Id,b:Id):Extract<RelationBody,{type:'endpointTangent'}>|null {
   const ga=geometryOf(geometry,a),gb=geometryOf(geometry,b);
-  if(!ga||!gb||!['line','arc','spline'].includes(ga.type)||!['line','arc','spline'].includes(gb.type)||(ga.type==='spline'&&!ga.bezier)||(gb.type==='spline'&&!gb.bezier))return null;
+  if(!ga||!gb||!['line','arc','spline'].includes(ga.type)||!['line','arc','spline'].includes(gb.type)||(ga.type==='spline'&&!ga.bezier&&!ga.nurbs)||(gb.type==='spline'&&!gb.bezier&&!gb.nurbs))return null;
   const ends=(g:SolvedGeometry):P2[]=>g.type==='line'?[g.a,g.b]:g.type==='arc'?[polar(g.c,g.r,g.a0),polar(g.c,g.r,g.a1)]:g.type==='spline'?[g.points[0]!,g.points[g.points.length-1]!]:[];
   const ea=ends(ga),eb=ends(gb);let ai=0,bi=0,best=Infinity;for(let i=0;i<2;i++)for(let j=0;j<2;j++){const d=dist(ea[i]!,eb[j]!);if(d<best){best=d;ai=i;bi=j;}}
   const normal=(g:SolvedGeometry,p:P2):P2=>g.type==='line'?perp(sub(g.b,g.a)):g.type==='arc'?sub(g.c,p):g.type==='spline'?perp(dist(p,g.points[0]!)<1e-9?sub(g.points[1]!,g.points[0]!):sub(g.points[g.points.length-1]!,g.points[g.points.length-2]!)):[0,0];

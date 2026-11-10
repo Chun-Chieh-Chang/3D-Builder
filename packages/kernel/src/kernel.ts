@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import type { BRepBuilderAPI_MakeShape, GProp_GProps, NCollection_Array1_gp_Pnt2d, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
+import type { BRepBuilderAPI_MakeShape, Geom_BSplineCurve, GProp_GProps, NCollection_Array1_gp_Pnt2d, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
 import { anyHit, buildBvh, nearestHitAt, triangleNormal } from './rays';
 import { forEachSample } from './sampling';
 import { escapeStepText } from './stepText';
@@ -9,6 +9,7 @@ import { loopPoints, sweepVolumeFloor } from './sweepFloor';
 import { chainBoundary, signedLoopArea, type Seg } from './section-loops';
 import { certifyOffset, type Seg2 } from './section-envelope';
 import { approximateSection } from './section-approximation';
+import { chainCurve, deviation, exactify, setRoundDeadline, supportOf } from './exactRound';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
   KernelError,
@@ -59,6 +60,7 @@ import {
   type HelixAxisPath,
   type HomogeneousPole,
   type SectionEdge,
+  type NurbsSectionEdge,
 } from './types';
 
 /** How far a surface made by offsetting may be from the gap asked for (mm): the check of every surface feature (ADR 0067). */
@@ -103,7 +105,15 @@ export type Segment =
   | { kind: 'arc'; c: P2; r: number; from: P2; to: P2; ccw: boolean; source: string }
   | { kind: 'circle'; c: P2; r: number; source: string }
   | { kind: 'ellipse'; c: P2; rx: number; ry: number; angle: number; source: string }
-  | { kind: 'spline'; points: P2[]; closed: boolean; source: string; bezierPoles?: P2[] };
+  | {
+      kind: 'spline';
+      points: P2[];
+      closed: boolean;
+      source: string;
+      bezierPoles?: P2[];
+      /** Drawn exactly as this clamped (rational) B-spline of `poles`; `points` are then only samples of it. */
+      nurbs?: { poles: P2[]; degree: number; knots: number[]; mults: number[]; weights?: number[] };
+    };
 
 /** Counter-clockwise outer loop with clockwise holes (as produced by @3db/sketch findProfiles). */
 export interface Region {
@@ -239,6 +249,8 @@ const LAW_STRETCH_SAMPLES = 64;
  * the test suite: a sound result is 1e-7 (median) to 0.025 mm on a 0.5 mm radius, 5 % of it, and meshes without a hole; the one that did not mesh had 18.09 mm,
  * 36 times the radius. A quarter of the radius lies between the two, 5 times above the largest sound one.
  */
+/** How long the exact rolling ball may take for one round (one contour of a fillet) before the round keeps OCCT's surface (C2). */
+const EXACT_ROUND_MS = 20_000;
 const FILLET_TOLERANCE_RATIO = 0.25;
 
 const add = (a: Vec3, b: Vec3, s = 1): Vec3 => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
@@ -510,7 +522,29 @@ export class Kernel {
             throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
           }
         }
-        if (seg.bezierPoles) {
+        if (seg.nurbs) {
+          const n = seg.nurbs;
+          const total = n.mults.reduce((a, b) => a + b, 0);
+          const ok =
+            !seg.closed && Number.isInteger(n.degree) && n.degree >= 1 && n.degree <= 25 && n.poles.length > n.degree && n.knots.length === n.mults.length && n.knots.length >= 2 &&
+            total === n.poles.length + n.degree + 1 && n.mults[0] === n.degree + 1 && n.mults[n.mults.length - 1] === n.degree + 1 &&
+            n.knots.every((k, i) => Number.isFinite(k) && (i === 0 || k > n.knots[i - 1]!)) && n.poles.flat().every(Number.isFinite) &&
+            (!n.weights || (n.weights.length === n.poles.length && n.weights.every((w) => Number.isFinite(w) && w > 0)));
+          if (!ok) throw new KernelError(t('kernel.wireNotClosed', { source: seg.source }));
+          const poles = arena.own(new oc.NCollection_Array1_gp_Pnt(1, n.poles.length));
+          n.poles.forEach((q, i) => poles.SetValue(i + 1, this.pnt(arena, at(q))));
+          const knots = arena.own(new oc.NCollection_Array1_double(1, n.knots.length));
+          const mults = arena.own(new oc.NCollection_Array1_int(1, n.mults.length));
+          n.knots.forEach((k, i) => knots.SetValue(i + 1, k));
+          n.mults.forEach((m, i) => mults.SetValue(i + 1, m));
+          let curve: Geom_BSplineCurve;
+          if (n.weights) {
+            const weights = arena.own(new oc.NCollection_Array1_double(1, n.weights.length));
+            n.weights.forEach((w, i) => weights.SetValue(i + 1, w));
+            curve = arena.own(new oc.Geom_BSplineCurve(poles, weights, knots, mults, n.degree, false, true));
+          } else curve = arena.own(new oc.Geom_BSplineCurve(poles, knots, mults, n.degree, false));
+          edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(curve)).Edge());
+        } else if (seg.bezierPoles) {
           const poles = seg.bezierPoles;
           if (seg.closed || poles.length < 2 || poles.length > 26 || !poles.flat().every(Number.isFinite)) throw new KernelError(t('gear.invalid'));
           const arr = arena.own(new oc.NCollection_Array1_gp_Pnt(1, poles.length));
@@ -521,7 +555,8 @@ export class Kernel {
           const curve = this.catmullRom(arena, pts, seg.closed, at);
           edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(curve)).Edge());
         }
-        if (hole) edge = arena.own(oc.TopoDS.Edge(arena.own(edge.Reversed())));
+        // a hole's pieces come already reversed by the sketch, a B-spline's poles with them: its edge runs the right way as made
+        if (hole && !seg.nurbs) edge = arena.own(oc.TopoDS.Edge(arena.own(edge.Reversed())));
       } else {
         const [p, q] = seg.ccw ? [seg.from, seg.to] : [seg.to, seg.from];
         edge = arena.own(arena.own(new oc.BRepBuilderAPI_MakeEdge(circ(seg.c, seg.r), this.pnt(arena, at(p)), this.pnt(arena, at(q)))).Edge());
@@ -1911,7 +1946,17 @@ export class Kernel {
    * radius at the positions along it (`t`: the fraction of the edge from the smaller-coordinate end, see `radiusLaw`), between two of them linear. An edge
    * of `laws` is rounded by its law, the others by `radius`; a law needs its two ends (t = 0 and t = 1), the radius outside them is not defined.
    */
-  fillet(target: ShapeId, edgeIndices: number[], radius: number, laws?: Map<number, { t: number; r: number }[]>): OpResult {
+  /**
+   * `approximation`: how closely a fillet that is no torus or cylinder (a B-spline) follows the rolling ball, in mm; OCCT's own (left when not given)
+   * is 1e-4, and the rounds it makes on a drafted wall were 2.45e-5 to 1.32e-3 mm off the ball (C2). A recognized round must be as close as the file's.
+   */
+  /**
+   * `exact` (default false; a fillet feature asks for it with `exact`, which recognition sets): a constant-radius round OCCT makes as a B-spline (on a drafted wall, a cone, a tilted face) is replaced by the exact rolling
+   * ball (C2, ADR draft in freeform-generalization.md §6b). OCCT's is 2e-5 to 2e-3 mm off the ball there, past the 1e-6 a recognized round has to meet.
+   * A round the replacement cannot take (a corner where rounds meet, supports that change along the chain, a closed chain of several faces) keeps
+   * OCCT's surface; so does one whose replaced body fails BRepCheck or whose volume moves by more than OCCT's own deviation allows.
+   */
+  fillet(target: ShapeId, edgeIndices: number[], radius: number, laws?: Map<number, { t: number; r: number }[]>, approximation?: number, exact = false): OpResult {
     if (edgeIndices.length === 0) throw new KernelError(t('kernel.filletNeedsEdge'));
     const oc = this.oc;
     const arena = new Arena();
@@ -1928,6 +1973,12 @@ export class Kernel {
       for (const filletShape of [oc.ChFi3d_FilletShape.ChFi3d_Rational, oc.ChFi3d_FilletShape.ChFi3d_QuasiAngular, oc.ChFi3d_FilletShape.ChFi3d_Polynomial]) {
         try {
           const mk = arena.own(new oc.BRepFilletAPI_MakeFillet(shape, filletShape));
+          if (approximation !== undefined) {
+            if (!(approximation > 0 && Number.isFinite(approximation))) throw new KernelError(t('kernel.opFailed', { label: t('feature.fillet') }));
+            // angular, spine, 2D, 3D approximation, 2D approximation and sag tolerances: the 3D ones at what is asked, the others in the same proportion
+            // to it as OCCT's defaults are to its 1e-4
+            mk.SetParams(1e-2, approximation, approximation / 10, approximation, approximation / 10, approximation / 10);
+          }
           for (const i of edgeIndices) {
             const e = edges.keys[i];
             if (!e) throw new KernelError(t('kernel.edgeOutOfRange', { index: i }));
@@ -1953,13 +2004,126 @@ export class Kernel {
         }
       }
       if (!out || !usedMk) throw lastErr;
-      return { shape: this.put(out), faceOrigins: this.history(usedMk, { faces: faces.keys, edges: edges.keys, verts: verts.keys }, out, arena) };
+      const faceOrigins = this.history(usedMk, { faces: faces.keys, edges: edges.keys, verts: verts.keys }, out, arena);
+      // the exact rounds keep every face where it was (same order, same count), so the history read off OCCT's body holds for theirs
+      const final = exact && !(laws && laws.size > 0) ? this.exactRounds(shape, out, usedMk, radius, arena) : out;
+      return { shape: this.put(final), faceOrigins };
     } finally {
       faces.dispose();
       edges.dispose();
       verts.dispose();
       arena.dispose();
     }
+  }
+
+  /** What became of each contour of the last fillet asked for exact rounds (for tests and diagnosis: exact, or why OCCT's round was kept). */
+  exactRoundLog: { contour: number; outcome: string; detail?: string }[] = [];
+
+  /** OCCT's B-spline rounds of `out` (made by `mk` from `original`) replaced by exact rolling balls, contour by contour; see `fillet`. */
+  private exactRounds(original: TopoDS_Shape, out: TopoDS_Shape, mk: any, r: number, arena: Arena): TopoDS_Shape {
+    const oc = this.oc as any;
+    const FACE = oc.TopAbs_ShapeEnum.TopAbs_FACE, EDGE = oc.TopAbs_ShapeEnum.TopAbs_EDGE;
+    const facesOf = (s: TopoDS_Shape): any[] => { const fs: any[] = []; for (const ex = arena.own(new oc.TopExp_Explorer(s, FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) fs.push(oc.TopoDS.Face(ex.Current())); return fs; };
+    const T2 = oc.GeomAbs_SurfaceType; const ANALYTIC = [T2.GeomAbs_Plane, T2.GeomAbs_Cylinder, T2.GeomAbs_Cone, T2.GeomAbs_Sphere, T2.GeomAbs_Torus];
+    const analytic = (f: any) => { const t2 = arena.own(new oc.BRepAdaptor_Surface(f, false)).GetType(); return ANALYTIC.some((x) => x === t2); };
+    let current = out;
+    const outFaces = facesOf(out);
+    const log: { contour: number; outcome: string; detail?: string }[] = (this.exactRoundLog = []);
+    for (let c = 1; c <= mk.NbContours(); c++) {
+      const note = (outcome: string, detail?: string) => log.push({ contour: c, outcome, ...(detail ? { detail } : {}) });
+      setRoundDeadline(performance.now() + EXACT_ROUND_MS);
+      try {
+        const chain: any[] = []; for (let j = 1; j <= mk.NbEdges(c); j++) chain.push(mk.Edge(c, j));
+        // the round faces of this contour, as indices of the body's faces
+        const roundIdx = [...new Set(chain.flatMap((e) => this.list(mk.Generated(e)).map((g) => outFaces.findIndex((f) => f.IsSame(g))).filter((i) => i >= 0)))];
+        if (roundIdx.length === 0 || roundIdx.every((i) => analytic(outFaces[i]))) { note('analytic'); continue; }
+        const adj = (e: any) => facesOf(original).filter((f) => { for (const ex = arena.own(new oc.TopExp_Explorer(f, EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) if (ex.Current().IsSame(e)) return true; return false; });
+        const same = (a: any[], b: any[]) => a.length === 2 && b.length === 2 && a.every((f) => b.some((g) => g.IsSame(f)));
+        // the chain in stretches that roll on the same two faces: a wall can turn smoothly from one face to the next under the round (C2.11)
+        const whole = chain.length > 1 ? chainCurve(oc, chain) : null;
+        const ordered: any[] = whole ? whole.order.map((o: any) => o.e) : chain;
+        const stretches: { edges: any[]; lo: number; hi: number; pair: any[] }[] = [];
+        ordered.forEach((e, k) => { const pr = adj(e); const lo = whole ? whole.cum[k] : 0, hi = whole ? whole.cum[k + 1] : 0; const last = stretches[stretches.length - 1]; if (last && same(last.pair, pr)) { last.edges.push(e); last.hi = hi; } else stretches.push({ edges: [e], lo, hi, pair: pr }); });
+        if (whole?.closedChain && stretches.length > 1 && same(stretches[0]!.pair, stretches[stretches.length - 1]!.pair)) { const f0 = stretches.shift()!; const l = stretches[stretches.length - 1]!; l.edges.push(...f0.edges); l.hi = f0.hi + whole.cum[whole.cum.length - 1]; }
+        if (stretches.some((st) => st.pair.length !== 2)) { note('supports'); continue; }
+        if (stretches.length > 1) note('stretches', String(stretches.length));
+        const now = facesOf(current);
+        type Plan = { roundIdx: number[]; supIdx: number[]; sharp: any; sgn: number; devOcct: number; area: number };
+        const plans: Plan[] = []; let refused = false;
+        // which round faces roll on which stretch: OCCT's history names several edges for one face, so it is read off the faces each touches
+        const edgesOf = (f: any) => { const es: any[] = []; for (const ex = arena.own(new oc.TopExp_Explorer(f, EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) es.push(ex.Current()); return es; };
+        const touching = new Map(roundIdx.map((q) => { const es = edgesOf(outFaces[q]); return [q, outFaces.map((_, k) => k).filter((k) => k !== q && edgesOf(outFaces[k]).some((x) => es.some((y) => y.IsSame(x))))]; }));
+        for (const st of stretches) {
+          const supIdx = st.pair.map((f) => { if (mk.IsDeleted(f)) return -1; const m = this.list(mk.Modified(f)); const img = m.length === 1 ? m[0] : m.length === 0 ? f : null; return img ? outFaces.findIndex((g) => g.IsSame(img)) : -1; });
+          const rIdx = stretches.length === 1 ? roundIdx : roundIdx.filter((q) => supIdx.every((k) => touching.get(q)!.includes(k)));
+          if (supIdx.some((q) => q < 0) || rIdx.length === 0) { note('support not kept'); refused = true; break; }
+          // a stretch's own edges, run on past its ends along their own curves (not onto the next stretch's edges: the curvature changes there, and the sections
+          // would bunch where it does)
+          const sharp = stretches.length > 1 ? chainCurve(oc, st.edges) : whole ?? arena.own(new oc.BRepAdaptor_Curve(oc.TopoDS.Edge(chain[0])));
+          const supF = supIdx.map((q) => now[q]); const rounds = rIdx.map((q) => now[q]);
+          const sup = supF.map((f) => {
+            const support = supportOf(oc, f);
+            arena.own({ delete: support.release });
+            return support;
+          });
+          // which side of the supports the ball is on, read off OCCT's round (within 1e-3 of the ball)
+          let sgn = 1;
+          { const ad = arena.own(new oc.BRepAdaptor_Surface(rounds[0], true)); const d = ad.EvalD1((ad.FirstUParameter() + ad.LastUParameter()) / 2, (ad.FirstVParameter() + ad.LastVParameter()) / 2);
+            const p = [d.Point.X(), d.Point.Y(), d.Point.Z()]; const du = [d.D1U.X(), d.D1U.Y(), d.D1U.Z()], dv = [d.D1V.X(), d.D1V.Y(), d.D1V.Z()];
+            const n = [du[1]! * dv[2]! - du[2]! * dv[1]!, du[2]! * dv[0]! - du[0]! * dv[2]!, du[0]! * dv[1]! - du[1]! * dv[0]!]; const ln = Math.hypot(n[0]!, n[1]!, n[2]!);
+            let best = Infinity, center: number[] = p;
+            for (const sg of [1, -1]) { const q = p.map((x, k) => x + (sg * r * n[k]!) / ln); const m = Math.max(...sup.map((S) => Math.abs(S.dist(q as any) - r))); if (m < best) { best = m; center = q; } }
+            if (!(best < 1e-2 * r)) { for (const S of sup) S.release(); note('no ball', `best ${best.toExponential(2)} rounds ${rIdx} sup ${supIdx} at ${p.map((x) => x.toFixed(3))}`); refused = true; break; }
+            const uv = sup[0]!.proj(center as any); const ev = sup[0]!.ev(uv[0], uv[1]); sgn = (center[0]! - ev.p[0]) * ev.n[0] + (center[1]! - ev.p[1]) * ev.n[1] + (center[2]! - ev.p[2]) * ev.n[2] > 0 ? 1 : -1; }
+          const devOcct = rIdx.every((q) => analytic(outFaces[q])) ? 0 : Math.max(...rounds.map((f) => deviation(oc, f, sup, r, 12)));
+          const area = rounds.reduce((a2, f) => { const g = arena.own(new oc.GProp_GProps()); oc.BRepGProp.SurfaceProperties(f, g, false, false); return a2 + g.Mass(); }, 0);
+          for (const S of sup) S.release();
+          plans.push({ roundIdx: rIdx, supIdx, sharp, sgn, devOcct, area });
+        }
+        if (refused) continue;
+        const allRounds = plans.flatMap((pl) => pl.roundIdx);
+        if (new Set(allRounds).size !== allRounds.length) { note('a round face on two stretches'); continue; }
+        if (allRounds.length !== roundIdx.length) { note('a round face on no stretch'); continue; }
+        // OCCT's round is already the ball (to within what a recognized round must meet) where it is an analytic surface or within 1e-9
+        const todo = plans.filter((pl) => pl.devOcct > 1e-9);
+        if (todo.length === 0) { note('occt exact'); continue; }
+        const v0 = this.volumeOf(current, arena);
+        const allowed = todo.reduce((a2, pl) => a2 + 4 * pl.devOcct * pl.area, 0) + 1e-9 * Math.abs(v0);
+        for (const seamSwap of [true, false]) {
+          // exactify edits the vertices and edges it shares with the rest of the body in place: each try works on its own copy, so a refused one leaves
+          // `current` (and OCCT's body) as they were. The stretches of one chain go in turn on the same copy, and stand or fall together.
+          let work = arena.own(new oc.BRepBuilderAPI_Copy(current, true, false)).Shape();
+          let res: any = null; const infos: any[] = [];
+          try {
+            for (const pl of todo) {
+              const wf = facesOf(work); if (wf.length !== now.length) throw new Error('face count');
+              const wRounds = pl.roundIdx.map((q) => wf[q]), wSup = pl.supIdx.map((q) => wf[q]);
+              const others = allRounds.filter((q) => !pl.roundIdx.includes(q)).map((q) => wf[q]);
+              res = exactify(oc, work, wRounds.length > 1 ? wRounds : wRounds[0], wSup, pl.sharp, r, pl.sgn, seamSwap, original, others);
+              work = res.shape; infos.push(res.info);
+            }
+          } catch (e) { rethrowTrap(e); note('threw', String((e as any)?.message ?? e)); break; }
+          res.info = Object.fromEntries(['clamped', 'vertexTol', 'endGap', 'pcurveRemade', 'pjointGap', 'endCorners'].map((k) => [k, infos.flatMap((x) => x[k] ?? [])]));
+          res.info.sections = infos.map((x) => x.sections).join('+');
+          if (!arena.own(new oc.BRepCheck_Analyzer(res.shape, true, false, false)).IsValid()) { note('invalid', `seamSwap=${seamSwap}`); continue; }
+          if (facesOf(res.shape).length !== now.length) { note('face count'); break; }
+          // the body may move only by what OCCT's rounds were off the ball (and the integration's own error)
+          const v1 = this.volumeOf(res.shape, arena);
+          if (Math.abs(v1 - v0) > allowed) { note('volume', `${v1 - v0} > ${allowed}`); break; }
+          current = res.shape; const mx = (a?: number[]) => (a && a.length ? Math.max(...a).toExponential(1) : '-'); note('exact', `dev ${Math.max(...todo.map((pl) => pl.devOcct)).toExponential(2)} sections ${res.info.sections} clamped ${mx(res.info.clamped)} vtol ${mx(res.info.vertexTol)} endGap ${mx(res.info.endGap)} pcRemade ${mx(res.info.pcurveRemade)} pjoint ${mx(res.info.pjointGap)}`);
+          break;
+        }
+      } catch (e) {
+        rethrowTrap(e); note('threw', String((e as any)?.message ?? e));
+      } finally {
+        setRoundDeadline(Infinity);
+      }
+    }
+    return current;
+  }
+
+  private volumeOf(s: TopoDS_Shape, arena: Arena): number {
+    const oc = this.oc as any; const g = arena.own(new oc.GProp_GProps()); oc.BRepGProp.VolumeProperties(s, g, 1e-9, false, false); return g.Mass();
   }
 
   /**
@@ -3415,6 +3579,58 @@ export class Kernel {
    * up to 0.36 mm and 7% off, so whoever shows them as a result calls `massPropsExact`. The area is the fixed rule's everywhere. `adaptive: false` is the fixed rule for all of it, `eps` the
    * adaptive rule for all of it.
    */
+  /**
+   * The volumes of what `a` has and `b` has not, and of what `b` has and `a` has not, from one intersection of the two (`BOPAlgo_CellsBuilder`): each
+   * measured on its own pieces, where a sum of volumes less twice the shared one would take near-equal figures from each other and keep their error.
+   */
+  differenceVolumes(a: ShapeId, b: ShapeId): [number, number] {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const [sa, sb] = [this.get(a), this.get(b)];
+      const cells = arena.own(new oc.BOPAlgo_CellsBuilder());
+      const args = arena.own(new oc.NCollection_List_TopoDS_Shape());
+      args.Append(sa);
+      args.Append(sb);
+      cells.SetArguments(args);
+      cells.Perform();
+      if (cells.HasErrors()) throw new KernelError(t('kernel.opFailed', { label: t('body.common') }));
+      const part = (take: TopoDS_Shape, avoid: TopoDS_Shape): number => {
+        const lt = arena.own(new oc.NCollection_List_TopoDS_Shape());
+        const la = arena.own(new oc.NCollection_List_TopoDS_Shape());
+        lt.Append(take);
+        la.Append(avoid);
+        cells.RemoveAllFromResult();
+        cells.AddToResult(lt, la, 0, true);
+        const v = arena.own(new oc.GProp_GProps());
+        oc.BRepGProp.VolumeProperties(arena.own(cells.Shape()), v, false, false, false);
+        return Math.abs(v.Mass());
+      };
+      return [part(sa, sb), part(sb, sa)];
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * The shape's area to a relative precision `eps` (`BRepGProp.SurfaceProperties` with a bound), for comparing two shapes to 1e-6: the fixed rule
+   * `massProps` uses is off by more than that on a plane with hundreds of B-spline holes (1.8e-6 on a 2,004-face plate, C1), the bounded one by 4e-8.
+   * Surfaces of extrusion and revolution are first written as the B-spline surfaces they are (the same geometry): the bounded rule is wrong on them in
+   * this build (4.4e-4 on the walls of an extruded B-spline outline, against 3e-9 for the same walls as B-spline surfaces).
+   */
+  surfaceArea(id: ShapeId, eps = 1e-9): number {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const s = arena.own(new oc.GProp_GProps());
+      const as = arena.own(oc.ShapeCustom.ConvertToBSpline(this.get(id), true, true, false, false));
+      oc.BRepGProp.SurfaceProperties(as, s, eps, false);
+      return s.Mass();
+    } finally {
+      arena.dispose();
+    }
+  }
+
   massProps(id: ShapeId, options: { eps?: number; adaptive?: boolean } = {}): MassProps {
     const oc = this.oc;
     const arena = new Arena();
@@ -3513,6 +3729,23 @@ export class Kernel {
    * curve type for anything else. The pieces are not ordered or chained: `@3db/regen` does that. The common of the solid and the rectangle is a boolean (AGENTS
    * §3.5: no zero-growth claim); every temporary is arena-owned. A point or pole off the plane (more than 1e-7 mm from it) is an error.
    */
+  /**
+   * As `sectionEdges`, but a wall that is a B-spline curve carried straight along the frame's normal gives that curve exactly (`NurbsSectionEdge`), read
+   * from the wall's own surface, where `sectionEdges` gives the intersection's approximation of it (feature recognition, C1).
+   */
+  sectionCurves(id: ShapeId, frame: Frame, rect: { u0: number; u1: number; v0: number; v1: number }): (SectionEdge | NurbsSectionEdge)[] {
+    const arena = new Arena();
+    try {
+      const corners: P2[] = [[rect.u0, rect.v0], [rect.u1, rect.v0], [rect.u1, rect.v1], [rect.u0, rect.v1]];
+      const outer: Segment[] = corners.map((a, i) => ({ kind: 'line', a, b: corners[(i + 1) % 4]!, source: `r${i}` }));
+      const face = this.profile(arena, frame, [{ outer, holes: [] }], new Map());
+      const mk = this.boolOp('common', this.get(id), face, t('body.common'), arena);
+      return this.readSectionEdges(arena.own(mk.Shape()), frame, arena, this.get(id));
+    } finally {
+      arena.dispose();
+    }
+  }
+
   sectionEdges(id: ShapeId, frame: Frame, rect: { u0: number; u1: number; v0: number; v1: number }): SectionEdge[] {
     const arena = new Arena();
     try {
@@ -3520,21 +3753,161 @@ export class Kernel {
       const outer: Segment[] = corners.map((a, i) => ({ kind: 'line', a, b: corners[(i + 1) % 4]!, source: `r${i}` }));
       const face = this.profile(arena, frame, [{ outer, holes: [] }], new Map());
       const mk = this.boolOp('common', this.get(id), face, t('body.common'), arena);
-      return this.readSectionEdges(arena.own(mk.Shape()), frame, arena);
+      return this.readSectionEdges(arena.own(mk.Shape()), frame, arena) as SectionEdge[];
     } finally {
       arena.dispose();
     }
   }
 
-  private readSectionEdges(shape: TopoDS_Shape, frame: Frame, arena: Arena): SectionEdge[] {
+  /**
+   * When `face` is a B-spline or Bézier curve carried straight along `n` (a surface of extrusion along `n`, or a B-spline surface whose poles, seen along
+   * `n`, are the same in every row with the same weights): that curve, moved along `n` onto the plane through `origin`. A plane square to `n` cuts such a
+   * wall in exactly that curve, which the intersection itself only gives approximately (as many short straight pieces). Else null.
+   */
+  private extrudedCurveOf(face: TopoDS_Shape, origin: Vec3, n: Vec3, arena: Arena): Geom_BSplineCurve | null {
     const oc = this.oc;
+    const onPlane = (p: Vec3): Vec3 => {
+      const h = dot3(sub3(p, origin), n);
+      return [p[0] - h * n[0], p[1] - h * n[1], p[2] - h * n[2]];
+    };
+    const ad = arena.own(new oc.BRepAdaptor_Surface(arena.own(oc.TopoDS.Face(face)), true));
+    const kind = String(ad.GetType()).replace('GeomAbs_', '');
+    if (kind === 'SurfaceOfExtrusion') {
+      // a curve swept straight along a direction: when that is `n` and the curve a B-spline or a Bézier, it is the section's curve
+      const d = this.xyz(arena.own(ad.Direction()));
+      if (Math.abs(Math.abs(dot3(d, n)) - 1) > 1e-12) return null;
+      const basis = arena.own(ad.BasisCurve());
+      const bt = String(basis.GetType()).replace('GeomAbs_', '');
+      if (bt !== 'BSplineCurve' && bt !== 'BezierCurve') return null;
+      const curve = arena.own(bt === 'BSplineCurve' ? oc.GeomConvert.CurveToBSplineCurve(arena.own(basis.BSpline())) : oc.GeomConvert.CurveToBSplineCurve(arena.own(basis.Bezier())));
+      for (let i = 1; i <= curve.NbPoles(); i++) curve.SetPole(i, this.pnt(arena, onPlane(this.xyz(arena.own(curve.Pole(i))))), curve.Weight(i));
+      return curve;
+    }
+    if (kind !== 'BSplineSurface') return null;
+    const s = arena.own(ad.BSpline());
+    const [nu, nv] = [s.NbUPoles(), s.NbVPoles()];
+    const pole = (i: number, j: number) => this.xyz(arena.own(s.Pole(i, j)));
+    const size = Math.max(1, ...[pole(1, 1), pole(nu, nv)].map((p) => Math.hypot(...p)));
+    // straight along `n` in V: every pole of a column, seen along n, where the column's first one is, with its weight (S(u, v) is then the curve of the
+    // first row moved along n by some amount, whatever the degree or the spacing along n); likewise in U
+    const straightIn = (alongV: boolean): boolean => {
+      const [ni, nj] = alongV ? [nu, nv] : [nv, nu];
+      const P = (i: number, j: number) => (alongV ? pole(i, j) : pole(j, i));
+      const W = (i: number, j: number) => (alongV ? s.Weight(i, j) : s.Weight(j, i));
+      if (nj < 2) return false;
+      for (let i = 1; i <= ni; i++) {
+        const first = onPlane(P(i, 1));
+        for (let j = 2; j <= nj; j++) {
+          if (Math.hypot(...sub3(onPlane(P(i, j)), first)) > 1e-12 * size) return false;
+          if (Math.abs(W(i, j) - W(i, 1)) > 1e-12 * Math.abs(W(i, 1))) return false;
+        }
+      }
+      return true;
+    };
+    const alongV = straightIn(true);
+    if (!alongV && !straightIn(false)) return null;
+    const iso = alongV ? s.VIso(ad.FirstVParameter()) : s.UIso(ad.FirstUParameter());
+    const curve = arena.own(oc.GeomConvert.CurveToBSplineCurve(arena.own(iso)));
+    for (let i = 1; i <= curve.NbPoles(); i++) curve.SetPole(i, this.pnt(arena, onPlane(this.xyz(arena.own(curve.Pole(i))))), curve.Weight(i));
+    return curve;
+  }
+
+  /** The walls of `source` that are such curves carried straight along `n` (`extrudedCurveOf`), each curve on the plane through `origin`. */
+  private extrudedCurves(source: TopoDS_Shape, origin: Vec3, n: Vec3, arena: Arena): Geom_BSplineCurve[] {
+    const oc = this.oc;
+    const out: Geom_BSplineCurve[] = [];
+    for (const ex = arena.own(new oc.TopExp_Explorer(source, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) {
+      const c = this.extrudedCurveOf(arena.own(ex.Current()), origin, n, arena);
+      if (c) out.push(c);
+    }
+    return out;
+  }
+
+  /** Whether a face is a B-spline or Bézier curve carried exactly straight along `d` (its section square to `d` is then read exactly, C1). */
+  faceExtrudedAlong(target: ShapeId, faceIndex: number, d: Vec3): boolean {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const face = ShapeIndex.of(oc, this.get(target), T.FACE, arena).keys[faceIndex];
+      if (!face) throw new KernelError(t('edit.faceOutOfRange', { index: faceIndex }));
+      const l = Math.hypot(...d);
+      return this.extrudedCurveOf(face, [0, 0, 0], [d[0] / l, d[1] / l, d[2] / l], arena) !== null;
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /** The piece of one of `curves` from `a` to `b` (both on it within 1e-7, and the curve between them near `mid`), as a section's exact curve; else null. */
+  private exactSectionCurve(curves: Geom_BSplineCurve[], a: Vec3, b: Vec3, mid: Vec3, local: (p: Vec3) => [number, number], arena: Arena, boxes: Map<Geom_BSplineCurve, { lo: Vec3; hi: Vec3 }> = new Map()): NurbsSectionEdge | null {
+    const oc = this.oc;
+    // a B-spline lies in the box of its poles: only a curve whose box holds both ends can be the one
+    const inBox = (c: Geom_BSplineCurve, p: Vec3) => {
+      let box = boxes.get(c);
+      if (!box) {
+        const lo: Vec3 = [Infinity, Infinity, Infinity];
+        const hi: Vec3 = [-Infinity, -Infinity, -Infinity];
+        for (let i = 1; i <= c.NbPoles(); i++) {
+          const q = this.xyz(arena.own(c.Pole(i)));
+          for (let k = 0; k < 3; k++) {
+            lo[k] = Math.min(lo[k]!, q[k]!);
+            hi[k] = Math.max(hi[k]!, q[k]!);
+          }
+        }
+        boxes.set(c, (box = { lo, hi }));
+      }
+      return p.every((x, k) => x >= box!.lo[k]! - 1e-6 && x <= box!.hi[k]! + 1e-6);
+    };
+    for (const c of curves) {
+      if (!inBox(c, a) || !inBox(c, b)) continue;
+      const param = (p: Vec3): number | null => {
+        const pr = arena.own(new oc.GeomAPI_ProjectPointOnCurve(this.pnt(arena, p), c));
+        return pr.NbPoints() > 0 && pr.LowerDistance() <= 1e-7 ? pr.LowerDistanceParameter() : null;
+      };
+      const ua = param(a);
+      const ub = param(b);
+      if (ua === null || ub === null || Math.abs(ua - ub) <= 1e-12) continue;
+      const piece = arena.own(oc.GeomConvert.CurveToBSplineCurve(c));
+      piece.Segment(Math.min(ua, ub), Math.max(ua, ub));
+      // the section's own (approximate) curve passes near the middle of this piece: it is the same stretch of the wall, not the rest of a closed one
+      const pm = arena.own(new oc.GeomAPI_ProjectPointOnCurve(this.pnt(arena, mid), piece));
+      if (!(pm.NbPoints() > 0 && pm.LowerDistance() <= 1e-3)) continue;
+      const rev = ua > ub;
+      const n = piece.NbPoles();
+      const idx = (i: number) => (rev ? n + 1 - i : i);
+      const poles: [number, number][] = [];
+      const weights: number[] = [];
+      for (let i = 1; i <= n; i++) {
+        poles.push(local(this.xyz(arena.own(piece.Pole(idx(i))))));
+        weights.push(piece.Weight(idx(i)));
+      }
+      const nk = piece.NbKnots();
+      const k0 = piece.Knot(1);
+      const k1 = piece.Knot(nk);
+      const knots: number[] = [];
+      const mults: number[] = [];
+      for (let i = 1; i <= nk; i++) {
+        const j = rev ? nk + 1 - i : i;
+        knots.push(rev ? k0 + k1 - piece.Knot(j) : piece.Knot(j));
+        mults.push(piece.Multiplicity(j));
+      }
+      const degree = piece.Degree();
+      if (mults[0] !== degree + 1 || mults[mults.length - 1] !== degree + 1) continue;
+      return { kind: 'nurbs', degree, poles, ...(piece.IsRational() ? { weights } : {}), knots, mults, a: poles[0]!, b: poles[n - 1]! };
+    }
+    return null;
+  }
+
+  private readSectionEdges(shape: TopoDS_Shape, frame: Frame, arena: Arena, source?: TopoDS_Shape): (SectionEdge | NurbsSectionEdge)[] {
+    const oc = this.oc;
+    let extruded: Geom_BSplineCurve[] | undefined;
+    const boxes = new Map<Geom_BSplineCurve, { lo: Vec3; hi: Vec3 }>();
     const local = (p: Vec3): P2 => {
       const d: Vec3 = [p[0] - frame.origin[0], p[1] - frame.origin[1], p[2] - frame.origin[2]];
       const off = dot3(d, frame.normal);
       if (Math.abs(off) > 1e-7) throw new KernelError(t('recognize.offPlane', { distance: off.toExponential(2) }));
       return [dot3(d, frame.xDir), dot3(d, frame.yDir)];
     };
-    const out: SectionEdge[] = [];
+    const out: (SectionEdge | NurbsSectionEdge)[] = [];
     const ex = arena.own(new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
     for (; ex.More(); ex.Next()) {
       const edge = arena.own(oc.TopoDS.Edge(arena.own(ex.Current())));
@@ -3560,6 +3933,12 @@ export class Kernel {
         const b = at(t1);
         if (Math.abs(t1 - t0 - 2 * Math.PI) < 1e-9 || (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9 && t1 - t0 > Math.PI)) out.push({ kind: 'circle', c: center, r });
         else out.push({ kind: 'arc', c: center, r, a, b, mid: at((t0 + t1) / 2) });
+      } else if ((type === 'bsplinecurve' || type === 'beziercurve') && source && (extruded ??= this.extrudedCurves(source, frame.origin, frame.normal, arena)).length > 0 && (() => {
+        const exact = this.exactSectionCurve(extruded!, this.xyz(arena.own(ad.EvalD0(t0))), this.xyz(arena.own(ad.EvalD0(t1))), this.xyz(arena.own(ad.EvalD0((t0 + t1) / 2))), local, arena, boxes);
+        if (exact) out.push(exact);
+        return !!exact;
+      })()) {
+        // read exactly from the wall it cuts
       } else if (type === 'bsplinecurve' || type === 'beziercurve') {
         // The adaptor hands back the whole curve, with the edge's location applied but not its trim: the conversion takes the edge's own range. A Bézier becomes
         // a one-span B-spline with the same parameter first, because an edge on one (a profile's own edge, seen in a section on its cap) can be trimmed too.
@@ -3690,7 +4069,7 @@ export class Kernel {
         if (!offset.IsDone()) throw new KernelError(t('sectionClearance.offsetFailed'));
         const shape = arena.own(offset.Shape());
         guard(this.compound(loops.map((l) => l.wire), arena), shape);
-        return classify(this.readSectionEdges(shape, xy, arena)).regions.map((r) => r.face);
+        return classify(this.readSectionEdges(shape, xy, arena) as SectionEdge[]).regions.map((r) => r.face);
       });
       let resultShape: TopoDS_Shape = this.compound(faces, arena);
       if (side === 'out' && faces.length > 1) {
@@ -3699,7 +4078,7 @@ export class Kernel {
         unify.Build();
         resultShape = arena.own(unify.Shape());
       }
-      const resultEdges = this.readSectionEdges(resultShape, xy, arena);
+      const resultEdges = this.readSectionEdges(resultShape, xy, arena) as SectionEdge[];
       const result = classify(resultEdges);
       const resultWires = this.compound(result.loops.map((loop) => loop.wire), arena);
       guard(this.compound(source.loops.map((l) => l.wire), arena), resultWires);
@@ -3708,7 +4087,7 @@ export class Kernel {
       if (side === 'out' ? !sourceIn.every(Boolean) || resultIn.some(Boolean) : sourceIn.some(Boolean) || !resultIn.every(Boolean)) {
         throw new KernelError(t('sectionClearance.wrongSide'));
       }
-      const certificate = certifyOffset(clearanceEdges(sourceEdges), clearanceEdges(this.readSectionEdges(resultWires, xy, arena)), gap, upperSlack);
+      const certificate = certifyOffset(clearanceEdges(sourceEdges), clearanceEdges(this.readSectionEdges(resultWires, xy, arena) as SectionEdge[]), gap, upperSlack);
       if (certificate.failures.length) throw new KernelError(t('sectionClearance.maximum'));
       const regions = result.regions.map(({ outer, holes }) => ({
         outer: outer.segments,
@@ -6406,11 +6785,13 @@ const DEFAULT_SEW_TOLERANCE = 0.01;
 type SectionSegment = Extract<Segment, { kind: 'line' | 'arc' | 'circle' }>;
 
 function clearanceSegments(loop: Seg[], index: number, hole = false): SectionSegment[] {
+  // the loops here come from `sectionEdges`, which has no exact B-spline pieces (only `sectionCurves` does)
+  if (loop.some((s) => s.kind === 'nurbs')) throw new Error('a section clearance loop cannot hold an exact B-spline piece');
   const segs = (signedLoopArea(loop) >= 0) !== hole ? loop : [...loop].reverse().map((s) => {
-    if (s.kind === 'circle') return s;
+    if (s.kind === 'circle' || s.kind === 'nurbs') return s;
     return s.kind === 'line' ? { ...s, a: s.b, b: s.a } : { ...s, a: s.b, b: s.a, ccw: !s.ccw };
   });
-  return segs.map((s, i) => {
+  return (segs as Exclude<Seg, { kind: 'nurbs' }>[]).map((s, i) => {
     const source = `section:${index}:${i}`;
     return s.kind === 'arc' ? { kind: 'arc', c: s.c, r: s.r, from: s.a, to: s.b, ccw: s.ccw, source } : { ...s, source };
   });

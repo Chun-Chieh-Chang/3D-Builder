@@ -1,5 +1,5 @@
 /**
- * A spline outline made of biarcs (ADR 0243), random parts (AGENTS §3.4): 120 extrusions of a random spline, half of them with a hole, made with the kernel, sent through STEP and recognized
+ * A spline outline made of biarcs (ADR 0243), random parts (AGENTS §3.4): 120 walls of a random spline, straight to within the check but no exact extrusion (C1), in two files, half of them with a hole, made with the kernel, sent through STEP and recognized
  * with the approximation on. Each is refused with a RecognizeError or comes back within the bound it claims, which is checked here by the circle's formula on the rebuilt arcs, not by the
  * comparison the product uses. In a file of its own for a fresh Emscripten heap (AGENTS §3.5); the heap's growth is printed, not claimed to be zero.
  */
@@ -45,12 +45,16 @@ function toArc(p: P, e: Extract<SectionEdge, { kind: 'arc' }>): number {
   return Math.min(Math.hypot(p[0] - e.a[0], p[1] - e.a[1]), Math.hypot(p[0] - e.b[0], p[1] - e.b[1]));
 }
 
-it('120 random spline extrusions: each refused or within the bound it says, nothing crashes', async () => {
+/** Seeds 1 to 60 here, 61 to 120 in recognize-approximate-fuzz-2: the near-straight lofted walls (C1) take about 4 s a part, two files keep each well within its time. */
+export const FIRST = 1;
+export const LAST = 60;
+
+it(`random near-straight spline walls ${FIRST}..${LAST}: each refused or within the bound it says, nothing crashes`, async () => {
   const h0 = heap();
   expect(h0).toBeGreaterThan(0);
   let [rebuilt, refused, holes, worstRatio, worstBound] = [0, 0, 0, 0, 0];
   const refusals = new Map<string, number>();
-  for (let seed = 1; seed <= 120; seed++) {
+  for (let seed = FIRST; seed <= LAST; seed++) {
     const r = rng(seed);
     const round = (v: number) => Math.round(v * 100) / 100;
     const [w, y, h] = [round(20 + r() * 40), round(20 + r() * 20), round(4 + r() * 20)];
@@ -61,7 +65,10 @@ it('120 random spline extrusions: each refused or within the bound it says, noth
     const made: ShapeId[] = [];
     const own = (id: ShapeId) => (made.push(id), id);
     try {
-      let s = own(kernel.extrude(XY, [region], [0, 0, h]).shape);
+      // the spline wall straight to well within what is asked of it but no exact extrusion (one inner point 1e-8 mm off at the top, ruled between):
+      // an exact extrusion is rebuilt exactly instead, with no approximation (C1)
+      const nudged = region.outer.map((g) => (g.kind === 'spline' ? { ...g, points: g.points.map((p, i) => (i === 1 ? ([p[0], p[1] + 1e-8] as [number, number]) : p)) } : g));
+      let s = own(kernel.loft([{ frame: XY, outer: region.outer }, { frame: { ...XY, origin: [0, 0, h] }, outer: nudged }]).shape);
       const hole = r() < 0.5;
       if (hole) {
         s = own(kernel.boolean('cut', s, own(kernel.extrude({ ...XY, origin: [0, 0, -1] }, [{ outer: [{ kind: 'circle', c: [w / 2, y / 2], r: round(1 + r() * (y / 6)), source: 'h' }], holes: [] }], [0, 0, h + 2]).shape)).shape);
@@ -115,5 +122,5 @@ it('120 random spline extrusions: each refused or within the bound it says, noth
   const h1 = heap()!;
   console.log(`approximate fuzz: ${rebuilt} rebuilt, ${refused} refused, ${holes} with a hole; worst bound ${worstBound.toFixed(5)} mm, worst measured/bound ${worstRatio.toFixed(3)}; heap ${(h0! / 1048576).toFixed(0)} -> ${(h1 / 1048576).toFixed(0)} MiB\n${[...refusals].map(([k, v]) => `${v} × ${k}`).join('\n')}`);
   // gentle outlines are what this is for: most of them must get through, or the test proves only that refusing is safe
-  expect(rebuilt).toBeGreaterThanOrEqual(90);
+  expect(rebuilt).toBeGreaterThanOrEqual(45);
 }, 590_000);

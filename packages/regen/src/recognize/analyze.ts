@@ -5,7 +5,7 @@
  * that build it. Nothing here touches a document: `reconstruct.ts` turns this into features and checks the result against the original.
  */
 import { t } from '@3db/i18n';
-import { KernelError, rethrowTrap, type FaceInfo, type Frame, type Kernel, type SectionEdge, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
+import { KernelError, rethrowTrap, type FaceInfo, type NurbsSectionEdge, type Frame, type Kernel, type SectionEdge, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
 import type { Budget } from '../budget';
 import { biarcEnvelope } from '../section/envelope';
 import { chainLoops, LoopError, type Loop, type P2 } from '../section/loops';
@@ -611,8 +611,8 @@ function circleThrough(a: readonly number[], m: readonly number[], b: readonly n
 }
 
 /** A section's splines as biarcs, with the bound that was proved kept in `approx`. */
-function asBiarcs(edges: SectionEdge[], approx: SplineApproximation): SectionEdge[] {
-  return edges.flatMap((e): SectionEdge[] => {
+function asBiarcs(edges: (SectionEdge | NurbsSectionEdge)[], approx: SplineApproximation): (SectionEdge | NurbsSectionEdge)[] {
+  return edges.flatMap((e): (SectionEdge | NurbsSectionEdge)[] => {
     if (e.kind !== 'bezier') return [e];
     approx.used = true;
     const pieces = e.spans.flatMap((span) => biarcEnvelope(span, approx.tolerance).pieces);
@@ -636,9 +636,9 @@ function sectionRect(frame: Frame, box: { min: Vec3; max: Vec3 }, half: boolean)
 
 function section(kernel: Kernel, shape: ShapeId, frame: Frame, box: { min: Vec3; max: Vec3 }, half = false, budget?: Budget, approx?: SplineApproximation): Loop[] {
   budget?.check();
-  let edges: SectionEdge[];
+  let edges: (SectionEdge | NurbsSectionEdge)[];
   try {
-    edges = kernel.sectionEdges(shape, frame, sectionRect(frame, box, half));
+    edges = kernel.sectionCurves(shape, frame, sectionRect(frame, box, half));
   } catch (e) {
     if (e instanceof KernelError) throw new RecognizeError(t('recognize.sectionFailed', { why: e.message }));
     throw e;
@@ -690,18 +690,22 @@ function wallLean(f: FaceInfo, d: Vec3): number | null {
   return null;
 }
 
-/** A face with no simple surface that is a straight wall along a direction, when splines are to be approximated (ADR 0243). */
+/**
+ * A face with no simple surface that is a straight wall along a direction. Its section square to that direction is read exactly (`Kernel.sectionCurves`) when
+ * the wall is a B-spline curve carried straight (C1); otherwise the section has a curve chaining refuses, unless splines are to be approximated (ADR 0243).
+ */
 type FreeWall = (face: number, d: Vec3) => boolean;
 
 function freeWalls(kernel: Kernel, shape: ShapeId, approx?: SplineApproximation): FreeWall | undefined {
-  if (!approx) return undefined;
+  // without the approximation, only a wall whose section is read exactly (C1); with it, any wall straight to within what is asked of its normal
+  const wall = approx ? kernel.faceRuledAlong.bind(kernel) : kernel.faceExtrudedAlong.bind(kernel);
   const cache = new Map<string, boolean>();
   return (face, d) => {
     const u = canonical(d);
     const key = `${face}:${u[0].toFixed(6)},${u[1].toFixed(6)},${u[2].toFixed(6)}`;
     let v = cache.get(key);
     if (v === undefined) {
-      v = kernel.faceRuledAlong(shape, face, u);
+      v = wall(shape, face, u);
       cache.set(key, v);
     }
     return v;
@@ -1007,7 +1011,7 @@ function mixedLayer(kernel: Kernel, shape: ShapeId, frame: Frame, d: Vec3, heigh
       }
       const loops = bottomLoops(topo, frame, d);
       if (loops?.length) return [{ frame, loops, ...(lean !== 0 ? { draft: { angle: Math.abs(lean), inward: lean > 0 } } : {}) }];
-      if (approx && free) {
+      if (free) {
         const profile = layerProfile(kernel, p.shape, frame, d, height, lean, budget, approx);
         if (profile) return [profile];
       }
@@ -1252,7 +1256,7 @@ function revolveBase(kernel: Kernel, shape: ShapeId, axis: { origin: Vec3; dir: 
   const mirror = dot(cross(frame.xDir, frame.yDir), half.normal) < 0;
   const moved = loops.map((l) => ({
     ...l,
-    segs: l.segs.map((s) => (s.kind === 'line' ? { ...s, a: to(s.a), b: to(s.b) } : s.kind === 'arc' ? { ...s, c: to(s.c), a: to(s.a), b: to(s.b), ccw: mirror ? !s.ccw : s.ccw } : { ...s, c: to(s.c) })),
+    segs: l.segs.map((s) => (s.kind === 'line' ? { ...s, a: to(s.a), b: to(s.b) } : s.kind === 'arc' ? { ...s, c: to(s.c), a: to(s.a), b: to(s.b), ccw: mirror ? !s.ccw : s.ccw } : s.kind === 'nurbs' ? { ...s, a: to(s.a), b: to(s.b), poles: s.poles.map(to) } : { ...s, c: to(s.c) })),
   }));
   return { type: 'revolve', axis, profile: { frame, loops: moved } };
 }

@@ -4994,9 +4994,9 @@ export class Regenerator {
    * short of the true limit, never over). Rounding is refused mostly because the rounds of neighbouring edges meet each other (a hole near an edge: the strip left between
    * them has to be wider than two radii), or one is wider than the face beside it.
    */
-  private roundEdges(shape: ShapeId, edges: number[], radius: number): OpResult {
+  private roundEdges(shape: ShapeId, edges: number[], radius: number, exact = false): OpResult {
     try {
-      return this.kernel.fillet(shape, edges, radius);
+      return this.kernel.fillet(shape, edges, radius, undefined, undefined, exact);
     } catch (e) {
       if (!(e instanceof KernelError)) throw e;
       const works = (r: number): boolean => {
@@ -5028,7 +5028,7 @@ export class Regenerator {
       const { edges } = this.edgesOfRefs(mine, body);
       const laws = this.filletLaws(f, mine, body);
       // a variable radius has no "slightly smaller works" to fall back to: a law that fails fails, and says so (ADR 0167)
-      const r = laws ? this.kernel.fillet(body.shape, edges, evalLength(f.radius), laws) : this.roundEdges(body.shape, edges, evalLength(f.radius));
+      const r = laws ? this.kernel.fillet(body.shape, edges, evalLength(f.radius), laws) : this.roundEdges(body.shape, edges, evalLength(f.radius), f.exact ?? false);
       const topology = this.kernel.topology(r.shape);
       return { id: body.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, { featureId: f.id, role: 'fillet', input: body.names }), by: f.id };
     });

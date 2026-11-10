@@ -16,6 +16,7 @@ export const sketch = {
   'sketch.ellipseMinor': '短軸半徑',
   'sketch.ellipseAxesInvalid': '橢圓半徑須滿足：短軸 ≥ 0.000001 mm；長軸 > 短軸 + 0.000001 mm 且 ≤ 1000000 mm；長短軸比 ≤ 10000。',
   'sketch.ellipseTangentLine': '橢圓相切目前須搭配直線。',
+  'sketch.nurbsInvalid': '樣條 {id} 的 B-spline 定義無效：次數須為 1～25 的整數且控制點多於次數；節點須嚴格遞增，兩端重數為次數加一、中間重數 1～次數，總重數等於控制點數加次數加一；權重須逐點為正數；不可同時為 Bézier 或封閉曲線。',
   'sketch.bezierInvalid': 'Bézier 曲線須為開放曲線，含 2～4 個不同控制點，且端點控制柄長度須大於零。',
   'sketch.bezierRequired': '端點相切須使用控制點 Bézier 曲線；擬合樣條保留既有定義。',
   'sketch.entry.length': '長度',

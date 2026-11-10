@@ -23,7 +23,7 @@ class MappingError extends Error {}
 
 /** End points of an open curve (none for points and circles). */
 function endpoints(e: SketchEntity): Id[] {
-  return e.type === 'line' ? [e.p1, e.p2] : e.type === 'arc' ? [e.start, e.end] : e.type==='spline'&&e.bezier?[e.points[0]!,e.points[e.points.length-1]!]:[];
+  return e.type === 'line' ? [e.p1, e.p2] : e.type === 'arc' ? [e.start, e.end] : e.type==='spline'&&(e.bezier||e.nurbs)?[e.points[0]!,e.points[e.points.length-1]!]:[];
 }
 
 /** Values the solver starts from: stored positions unless overridden (drag frames, analysis). */
@@ -256,6 +256,7 @@ function toPrimitives(sketch: SketchFeature, start: Start, pinned: ReadonlySet<I
       }
       case 'spline':
         if(e.bezier)prims.push({id:e.id,type:'bspline',pole_ids:e.points,weights:e.points.map(()=>1),knots:[0,1],mult:[e.points.length,e.points.length],degree:e.points.length-1,periodic:false});
+        else if(e.nurbs)prims.push({id:e.id,type:'bspline',pole_ids:e.points,weights:e.nurbs.weights??e.points.map(()=>1),knots:e.nurbs.knots,mult:e.nurbs.mults,degree:e.nurbs.degree,periodic:false});
         break;
     }
   }
@@ -862,6 +863,7 @@ function readGeometry(values: Values, sketch: SketchFeature): Map<Id, SolvedGeom
         out.set(e.id, {
           type: 'spline',
           ...(e.bezier?{bezier:true}:{}),
+          ...(e.nurbs?{nurbs:e.nurbs}:{}),
           points: pts,
           closed: e.closed ?? false,
           pointIds: e.points,

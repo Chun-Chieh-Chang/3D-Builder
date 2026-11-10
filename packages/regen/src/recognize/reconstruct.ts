@@ -4,7 +4,7 @@
  * same solid is a `RecognizeError`, and the document is not changed.
  */
 import { t } from '@3db/i18n';
-import type { Frame, Kernel, ShapeId, SurfaceGeometry, Topology, Vec3 } from '@3db/kernel';
+import { KernelError, type Frame, type Kernel, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
 import {
   applyCommand,
   createEmptyPart,
@@ -177,6 +177,10 @@ class Builder {
       for (const s of loop.segs) {
         if (s.kind === 'line') {
           entities.push({ id: this.ids.take('l'), type: 'line', p1: point(s.a), p2: point(s.b) });
+        } else if (s.kind === 'nurbs') {
+          // the poles: the ends shared with the pieces either side, the inner ones points of their own (never merged with another that happens to lie there)
+          const poles = s.poles.map((p, i) => (i === 0 ? point(s.a) : i === s.poles.length - 1 ? point(s.b) : point(p, true)));
+          entities.push({ id: this.ids.take('sp'), type: 'spline', points: poles, nurbs: { degree: s.degree, knots: [...s.knots], mults: [...s.mults], ...(s.weights ? { weights: [...s.weights] } : {}) } });
         } else if (s.kind === 'arc') {
           const id = this.ids.take('a');
           const [from, to] = s.ccw ? [s.a, s.b] : [s.b, s.a];
@@ -237,13 +241,39 @@ class Builder {
       take(Math.abs(p[0]) <= ZERO ? { type: 'vertical', a: id, b: '@origin' } : { type: 'distanceX', a: '@origin', b: id, value: num(Math.abs(p[0])) });
       take(Math.abs(p[1]) <= ZERO ? { type: 'horizontal', a: id, b: '@origin' } : { type: 'distanceY', a: '@origin', b: id, value: num(Math.abs(p[1])) });
     }
+    // The sketch's parts that share no point have additive freedoms, and a dimension can only be redundant with its own part, so each part is defined by
+    // itself (a sketch of thousands of entities is many small solves, not thousands of whole ones). In a part, a run of candidates is taken whole when the
+    // solver says it removes exactly as many freedoms as it has candidates, none redundant: then each would have been kept on its own, in order. Otherwise the
+    // run is halved, the first half settled before the second, down to single candidates: the same choice as trying them one at a time.
+    const parts = sketchParts(sketch);
+    const kept = new Set<SketchConstraint>();
+    const byPart = new Map<number, SketchConstraint[]>();
     for (const c of candidates) {
-      if (s.dof === 0) break;
-      sketch.constraints.push(c);
-      const next = state();
-      if (next.status === 'over' || next.status === 'failed' || next.dof >= s.dof || next.redundant.length || next.conflicting.length) sketch.constraints.pop();
-      else s = next;
+      const part = parts.of(c);
+      byPart.set(part, [...(byPart.get(part) ?? []), c]);
     }
+    for (const [part, list] of byPart) {
+      const sub: SketchFeature = { ...sketch, entities: sketch.entities.filter((e) => parts.entity(e) === part), constraints: sketch.constraints.filter((c) => parts.of(c) === part) };
+      let st = solver.solve(sub);
+      if (st.status === 'over' || st.status === 'failed') continue;
+      const settle = (run: SketchConstraint[]): void => {
+        if (run.length === 0 || st.dof === 0) return;
+        sub.constraints.push(...run);
+        const next = solver.solve(sub);
+        if (!(next.status === 'over' || next.status === 'failed' || next.redundant.length || next.conflicting.length) && next.dof === st.dof - run.length) {
+          st = next;
+          for (const c of run) kept.add(c);
+          return;
+        }
+        sub.constraints.splice(sub.constraints.length - run.length, run.length);
+        if (run.length === 1) return;
+        const half = Math.ceil(run.length / 2);
+        settle(run.slice(0, half));
+        settle(run.slice(half));
+      };
+      settle(list);
+    }
+    sketch.constraints.push(...candidates.filter((c) => kept.has(c)));
   }
 
   base(rec: Recognition, merge: boolean | undefined): void {
@@ -398,7 +428,7 @@ function blendFeature(rec: BlendRecord, r: RebuildResult, ids: IdAllocator, b: B
   };
   if (rec.type === 'fillet') {
     const edges = [...new Set(rec.edges.flatMap(find))];
-    const f: FilletFeature = { id: ids.take('fillet'), type: 'fillet', name: b.name('fillet'), suppressed: false, edges: edges.map(ref), radius: num(rec.radius) };
+    const f: FilletFeature = { id: ids.take('fillet'), type: 'fillet', name: b.name('fillet'), suppressed: false, edges: edges.map(ref), radius: num(rec.radius), exact: true };
     return [f];
   }
   // a chamfer's first distance is on the face of the edge whose name sorts first (`flip`: the other one); edges are grouped by the distances that gives
@@ -557,14 +587,25 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
       return { doc: next, commands, report };
     }
     const m0 = kernel.massProps(whole);
+    const area0 = kernel.surfaceArea(whole);
     const compare = (body: NonNullable<RebuildResult['body']>): ReconstructReport => {
       budget.check();
       const m1 = kernel.massProps(body.shape);
-      const shared = kernel.common(whole, body.shape, 0);
-      if (shared.shape !== null) kernel.release(shared.shape);
       const volumeError = Math.abs(m1.volume - m0.volume) / m0.volume;
-      const areaError = Math.abs(m1.area - m0.area) / m0.area;
-      const difference = Math.max(0, m0.volume + m1.volume - 2 * shared.volume) / m0.volume;
+      // the area to a set precision: the fixed rule is off by more than the tolerance on faces with many B-spline holes (C1)
+      const areaError = Math.abs(kernel.surfaceArea(body.shape) - area0) / area0;
+      // the volume of the two cuts, each measured on the pieces themselves; the sum of the volumes less twice the shared one takes two near-equal figures
+      // from each other and keeps their integration error (7e-6 of a plate whose cuts are both empty)
+      let difference: number;
+      try {
+        const [ab, ba] = kernel.differenceVolumes(whole, body.shape);
+        difference = (ab + ba) / m0.volume;
+      } catch (e) {
+        if (!(e instanceof KernelError)) throw e;
+        const shared = kernel.common(whole, body.shape, 0);
+        if (shared.shape !== null) kernel.release(shared.shape);
+        difference = Math.max(0, m0.volume + m1.volume - 2 * shared.volume) / m0.volume;
+      }
       return { features: { ...b.counts }, faces: [facesBefore, body.topology.faces.length], volume: m0.volume, volumeError, areaError, difference };
     };
     const matches = (r: ReconstructReport) => [r.volumeError, r.areaError, r.difference].every((error) => error <= RECOGNIZE_TOLERANCE);
@@ -592,3 +633,44 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
 
 export { recognize };
 export type { Recognition };
+
+/**
+ * The parts of a sketch that share no point: each entity's points (and each relation or dimension's) in one part; `@origin` and the axes, fixed, join none.
+ * A relation or dimension of nothing in the sketch but those is a part of its own (-1).
+ */
+function sketchParts(sketch: SketchFeature): { entity: (e: SketchEntity) => number; of: (c: SketchConstraint) => number } {
+  const parent = new Map<Id, Id>();
+  const find = (x: Id): Id => {
+    let r = x;
+    while (parent.get(r) !== r) r = parent.get(r)!;
+    let y = x;
+    while (parent.get(y) !== r) {
+      const n = parent.get(y)!;
+      parent.set(y, r);
+      y = n;
+    }
+    return r;
+  };
+  const ids = new Set(sketch.entities.map((e) => e.id));
+  for (const id of ids) parent.set(id, id);
+  const join = (xs: Id[]) => {
+    const own = xs.filter((x) => ids.has(x));
+    for (let i = 1; i < own.length; i++) parent.set(find(own[i]!), find(own[0]!));
+  };
+  const refs = (o: object): Id[] => Object.entries(o).flatMap(([k, v]) => (k === 'id' || k === 'type' || k === 'value' ? [] : typeof v === 'string' ? [v] : Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []));
+  for (const e of sketch.entities) join([e.id, ...refs(e)]);
+  for (const c of sketch.constraints) join(refs(c));
+  const roots = new Map<Id, number>();
+  const number = (id: Id) => {
+    const r = find(id);
+    if (!roots.has(r)) roots.set(r, roots.size);
+    return roots.get(r)!;
+  };
+  return {
+    entity: (e) => number(e.id),
+    of: (c) => {
+      const own = refs(c).filter((x) => ids.has(x));
+      return own.length ? number(own[0]!) : -1;
+    },
+  };
+}

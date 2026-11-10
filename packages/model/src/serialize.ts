@@ -261,6 +261,8 @@ const migrations: Record<number, (doc: Json) => Json> = {
   92: (doc) => doc,
   // v94: a blind hole can have an included drill-point angle. Existing holes retain their flat bottoms.
   93: (doc) => doc,
+  // v95: a sketch spline can be a clamped (rational) B-spline of its poles (`nurbs`), and a fillet can be the exact rolling ball (`exact`, set by recognition). Existing splines and fillets keep their definitions; an older version refuses the file rather than drawing such a spline as a curve through its poles.
+  94: (doc) => doc,
 };
 
 /**

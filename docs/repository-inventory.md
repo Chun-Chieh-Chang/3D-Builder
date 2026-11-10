@@ -6,7 +6,7 @@
 
 | 項目 | 程式來源值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 94／7／38 |
+| 零件／組合件／工程圖 Schema | 95／7／38 |
 | ADR 文件 | 246 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 231／226／278 |
 | 實機清單項目 | 101 |
@@ -627,6 +627,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 ### 設計提案
 
+- [自由曲面特徵化通則：調查結果與推進計畫](<design/feature-recognition/freeform-generalization.md>)
 - [STEP 特徵辨識與重建（藍圖 F2.4）](<design/feature-recognition/plan.md>)
 - [`D:\3DB實機確認` 全量 STEP → `.3dbx` 100% 原生特徵樹轉換推進計畫與驗證規格書](<design/feature-recognition/step-100-plan.md>)
 - [3D-Builder 選單與工具圖示重新規劃](<design/menu-redesign/plan.md>)

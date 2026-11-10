@@ -22,6 +22,7 @@ import {
 import {
   add,
   bezierPoint,
+  controlSamples,
   alignments,
   angleRays,
   circleThrough,
@@ -3200,7 +3201,8 @@ function transformedShapes(g: SolvedGeometry | undefined, m: Transform2): Previe
       return polyline(pts, true);
     }
     case 'spline':
-      return polyline(g.points, g.closed);
+      // a spline drawn by its poles (Bézier, B-spline) previews as its curve, not its control polygon
+      return polyline(g.bezier || g.nurbs ? controlSamples(g.points, g.nurbs) : g.points, g.closed);
     default:
       return [];
   }

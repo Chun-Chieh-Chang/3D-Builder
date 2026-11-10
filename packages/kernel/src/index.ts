@@ -6,4 +6,5 @@ export { forEachSample, type SampleMesh } from './sampling';
 export { planSectionPath, rightOfPolyline, turnRows, type PathPlane, type SectionPathPlan } from './sectionPath';
 export { inheritBodySurface, sameSurface } from './sameSurface';
 export * from './section-loops';
+export { nurbsArea, nurbsAt, nurbsEval, nurbsReversed, type Nurbs2 } from './nurbs2d';
 export * from './section-envelope';

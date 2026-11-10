@@ -143,6 +143,7 @@ export function sketchError(sketch: Pick<SketchFeature, 'entities' | 'constraint
     if (e.type === 'spline') {
       if(e.bezier!==undefined&&(typeof e.bezier!=='boolean'||e.bezier&&(e.closed||e.points.length<2||e.points.length>4)))return t('sketch.bezierInvalid');
       if(e.bezier){const pts=e.points.map(id=>byId.get(id));const distance=(a:SketchEntity|undefined,b:SketchEntity|undefined)=>a?.type==='point'&&b?.type==='point'?Math.hypot(a.x-b.x,a.y-b.y):0;if(!(distance(pts[0],pts[1])>1e-8&&distance(pts[pts.length-1],pts[pts.length-2])>1e-8))return t('sketch.bezierInvalid');}
+      if (e.nurbs !== undefined && !nurbsValid(e.nurbs, e.points.length, e.bezier, e.closed)) return t('sketch.nurbsInvalid', { id: e.id });
       if (e.points.length < 2) return t('rules.splinePointsMin', { id: e.id });
       if (e.closed && e.points.length < 3) return t('rules.splineClosedMin', { id: e.id });
     }
@@ -256,4 +257,21 @@ export function removalSet(sketch: SketchFeature, ids: Iterable<Id>): Set<Id> {
     }
   }
   return removed;
+}
+
+/**
+ * A clamped B-spline the poles can draw: a whole degree from 1 to 25 with more poles than that; knots finite and strictly rising; each end knot `degree + 1`
+ * times and every inner one 1 to `degree` times, `poles + degree + 1` in all; weights, when given, one per pole, finite and positive. Never with `bezier`, never closed.
+ */
+export function nurbsValid(n: { degree: unknown; knots: unknown; mults: unknown; weights?: unknown }, poles: number, bezier?: boolean, closed?: boolean): boolean {
+  if (bezier || closed) return false;
+  const { degree, knots, mults, weights } = n;
+  if (typeof degree !== 'number' || !Number.isInteger(degree) || degree < 1 || degree > 25 || poles < degree + 1) return false;
+  if (!Array.isArray(knots) || !Array.isArray(mults) || knots.length < 2 || knots.length !== mults.length) return false;
+  if (!knots.every((k, i) => typeof k === 'number' && Number.isFinite(k) && (i === 0 || k > (knots[i - 1] as number)))) return false;
+  const last = mults.length - 1;
+  if (!mults.every((m, i) => typeof m === 'number' && Number.isInteger(m) && (i === 0 || i === last ? m === degree + 1 : m >= 1 && m <= degree))) return false;
+  if ((mults as number[]).reduce((a, b) => a + b, 0) !== poles + degree + 1) return false;
+  if (weights !== undefined && !(Array.isArray(weights) && weights.length === poles && weights.every((w) => typeof w === 'number' && Number.isFinite(w) && w > 0))) return false;
+  return true;
 }

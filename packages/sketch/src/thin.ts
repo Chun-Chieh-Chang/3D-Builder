@@ -1,6 +1,7 @@
 import { t } from '@3db/i18n';
 import type { Id, SketchFeature } from '@3db/model';
-import { Nodes, signedAreaOf, TOL } from './profiles';
+import { Nodes, reverseNurbs, signedAreaOf, TOL } from './profiles';
+import { controlSamples } from './interact';
 import { contourArea, textContours } from './font';
 import type { Loop2, P2, Region2, Segment2, SolvedSketch } from './types';
 
@@ -118,7 +119,15 @@ export function reversePath(path: Segment2[]): Segment2[] {
   return path
     .slice()
     .reverse()
-    .map((s): Segment2 => (s.kind === 'line' ? { ...s, a: s.b, b: s.a } : s.kind === 'arc' ? { ...s, from: s.to, to: s.from, ccw: !s.ccw } : s));
+    .map((s): Segment2 =>
+      s.kind === 'line'
+        ? { ...s, a: s.b, b: s.a }
+        : s.kind === 'arc'
+          ? { ...s, from: s.to, to: s.from, ccw: !s.ccw }
+          : s.kind === 'spline'
+            ? { ...s, points: [...s.points].reverse(), ...(s.bezierPoles ? { bezierPoles: [...s.bezierPoles].reverse() } : {}), ...(s.nurbs ? { nurbs: reverseNurbs(s.nurbs) } : {}) }
+            : s,
+    );
 }
 
 /**
@@ -250,10 +259,13 @@ export function findOutlines(sketch: SketchFeature, solved: SolvedSketch): Outli
         edges.push({
           from: nodes.find(g.pointIds[0]!),
           to: nodes.find(g.pointIds[g.pointIds.length - 1]!),
+          // a spline drawn by its poles (Bézier, B-spline) is that curve, the same as in a profile: its samples, and its poles for the solid
           make: (fwd) => ({
             kind: 'spline',
-            points: fwd ? g.points : [...g.points].reverse(),
+            points: g.bezier || g.nurbs ? controlSamples(g.points, g.nurbs, !fwd) : fwd ? g.points : [...g.points].reverse(),
             closed: false,
+            ...(g.bezier ? { bezierPoles: fwd ? g.points : [...g.points].reverse() } : {}),
+            ...(g.nurbs ? { nurbs: fwd ? { ...g.nurbs, poles: g.points } : reverseNurbs({ ...g.nurbs, poles: g.points }) } : {}),
             source: e.id,
           }),
         });

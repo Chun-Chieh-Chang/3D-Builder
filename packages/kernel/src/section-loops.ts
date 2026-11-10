@@ -2,11 +2,13 @@
  * The boundary pieces of a planar cross-section (`Kernel.sectionEdges`) chained into closed loops, with the pieces that continue one another merged (two halves
  * of a circle become the circle, collinear lines one line), and the loops sorted into the regions they bound. Pure geometry in the plane: no kernel.
  */
-import type { SectionEdge } from './types';
+import type { NurbsSectionEdge, SectionEdge } from './types';
+import { nurbsArea, nurbsAt, nurbsReversed, type Nurbs2 } from './nurbs2d';
 
 export type P2 = [number, number];
 /** An arc runs from `a` to `b`, counter-clockwise when `ccw`. */
-export type Seg = { kind: 'line'; a: P2; b: P2 } | { kind: 'arc'; c: P2; r: number; a: P2; b: P2; ccw: boolean } | { kind: 'circle'; c: P2; r: number };
+/** `nurbs`: a clamped (rational) B-spline from its first pole `a` to its last `b` (exact outlines of B-spline walls, C1). */
+export type Seg = { kind: 'line'; a: P2; b: P2 } | { kind: 'arc'; c: P2; r: number; a: P2; b: P2; ccw: boolean } | { kind: 'circle'; c: P2; r: number } | ({ kind: 'nurbs'; a: P2; b: P2 } & Nurbs2);
 
 export interface Loop {
   segs: Seg[];
@@ -38,12 +40,13 @@ export function sweep(s: Extract<Seg, { kind: 'arc' }>): number {
   return d;
 }
 
-const reversed = (s: Seg): Seg => (s.kind === 'line' ? { kind: 'line', a: s.b, b: s.a } : s.kind === 'arc' ? { ...s, a: s.b, b: s.a, ccw: !s.ccw } : s);
+const reversed = (s: Seg): Seg => (s.kind === 'line' ? { kind: 'line', a: s.b, b: s.a } : s.kind === 'arc' ? { ...s, a: s.b, b: s.a, ccw: !s.ccw } : s.kind === 'nurbs' ? { ...nurbsReversed(s), a: s.b, b: s.a } : s);
 const start = (s: Exclude<Seg, { kind: 'circle' }>) => s.a;
 const end = (s: Exclude<Seg, { kind: 'circle' }>) => s.b;
 
 function segArea(s: Seg): number {
   if (s.kind === 'circle') return Math.PI * s.r * s.r;
+  if (s.kind === 'nurbs') return nurbsArea(s);
   const chord = (s.a[0] * s.b[1] - s.b[0] * s.a[1]) / 2;
   if (s.kind === 'line') return chord;
   const phi = sweep(s);
@@ -55,7 +58,10 @@ function polygon(segs: Seg[]): P2[] {
   const out: P2[] = [];
   for (const s of segs) {
     if (s.kind === 'line') out.push(s.a);
-    else if (s.kind === 'circle') for (let k = 0; k < 32; k++) out.push([s.c[0] + s.r * Math.cos((TAU * k) / 32), s.c[1] + s.r * Math.sin((TAU * k) / 32)]);
+    else if (s.kind === 'nurbs') {
+      const steps = 16 * (s.knots.length - 1);
+      for (let k = 0; k < steps; k++) out.push(nurbsAt(s, k / steps));
+    } else if (s.kind === 'circle') for (let k = 0; k < 32; k++) out.push([s.c[0] + s.r * Math.cos((TAU * k) / 32), s.c[1] + s.r * Math.sin((TAU * k) / 32)]);
     else {
       const a0 = angleOf(s.c, s.a);
       const phi = sweep(s) * (s.ccw ? 1 : -1);
@@ -79,6 +85,7 @@ function inside(p: P2, poly: P2[]): boolean {
 function probe(s: Seg): P2 {
   if (s.kind === 'circle') return [s.c[0] + s.r, s.c[1]];
   if (s.kind === 'line') return [(s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2];
+  if (s.kind === 'nurbs') return nurbsAt(s, 0.5);
   const m = angleOf(s.c, s.a) + (sweep(s) / 2) * (s.ccw ? 1 : -1);
   return [s.c[0] + s.r * Math.cos(m), s.c[1] + s.r * Math.sin(m)];
 }
@@ -116,12 +123,13 @@ function merge(segs: Seg[], tol: number): Seg[] {
 }
 
 /** Chain the analytic boundary without merging or sampling its curves. */
-export function chainBoundary(edges: SectionEdge[], tol: number): Seg[][] {
+export function chainBoundary(edges: (SectionEdge | NurbsSectionEdge)[], tol: number): Seg[][] {
   const open: Exclude<Seg, { kind: 'circle' }>[] = [];
   const loops: Seg[][] = [];
   for (const e of edges) {
     if (e.kind === 'other' || e.kind === 'bezier') throw new LoopError(`curve ${e.curve}`, e.curve);
     if (e.kind === 'circle') loops.push([{ kind: 'circle', c: e.c, r: e.r }]);
+    else if (e.kind === 'nurbs') open.push({ kind: 'nurbs', a: e.a, b: e.b, degree: e.degree, poles: e.poles, knots: e.knots, mults: e.mults, ...(e.weights ? { weights: e.weights } : {}) });
     else if (e.kind === 'line') {
       if (!near(e.a, e.b, tol)) open.push({ kind: 'line', a: e.a, b: e.b });
     } else {
@@ -167,7 +175,7 @@ export function signedLoopArea(segs: Seg[]): number {
 }
 
 /** The loops of a section, merged, each with its area and how deep it is nested. Throws `LoopError` for a curve that is not a line or a circle, or pieces that do not close. */
-export function chainLoops(edges: SectionEdge[], tol = 1e-6): Loop[] {
+export function chainLoops(edges: (SectionEdge | NurbsSectionEdge)[], tol = 1e-6): Loop[] {
   const merged = chainBoundary(edges, tol).map((loop) => merge(loop, tol));
   const polys = merged.map(polygon);
   return merged.map((segs, i) => ({

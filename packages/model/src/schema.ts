@@ -6,10 +6,18 @@ import type { Id } from './ids';
  * DOF status, mass properties and error lists are derived data and never stored.
  */
 
-export const SCHEMA_VERSION = 94;
+export const SCHEMA_VERSION = 95;
 
 /** Value expression (B5.2, B5.3): "20", "25.4mm", "30deg", "wall_t*2", "D1@草圖1/2", "property('厚度')"; see `expr/`. */
 export type Expr = string;
+
+/** The knot vector and weights of a sketch spline drawn by its poles as a clamped B-spline (see the `spline` entity). */
+export interface SplineNurbs {
+  degree: number;
+  knots: number[];
+  mults: number[];
+  weights?: number[];
+}
 
 export type Vec3 = [number, number, number];
 
@@ -72,7 +80,12 @@ export type SketchEntity =
   | { id: Id; type: 'circle'; center: Id; radius: number; construction?: boolean; ref?: Ref }
   | { id: Id; type: 'arc'; center: Id; start: Id; end: Id; construction?: boolean; ref?: Ref }
   | { id: Id; type: 'ellipse'; center: Id; major: Id; minorRadius: number; construction?: boolean; ref?: Ref }
-  | { id: Id; type: 'spline'; points: Id[]; closed?: boolean; bezier?: boolean; construction?: boolean; ref?: Ref }
+  /**
+   * `bezier`: the points are the poles of one Bézier curve. `nurbs`: the points are the poles of a clamped (rational) B-spline of that degree, knots and
+   * multiplicities (the ends `degree + 1` times, so the curve starts and ends on its first and last point), weights only when rational (C1, exact
+   * outlines from recognized B-spline walls). Neither: a curve through the points.
+   */
+  | { id: Id; type: 'spline'; points: Id[]; closed?: boolean; bezier?: boolean; nurbs?: SplineNurbs; construction?: boolean; ref?: Ref }
   | {
       id: Id;
       type: 'text';
@@ -622,6 +635,12 @@ export interface FilletFeature extends FeatureBase {
    * where the radius would change. Absent (or empty) is a constant radius, as every file before v66.
    */
   variable?: FilletVariablePoint[];
+  /**
+   * The round is the exact rolling ball (C2, v95): where OCCT's own round would be a B-spline off the ball (an edge that is no line or circle), it is
+   * replaced by the ball's surface (Kernel.fillet's `exact`). Set by recognition, whose rebuilt solid must meet the original to 1e-6; absent is OCCT's
+   * round as before, which is faster (an exact round over a B-spline face costs seconds).
+   */
+  exact?: boolean;
 }
 
 /**

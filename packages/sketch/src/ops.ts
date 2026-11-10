@@ -1473,7 +1473,7 @@ function copies(sketch: Pick<SketchFeature, 'entities' | 'constraints'>, geometr
           copy = { id: ids.take('el'), type: 'ellipse', center: pt(e.center), major: pt(e.major), minorRadius: (g?.type === 'ellipse' ? g.minorRadius : e.minorRadius) * k, ...construction };
           break;
         case 'spline':
-          copy = { id: ids.take('sp'), type: 'spline', points: e.points.map(pt), ...(e.bezier?{bezier:true}:{}), ...(e.closed ? { closed: true } : {}), ...construction };
+          copy = { id: ids.take('sp'), type: 'spline', points: e.points.map(pt), ...(e.bezier?{bezier:true}:{}), ...(e.nurbs?{nurbs:structuredClone(e.nurbs)}:{}), ...(e.closed ? { closed: true } : {}), ...construction };
           break;
         case 'text': {
           const { id: _old, at, size, angle, ...rest } = e;

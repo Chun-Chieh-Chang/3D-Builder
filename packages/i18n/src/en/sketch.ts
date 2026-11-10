@@ -18,6 +18,7 @@ export const sketch: Translation = {
   'sketch.ellipseMinor': 'Minor radius',
   'sketch.ellipseAxesInvalid': 'Ellipse radii require: minor ≥ 0.000001 mm; major > minor + 0.000001 mm and ≤ 1000000 mm; major/minor ≤ 10000.',
   'sketch.ellipseTangentLine': 'Ellipse tangency currently requires a line.',
+  'sketch.nurbsInvalid': 'Spline {id} has an invalid B-spline definition: the degree must be a whole number from 1 to 25 with more poles than the degree; knots must rise strictly, end multiplicities be degree + 1 and inner ones 1 to the degree, totalling poles + degree + 1; weights must be positive, one per pole; it cannot also be a Bezier or a closed curve.',
   'sketch.bezierInvalid': 'A Bezier curve needs 2–4 distinct control points, positive endpoint handle lengths and an open curve.',
   'sketch.bezierRequired': 'Endpoint tangency requires a control-point Bezier curve; fit splines must keep their existing definition.',
   'sketch.entry.length': 'Length',

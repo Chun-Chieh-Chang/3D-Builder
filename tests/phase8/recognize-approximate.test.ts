@@ -33,6 +33,16 @@ const S: P[] = [[28.72, 25], [21, 34], [14, 26], [7, 19], [0, 25]];
 const ring = (n: number, r: (a: number) => number): Region => ({ outer: [{ kind: 'spline', closed: true, points: Array.from({ length: n }, (_, i) => { const a = (2 * Math.PI * i) / n; return [r(a) * Math.cos(a), r(a) * Math.sin(a)]; }), source: 'c' }], holes: [] } as Region);
 const hole = (c: P, r: number, z0: number, h: number) => kernel.extrude({ ...XY, origin: [0, 0, z0] }, [{ outer: [{ kind: 'circle', c, r, source: 'h' }], holes: [] }], [0, 0, h]).shape;
 
+/**
+ * A part whose spline wall is straight to well within what `faceRuledAlong` asks (1e-6 of the normal) but is no exact translation along Z: the outline
+ * at the top has one inner spline point moved 1e-8 mm in the plane, and the side faces are ruled between the two. Its section is no exact B-spline (C1),
+ * so it is what the approximation (ADR 0243) is for; a wall that is an exact extrusion is rebuilt exactly instead, with or without the option.
+ */
+const near = (region: Region, h = 20): ShapeId => {
+  const nudged = region.outer.map((s) => (s.kind === 'spline' ? { ...s, points: s.points.map((p, i) => (i === 1 ? ([p[0], p[1] + 1e-8] as P) : p)) } : s));
+  return kernel.loft([{ frame: XY, outer: region.outer }, { frame: { ...XY, origin: [0, 0, h] }, outer: nudged }]).shape;
+};
+
 async function recognizeIt(s: ShapeId, approximate: boolean | undefined) {
   const bytes = new TextEncoder().encode(kernel.exportStep(s, 'p'));
   const sha = await sha256Hex(bytes);
@@ -82,12 +92,27 @@ function splineToArcs(original: ShapeId, rebuilt: ShapeId, z: number): { farthes
 
 describe('asked for', () => {
   it('off unless asked: refused as it always was, the option named, nothing changed', async () => {
-    const s = kernel.extrude(XY, [open(GENTLE)], [0, 0, 20]).shape;
+    const s = near(open(GENTLE));
     for (const option of [undefined, false]) {
       const e = await recognizeIt(s, option).catch((x: unknown) => x);
       expect(e).toBeInstanceOf(RecognizeError);
       expect((e as Error).message).toContain('自由曲面');
       expect((e as Error).message).toContain('樣條輪廓用雙圓弧近似');
+    }
+  });
+
+  it('a spline wall that is an exact extrusion: rebuilt exactly with the option off or on, its outline a B-spline, no approximation (C1)', async () => {
+    const s = kernel.extrude(XY, [open(GENTLE)], [0, 0, 20]).shape;
+    for (const option of [undefined, false, true]) {
+      const r = await recognizeIt(s, option);
+      try {
+        expect(r.report.approximation).toBeUndefined();
+        expect(r.report.volumeError).toBeLessThan(1e-9);
+        expect(r.report.difference).toBeLessThan(1e-9);
+        expect(r.doc.features.some((f) => f.type === 'sketch' && f.entities.some((e) => e.type === 'spline' && e.nurbs))).toBe(true);
+      } finally {
+        r.regen.dispose();
+      }
     }
   });
 
@@ -102,7 +127,7 @@ describe('asked for', () => {
 
 describe('what comes of it', () => {
   it('a gentle open spline: arcs and lines only, each kept within the bound said, by a formula of its own', async () => {
-    const s = kernel.extrude(XY, [open(GENTLE)], [0, 0, 20]).shape;
+    const s = near(open(GENTLE));
     const { doc, report, regen } = await recognizeIt(s, true);
     const a = report.approximation!;
     expect(a).toBeDefined();
@@ -134,14 +159,14 @@ describe('what comes of it', () => {
   });
 
   it('every sketch fully defined, as a recognized sketch is', async () => {
-    const s = kernel.extrude(XY, [open(GENTLE)], [0, 0, 20]).shape;
+    const s = near(open(GENTLE));
     const { doc, regen } = await recognizeIt(s, true);
     expect(regen.rebuild(doc).features.filter((f) => f.sketch && f.sketch.dof !== 0).map((f) => f.id)).toEqual([]);
     regen.dispose();
   });
 
   it('an S curve, with a change of curvature within it', async () => {
-    const s = kernel.extrude(XY, [open(S)], [0, 0, 20]).shape;
+    const s = near(open(S));
     const { doc, report, regen } = await recognizeIt(s, true);
     const walk = splineToArcs(s, regen.rebuild(doc).body!.shape, 7.3);
     expect(walk.farthest).toBeLessThanOrEqual(report.approximation!.bound);
@@ -149,7 +174,7 @@ describe('what comes of it', () => {
   });
 
   it('a closed spline', async () => {
-    const s = kernel.extrude(XY, [ring(6, (a) => 25 + 2 * Math.cos(2 * a))], [0, 0, 20]).shape;
+    const s = near(ring(6, (a) => 25 + 2 * Math.cos(2 * a)));
     expect(kernel.check(s).valid).toBe(true);
     const { doc, report, regen } = await recognizeIt(s, true);
     const walk = splineToArcs(s, regen.rebuild(doc).body!.shape, 3);
@@ -159,7 +184,7 @@ describe('what comes of it', () => {
   });
 
   it('with a hole: the hole is still a hole feature, its circle exact', async () => {
-    const s = kernel.boolean('cut', kernel.extrude(XY, [open(GENTLE)], [0, 0, 20]).shape, hole([14, 10], 4, -1, 22)).shape;
+    const s = kernel.boolean('cut', near(open(GENTLE)), hole([14, 10], 4, -1, 22)).shape;
     const { doc, report, regen } = await recognizeIt(s, true);
     expect(doc.features.map((f) => f.type)).toEqual(['sketch', 'extrude', 'sketch', 'hole']);
     expect(report.approximation!.distance).toBeLessThanOrEqual(report.approximation!.bound);
@@ -167,7 +192,7 @@ describe('what comes of it', () => {
   });
 
   it('a rebuilt part saved and rebuilt again is the same part', async () => {
-    const s = kernel.extrude(XY, [open(GENTLE)], [0, 0, 20]).shape;
+    const s = near(open(GENTLE));
     const { doc, regen } = await recognizeIt(s, true);
     const [a, b] = [kernel.massProps(regen.rebuild(doc).body!.shape).volume, kernel.massProps(regen.rebuild(JSON.parse(JSON.stringify(doc)) as PartDoc).body!.shape).volume];
     expect(b).toBeCloseTo(a, 9);
@@ -191,7 +216,7 @@ describe('what it does not take', () => {
   });
 
   it('a round along the spline: its surface is no wall, refused', async () => {
-    const s = kernel.extrude(XY, [open(GENTLE)], [0, 0, 20]).shape;
+    const s = near(open(GENTLE));
     const topo = kernel.topology(s);
     const top = topo.edges.findIndex((e) => e.curve !== 'line' && Math.abs(e.mid[2] - 20) < 1e-6);
     expect(top).toBeGreaterThanOrEqual(0);
@@ -199,7 +224,7 @@ describe('what it does not take', () => {
   });
 
   it('too many arcs for one sketch: refused, and the count said', async () => {
-    const m = await refusal(kernel.extrude(XY, [ring(24, (a) => 25 + 3 * Math.cos(3 * a))], [0, 0, 20]).shape);
+    const m = await refusal(near(ring(24, (a) => 25 + 3 * Math.cos(3 * a))));
     expect(m).toMatch(/\d+ 段圓弧/);
   });
 
@@ -242,7 +267,7 @@ describe('Kernel.faceRuledAlong', () => {
 });
 
 it('leaves no shape of its own behind, refused or done', async () => {
-  const s = kernel.extrude(XY, [open(GENTLE)], [0, 0, 20]).shape;
+  const s = near(open(GENTLE));
   const a = await recognizeIt(s, true);
   a.regen.dispose();
   const before = kernel.liveShapes;
@@ -264,31 +289,31 @@ describe('the check catches a result that is not close', () => {
   const through = (s: ShapeId) => kernel.importStep(new TextEncoder().encode(kernel.exportStep(s, 'p'))).shape;
 
   it('the same solid passes', () => {
-    const s = through(kernel.extrude(XY, [open(GENTLE)], [0, 0, 20]).shape);
+    const s = through(near(open(GENTLE)));
     expect(report(s, s).run().approximation!.distance).toBeLessThan(1e-3);
   });
 
   it('the outline a tenth of a millimetre off, ten times what was promised: refused', () => {
-    const s = through(kernel.extrude(XY, [open(GENTLE)], [0, 0, 20]).shape);
+    const s = through(near(open(GENTLE)));
     const off = kernel.extrude(XY, [open(GENTLE.map(([x, y]) => [x, y + 0.1] as P))], [0, 0, 20]).shape;
     expect(report(off, s).run).toThrow(/差太多/);
   });
 
   it('just past the bound, by 3e-3 (the slack of the check is 1e-3): refused', () => {
-    const s = through(kernel.extrude(XY, [open(GENTLE)], [0, 0, 20]).shape);
+    const s = through(near(open(GENTLE)));
     const r = report(s, s);
     const off = kernel.extrude(XY, [open(GENTLE.map(([x, y]) => [x, y + r.approx.bound + 3e-3] as P))], [0, 0, 20]).shape;
     expect(report(off, s).run).toThrow(/差太多/);
   });
 
   it('a wall in a different place, with the same area: the area alone would not have told', () => {
-    const s = through(kernel.extrude(XY, [open(GENTLE)], [0, 0, 20]).shape);
+    const s = through(near(open(GENTLE)));
     const moved = kernel.extrude({ ...XY, origin: [0.5, 0, 0] }, [open(GENTLE)], [0, 0, 20]).shape;
     expect(report(moved, s).run).toThrow(/差太多/);
   });
 
   it('no section to compare is no check', () => {
-    const s = through(kernel.extrude(XY, [open(GENTLE)], [0, 0, 20]).shape);
+    const s = through(near(open(GENTLE)));
     const approx = { tolerance: SPLINE_TOLERANCE, bound: 0.01, used: true };
     const rec = recognize(kernel, s, frameFor, undefined, { ...approx });
     const empty = { ...rec, base: { type: 'extrude', dir: [0, 0, 1], levels: [0], layers: [] } } as typeof rec;
