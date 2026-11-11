@@ -9,6 +9,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { Arena } from './occt';
+import { rethrowTrap } from './types';
 
 /** The most and the fewest sections of the ball taken along an edge, and how close to the ball the surface through them must be (mm). */
 const ROUND_SECTIONS = 512;
@@ -329,7 +330,7 @@ function signedNear(oc: any, face: any, keep: { release(): void }[]) {
   };
   // where to start Newton from: given parameters, or a vertex's own on this face (from a pcurve of one of its edges); a global projection only if neither
   const seed = (uv: [number, number]) => { last = [...uv]; };
-  const seedAt = (V: any) => { try { const q = oc.BRep_Tool.Parameters(oc.TopoDS.Vertex(V), face); last = [q.X(), q.Y()]; q.delete(); } catch { /* not on this face: the start is found without it */ } };
+  const seedAt = (V: any) => { try { const q = oc.BRep_Tool.Parameters(oc.TopoDS.Vertex(V), face); last = [q.X(), q.Y()]; q.delete(); } catch (e) { rethrowTrap(e); /* not on this face: the start is found without it */ } };
   return Object.assign(fn, { seed, seedAt });
 }
 /** The foot of q on a B-spline surface (an exact round): the nearest of a coarse grid, then Newton; no global projection (see `projector`). */
@@ -614,7 +615,7 @@ export function exactify(oc: any, shape: any, FoldIn: any, supFaces: any[], shar
       const n = x.length; const J: number[][] = f.map(() => []);
       for (let q = 0; q < n; q++) { const h = q === 1 ? 1e-8 : 1e-6; const xp = [...x], xm = [...x]; xp[q]! += h; xm[q]! -= h; const fp = F(xp), fm = F(xm); for (let w = 0; w < f.length; w++) J[w]![q] = (fp[w]! - fm[w]!) / (2 * h); }
       let dx: number[];
-      try { dx = solve(J, f.map((q) => [q])).map((q) => q[0]!); } catch { throw new Error('end corner: singular'); }
+      try { dx = solve(J, f.map((q) => [q])).map((q) => q[0]!); } catch (e) { rethrowTrap(e); throw new Error('end corner: singular'); }
       if (!dx.every(Number.isFinite)) throw new Error('end corner: singular');
       let lam = 1, nx = x.map((q, k2) => q - dx[k2]!), nf = F(nx);
       while (nrm(nf) > nrm(f) && lam > 1e-6) { lam /= 2; nx = x.map((q, k2) => q - lam * dx[k2]!); nf = F(nx); }
