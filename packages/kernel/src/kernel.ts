@@ -10,6 +10,8 @@ import { chainBoundary, signedLoopArea, type Seg } from './section-loops';
 import { certifyOffset, type Seg2 } from './section-envelope';
 import { approximateSection } from './section-approximation';
 import { chainCurve, deviation, exactify, setRoundDeadline, supportOf } from './exactRound';
+import { distancesToEdge, rollingBall, sharpCurve } from './roundRecognition';
+import { surfaceDeviation, type Deviation } from './surfaceDeviation';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
   KernelError,
@@ -3580,33 +3582,25 @@ export class Kernel {
    * adaptive rule for all of it.
    */
   /**
-   * The volumes of what `a` has and `b` has not, and of what `b` has and `a` has not, from one intersection of the two (`BOPAlgo_CellsBuilder`): each
-   * measured on its own pieces, where a sum of volumes less twice the shared one would take near-equal figures from each other and keep their error.
+   * ∫ over `a`'s boundary of the distance to `b`'s (ADR 0248): to first order the volume between two near-equal solids seen from `a`, measured on the
+   * exact surfaces without a boolean. Both are meshed first, with deflection `tolerance` (default: as `mesh`), which only chooses the faces near each point.
    */
-  differenceVolumes(a: ShapeId, b: ShapeId): [number, number] {
+  surfaceDeviation(a: ShapeId, b: ShapeId, tolerance?: number): Deviation {
     const oc = this.oc;
     const arena = new Arena();
     try {
       const [sa, sb] = [this.get(a), this.get(b)];
-      const cells = arena.own(new oc.BOPAlgo_CellsBuilder());
-      const args = arena.own(new oc.NCollection_List_TopoDS_Shape());
-      args.Append(sa);
-      args.Append(sb);
-      cells.SetArguments(args);
-      cells.Perform();
-      if (cells.HasErrors()) throw new KernelError(t('kernel.opFailed', { label: t('body.common') }));
-      const part = (take: TopoDS_Shape, avoid: TopoDS_Shape): number => {
-        const lt = arena.own(new oc.NCollection_List_TopoDS_Shape());
-        const la = arena.own(new oc.NCollection_List_TopoDS_Shape());
-        lt.Append(take);
-        la.Append(avoid);
-        cells.RemoveAllFromResult();
-        cells.AddToResult(lt, la, 0, true);
-        const v = arena.own(new oc.GProp_GProps());
-        oc.BRepGProp.VolumeProperties(arena.own(cells.Shape()), v, false, false, false);
-        return Math.abs(v.Mass());
-      };
-      return [part(sa, sb), part(sb, sa)];
+      if (tolerance === undefined) {
+        const box = arena.own(new oc.Bnd_Box());
+        oc.BRepBndLib.Add(sa, box, false);
+        const p = this.xyz(arena.own(box.CornerMin()));
+        const q = this.xyz(arena.own(box.CornerMax()));
+        tolerance = Math.min(1, Math.max(0.002, Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) * 5e-4));
+      }
+      this.mesh(a, { tolerance });
+      this.mesh(b, { tolerance });
+      const faces = (s: TopoDS_Shape) => ShapeIndex.of(oc, s, T.FACE, arena).keys.map((f) => arena.own(oc.TopoDS.Face(f)));
+      return surfaceDeviation(oc, faces(sa), faces(sb), tolerance);
     } finally {
       arena.dispose();
     }
@@ -3821,6 +3815,71 @@ export class Kernel {
       if (c) out.push(c);
     }
     return out;
+  }
+
+  /**
+   * C2: whether face `faceIndex` is a rolling-ball round of one radius between faces `supports` (sections arcs of one radius, the ball's centre that far
+   * from both supports' surfaces to within `tol` mm): its radius, whether it is on an outside edge (`convex`), and how far off it is. Else null.
+   */
+  rollingBall(target: ShapeId, faceIndex: number, supports: [number, number], tol: number): { radius: number; convex: boolean; deviation: number } | null {
+    const arena = new Arena();
+    try {
+      const faces = ShapeIndex.of(this.oc, this.get(target), T.FACE, arena).keys;
+      const [f, a, b] = [faceIndex, ...supports].map((i) => {
+        const x = faces[i];
+        if (!x) throw new KernelError(t('edit.faceOutOfRange', { index: i }));
+        return arena.own(this.oc.TopoDS.Face(x));
+      });
+      return rollingBall(this.oc, f, a, b, tol);
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * C2.8: the sharp edge a round (face `roundFace`) between faces `supports` took off, without taking it off: their surfaces intersected, the branch along
+   * the round, `n` points on it from where the round starts to where it ends (all of it when the round goes round). Null when they do not meet near it.
+   */
+  sharpEdge(target: ShapeId, roundFace: number, supports: [number, number], n = 33): { points: Vec3[]; closed: boolean } | null {
+    const arena = new Arena();
+    try {
+      const faces = ShapeIndex.of(this.oc, this.get(target), T.FACE, arena).keys;
+      const [f, a, b] = [roundFace, ...supports].map((i) => {
+        const x = faces[i];
+        if (!x) throw new KernelError(t('edit.faceOutOfRange', { index: i }));
+        return arena.own(this.oc.TopoDS.Face(x));
+      });
+      return sharpCurve(this.oc, f, a, b, n);
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * C2.10: each point's distance to edge `edgeIndex` — to the surfaces of the faces that meet there, not to the edge's (possibly approximated) curve —
+   * where its foot is inside the edge, or null where it is past the edge's ends.
+   */
+  distancesToEdge(target: ShapeId, edgeIndex: number, points: readonly Vec3[]): (number | null)[] {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const shape = this.get(target);
+      const edges = ShapeIndex.of(oc, shape, T.EDGE, arena);
+      const e = edges.keys[edgeIndex];
+      if (!e) throw new KernelError(t('kernel.edgeOutOfRange', { index: edgeIndex }));
+      const faces = ShapeIndex.of(oc, shape, T.FACE, arena).keys.filter((f) => {
+        for (const ex = arena.own(new oc.TopExp_Explorer(f, T.EDGE as never, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) {
+          const c = ex.Current();
+          const hit = edges.indexOf(c) === edgeIndex;
+          c.delete();
+          if (hit) return true;
+        }
+        return false;
+      }).map((f) => arena.own(oc.TopoDS.Face(f)));
+      return distancesToEdge(oc, arena.own(oc.TopoDS.Edge(e)), points, faces);
+    } finally {
+      arena.dispose();
+    }
   }
 
   /** Whether a face is a B-spline or Bézier curve carried exactly straight along `d` (its section square to `d` is then read exactly, C1). */

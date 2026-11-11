@@ -10,6 +10,12 @@
 
 > **2026-11-10 晚（Claude Code）C2.7f 產品路徑。** 精確滾球圓角已接進 `Kernel.fillet`（新檔 `packages/kernel/src/exactRound.ts`、測試 `packages/kernel/test/exact-round.test.ts` 9 項通過、型別與 `lint:rules` 通過），工作樹未 commit。代價：含 B-spline 支撐面時每個圓角約 2.8 秒，`surface-spike` 由 8.6 s／0.87 GB 變 39 s／2.5 GB。**使用者裁定只用於辨識重建**：`FilletFeature.exact`（v95，選填）由辨識重建設定，`Kernel.fillet` 預設關；使用者自己做的圓角速度不變（DEV_LOG 2026-11-10）。之後：C2.11 角落、C2.14 fuzz＋heap、C2.8～C2.10 辨識端。
 
+> **2026-11-11 晚（Claude Code CLI，Windows）C2.8～C2.10 與 ADR 0248 完成，未 commit。接手從這段開始。**
+> - **改動**：新檔 `packages/kernel/src/roundRecognition.ts`（不刪面的滾球圓角辨識、尖邊、邊上距離）、`packages/kernel/src/surfaceDeviation.ts`（ADR 0248：重建比對改為雙向曲面偏差積分，取代布林 `differenceVolumes`，後者已刪）；`kernel.ts`、`regen/src/recognize/{analyze,index,reconstruct}.ts`；測試 `packages/kernel/test/surface-deviation.test.ts`、`tests/phase8/recognize-rolling-ball*.ts`（kit、單元、fuzz 10 檔）。
+> - **使用者裁定**：比對要根治，不再依賴布林（2026-11-11「2, 我要根治」）；fuzz 判準改為「OCCT 圓角可被拒為自由曲面，或在 1e-6 內重建」。
+> - **驗證與量測**：見 DEV_LOG 2026-11-11 C2.8–C2.10 條目、ADR 0248、設計文件 §6d；實件稽核結果寫在 DEV_LOG 同條目。
+> - **下一步**：使用者核准後 commit；推送前跑全量單元測試與 `verify:ui`（web 端程式碼沒改，但頁面上的辨識走同一個 `reconstruct.ts`，`phase8-recognize-*` 腳本會經過新的比對）。之後：B-spline 支撐面延伸、與自由圓角相切的解析圓角、C4／C5。
+
 > **2026-11-11（Claude Code CLI，Windows）推送前全量驗證完成，接手從這段開始。本機 `main` 比 `origin/main` 多 4 個 commit（`3b1ba1f6`、`bdd5f445`、`399328dd`、測試更新），未推送。**
 > - **`verify:ui`**：278 項。第一輪 239 項全過，之後因系統記憶體不足被 Claude Code 停掉；以 `--only` 補跑其餘 41 項，40 項過。唯一失敗的 `phase8-recognize-spline.js` 是腳本過時：C1 起，精確伸長的 `spline-outline.step` 不勾近似也會精確重建，所以「先拒絕」的前提不再成立。把 `exactRound.ts` 換回 3b1ba1f6 的版本，失敗依舊。已改用新樣本 `tests/fixtures/step/spline-outline-near.step`（放樣，樣條點偏 1e-8 mm，體積 16705.47）測「拒絕／近似」，原樣本改測「精確重建」，單跑 PASS。
 > - **全量單元測試（`--maxWorkers 2`，420 檔）**：413 過、3 失敗、4 略過；4,900 項過、4 項失敗。① `crash-no-swallow`：3b1ba1f6 在 `exactRound.ts` 有兩處 `catch` 吞陷阱（ADR 0242），已修，commit `399328dd`。② `apps/mcp/test/recognize.test.ts`：與 e2e 同因，已改用兩個樣本，5/5 過。③ `recognize-approximate` 兩項：草圖求解器記憶體不足，屬既有問題，另立一項。

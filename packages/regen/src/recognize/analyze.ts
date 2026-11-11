@@ -52,7 +52,19 @@ export const TOL = 1e-6;
 /** The sharp edge a round or a chamfer was taken off, as it lies in the body without it: what the rebuilt body's edge must lie on. */
 export type SharpEdge =
   | { kind: 'line'; origin: Vec3; dir: Vec3; ends: [Vec3, Vec3] }
-  | { kind: 'circle'; center: Vec3; normal: Vec3; radius: number };
+  | { kind: 'circle'; center: Vec3; normal: Vec3; radius: number }
+  /**
+   * Any other curve (C2.9): points on it, from where the two supports' surfaces meet (C2.8), inside the stretch the round ran along; `closed` when the
+   * round went all the way round. The rebuilt body's edge is found by these points lying on it (C2.10), not by the kind of its curve.
+   */
+  | { kind: 'sampled'; points: Vec3[]; closed: boolean };
+
+/**
+ * How far a round that is no simple surface may be off a rolling ball (mm) to be read as one (C2). Measured: exact rolling balls this program makes 4e-13
+ * to 1.5e-8; the real part-4's rounds at most 1.45e-6; OCCT's own constant-radius rounds on tilted or spline supports 1.3e-5 and more. Whether the
+ * rebuilt solid is the same is decided by the comparison at the end, not by this.
+ */
+export const ROLLING_BALL_TOLERANCE = 1e-5;
 
 export interface FilletRecord {
   type: 'fillet';
@@ -171,6 +183,8 @@ interface BlendCandidate {
   rims?: [number[], number[]];
   /** For a round: the faces it is tangent to. */
   tangent?: number[];
+  /** A round with no simple surface, read as a rolling ball (C2): never taken off, its sharp edge sampled (C2.8, C2.9). */
+  free?: boolean;
 }
 
 function blendCandidates(topo: Topology, smooth: boolean[], adj: Map<number, number[]>[]): BlendCandidate[] {
@@ -298,6 +312,20 @@ function planesMeet(a: Extract<SurfaceGeometry, { type: 'plane' }>, b: Extract<S
 /** Where `p` is from a sharp edge's curve (a line: to the line; a circle: to the circle). */
 function distanceToSharp(p: Vec3, s: SharpEdge): number {
   if (s.kind === 'line') return lineDistance(p, s.origin, s.dir);
+  if (s.kind === 'sampled') {
+    // to the polyline through the points: off the curve itself by at most the chords' sag, so only for telling near from far
+    let best = Infinity;
+    const n = s.points.length;
+    for (let k = 0; k + 1 < n + (s.closed ? 1 : 0); k++) {
+      const a = s.points[k]!;
+      const b = s.points[(k + 1) % n]!;
+      const ab = sub(b, a);
+      const l2 = dot(ab, ab);
+      const w = l2 > 0 ? Math.min(1, Math.max(0, dot(sub(p, a), ab) / l2)) : 0;
+      best = Math.min(best, len(sub(p, addv(a, ab, w))));
+    }
+    return best;
+  }
   const v = sub(p, s.center);
   const z = dot(v, s.normal);
   const rho = len(sub(v, [s.normal[0] * z, s.normal[1] * z, s.normal[2] * z]));
@@ -350,6 +378,22 @@ function analyticSharpOf(topo: Topology, c: BlendCandidate): SharpEdge | null {
   return null;
 }
 
+/**
+ * C2: the faces with no simple surface that are rolling-ball rounds of one radius between two faces (`Kernel.rollingBall`), as round candidates. Their
+ * supports are the faces they are tangent to that are not themselves such faces; a face tangent to other than two is left as it is (freeform).
+ */
+function freeRounds(kernel: Kernel, shape: ShapeId, topo: Topology, odd: number[], smooth: boolean[], adj: Map<number, number[]>[]): BlendCandidate[] {
+  const tangent = (i: number) => [...adj[i]!.entries()].filter(([, edges]) => edges.some((e) => smooth[e])).map(([n]) => n);
+  const maybe = new Set(odd.filter((i) => tangent(i).length >= 2));
+  return [...maybe].flatMap((i): BlendCandidate[] => {
+    const all = tangent(i);
+    const supports = all.filter((n) => !maybe.has(n));
+    if (supports.length !== 2) return [];
+    const ball = kernel.rollingBall(shape, i, [supports[0]!, supports[1]!], ROLLING_BALL_TOLERANCE);
+    return ball ? [{ face: i, type: 'fillet', supports: [supports[0]!, supports[1]!], radius: ball.radius, convex: ball.convex, tangent: all, free: true }] : [];
+  });
+}
+
 function removeBlends(
   kernel: Kernel,
   shape: ShapeId,
@@ -358,8 +402,19 @@ function removeBlends(
   skipDeleteFaces = false,
 ): { shape: ShapeId; records: BlendRecord[]; removed: number; analyticOnly?: boolean } | null {
   if (cands.length === 0) return null;
-  if (skipDeleteFaces) {
-    const analyticSh = cands.filter((c) => c.supports[0] >= 0).map((c) => ({ c, s: analyticSharpOf(topo, c) }));
+  // a round with no simple surface is never taken off (C2.8): its sharp edge is where its supports' surfaces meet, and the base is read around it
+  const free = cands.some((c) => c.free);
+  if (skipDeleteFaces || free) {
+    const sharpOfCand = (c: BlendCandidate): SharpEdge | null => {
+      if (!c.free) return analyticSharpOf(topo, c);
+      const s = kernel.sharpEdge(shape, c.face, c.supports);
+      return s ? { kind: 'sampled', points: s.points, closed: s.closed } : null;
+    };
+    const analyticSh = cands.filter((c) => c.supports[0] >= 0).map((c) => ({ c, s: sharpOfCand(c) }));
+    if (free) {
+      const lost = analyticSh.filter((x) => x.s === null).map((x) => x.c.face);
+      if (lost.length) throw new RecognizeError(t('recognize.blendNoEdge', { faces: describe(topo, lost) }));
+    }
     if (analyticSh.length > 0 && analyticSh.every((x) => x.s !== null)) {
       const fillets = new Map<string, FilletRecord>();
       const chamfer: ChamferRecord = { type: 'chamfer', edges: [] };
@@ -1342,7 +1397,11 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
   const made: ShapeId[] = [];
   try {
     const topo0 = kernel.topology(shape);
-    const odd = topo0.faces.flatMap((f, i) => (ANALYTIC.has(f.surface) && f.geometry ? [] : [i]));
+    const odd0 = topo0.faces.flatMap((f, i) => (ANALYTIC.has(f.surface) && f.geometry ? [] : [i]));
+    // C2: those that are rolling-ball rounds are rounds, not freeform faces
+    const rounds0 = odd0.length ? freeRounds(kernel, shape, topo0, odd0, kernel.smoothEdges(shape, topo0.edges.map((_, i) => i)), adjacency(topo0)) : [];
+    const roundSet = new Set(rounds0.map((c) => c.face));
+    const odd = odd0.filter((i) => !roundSet.has(i));
     if (odd.length) {
       const loft = loftBase(kernel, shape, topo0, odd, frameFor, budget);
       if (loft) {
@@ -1378,11 +1437,12 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
     const allBlends: BlendRecord[] = [];
     let totalBlendFaces = 0;
     const analyticUnremoved = new Set<number>();
-    const skipDeleteFaces = topo0.faces.length > 500;
+    // rounds with no simple surface are left in the body (C2.8), and with them every other blend, read off where it is
+    const skipDeleteFaces = topo0.faces.length > 500 || rounds0.length > 0;
     for (let pass = 0; pass < 4; pass++) {
       const topoPass = pass === 0 ? topo0 : kernel.topology(current);
       const smooth = kernel.smoothEdges(current, topoPass.edges.map((_, i) => i));
-      const allCands = blendCandidates(topoPass, smooth, adjacency(topoPass));
+      const allCands = [...blendCandidates(topoPass, smooth, adjacency(topoPass)), ...(pass === 0 ? rounds0 : [])];
       if (allCands.length === 0) break;
       const supportedByOther = new Set(allCands.flatMap((c) => c.supports.filter((s) => s >= 0)));
       const outerCands = allCands.filter((c) => !supportedByOther.has(c.face));

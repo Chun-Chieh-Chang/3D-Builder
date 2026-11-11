@@ -4,7 +4,7 @@
  * same solid is a `RecognizeError`, and the document is not changed.
  */
 import { t } from '@3db/i18n';
-import { KernelError, type Frame, type Kernel, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
+import { type Frame, type Kernel, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
 import {
   applyCommand,
   createEmptyPart,
@@ -369,9 +369,29 @@ class Builder {
 
 // ------------------------------------------------------------------ rounds and chamfers on the rebuilt body
 
-function onSharp(r: RebuildResult, s: SharpEdge): number[] {
+/**
+ * C2.10: the rebuilt body's edges a sampled sharp edge lies along: each edge on which at least two of its points have a foot inside the edge within TOL,
+ * whatever curve the edge is. Every point must be on one of them (a point past every edge, or off them all, means the edge is not there).
+ */
+function onSampled(kernel: Kernel, body: NonNullable<RebuildResult['body']>, s: Extract<SharpEdge, { kind: 'sampled' }>): number[] {
+  const spacing = Math.max(...s.points.slice(1).map((p, k) => len(sub(p, s.points[k]!))));
+  const covered = s.points.map(() => false);
+  const found = body.topology.edges.flatMap((e, i) => {
+    // far from every point: not asked of the kernel
+    if (Math.min(...s.points.map((p) => len(sub(p, e.mid)))) > e.length / 2 + spacing + 1e-3) return [];
+    const ds = kernel.distancesToEdge(body.shape, i, s.points);
+    const on = ds.flatMap((d, k) => (d !== null && d <= TOL ? [k] : []));
+    if (on.length < 2) return [];
+    for (const k of on) covered[k] = true;
+    return [i];
+  });
+  return covered.every(Boolean) ? found : [];
+}
+
+function onSharp(kernel: Kernel, r: RebuildResult, s: SharpEdge): number[] {
   const body = r.body;
   if (!body) return [];
+  if (s.kind === 'sampled') return onSampled(kernel, body, s);
   return body.topology.edges.flatMap((e, i) => {
     if (s.kind === 'line') {
       if (e.curve !== 'line' || !e.dir || Math.abs(Math.abs(dot(unit(e.dir), s.dir)) - 1) > 1e-9) return [];
@@ -418,11 +438,11 @@ function extraChamferCaps(body: NonNullable<RebuildResult['body']>, source: Topo
   });
 }
 
-function blendFeature(rec: BlendRecord, r: RebuildResult, ids: IdAllocator, b: Builder): Feature[] {
+function blendFeature(kernel: Kernel, rec: BlendRecord, r: RebuildResult, ids: IdAllocator, b: Builder): Feature[] {
   const body = r.body!;
   const ref = (i: number): Ref => ({ kind: 'edge', name: body.names.edges[i]!, fingerprint: edgeFingerprint(body.topology, i) });
   const find = (s: SharpEdge) => {
-    const found = onSharp(r, s);
+    const found = onSharp(kernel, r, s);
     if (found.length === 0) throw new RecognizeError(t('recognize.edgeNotFound', { kind: t(rec.type === 'fillet' ? 'recognize.name.fillet' : 'recognize.name.chamfer', { n: '' }).trim() }));
     return found;
   };
@@ -570,7 +590,7 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
       const r = regen.rebuild(next, { until: end });
       const failed = failedOf(r, made);
       if (failed) throw new RecognizeError(whyFailed(failed));
-      for (const f of blendFeature(blend, r, ids, b)) {
+      for (const f of blendFeature(kernel, blend, r, ids, b)) {
         run({ type: 'insertFeature', feature: f, index: end });
         made.push(f.id);
         end++;
@@ -594,18 +614,11 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
       const volumeError = Math.abs(m1.volume - m0.volume) / m0.volume;
       // the area to a set precision: the fixed rule is off by more than the tolerance on faces with many B-spline holes (C1)
       const areaError = Math.abs(kernel.surfaceArea(body.shape) - area0) / area0;
-      // the volume of the two cuts, each measured on the pieces themselves; the sum of the volumes less twice the shared one takes two near-equal figures
-      // from each other and keeps their integration error (7e-6 of a plate whose cuts are both empty)
-      let difference: number;
-      try {
-        const [ab, ba] = kernel.differenceVolumes(whole, body.shape);
-        difference = (ab + ba) / m0.volume;
-      } catch (e) {
-        if (!(e instanceof KernelError)) throw e;
-        const shared = kernel.common(whole, body.shape, 0);
-        if (shared.shape !== null) kernel.release(shared.shape);
-        difference = Math.max(0, m0.volume + m1.volume - 2 * shared.volume) / m0.volume;
-      }
+      // the volume between the two, as each boundary's distance to the other integrated over it, the larger way (ADR 0248): a boolean of two near-equal
+      // solids with B-spline faces traps or runs for minutes (an imported round against the exact one that rebuilt it), and could not see a 2e-6 mm
+      // difference (it gave 0); the volume less twice the shared one keeps the integration error of near-equal figures (7e-6 of a plate)
+      budget.check();
+      const difference = Math.max(kernel.surfaceDeviation(whole, body.shape).integral, kernel.surfaceDeviation(body.shape, whole).integral) / m0.volume;
       return { features: { ...b.counts }, faces: [facesBefore, body.topology.faces.length], volume: m0.volume, volumeError, areaError, difference };
     };
     const matches = (r: ReconstructReport) => [r.volumeError, r.areaError, r.difference].every((error) => error <= RECOGNIZE_TOLERANCE);
