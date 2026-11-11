@@ -10,7 +10,9 @@
 
 > **2026-11-10 晚（Claude Code）C2.7f 產品路徑。** 精確滾球圓角已接進 `Kernel.fillet`（新檔 `packages/kernel/src/exactRound.ts`、測試 `packages/kernel/test/exact-round.test.ts` 9 項通過、型別與 `lint:rules` 通過），工作樹未 commit。代價：含 B-spline 支撐面時每個圓角約 2.8 秒，`surface-spike` 由 8.6 s／0.87 GB 變 39 s／2.5 GB。**使用者裁定只用於辨識重建**：`FilletFeature.exact`（v95，選填）由辨識重建設定，`Kernel.fillet` 預設關；使用者自己做的圓角速度不變（DEV_LOG 2026-11-10）。之後：C2.11 角落、C2.14 fuzz＋heap、C2.8～C2.10 辨識端。
 
-> **2026-11-11 晚（Claude Code CLI，Windows）C2.8～C2.10 與 ADR 0248 完成，未 commit。接手從這段開始。**
+> **2026-11-11 夜（Claude Code CLI，Windows）推送前驗證完成。** C2.8～C2.10＋ADR 0248 已 commit 為 `38f21925`（未推送）。全量單元測試抓到新比對在圓錐頂點（鑽尖）出錯，已修（`surfaceDeviation.ts` 週期換算＋多起點），**修正尚未 commit**。修正後：phase8 59/60（僅既有 `recognize-approximate` 2 項）、特徵辨識 fuzz 120/120、實件 30/35 不變、`verify:ui` 278/278（首輪 13 項環境錯誤，單跑與補跑全過）。細節見 DEV_LOG 2026-11-11 (late)。下一步：使用者核准後 commit 修正、推送。
+>
+> **2026-11-11 晚（Claude Code CLI，Windows）C2.8～C2.10 與 ADR 0248 完成，未 commit。**
 > - **改動**：新檔 `packages/kernel/src/roundRecognition.ts`（不刪面的滾球圓角辨識、尖邊、邊上距離）、`packages/kernel/src/surfaceDeviation.ts`（ADR 0248：重建比對改為雙向曲面偏差積分，取代布林 `differenceVolumes`，後者已刪）；`kernel.ts`、`regen/src/recognize/{analyze,index,reconstruct}.ts`；測試 `packages/kernel/test/surface-deviation.test.ts`、`tests/phase8/recognize-rolling-ball*.ts`（kit、單元、fuzz 10 檔）。
 > - **使用者裁定**：比對要根治，不再依賴布林（2026-11-11「2, 我要根治」）；fuzz 判準改為「OCCT 圓角可被拒為自由曲面，或在 1e-6 內重建」。
 > - **驗證與量測**：見 DEV_LOG 2026-11-11 C2.8–C2.10 條目、ADR 0248、設計文件 §6d；實件稽核結果寫在 DEV_LOG 同條目。

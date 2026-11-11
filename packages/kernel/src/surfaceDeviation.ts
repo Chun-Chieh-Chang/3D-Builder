@@ -165,7 +165,10 @@ export function surfaceDeviation(oc: any, facesA: readonly any[], facesB: readon
   const uv2 = own(new oc.gp_Pnt2d(0, 0));
   const g = own(new oc.gp_Pnt(0, 0, 0));
   const IN = oc.TopAbs_State.TopAbs_IN, ON = oc.TopAbs_State.TopAbs_ON;
-  const bFace = new Map<number, { ad: any; cl: any; edges: { pr: any; ends: V3[] }[] }>();
+  /** a periodic parameter brought into [first, first + period): the classifier reads (u, v) as given, and Newton may end a period or more away */
+  interface Period { first: number; period: number }
+  const wrap = (x: number, w: Period | null) => (w ? w.first + (((x - w.first) % w.period) + w.period) % w.period : x);
+  const bFace = new Map<number, { ad: any; cl: any; edges: { pr: any; ends: V3[] }[]; pu: Period | null; pv: Period | null }>();
   const faceOfB = (f: number) => {
     let x = bFace.get(f);
     if (x) return x;
@@ -188,31 +191,41 @@ export function surfaceDeviation(oc: any, facesA: readonly any[], facesB: readon
       const ends = [ca.FirstParameter(), ca.LastParameter()].map((t) => { const q = ca.Value(t); const o: V3 = [q.X(), q.Y(), q.Z()]; q.delete(); return o; });
       edges.push({ pr, ends });
     }
-    x = { ad, cl, edges };
+    const pu = ad.IsUPeriodic() ? { first: ad.FirstUParameter(), period: ad.UPeriod() } : null;
+    const pv = ad.IsVPeriodic() ? { first: ad.FirstVParameter(), period: ad.VPeriod() } : null;
+    x = { ad, cl, edges, pu, pv };
     bFace.set(f, x);
     return x;
   };
-  /** distance from p to face f of B, starting Newton at (u, v) */
-  const toFace = (f: number, p: V3, u0: number, v0: number): number => {
-    const { ad, cl, edges } = faceOfB(f);
-    let [u, v] = [u0, v0];
-    for (let it = 0; it < 30; it++) {
-      const e = sD1(oc, ad, u, v);
-      const r = sub(p, e.p as V3);
-      const a = dot(e.du as V3, e.du as V3), b = dot(e.du as V3, e.dv as V3), c = dot(e.dv as V3, e.dv as V3);
-      const ru = dot(e.du as V3, r), rv = dot(e.dv as V3, r);
-      const det = a * c - b * b;
-      if (!(Math.abs(det) > 0)) break;
-      const du = (ru * c - rv * b) / det, dv = (a * rv - b * ru) / det;
-      u += du;
-      v += dv;
-      if (Math.hypot(du * Math.sqrt(a), dv * Math.sqrt(c)) < 1e-14) break;
+  /**
+   * Distance from p to face f of B, Newton from each start in turn (the nearest triangle's point first, then its corners) until a foot is inside the
+   * face. By a cone's apex the mesh's nodes are one point with any u: from there Newton can end periods round (u = −7π, brought back by `wrap`) or
+   * cross the apex onto the other nappe, outside the face (the drill point of a hole; v past the apex); a corner off the apex starts it right.
+   */
+  const toFace = (f: number, p: V3, starts: readonly (readonly [number, number])[]): number => {
+    const { ad, cl, edges, pu, pv } = faceOfB(f);
+    for (const [u0, v0] of starts) {
+      let [u, v] = [u0, v0];
+      for (let it = 0; it < 30; it++) {
+        const e = sD1(oc, ad, u, v);
+        const r = sub(p, e.p as V3);
+        const a = dot(e.du as V3, e.du as V3), b = dot(e.du as V3, e.dv as V3), c = dot(e.dv as V3, e.dv as V3);
+        const ru = dot(e.du as V3, r), rv = dot(e.dv as V3, r);
+        const det = a * c - b * b;
+        if (!(Math.abs(det) > 0)) break;
+        const du = (ru * c - rv * b) / det, dv = (a * rv - b * ru) / det;
+        u += du;
+        v += dv;
+        if (Math.hypot(du * Math.sqrt(a), dv * Math.sqrt(c)) < 1e-14) break;
+      }
+      u = wrap(u, pu);
+      v = wrap(v, pv);
+      uv2.SetX(u);
+      uv2.SetY(v);
+      cl.Perform(facesB[f], uv2, 1e-9);
+      const s = cl.State();
+      if (s === IN || s === ON || String(s) === String(IN) || String(s) === String(ON)) return len(sub(p, sD1(oc, ad, u, v).p as V3));
     }
-    uv2.SetX(u);
-    uv2.SetY(v);
-    cl.Perform(facesB[f], uv2, 1e-9);
-    const s = cl.State();
-    if (s === IN || s === ON || String(s) === String(IN) || String(s) === String(ON)) return len(sub(p, sD1(oc, ad, u, v).p as V3));
     // the nearest point of the face is on its boundary
     let d = Infinity;
     g.SetCoord(p[0], p[1], p[2]);
@@ -252,7 +265,7 @@ export function surfaceDeviation(oc: any, facesA: readonly any[], facesB: readon
             const o = 6 * t.tri;
             const u0 = t.w[0] * triUv[o]! + t.w[1] * triUv[o + 2]! + t.w[2] * triUv[o + 4]!;
             const v0 = t.w[0] * triUv[o + 1]! + t.w[1] * triUv[o + 3]! + t.w[2] * triUv[o + 5]!;
-            d = Math.min(d, toFace(fb, p, u0, v0));
+            d = Math.min(d, toFace(fb, p, [[u0, v0], [triUv[o]!, triUv[o + 1]!], [triUv[o + 2]!, triUv[o + 3]!], [triUv[o + 4]!, triUv[o + 5]!]]));
           }
           out.integral += w * d;
           out.area += w;

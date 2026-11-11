@@ -20,7 +20,7 @@ The volume between the rebuild and the import is measured as each boundary's dis
   V(A △ B) ≈ ∫∂A d(p, ∂B) dA  (to first order in the distance)
 
 - **Points.** Every face of A is sampled in its own parameters. Each triangle of the face's triangulation is read in (u, v), cut into k² pieces (k from 1 to 8, at least about 100 points a face), and a point is taken at each piece's middle. The point is on the exact surface. Its weight is |Su × Sv| times the piece's (u, v) area, the surface's own area element, not the mesh's.
-- **Distance.** B's triangulation only chooses candidates. A bounding-volume tree finds every triangle within the nearest one's distance plus twice the mesh deflection. Per candidate face, Newton (Gauss–Newton on |S(u, v) − p|²) runs on the exact surface from the (u, v) of the nearest point of its nearest triangle. The foot counts when a `BRepClass_FaceClassifier` puts it inside the face (IN or ON). Otherwise the distance is to the face's edge curves (one projector per edge, reused) and their ends.
+- **Distance.** B's triangulation only chooses candidates. A bounding-volume tree finds every triangle within the nearest one's distance plus twice the mesh deflection. Per candidate face, Newton (Gauss–Newton on |S(u, v) − p|²) runs on the exact surface from the (u, v) of the nearest point of its nearest triangle. The foot counts when a `BRepClass_FaceClassifier` puts it inside the face (IN or ON); a periodic parameter is first brought into the face's period, because the classifier reads (u, v) as given. When the foot is outside, Newton runs again from each corner of the triangle. Both are for a cone's apex, where the mesh's nodes are one point with any u: from such a start Newton ended periods round (u = −7π) or crossed the apex onto the other nappe, outside the face. Any foot found inside is a point of the face, so a further start can only lower the distance to that face toward the true one, never below it. Otherwise the distance is to the face's edge curves (one projector per edge, reused) and their ends.
 - **Both ways.** A face one solid has and the other lacks is seen only from the solid that has it: a 0.5 mm hole is 75.4 mm³ from the holed plate and 9e-14 from the plain one, because the hole's 0.2 mm² of top falls between the plain top's points. The comparison uses the larger way.
 - `differenceVolumes` is removed; nothing else used it.
 
@@ -32,6 +32,8 @@ The volume between the rebuild and the import is measured as each boundary's dis
 | Box 40×30×12 moved 1e-3 / 1e-5 / 1e-7 | 2·b·c·δ | to 1e-12 / 1.6e-10 / 6.6e-9 relative; the last is arithmetic, about 1e-14 mm per distance at 40 mm from the origin |
 | Cylinder r 5 grown by δ | from A 2πrh·δ, from B 2π(r+δ)h·δ | exact to 1e-9 |
 | Half the top lowered by δ | 600·δ | to 1e-3; with a 5 mm mesh, where the untrimmed upper plane is a candidate over the lowered half, the classifier is what keeps it δ |
+| Blind holes with drill points (r 1.5–4.1, 118°–140°, 24 cases), through STEP | 0 | < 1e-12 of the volume; before the fixes, r 3 118°: 0.200 mm³ (one point by the apex, Newton ended at u = −7π, classified OUT, 0.29 mm to an edge) |
+| Feature-recognition fuzz seeds 21 and 35, drill point through STEP | 0 | 3.3e-10 and 4.6e-11 mm³; with the period fix only, 0.51 and 0.66 mm³ (Newton crossed the apex) |
 | Hole d 0.5 against none | ≥ 2.36 mm³ (the hole) | 75.4 one way, 9e-14 the other |
 | OCCT vs exact round, seed 2 | boolean: 0 in 8.4 s | 2.44e-5 mm³ (1.5e-9 relative) in 0.8 s |
 | Seeds 26 and 10 | boolean: trap / > 400 s | 0.9–1.5 s, no trap |
@@ -46,5 +48,7 @@ The (u, v) triangulation of a face with a curved boundary is an inscribed polygo
 
 - Recognition fuzz of rounds on freeform faces, seeds 1–100 (`tests/phase8/recognize-rolling-ball-fuzz*.test.ts`), runs with no trap and no timeout. Every case is rebuilt as the same solid or refused whole.
 - A rebuild the boolean wrongly called different now passes when it is the same to 1e-6. Seed 19, an OCCT round rebuilt as an exact round, is 1e-9 apart.
-- Mutation controls: weights of 1, no classifier (caught only with the coarse mesh case) and no slack each turn `packages/kernel/test/surface-deviation.test.ts` red.
+- The first version had no period wrap and passed every test written with it, which had no cone. The full suite caught it: `feature-recognition.test.ts` (two holes with drill points refused as "not the same", 8.4e-6) and `feature-recognition-fuzz.test.ts` (19 of 120 refused).
+- After the period fix the same files left 2 of 120 fuzz parts refused (seeds 21 and 35): the second failure, Newton across the apex, fixed by the further starts.
+- Mutation controls: one start only (the fuzz seeds' geometry turns red); no period wrap is not caught alone (a corner start recovers it), only together with one start; weights of 1, no classifier (caught only with the coarse mesh case) and no slack each turn `packages/kernel/test/surface-deviation.test.ts` red.
 - `ReconstructReport.difference` keeps its meaning: the volume between the two, relative to the import's volume.

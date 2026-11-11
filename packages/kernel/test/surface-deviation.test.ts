@@ -33,6 +33,43 @@ describe('surfaceDeviation against known answers', () => {
     }
   });
 
+  it('blind holes with a drill point (radius 1.5 to 4.1, 118° to 140°), through a STEP file: 0', () => {
+    // by a cone's apex the mesh's nodes are one point with any u; from there Newton ended at u = −7π (classified as is: OUT, 0.200 mm³ for r 3
+    // 118°) or crossed the apex onto the other nappe (r 2.41 and 2.46 at the fuzz's seeds 21 and 35: 0.51 and 0.66 mm³)
+    const XZ = { origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 0, 1], normal: [0, -1, 0] };
+    const worst: string[] = [];
+    for (const r of [1.5, 2.2, 2.41, 3, 3.6, 4.1]) {
+      for (const angle of [118, 125, 132, 140]) {
+        const point = r / Math.tan(((angle / 2) * Math.PI) / 180);
+        const profile = [[0, 11], [r, 11], [r, 6], [0, 6 - point]];
+        const tool = kernel.revolve(XZ as never, [{ outer: profile.map((a, i) => L(a, profile[(i + 1) % 4]!, 'p' + i)), holes: [] }] as never, { origin: [0, 0, 0], dir: [0, 0, 1] } as never, 2 * Math.PI).shape;
+        const a = kernel.boolean('cut', box(-30, -20, 0, 60, 40, 10), tool).shape;
+        const b = kernel.importStep(new TextEncoder().encode(kernel.exportStep(a, 'p'))).shape;
+        const v = kernel.massProps(a).volume;
+        for (const d of both(a, b)) if (!(d.integral / v < 1e-12)) worst.push(`r ${r} ${angle}°: ${(d.integral / v).toExponential(2)}`);
+        for (const id of [tool, a, b]) kernel.release(id);
+      }
+    }
+    expect(worst).toEqual([]);
+  });
+
+  it('the drill points of feature-recognition-fuzz seeds 35 and 21 (plate, radius, depth, point as there): 0', () => {
+    // here Newton from the nearest point crossed the apex onto the other nappe (v past it), outside the face: 0.66 and 0.51 mm³ before the corners
+    // of the triangle were tried as starts
+    const XZ = { origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 0, 1], normal: [0, -1, 0] };
+    const worst: string[] = [];
+    for (const [w, dp, t, r, bottom, point] of [[30.37, 40.22, 16.11, 4.71, 6.44, 1.8557461579913805], [51.61, 37.88, 9.97, 3.24, 3.99, 1.3394317104018998]] as const) {
+      const profile = [[0, t + 1], [r, t + 1], [r, bottom], [0, bottom - point]];
+      const tool = kernel.revolve(XZ as never, [{ outer: profile.map((a, i) => L(a, profile[(i + 1) % 4]!, 'p' + i)), holes: [] }] as never, { origin: [0, 0, 0], dir: [0, 0, 1] } as never, 2 * Math.PI).shape;
+      const a = kernel.boolean('cut', box(-w / 2, -dp / 2, 0, w, dp, t), tool).shape;
+      const b = kernel.importStep(new TextEncoder().encode(kernel.exportStep(a, 'p'))).shape;
+      const v = kernel.massProps(a).volume;
+      for (const d of both(a, b)) if (!(d.integral / v < 1e-12)) worst.push(`r ${r}: ${(d.integral / v).toExponential(2)}`);
+      for (const id of [tool, a, b]) kernel.release(id);
+    }
+    expect(worst).toEqual([]);
+  });
+
   // Two errors, asserted apart (AGENTS §4 2026-10-19 #3): the measure's, 1e-9 of the answer; and the arithmetic's, a distance taken between points
   // some 40 mm from the origin carries about 1e-14 mm, which over the area is 1e-13 mm³ per mm² (1e-7 of the answer at δ = 1e-7, measured 6.6e-9).
   const near = (got: number, want: number, area: number) => expect(Math.abs(got - want)).toBeLessThan(1e-9 * want + 1e-13 * area);
