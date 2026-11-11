@@ -10,7 +10,12 @@
 
 > **2026-11-10 晚（Claude Code）C2.7f 產品路徑。** 精確滾球圓角已接進 `Kernel.fillet`（新檔 `packages/kernel/src/exactRound.ts`、測試 `packages/kernel/test/exact-round.test.ts` 9 項通過、型別與 `lint:rules` 通過），工作樹未 commit。代價：含 B-spline 支撐面時每個圓角約 2.8 秒，`surface-spike` 由 8.6 s／0.87 GB 變 39 s／2.5 GB。**使用者裁定只用於辨識重建**：`FilletFeature.exact`（v95，選填）由辨識重建設定，`Kernel.fillet` 預設關；使用者自己做的圓角速度不變（DEV_LOG 2026-11-10）。之後：C2.11 角落、C2.14 fuzz＋heap、C2.8～C2.10 辨識端。
 
-> **2026-11-10 深夜（Claude Code CLI，Windows）C2.14d 完成，接手從這段開始。工作樹未 commit，未推送。**
+> **2026-11-11（Claude Code CLI，Windows）推送前全量驗證完成，接手從這段開始。本機 `main` 比 `origin/main` 多 4 個 commit（`3b1ba1f6`、`bdd5f445`、`399328dd`、測試更新），未推送。**
+> - **`verify:ui`**：278 項。第一輪 239 項全過，之後因系統記憶體不足被 Claude Code 停掉；以 `--only` 補跑其餘 41 項，40 項過。唯一失敗的 `phase8-recognize-spline.js` 是腳本過時：C1 起，精確伸長的 `spline-outline.step` 不勾近似也會精確重建，所以「先拒絕」的前提不再成立。把 `exactRound.ts` 換回 3b1ba1f6 的版本，失敗依舊。已改用新樣本 `tests/fixtures/step/spline-outline-near.step`（放樣，樣條點偏 1e-8 mm，體積 16705.47）測「拒絕／近似」，原樣本改測「精確重建」，單跑 PASS。
+> - **全量單元測試（`--maxWorkers 2`，420 檔）**：413 過、3 失敗、4 略過；4,900 項過、4 項失敗。① `crash-no-swallow`：3b1ba1f6 在 `exactRound.ts` 有兩處 `catch` 吞陷阱（ADR 0242），已修，commit `399328dd`。② `apps/mcp/test/recognize.test.ts`：與 e2e 同因，已改用兩個樣本，5/5 過。③ `recognize-approximate` 兩項：草圖求解器記憶體不足，屬既有問題，另立一項。
+> - **下一步**：取得使用者推送許可後推送；之後 C2.8～C2.10 辨識端。這台機器 16 GB，跑整輪 `verify:ui` 前先關 WSL（`vmmemWSL` 約 2.3 GB）與其他瀏覽器。
+
+> **2026-11-10 深夜（Claude Code CLI，Windows）C2.14d 完成。（已 commit `bdd5f445`）**
 > - **改動**：`packages/kernel/src/exactRound.ts` 全部 `EvalD1`/`EvalD2` 改經 `sD1`/`sD2`/`cD1`/`cD2`（重用輸出）；`chainCurve` 改提供 `d1`；`ballSections` 加 `oc` 參數；三個未釋放的 adaptor 改為 delete。`packages/kernel/test/exact-round-heap.test.ts` 改為種子 41、40 次，門檻仍為 +32 MiB。`kernel.ts` 沒有改。
 > - **量測**：種子 41 N=40 128 → 153.6 MiB（修前 550.7）；N=120 128 → 382.4，約 2.1 MiB／次（修前約 10）。批次 1–60 128 → 265.5（修前 458.9）。對照：改回 `EvalD1` 為 550.7 MiB，測試失敗。
 > - **殘餘的判定**：分段截斷顯示成長分布在每個建幾何的階段。OCCT 自身圓角 1500 次 128 → 458.9；`MakeBox`、B-spline 面、`Copy` 完整 delete 後仍佔 heap。據此判定殘餘屬 §3.5 類，由 ADR 0126 承擔。刪除陣列的嘗試沒有可量的差異，已還原。細節見 DEV_LOG 同日 C2.14d 條目、AGENTS §4 2026-11-10 第 4～6 條。

@@ -1,5 +1,10 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-11 — Full checks before pushing C1 + C2 (`3b1ba1f6`, `bdd5f445`)
+
+- `verify:ui` (278 calls): the first run passed all 239 calls it reached before Claude Code stopped it for low system memory; the remaining 41 calls were rerun with `--only` (`scratch/ff/rest-ui.mjs` lists what a stopped run did not reach), and 40 of them passed. `phase8-recognize-spline.js` failed with "timeout waiting for the panel". It failed the same way alone, and with `exactRound.ts` from `3b1ba1f6`. RCA: C1 rebuilds `spline-outline.step`, an exact extrusion, exactly when the box is off. The script's first press therefore succeeds instead of being refused, `import1` is gone, and its second panel never opens. `3b1ba1f6` updated the unit test (the `near` shape) but not this script or the MCP test. CAPA: new sample `tests/fixtures/step/spline-outline-near.step` (the unit test's `near(open(GENTLE))`, lofted with one spline point moved 1e-8 mm, valid, volume 16705.47) for refused/approximated; the old sample now checks exact rebuilding with the box off (NURBS outline, no word of approximation, fully defined, same volume). Both alone: PASS; MCP `recognize.test.ts` 5/5.
+- Full unit suite (`--maxWorkers 2`, 420 files): 413 pass, 3 fail, 4 skipped; 4,900 tests pass, 4 fail. (1) `crash-no-swallow`: two catches added in `3b1ba1f6` in `exactRound.ts` went on after a trap (ADR 0242); each now starts with `rethrowTrap(e)` (`399328dd`), and the test passes (it was red on HEAD); exact-round 9 files, 149 tests pass. (2) MCP recognize: same cause as the e2e script, fixed with it. (3) `recognize-approximate` (2): the existing sketch-solver out-of-memory at 68/82 arcs, a separate item.
+
 ## 2026-11-10 (night) — Exact rounds where rounds meet (C2.11), fuzz and heap (C2.14, in progress, not committed)
 
 - Measured first. The four real parts have no three-round sphere corners. They have two rounds cutting each other (part-4, 20 places) and rounds whose wall turns smoothly from one face to the next under them (part-3). Only those two are handled.

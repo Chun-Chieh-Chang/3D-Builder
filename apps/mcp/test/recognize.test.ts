@@ -77,8 +77,12 @@ it('refuses a feature that is not an imported body, or none, and leaves the part
 });
 
 describe('a spline outline (ADR 0243)', () => {
-  const importedSpline = async () => {
-    const bytes = new Uint8Array(readFileSync(join(__dirname, '../../../tests/fixtures/step/spline-outline.step')));
+  /**
+   * spline-outline.step is an exact extrusion, rebuilt exactly whether asked or not (C1); spline-outline-near.step is straight to well within 1e-6 but no exact extrusion
+   * (one inner spline point of the top outline moved 1e-8 mm), which is what the approximation is for.
+   */
+  const importedSpline = async (file = 'spline-outline-near.step') => {
+    const bytes = new Uint8Array(readFileSync(join(__dirname, '../../../tests/fixtures/step', file)));
     const sha = await sha256Hex(bytes);
     const doc = applyCommand(createEmptyPart(), { type: 'importBody', blob: { id: 'blob1', sha256: sha, kind: 'step', fileName: 'spline.step' }, feature: { id: 'import1', type: 'importedBody', name: 'i', suppressed: false, blob: 'blob1' }, index: 0 });
     return s.load(doc, new Map([[sha, bytes]]));
@@ -95,6 +99,14 @@ describe('a spline outline (ADR 0243)', () => {
     expect(close.bound).toBeGreaterThan(0);
     expect(close.bound).toBeLessThanOrEqual(0.01);
     expect(close.distance).toBeLessThanOrEqual(close.bound);
+  });
+
+  it('an exact extrusion, unasked: rebuilt exactly, no approximation (C1)', async () => {
+    await importedSpline('spline-outline.step');
+    const r = data(await callTool(s, 'recognize_features', { feature: 'import1' }));
+    expect(r.committed).toBe(true);
+    expect(r.recognized.approximation).toBeUndefined();
+    expect(s.doc.features.some((f) => f.type === 'sketch' && f.entities.some((e) => e.type === 'spline' && 'nurbs' in e && e.nurbs))).toBe(true);
   });
 
   it('a value that is no yes or no is refused, not taken as one', async () => {

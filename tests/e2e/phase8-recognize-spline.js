@@ -4,10 +4,12 @@
 //   await import('/@fs/<checkout>/tests/e2e/phase8-recognize-spline.js?' + Date.now());
 //   const r = await __frs.run();
 //
-// A new part imports tests/fixtures/step/spline-outline.step (a spline outline 28.72 wide extruded by 20; served on 127.0.0.1:5393 by verify:ui). The box in its panel is off: pressing
-// 「辨識特徵」 is refused as before, and the refusal names the box. Then the box is ticked and pressed: the notice says it is approximate, with the bound and what was measured, the features
-// are a sketch of arcs and an extrusion, in the real job worker. One undo brings the import back; the box is off again when the panel comes back. Without the sample server the run is left
-// out (`skipped`, which is no pass).
+// The samples are served on 127.0.0.1:5393 by verify:ui. First tests/fixtures/step/spline-outline.step, a spline outline 28.72 wide that is an exact extrusion by 20: with the box off,
+// 「辨識特徵」 rebuilds it exactly (C1), its outline a B-spline, no word of approximation; one undo brings the import back. Then a new part imports
+// tests/fixtures/step/spline-outline-near.step, whose wall is straight to well within 1e-6 but no exact extrusion (one inner spline point of the top outline moved 1e-8 mm, the side
+// lofted), so no exact B-spline section exists: with the box off it is refused, and the refusal names the box. Then the box is ticked and pressed: the notice says it is approximate,
+// with the bound and what was measured, the features are a sketch of arcs and an extrusion, in the real job worker. One undo brings the import back; the box is off again when the panel
+// comes back. Without the sample server the run is left out (`skipped`, which is no pass).
 
 const here = import.meta.url.slice(0, import.meta.url.lastIndexOf('/') + 1);
 await import(here + 'phase1-demo-parts.js?' + Date.now());
@@ -15,7 +17,8 @@ const H = window.__ui;
 const { store } = H;
 const FRS = (window.__frs = {});
 
-const VOLUME = 17016.96014762222;
+const EXACT_VOLUME = 17016.96014762222;
+const VOLUME = 16705.466668341996;
 const volume = () => store.getState().result.mass.volume;
 const failed = () => store.getState().result.features.filter((f) => f.status !== 'ok' && f.status !== 'suppressed').map((f) => `${f.id}: ${f.message}`);
 const types = () => store.getState().doc.features.map((f) => f.type);
@@ -38,19 +41,42 @@ const press = async () => {
 };
 
 FRS.run = async (base = globalThis.__samplesOrigin ?? 'http://127.0.0.1:5393/') => {
-  let bytes;
+  let exactBytes, bytes;
   try {
-    bytes = new Uint8Array(await (await fetch(base + 'spline-outline.step')).arrayBuffer());
+    exactBytes = new Uint8Array(await (await fetch(base + 'spline-outline.step')).arrayBuffer());
+    bytes = new Uint8Array(await (await fetch(base + 'spline-outline-near.step')).arrayBuffer());
   } catch {
     return { name: 'recognize a spline outline', skipped: 'the sample server is not running' };
   }
   await H.waitFor(() => store.getState().bootMs !== null, 90000, 'kernel boot');
-  store.newPart();
-  if (store.getState().unsaved) await store.answerUnsaved('discard');
+  const load = async (name, data) => {
+    store.newPart();
+    if (store.getState().unsaved) await store.answerUnsaved('discard');
+    await H.settle();
+    await store.importData(name, data);
+    await H.settle();
+    return { types: types(), volume: volume(), failed: failed() };
+  };
+
+  // an exact extrusion: rebuilt exactly with the box off, its outline a B-spline (C1)
+  const exactImported = await load('spline-outline.step', exactBytes);
+  await openPanel();
+  const exactOff = box()?.checked;
+  const exactNotice = await press();
+  const exactSketch = store.getState().doc.features.find((f) => f.type === 'sketch');
+  const exact = {
+    types: types(),
+    volume: volume(),
+    failed: failed(),
+    nurbs: exactSketch?.entities.filter((e) => e.type === 'spline' && e.nurbs).length ?? 0,
+    sketches: store.getState().result.features.filter((f) => f.sketch).map((f) => `${f.sketch.status}/${f.sketch.dof}`),
+  };
+  store.undo();
   await H.settle();
-  await store.importData('spline-outline.step', bytes);
-  await H.settle();
-  const imported = { types: types(), volume: volume(), failed: failed() };
+  const exactUndone = { types: types(), volume: volume() };
+
+  // no exact extrusion
+  const imported = await load('spline-outline-near.step', bytes);
 
   // off by default: refused, and the refusal says what to tick
   await openPanel();
@@ -91,6 +117,11 @@ FRS.run = async (base = globalThis.__samplesOrigin ?? 'http://127.0.0.1:5393/') 
   const close = (v, to, by) => Math.abs(v - to) <= by;
   return {
     name: 'recognize a spline outline',
+    exactImported,
+    exactOff,
+    exactNotice,
+    exact,
+    exactUndone,
     imported,
     offAtFirst,
     label,
@@ -104,6 +135,11 @@ FRS.run = async (base = globalThis.__samplesOrigin ?? 'http://127.0.0.1:5393/') 
     undone,
     offAgain,
     pass:
+      JSON.stringify(exactImported.types) === '["importedBody"]' && close(exactImported.volume, EXACT_VOLUME, 1e-3) && exactImported.failed.length === 0 &&
+      exactOff === false && /^已辨識/.test(exactNotice) && !/近似/.test(exactNotice) &&
+      JSON.stringify(exact.types) === '["sketch","extrude"]' && exact.nurbs > 0 && exact.failed.length === 0 && exact.sketches.every((x) => x === 'fully/0') &&
+      close(exact.volume, EXACT_VOLUME, 1e-3) &&
+      JSON.stringify(exactUndone.types) === '["importedBody"]' && close(exactUndone.volume, EXACT_VOLUME, 1e-3) &&
       JSON.stringify(imported.types) === '["importedBody"]' && close(imported.volume, VOLUME, 1e-3) && imported.failed.length === 0 &&
       offAtFirst === false && /樣條輪廓用雙圓弧近似/.test(label ?? '') &&
       /自由曲面/.test(refusal) && /樣條輪廓用雙圓弧近似/.test(refusal) && JSON.stringify(afterRefusal) === '["importedBody"]' &&
