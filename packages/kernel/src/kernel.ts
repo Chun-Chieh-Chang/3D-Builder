@@ -240,6 +240,12 @@ const T = {
 } as const;
 
 /**
+ * An edge tolerance at or below this asks for no allowance (ADR 0249): OCCT's own confusion distance, which every file joined to working precision is
+ * within, so recognition of such a file is held to `RECOGNIZE_TOLERANCE` as before.
+ */
+const FILE_TOLERANCE_FLOOR = 1e-7;
+
+/**
  * How many pieces one stretch of a variable-radius law (C5.2, ADR 0167) is cut into. OCCT fills its laws smoothly, so the straight line between two
  * control points has to be sampled to come out straight; at this many pieces the fill stays within a few hundredths of a millimetre of it (measured:
  * a law of 2 to 6 over a 40 mm edge comes out with the radius of the line at every position to 1e-5, and its volume to 1e-4 of the integral).
@@ -3585,7 +3591,7 @@ export class Kernel {
    * ∫ over `a`'s boundary of the distance to `b`'s (ADR 0248): to first order the volume between two near-equal solids seen from `a`, measured on the
    * exact surfaces without a boolean. Both are meshed first, with deflection `tolerance` (default: as `mesh`), which only chooses the faces near each point.
    */
-  surfaceDeviation(a: ShapeId, b: ShapeId, tolerance?: number): Deviation {
+  surfaceDeviation(a: ShapeId, b: ShapeId, tolerance?: number, allow?: { a?: readonly number[]; b?: readonly number[] }): Deviation {
     const oc = this.oc;
     const arena = new Arena();
     try {
@@ -3600,7 +3606,46 @@ export class Kernel {
       this.mesh(a, { tolerance });
       this.mesh(b, { tolerance });
       const faces = (s: TopoDS_Shape) => ShapeIndex.of(oc, s, T.FACE, arena).keys.map((f) => arena.own(oc.TopoDS.Face(f)));
-      return surfaceDeviation(oc, faces(sa), faces(sb), tolerance);
+      return surfaceDeviation(oc, faces(sa), faces(sb), tolerance, 100, allow);
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * How far apart the shape's faces are where they meet (ADR 0249). Per edge (in `topology` order), the gap: at 9 points, the largest distance among the
+   * edge's 3D curve and the edge on each of its faces (its pcurve carried onto that face's surface); 0 when within `FILE_TOLERANCE_FLOOR`. Per face, the
+   * largest gap of its edges: the file does not say which of two faces that miss each other is off, so a solid whose faces really meet may move either
+   * by that much. Measured, not `BRep_Tool.Tolerance`, which only ever grows. `volume` Σ τ_f · area_f, `area` Σ 2 τ_e · length_e.
+   */
+  fileTolerance(target: ShapeId): { faces: number[]; edges: number[]; volume: number; area: number; max: number; count: number } {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const s = this.get(target);
+      const faces = ShapeIndex.of(oc, s, T.FACE, arena).keys.map((f) => arena.own(oc.TopoDS.Face(f)));
+      const edges = ShapeIndex.of(oc, s, T.EDGE, arena);
+      const topo = this.topology(target);
+      const gaps = edges.keys.map((es, k) => {
+        const e = arena.own(oc.TopoDS.Edge(es));
+        if (oc.BRep_Tool.Degenerated(e)) return 0;
+        const c3 = arena.own(new oc.BRepAdaptor_Curve(e));
+        const on = topo.edges[k]!.faces.map((fi) => arena.own(new oc.BRepAdaptor_Curve(e, faces[fi]!)));
+        const [a, b] = [c3.FirstParameter(), c3.LastParameter()];
+        let g = 0;
+        for (let i = 0; i <= 8; i++) {
+          const u = a + ((b - a) * i) / 8;
+          const pts = [c3, ...on].map((c) => arena.own(c.Value(u)));
+          for (let x = 0; x < pts.length; x++) for (let y = x + 1; y < pts.length; y++) g = Math.max(g, pts[x]!.Distance(pts[y]!));
+        }
+        return g > FILE_TOLERANCE_FLOOR ? g : 0;
+      });
+      const out = topo.faces.map(() => 0);
+      topo.edges.forEach((e, k) => { for (const fi of e.faces) out[fi] = Math.max(out[fi]!, gaps[k]!); });
+      let volume = 0, area = 0;
+      out.forEach((t, i) => (volume += t * topo.faces[i]!.area));
+      gaps.forEach((t, i) => (area += 2 * t * topo.edges[i]!.length));
+      return { faces: out, edges: gaps, volume, area, max: Math.max(0, ...out), count: out.filter((t) => t > 0).length };
     } finally {
       arena.dispose();
     }

@@ -10,6 +10,12 @@
 
 > **2026-11-10 晚（Claude Code）C2.7f 產品路徑。** 精確滾球圓角已接進 `Kernel.fillet`（新檔 `packages/kernel/src/exactRound.ts`、測試 `packages/kernel/test/exact-round.test.ts` 9 項通過、型別與 `lint:rules` 通過），工作樹未 commit。代價：含 B-spline 支撐面時每個圓角約 2.8 秒，`surface-spike` 由 8.6 s／0.87 GB 變 39 s／2.5 GB。**使用者裁定只用於辨識重建**：`FilletFeature.exact`（v95，選填）由辨識重建設定，`Kernel.fillet` 預設關；使用者自己做的圓角速度不變（DEV_LOG 2026-11-10）。之後：C2.11 角落、C2.14 fuzz＋heap、C2.8～C2.10 辨識端。
 
+> **2026-11-11 深夜（Claude Code CLI，Windows）ADR 0249 原檔精度容許＋圓角推舉重試，使用者已同意 commit 與 push。接手從這段開始。**
+> - **使用者裁定**：驗收門檻隨原檔精度調整（設計文件 §6h）；C5 方向為「控制點可編輯曲面片」（§6f，尚未開工）。
+> - **改動**：`Kernel.fileTolerance`、`surfaceDeviation` 的逐面容許（`excess`）、`reconstruct` 的比對與 `report.fileTolerance`、`analyze.ts` 的圓角推舉（最佳支撐對、門檻 max(1e-5, 1e-3·r, 2τ)）與 `FreeRoundsOption`；帶圓角被拒時不帶圓角重試。測試 `packages/kernel/test/file-tolerance.test.ts`、`recognize-rolling-ball.test.ts`。
+> - **驗證**：分批單元測試 82 檔僅既有 2 項失敗；35 件實件 30/35 不變、0 退步。細節見 DEV_LOG 2026-11-11 (night)、ADR 0249。
+> - **下一步**：part-4 剩 5 張非圓角面需 C4 三項新能力（設計文件 §6i）：偽裝成樣條的解析面換回解析面（在原檔容差內）、混合本體中各自沿某方向的自由牆、無平面對應的斜向伸長。MT17203 的接合誤差尚未量；E13 需 C3（螺紋）。
+>
 > **2026-11-11 夜（Claude Code CLI，Windows）推送前驗證完成。** C2.8～C2.10＋ADR 0248 已 commit 為 `38f21925`（未推送）。全量單元測試抓到新比對在圓錐頂點（鑽尖）出錯，已修（`surfaceDeviation.ts` 週期換算＋多起點），**修正尚未 commit**。修正後：phase8 59/60（僅既有 `recognize-approximate` 2 項）、特徵辨識 fuzz 120/120、實件 30/35 不變、`verify:ui` 278/278（首輪 13 項環境錯誤，單跑與補跑全過）。細節見 DEV_LOG 2026-11-11 (late)。下一步：使用者核准後 commit 修正、推送。
 >
 > **2026-11-11 晚（Claude Code CLI，Windows）C2.8～C2.10 與 ADR 0248 完成，未 commit。**

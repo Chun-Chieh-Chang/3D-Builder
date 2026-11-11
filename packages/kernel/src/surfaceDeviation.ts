@@ -136,13 +136,21 @@ export interface Deviation {
   /** the sum of the weights: the first solid's area as sampled (mm²) */
   area: number;
   samples: number;
+  /**
+   * ∫ max(0, d − τ) dA (ADR 0249): only what is past the allowance τ of the point, the larger of its own face's (`allow.a`) and that of the face of the
+   * second solid nearest to it (`allow.b`). Equal to `integral` when no allowance is given.
+   */
+  excess: number;
 }
 
 /**
  * ∫∂A d(p, ∂B) dA (see the module's comment). `facesA`/`facesB` are the solids' faces, already meshed with deflection `tolerance`; `perFace`: at least
- * about this many points on each face of A.
+ * about this many points on each face of A. `allow`: per face of A and of B, how far that face may be from the other solid without counting (`excess`).
  */
-export function surfaceDeviation(oc: any, facesA: readonly any[], facesB: readonly any[], tolerance: number, perFace = 100): Deviation {
+export function surfaceDeviation(oc: any, facesA: readonly any[], facesB: readonly any[], tolerance: number, perFace = 100, allow?: { a?: readonly number[]; b?: readonly number[] }): Deviation {
+  for (const [list, n] of [[allow?.a, facesA.length], [allow?.b, facesB.length]] as const) {
+    if (list && (list.length !== n || !list.every((t) => t >= 0 && Number.isFinite(t)))) throw new Error('surfaceDeviation: an allowance per face, each finite and not negative');
+  }
   const meshA = faceMeshes(oc, facesA), meshB = faceMeshes(oc, facesB);
   // B's triangles, all faces in one tree; per triangle its face and the (u, v) of its corners
   const positions: number[] = [], indices: number[] = [], triFace: number[] = [], triUv: number[] = [];
@@ -238,7 +246,7 @@ export function surfaceDeviation(oc: any, facesA: readonly any[], facesB: readon
   };
 
   try {
-    const out: Deviation = { integral: 0, max: 0, area: 0, samples: 0 };
+    const out: Deviation = { integral: 0, max: 0, area: 0, samples: 0, excess: 0 };
     const slack = 2 * tolerance + 1e-9;
     meshA.forEach((m, f) => {
       const ad = own(new oc.BRepAdaptor_Surface(facesA[f], true));
@@ -254,7 +262,7 @@ export function surfaceDeviation(oc: any, facesA: readonly any[], facesB: readon
           const s = sD1(oc, ad, u, v);
           const w = len(cross(s.du as V3, s.dv as V3)) * uvArea;
           const p = s.p as V3;
-          let d = Infinity;
+          let d = Infinity, nearest = -1;
           // per face of B near p, its nearest triangle: Newton from there
           const near = new Map<number, { tri: number; w: V3; d: number }>();
           for (const t of trianglesNear(bvh, p, slack)) {
@@ -265,8 +273,11 @@ export function surfaceDeviation(oc: any, facesA: readonly any[], facesB: readon
             const o = 6 * t.tri;
             const u0 = t.w[0] * triUv[o]! + t.w[1] * triUv[o + 2]! + t.w[2] * triUv[o + 4]!;
             const v0 = t.w[0] * triUv[o + 1]! + t.w[1] * triUv[o + 3]! + t.w[2] * triUv[o + 5]!;
-            d = Math.min(d, toFace(fb, p, [[u0, v0], [triUv[o]!, triUv[o + 1]!], [triUv[o + 2]!, triUv[o + 3]!], [triUv[o + 4]!, triUv[o + 5]!]]));
+            const dd = toFace(fb, p, [[u0, v0], [triUv[o]!, triUv[o + 1]!], [triUv[o + 2]!, triUv[o + 3]!], [triUv[o + 4]!, triUv[o + 5]!]]);
+            if (dd < d) { d = dd; nearest = fb; }
           }
+          const tau = Math.max(allow?.a?.[f] ?? 0, nearest >= 0 ? allow?.b?.[nearest] ?? 0 : 0);
+          out.excess += w * Math.max(0, d - tau);
           out.integral += w * d;
           out.area += w;
           out.max = Math.max(out.max, d);

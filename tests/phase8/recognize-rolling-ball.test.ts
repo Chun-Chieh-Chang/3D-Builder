@@ -2,13 +2,14 @@
  * C2.8–C2.10: a round that is no simple surface (a B-spline in the file) read back as a rolling ball, without taking it off. The part: a boss whose
  * outline has a spline, on a plate, the spline wall's foot rounded with the exact rolling ball. `deleteFaces` cannot take that round off (the wall
  * cannot be stretched back down to the plate), which is why the sharp edge comes from the supports' surfaces met (C2.8), is kept as points (C2.9) and
- * is found on the rebuilt body by those points lying on it (C2.10). Each claim has its control: OCCT's own round of the same edge (no rolling ball) is
- * not read as one, and a point past an edge or off it is not on it.
+ * is found on the rebuilt body by those points lying on it (C2.10). Each claim has its control: OCCT's own round of the same edge is no rolling ball
+ * to ROLLING_BALL_TOLERANCE (nominated within 1e-3 of its radius, it is the comparison that accepts its exact rebuild), a corner near a ball that is
+ * no round is still rebuilt without one (ADR 0249), and a point past an edge or off it is not on it.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, KernelError, type ShapeId } from '@3db/kernel';
-import { RecognizeError, ROLLING_BALL_TOLERANCE } from '@3db/regen';
+import { ROLLING_BALL_TOLERANCE } from '@3db/regen';
 import { recognizeStep, splineBoss } from './recognize-rolling-ball.kit';
 
 let kernel: Kernel;
@@ -98,13 +99,48 @@ describe('recognized through a STEP file', () => {
     }, 120_000);
   }
 
-  it('OCCT\'s own round of that edge, no rolling ball, is refused as a freeform face, the part unchanged', async () => {
+  // Until ADR 0249 this was refused: off the ball by more than ROLLING_BALL_TOLERANCE, it was not nominated. Nominated now (within 1e-3 of its radius),
+  // it is rebuilt as an exact round, and that is the same solid to 2e-9 to 6e-9 of the volume before any allowance is taken off: the comparison, not the
+  // nomination, is what says so (the raw difference is asserted, so OCCT's 5.5e-6 joint gaps there are not what lets it through).
+  it('OCCT\'s own round of that edge, no rolling ball but within 1e-3 of its radius: rebuilt as an exact round, the same solid before any allowance', async () => {
     const plain = splineBoss(kernel);
     const occt = kernel.fillet(plain.shape, plain.edges, 0.8, undefined, undefined, false);
-    const e = await recognizeStep(kernel, solver, occt.shape).catch((x: unknown) => x);
-    expect(e).toBeInstanceOf(RecognizeError);
-    expect((e as RecognizeError).message).toMatch(/自由曲面|freeform/);
+    const out = await recognizeStep(kernel, solver, occt.shape);
+    expect(out.report.features).toMatchObject({ extrude: 2, fillet: 1 });
+    const fillet = out.doc.features.find((f) => f.type === 'fillet');
+    expect(fillet?.type === 'fillet' && fillet.exact).toBe(true);
+    expect(out.report.fileTolerance).toBeDefined();
+    expect(out.report.fileTolerance!.difference).toBeLessThan(1e-7);
+    expect(out.report.volumeError).toBeLessThan(1e-7);
   }, 120_000);
+
+  // A nomination is only a proposal (ADR 0249). An exact elliptical quarter (a rational quadratic) at the corner of a box, semi-axes 2 and 2 + e, is
+  // tangent to both walls and within 1e-3 of a ball of its radius, so it is nominated; but it is no round, and the exact round of that corner does
+  // not rebuild it. Before the retry the part was refused ('no edge for the round'), though without the nomination it is an extrusion of its exact
+  // outline (C1). e = 0, a true round drawn as a spline, was refused even before ADR 0249: a round at the corner of an extrusion is in its outline.
+  for (const e of [0, 2e-4, 1e-3]) {
+    it(`an elliptical corner (semi-axes 2 and ${2 + e}) near a ball: nominated, refused as a round, then rebuilt as one extrusion of its exact outline`, async () => {
+      const [a, b, w] = [2, 2 + e, Math.SQRT1_2];
+      const outer = [
+        { kind: 'line', a: [0, 0], b: [40, 0], source: 'l0' },
+        { kind: 'line', a: [40, 0], b: [40, 30 - b], source: 'l1' },
+        { kind: 'spline', points: [[40, 30 - b], [40 - a, 30]], closed: false, source: 'e', nurbs: { poles: [[40, 30 - b], [40, 30], [40 - a, 30]], degree: 2, knots: [0, 1], mults: [3, 3], weights: [1, w, 1] } },
+        { kind: 'line', a: [40 - a, 30], b: [0, 30], source: 'l2' },
+        { kind: 'line', a: [0, 30], b: [0, 0], source: 'l3' },
+      ];
+      const XY = { origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 1, 0], normal: [0, 0, 1] };
+      const box = kernel.extrude(XY as never, [{ outer, holes: [] }] as never, [0, 0, 10]).shape;
+      const t = kernel.topology(box);
+      const corner = t.faces.findIndex((f) => !f.geometry);
+      // the premise: the corner is nominated (near a ball, within the relative term)
+      const ball = kernel.rollingBall(box, corner, t.faces.flatMap((f, i) => (f.geometry?.type === 'plane' && Math.abs(f.geometry.normal[2]) < 0.5 && (Math.abs(f.center[0] - 40) < 1e-9 || Math.abs(f.center[1] - 30) < 1e-9) ? [i] : [])) as [number, number], Infinity);
+      expect(ball).not.toBeNull();
+      expect(ball!.deviation).toBeLessThanOrEqual(1e-3 * ball!.radius);
+      const out = await recognizeStep(kernel, solver, box);
+      expect(out.report.features).toMatchObject({ extrude: 1, fillet: 0 });
+      expect(out.report.difference).toBeLessThan(1e-12);
+    }, 120_000);
+  }
 
   it('the same boss without the round is rebuilt as before, with no round', async () => {
     const out = await recognizeStep(kernel, solver, splineBoss(kernel).shape);

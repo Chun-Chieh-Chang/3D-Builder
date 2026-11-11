@@ -66,6 +66,13 @@ export type SharpEdge =
  */
 export const ROLLING_BALL_TOLERANCE = 1e-5;
 
+/**
+ * A face whose sections are arcs of one radius r is nominated as a round when the ball is within this fraction of r of both supports (ADR 0249). Measured
+ * on part-4 of the real assembly: rounds exported 1e-4 off a ball, 2.8e-4·r to 5.6e-4·r (r 0.381 to 1.524); some meet their supports to 3e-6 at a slight
+ * angle rather than tangent, and moving them onto the exact ball changes the volume by 3.8e-7 of the part. Nomination only: the rebuild is compared after.
+ */
+export const NOMINATE_BALL_RELATIVE = 1e-3;
+
 export interface FilletRecord {
   type: 'fillet';
   radius: number;
@@ -380,17 +387,30 @@ function analyticSharpOf(topo: Topology, c: BlendCandidate): SharpEdge | null {
 
 /**
  * C2: the faces with no simple surface that are rolling-ball rounds of one radius between two faces (`Kernel.rollingBall`), as round candidates. Their
- * supports are the faces they are tangent to that are not themselves such faces; a face tangent to other than two is left as it is (freeform).
+ * supports are two of the faces they are tangent to that are not themselves such faces: the pair the ball rolls on best, when more than two are tangent
+ * (a round that runs into an analytic round at its end is tangent to that too). How far off a ball may be is the largest of `ROLLING_BALL_TOLERANCE`,
+ * `NOMINATE_BALL_RELATIVE` of its radius, and twice how far apart the face and its neighbours are in the file (ADR 0249: a round exported 1e-4 off its
+ * supports): this only nominates, the comparison after the rebuild decides (a face nominated wrongly gets the whole part refused, never accepted).
  */
 function freeRounds(kernel: Kernel, shape: ShapeId, topo: Topology, odd: number[], smooth: boolean[], adj: Map<number, number[]>[]): BlendCandidate[] {
   const tangent = (i: number) => [...adj[i]!.entries()].filter(([, edges]) => edges.some((e) => smooth[e])).map(([n]) => n);
   const maybe = new Set(odd.filter((i) => tangent(i).length >= 2));
+  if (maybe.size === 0) return [];
+  const gap = kernel.fileTolerance(shape).faces;
   return [...maybe].flatMap((i): BlendCandidate[] => {
     const all = tangent(i);
     const supports = all.filter((n) => !maybe.has(n));
-    if (supports.length !== 2) return [];
-    const ball = kernel.rollingBall(shape, i, [supports[0]!, supports[1]!], ROLLING_BALL_TOLERANCE);
-    return ball ? [{ face: i, type: 'fillet', supports: [supports[0]!, supports[1]!], radius: ball.radius, convex: ball.convex, tangent: all, free: true }] : [];
+    let best: { pair: [number, number]; ball: NonNullable<ReturnType<Kernel['rollingBall']>> } | null = null;
+    for (let a = 0; a < supports.length; a++) {
+      for (let b = a + 1; b < supports.length; b++) {
+        const pair: [number, number] = [supports[a]!, supports[b]!];
+        // asked with no limit, the limit is applied here, where the radius is known
+        const ball = kernel.rollingBall(shape, i, pair, Infinity);
+        if (!ball || ball.deviation > Math.max(ROLLING_BALL_TOLERANCE, NOMINATE_BALL_RELATIVE * ball.radius, 2 * (gap[i] ?? 0))) continue;
+        if (!best || ball.deviation < best.ball.deviation) best = { pair, ball };
+      }
+    }
+    return best ? [{ face: i, type: 'fillet', supports: best.pair, radius: best.ball.radius, convex: best.ball.convex, tangent: all, free: true }] : [];
   });
 }
 
@@ -1389,17 +1409,29 @@ function loftBase(kernel: Kernel, shape: ShapeId, topo: Topology, odd: number[],
 }
 
 /**
+ * Whether to read faces with no simple surface as rolling-ball rounds (C2.8; on unless `free` is false), and how many were (`nominated`, set by
+ * `recognize`). A nomination is only a proposal: a face near a ball may be something else that is recognized without it (an elliptical corner of an
+ * extrusion), so a caller whose rebuild with the rounds is refused asks again without them (ADR 0249).
+ */
+export interface FreeRoundsOption {
+  free?: boolean;
+  nominated?: number;
+}
+
+/**
  * Takes `shape` apart. The shapes made on the way are released; `shape` is not. Throws `RecognizeError` with a message for the user when some part of
  * the body is none of the features this recognizes.
  */
-export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, budget?: Budget, approx?: SplineApproximation): Recognition {
+export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, budget?: Budget, approx?: SplineApproximation, rounds: FreeRoundsOption = {}): Recognition {
   if (kernel.solidCount(shape) !== 1) throw new RecognizeError(t('recognize.oneSolid', { n: kernel.solidCount(shape) }));
   const made: ShapeId[] = [];
   try {
     const topo0 = kernel.topology(shape);
     const odd0 = topo0.faces.flatMap((f, i) => (ANALYTIC.has(f.surface) && f.geometry ? [] : [i]));
     // C2: those that are rolling-ball rounds are rounds, not freeform faces
-    const rounds0 = odd0.length ? freeRounds(kernel, shape, topo0, odd0, kernel.smoothEdges(shape, topo0.edges.map((_, i) => i)), adjacency(topo0)) : [];
+    const rounds0 =
+      odd0.length && rounds.free !== false ? freeRounds(kernel, shape, topo0, odd0, kernel.smoothEdges(shape, topo0.edges.map((_, i) => i)), adjacency(topo0)) : [];
+    rounds.nominated = rounds0.length;
     const roundSet = new Set(rounds0.map((c) => c.face));
     const odd = odd0.filter((i) => !roundSet.has(i));
     if (odd.length) {

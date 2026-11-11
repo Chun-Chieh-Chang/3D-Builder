@@ -29,7 +29,7 @@ import { edgeFingerprint, faceFingerprint, ownerFeatures } from '@3db/naming';
 import type { SketchSolver } from '@3db/sketch';
 import { RECOGNIZE_LIMITS, startBudget, type BudgetLimits } from '../budget';
 import type { Regenerator, RebuildResult } from '../engine';
-import { addv, distanceToSharp, dot, len, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type BaseRecord, type HoleRecord, type Recognition, type SharpEdge, type SplineApproximation } from './analyze';
+import { addv, distanceToSharp, dot, len, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type BaseRecord, type FreeRoundsOption, type HoleRecord, type Recognition, type SharpEdge, type SplineApproximation } from './analyze';
 import { compareSections, sectionsClose } from './compareSections';
 import type { Loop, P2 } from '../section/loops';
 
@@ -44,7 +44,13 @@ export interface ReconstructReport {
   /** |V' − V| / V, |A' − A| / A, and the volume the two solids do not share, over V. */
   volumeError: number;
   areaError: number;
+  /** With `fileTolerance`, only what is past each face's own allowance (ADR 0249); the whole of it is `fileTolerance.difference`. */
   difference: number;
+  /**
+   * Set when the imported file joins some of its faces only to a tolerance past 1e-7 (ADR 0249): how many faces, the largest tolerance (mm), and over
+   * V (A for `area`) what that lets the volume and the area differ by, and the volume between the two before each point's allowance was taken off.
+   */
+  fileTolerance?: { faces: number; max: number; volume: number; area: number; difference: number };
   /** Set when a spline outline was approximated (ADR 0243): the rebuilt solid is close to the original, not the same. */
   approximation?: {
     /** The largest distance the biarcs were proved to keep from the spline (mm). */
@@ -565,80 +571,107 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
     keep.push(shape);
     const facesBefore = solo.body.topology.faces.length;
     budget.check();
-    const approx: SplineApproximation | undefined = options.approximateSplines ? { tolerance: SPLINE_TOLERANCE, bound: 0, used: false } : undefined;
-    const rec = recognize(kernel, shape, frameFor, budget, approx);
-    // a solver that cannot take the sketch is what an approximation runs into first: say how many arcs it came to
-    const whyFailed = (why: string): string => t('recognize.featureFailed', { why }) + (approx?.used ? ` ${t('recognize.approxArcs', { arcs: arcsOf(rec.base) })}` : '');
+    const attempt = (rounds: FreeRoundsOption): { doc: PartDoc; commands: Command[]; report: ReconstructReport } => {
+      const approx: SplineApproximation | undefined = options.approximateSplines ? { tolerance: SPLINE_TOLERANCE, bound: 0, used: false } : undefined;
+      const rec = recognize(kernel, shape, frameFor, budget, approx, rounds);
+      // a solver that cannot take the sketch is what an approximation runs into first: say how many arcs it came to
+      const whyFailed = (why: string): string => t('recognize.featureFailed', { why }) + (approx?.used ? ` ${t('recognize.approxArcs', { arcs: arcsOf(rec.base) })}` : '');
 
-    const ids = new IdAllocator(doc.idCounters, idsInUse(doc));
-    const b = new Builder(ids, solver);
-    b.base(rec, imported.merge);
-    b.holes(rec.holes);
-    // the commands, as the app applies them in one undoable step
-    const commands: Command[] = [];
-    let next = doc;
-    const run = (cmd: Command) => {
-      commands.push(cmd);
-      next = applyCommand(next, cmd);
-    };
-    b.features.forEach((f, k) => run({ type: 'insertFeature', feature: f, index: index + 1 + k }));
-    run({ type: 'deleteFeatures', featureIds: [featureId] });
-    let end = index + b.features.length;
-    const made = b.features.map((f) => f.id);
-    for (const blend of rec.blends) {
-      budget.check();
-      const r = regen.rebuild(next, { until: end });
-      const failed = failedOf(r, made);
-      if (failed) throw new RecognizeError(whyFailed(failed));
-      for (const f of blendFeature(kernel, blend, r, ids, b)) {
-        run({ type: 'insertFeature', feature: f, index: end });
-        made.push(f.id);
-        end++;
-      }
-    }
-    budget.check();
-    const after = regen.rebuild(next);
-    const failed = failedOf(after, [...made, ...okBefore.filter((id) => id !== featureId)]);
-    if (failed) throw new RecognizeError(whyFailed(failed));
-    if (!after.body) throw new RecognizeError(t('recognize.featureFailed', { why: '—' }));
-    budget.check();
-    if (approx?.used) {
-      const report = approximateReport(kernel, whole, after.body.shape, rec, approx, { features: { ...b.counts }, faces: [facesBefore, after.body.topology.faces.length] });
-      return { doc: next, commands, report };
-    }
-    const m0 = kernel.massProps(whole);
-    const area0 = kernel.surfaceArea(whole);
-    const compare = (body: NonNullable<RebuildResult['body']>): ReconstructReport => {
-      budget.check();
-      const m1 = kernel.massProps(body.shape);
-      const volumeError = Math.abs(m1.volume - m0.volume) / m0.volume;
-      // the area to a set precision: the fixed rule is off by more than the tolerance on faces with many B-spline holes (C1)
-      const areaError = Math.abs(kernel.surfaceArea(body.shape) - area0) / area0;
-      // the volume between the two, as each boundary's distance to the other integrated over it, the larger way (ADR 0248): a boolean of two near-equal
-      // solids with B-spline faces traps or runs for minutes (an imported round against the exact one that rebuilt it), and could not see a 2e-6 mm
-      // difference (it gave 0); the volume less twice the shared one keeps the integration error of near-equal figures (7e-6 of a plate)
-      budget.check();
-      const difference = Math.max(kernel.surfaceDeviation(whole, body.shape).integral, kernel.surfaceDeviation(body.shape, whole).integral) / m0.volume;
-      return { features: { ...b.counts }, faces: [facesBefore, body.topology.faces.length], volume: m0.volume, volumeError, areaError, difference };
-    };
-    const matches = (r: ReconstructReport) => [r.volumeError, r.areaError, r.difference].every((error) => error <= RECOGNIZE_TOLERANCE);
-    const report = compare(after.body);
-    if (matches(report)) return { doc: next, commands, report };
-    if (end === next.features.length && b.counts.chamfer > 0) {
-      const chamfers = new Set(next.features.filter((f) => f.type === 'chamfer' && made.includes(f.id)).map((f) => f.id));
-      const faces = extraChamferCaps(after.body, kernel.topology(whole), chamfers);
-      if (faces.length) {
-        const id = ids.take('deleteFace');
-        const cmd: Command = { type: 'insertFeature', index: end, feature: { id, type: 'deleteFace', name: t('feature.deleteFace'), suppressed: false, faces } };
-        const candidate = applyCommand(next, cmd);
-        const rebuilt = regen.rebuild(candidate);
-        if (rebuilt.body && !failedOf(rebuilt, [...made, id, ...okBefore.filter((f) => f !== featureId)])) {
-          const repaired = compare(rebuilt.body);
-          if (matches(repaired)) return { doc: candidate, commands: [...commands, cmd], report: repaired };
+      const ids = new IdAllocator(doc.idCounters, idsInUse(doc));
+      const b = new Builder(ids, solver);
+      b.base(rec, imported.merge);
+      b.holes(rec.holes);
+      // the commands, as the app applies them in one undoable step
+      const commands: Command[] = [];
+      let next = doc;
+      const run = (cmd: Command) => {
+        commands.push(cmd);
+        next = applyCommand(next, cmd);
+      };
+      b.features.forEach((f, k) => run({ type: 'insertFeature', feature: f, index: index + 1 + k }));
+      run({ type: 'deleteFeatures', featureIds: [featureId] });
+      let end = index + b.features.length;
+      const made = b.features.map((f) => f.id);
+      for (const blend of rec.blends) {
+        budget.check();
+        const r = regen.rebuild(next, { until: end });
+        const failed = failedOf(r, made);
+        if (failed) throw new RecognizeError(whyFailed(failed));
+        for (const f of blendFeature(kernel, blend, r, ids, b)) {
+          run({ type: 'insertFeature', feature: f, index: end });
+          made.push(f.id);
+          end++;
         }
       }
+      budget.check();
+      const after = regen.rebuild(next);
+      const failed = failedOf(after, [...made, ...okBefore.filter((id) => id !== featureId)]);
+      if (failed) throw new RecognizeError(whyFailed(failed));
+      if (!after.body) throw new RecognizeError(t('recognize.featureFailed', { why: '—' }));
+      budget.check();
+      if (approx?.used) {
+        const report = approximateReport(kernel, whole, after.body.shape, rec, approx, { features: { ...b.counts }, faces: [facesBefore, after.body.topology.faces.length] });
+        return { doc: next, commands, report };
+      }
+      const m0 = kernel.massProps(whole);
+      const area0 = kernel.surfaceArea(whole);
+      // a file whose faces meet only to a tolerance past 1e-7: a solid whose faces really meet may differ from it by that much, face by face (ADR 0249,
+      // the user's ruling of 2026-11-11); a file joined to working precision has no allowance and is held to RECOGNIZE_TOLERANCE as before
+      const own = kernel.fileTolerance(whole);
+      const allow = own.count > 0 ? own : null;
+      const compare = (body: NonNullable<RebuildResult['body']>): ReconstructReport => {
+        budget.check();
+        const m1 = kernel.massProps(body.shape);
+        const volumeError = Math.abs(m1.volume - m0.volume) / m0.volume;
+        // the area to a set precision: the fixed rule is off by more than the tolerance on faces with many B-spline holes (C1)
+        const areaError = Math.abs(kernel.surfaceArea(body.shape) - area0) / area0;
+        // the volume between the two, as each boundary's distance to the other integrated over it, the larger way (ADR 0248): a boolean of two near-equal
+        // solids with B-spline faces traps or runs for minutes (an imported round against the exact one that rebuilt it), and could not see a 2e-6 mm
+        // difference (it gave 0); the volume less twice the shared one keeps the integration error of near-equal figures (7e-6 of a plate)
+        budget.check();
+        const ab = kernel.surfaceDeviation(whole, body.shape, undefined, allow ? { a: allow.faces } : undefined);
+        const ba = kernel.surfaceDeviation(body.shape, whole, undefined, allow ? { b: allow.faces } : undefined);
+        const difference = Math.max(ab.excess, ba.excess) / m0.volume;
+        const fileTolerance = allow
+          ? { faces: allow.count, max: allow.max, volume: allow.volume / m0.volume, area: allow.area / area0, difference: Math.max(ab.integral, ba.integral) / m0.volume }
+          : undefined;
+        return { features: { ...b.counts }, faces: [facesBefore, body.topology.faces.length], volume: m0.volume, volumeError, areaError, difference, ...(fileTolerance ? { fileTolerance } : {}) };
+      };
+      const matches = (r: ReconstructReport) =>
+        r.volumeError <= RECOGNIZE_TOLERANCE + (r.fileTolerance?.volume ?? 0) &&
+        r.areaError <= RECOGNIZE_TOLERANCE + (r.fileTolerance?.area ?? 0) &&
+        r.difference <= RECOGNIZE_TOLERANCE;
+      const report = compare(after.body);
+      if (matches(report)) return { doc: next, commands, report };
+      if (end === next.features.length && b.counts.chamfer > 0) {
+        const chamfers = new Set(next.features.filter((f) => f.type === 'chamfer' && made.includes(f.id)).map((f) => f.id));
+        const faces = extraChamferCaps(after.body, kernel.topology(whole), chamfers);
+        if (faces.length) {
+          const id = ids.take('deleteFace');
+          const cmd: Command = { type: 'insertFeature', index: end, feature: { id, type: 'deleteFace', name: t('feature.deleteFace'), suppressed: false, faces } };
+          const candidate = applyCommand(next, cmd);
+          const rebuilt = regen.rebuild(candidate);
+          if (rebuilt.body && !failedOf(rebuilt, [...made, id, ...okBefore.filter((f) => f !== featureId)])) {
+            const repaired = compare(rebuilt.body);
+            if (matches(repaired)) return { doc: candidate, commands: [...commands, cmd], report: repaired };
+          }
+        }
+      }
+      throw new RecognizeError(t('recognize.notSame', { volume: report.volumeError.toExponential(2), area: report.areaError.toExponential(2), difference: report.difference.toExponential(2) }));
+    };
+    // a face read as a rolling-ball round is only nominated (ADR 0249): refused with the rounds, the body is asked again without them, as it was before
+    // C2.8 (an elliptical corner of an extrusion is near a ball, and an extrusion without it); refused again, the first answer says more
+    const first: FreeRoundsOption = {};
+    try {
+      return attempt(first);
+    } catch (e) {
+      if (!(e instanceof RecognizeError) || !first.nominated) throw e;
+      try {
+        return attempt({ free: false });
+      } catch (again) {
+        throw again instanceof RecognizeError ? e : again;
+      }
     }
-    throw new RecognizeError(t('recognize.notSame', { volume: report.volumeError.toExponential(2), area: report.areaError.toExponential(2), difference: report.difference.toExponential(2) }));
   } finally {
     for (const id of keep) kernel.release(id);
   }
