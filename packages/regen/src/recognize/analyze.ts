@@ -24,6 +24,13 @@ export interface SplineApproximation {
 
 export class RecognizeError extends Error {
   override readonly name = 'RecognizeError';
+  constructor(
+    message: string,
+    /** Refused because faces with no simple surface are not all walls along one direction (the freeform-face check before anything is taken apart). */
+    readonly freeform = false,
+  ) {
+    super(message);
+  }
 }
 
 // ------------------------------------------------------------------ vectors
@@ -72,6 +79,14 @@ export const ROLLING_BALL_TOLERANCE = 1e-5;
  * angle rather than tangent, and moving them onto the exact ball changes the volume by 3.8e-7 of the part. Nomination only: the rebuild is compared after.
  */
 export const NOMINATE_BALL_RELATIVE = 1e-3;
+
+/**
+ * How far a face stored as a B-spline (or a surface of revolution or extrusion) may be off a plane, cylinder, cone, sphere or torus (mm) to be read as
+ * one (C4): this, or how far apart the face and its neighbours are in the file (ADR 0249), the larger. Measured on part-4 of the real assembly: 20 such
+ * faces within 3.3e-7 (tori and cylinders the exporting system wrote as splines), 6 more within their own file gaps (1.8e-5 to 2.1e-4 against gaps of
+ * 1.7e-4 to 6e-4). Nomination only: the rebuilt solid is compared after, and a part refused with faces read this way is asked again without.
+ */
+export const ANALYTIC_FACE_TOLERANCE = 1e-6;
 
 export interface FilletRecord {
   type: 'fillet';
@@ -426,7 +441,10 @@ function removeBlends(
   const free = cands.some((c) => c.free);
   if (skipDeleteFaces || free) {
     const sharpOfCand = (c: BlendCandidate): SharpEdge | null => {
-      if (!c.free) return analyticSharpOf(topo, c);
+      // a round on two planes, or a ring on a plane and a cylinder about its axis, has its edge in closed form; any other (C4: a drafted part's cones
+      // and tilted planes) is where its supports' surfaces meet, as a round with no simple surface's is
+      const closedForm = c.free ? null : analyticSharpOf(topo, c);
+      if (closedForm || (!c.free && c.type !== 'fillet')) return closedForm;
       const s = kernel.sharpEdge(shape, c.face, c.supports);
       return s ? { kind: 'sampled', points: s.points, closed: s.closed } : null;
     };
@@ -479,7 +497,7 @@ function removeBlends(
     }
     if (!r) return null;
   }
-  const after = kernel.topology(r.shape);
+  const after = readTopology(kernel, r.shape);
   const oldMids = topo.edges.map((e) => e.mid);
   const isNew = (ei: number) => !oldMids.some((m) => len(sub(m, after.edges[ei]!.mid)) <= TOL);
   const fillets = new Map<string, FilletRecord>();
@@ -700,6 +718,128 @@ function asBiarcs(edges: (SectionEdge | NurbsSectionEdge)[], approx: SplineAppro
   });
 }
 
+/**
+ * C4: a section through a face stored as a spline comes back as a spline curve even where the face is a plane or a cylinder. Each such curve that is a
+ * straight line, an arc or a whole circle to within `tol` (every one of 9 points on each of its spans) is given as that; the rest are left as they
+ * are. Only asked when some face of the body was read as a simple surface, with the largest allowance one of them was given.
+ */
+function asSimple(edges: (SectionEdge | NurbsSectionEdge)[], tol: number): (SectionEdge | NurbsSectionEdge)[] {
+  return edges.map((e): SectionEdge | NurbsSectionEdge => {
+    // a wall read exactly that is flat (a plane stored as a spline) gives a spline of degree 1 between two poles: a line
+    if (e.kind === 'nurbs' && e.degree === 1 && e.poles.length === 2) return { kind: 'line', a: e.a, b: e.b };
+    if (e.kind !== 'bezier') return e;
+    const pts: P2[] = [];
+    for (const span of e.spans) {
+      for (let k = 0; k <= 8; k++) {
+        if (k === 0 && pts.length) continue;
+        // de Casteljau on the homogeneous poles
+        let row = span.map((q) => [...q]);
+        const u = k / 8;
+        while (row.length > 1) row = row.slice(1).map((q, i) => q.map((x, c) => row[i]![c]! * (1 - u) + x * u));
+        const [x, y, , w] = row[0]!;
+        pts.push([x! / w!, y! / w!]);
+      }
+    }
+    if (pts.length < 3 || pts.some((q) => !Number.isFinite(q[0]) || !Number.isFinite(q[1]))) return e;
+    const a = pts[0]!;
+    const b = pts[pts.length - 1]!;
+    const chord = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const closed = chord <= tol;
+    if (!closed && pts.every((q) => Math.abs((q[0] - a[0]) * (b[1] - a[1]) - (q[1] - a[1]) * (b[0] - a[0])) / chord <= tol)) {
+      // in order along it, or it is a curve that doubles back on a line
+      const along = pts.map((q) => ((q[0] - a[0]) * (b[0] - a[0]) + (q[1] - a[1]) * (b[1] - a[1])) / chord);
+      return along.every((x, i) => i === 0 || x > along[i - 1]!) ? { kind: 'line', a, b } : e;
+    }
+    const n = pts.length;
+    const three: [P2, P2, P2] = closed ? [a, pts[Math.floor(n / 3)]!, pts[Math.floor((2 * n) / 3)]!] : [a, pts[Math.floor(n / 2)]!, b];
+    const c = circleThrough(three[0], three[1], three[2]);
+    if (!c) return e;
+    const r = Math.hypot(a[0] - c[0], a[1] - c[1]);
+    if (!(r > tol) || !pts.every((q) => Math.abs(Math.hypot(q[0] - c[0], q[1] - c[1]) - r) <= tol)) return e;
+    // going one way round, less than a full turn between neighbours (so the arc is the curve's own stretch of the circle)
+    const ang = pts.map((q) => Math.atan2(q[1] - c[1], q[0] - c[0]));
+    let total = 0;
+    let sign = 0;
+    for (let i = 1; i < n; i++) {
+      let d = ang[i]! - ang[i - 1]!;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      if (d === 0 || (sign !== 0 && Math.sign(d) !== sign)) return e;
+      sign = Math.sign(d);
+      total += Math.abs(d);
+    }
+    if (closed) return Math.abs(total - 2 * Math.PI) <= 1e-6 ? { kind: 'circle', c, r } : e;
+    return total < 2 * Math.PI - 1e-9 ? { kind: 'arc', c, r, a, b, mid: three[1] } : e;
+  });
+}
+
+/**
+ * C4: where the pieces of a section do not quite meet (faces of a file that meet only to a tolerance, each read as its own simple surface), each corner
+ * between two lines or arcs is put where their own line or circle cross, when that is within `tol` of both ends; the pieces stay on their curves.
+ * A corner with a spline piece, or whose curves do not cross that near (parallel lines, circles apart), is left as it is.
+ */
+function healCorners(loops: Loop[], tol: number): Loop[] {
+  type Curve = { kind: 'line'; o: P2; d: P2 } | { kind: 'circle'; c: P2; r: number };
+  const curveOf = (g: Loop['segs'][number]): Curve | null => {
+    if (g.kind === 'line') {
+      const l = Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1]);
+      return l > 0 ? { kind: 'line', o: g.a, d: [(g.b[0] - g.a[0]) / l, (g.b[1] - g.a[1]) / l] } : null;
+    }
+    return g.kind === 'arc' ? { kind: 'circle', c: g.c, r: g.r } : null;
+  };
+  const near = (cands: P2[], q: P2): P2 | null => cands.reduce<P2 | null>((best, x) => (!best || Math.hypot(x[0] - q[0], x[1] - q[1]) < Math.hypot(best[0] - q[0], best[1] - q[1]) ? x : best), null);
+  const lineCircle = (l: Extract<Curve, { kind: 'line' }>, k: Extract<Curve, { kind: 'circle' }>): P2[] => {
+    const w: P2 = [k.c[0] - l.o[0], k.c[1] - l.o[1]];
+    const along = w[0] * l.d[0] + w[1] * l.d[1];
+    const foot: P2 = [l.o[0] + l.d[0] * along, l.o[1] + l.d[1] * along];
+    const h2 = k.r * k.r - ((foot[0] - k.c[0]) ** 2 + (foot[1] - k.c[1]) ** 2);
+    // touching to within the tolerance: the one point
+    if (h2 < 0) return Math.sqrt(-h2) <= Math.sqrt(2 * k.r * tol) ? [foot] : [];
+    const h = Math.sqrt(h2);
+    return [[foot[0] + l.d[0] * h, foot[1] + l.d[1] * h], [foot[0] - l.d[0] * h, foot[1] - l.d[1] * h]];
+  };
+  const cross = (x: Curve, y: Curve): P2[] => {
+    if (x.kind === 'line' && y.kind === 'line') {
+      const den = x.d[0] * y.d[1] - x.d[1] * y.d[0];
+      if (Math.abs(den) < 1e-9) return [];
+      const k = ((y.o[0] - x.o[0]) * y.d[1] - (y.o[1] - x.o[1]) * y.d[0]) / den;
+      return [[x.o[0] + x.d[0] * k, x.o[1] + x.d[1] * k]];
+    }
+    if (x.kind === 'line' && y.kind === 'circle') return lineCircle(x, y);
+    if (x.kind === 'circle' && y.kind === 'line') return lineCircle(y, x);
+    const [a, b] = [x, y] as [Extract<Curve, { kind: 'circle' }>, Extract<Curve, { kind: 'circle' }>];
+    const dx = b.c[0] - a.c[0];
+    const dy = b.c[1] - a.c[1];
+    const dist = Math.hypot(dx, dy);
+    if (!(dist > 1e-12)) return [];
+    // the line through the two crossings, then that line with the first circle
+    const m = (dist * dist + a.r * a.r - b.r * b.r) / (2 * dist);
+    return lineCircle({ kind: 'line', o: [a.c[0] + (dx / dist) * m, a.c[1] + (dy / dist) * m], d: [-dy / dist, dx / dist] }, a);
+  };
+  return loops.map((loop) => {
+    const segs = loop.segs.map((g) => ({ ...g }));
+    const n = segs.length;
+    if (n < 2) return loop;
+    let moved = false;
+    for (let i = 0; i < n; i++) {
+      const g = segs[i]!;
+      const h = segs[(i + 1) % n]!;
+      if (g.kind === 'circle' || h.kind === 'circle') continue;
+      const gap = Math.hypot(g.b[0] - h.a[0], g.b[1] - h.a[1]);
+      if (gap <= 1e-13) continue;
+      const [cg, ch] = [curveOf(g), curveOf(h)];
+      if (!cg || !ch) continue;
+      const mid: P2 = [(g.b[0] + h.a[0]) / 2, (g.b[1] + h.a[1]) / 2];
+      const x = near(cross(cg, ch), mid);
+      if (!x || Math.hypot(x[0] - g.b[0], x[1] - g.b[1]) > 2 * tol || Math.hypot(x[0] - h.a[0], x[1] - h.a[1]) > 2 * tol) continue;
+      g.b = x;
+      h.a = x;
+      moved = true;
+    }
+    return moved ? { ...loop, segs } : loop;
+  });
+}
+
 function sectionRect(frame: Frame, box: { min: Vec3; max: Vec3 }, half: boolean) {
   const corners: Vec3[] = [];
   for (const x of [box.min[0], box.max[0]]) for (const y of [box.min[1], box.max[1]]) for (const z of [box.min[2], box.max[2]]) corners.push([x, y, z]);
@@ -718,8 +858,14 @@ function section(kernel: Kernel, shape: ShapeId, frame: Frame, box: { min: Vec3;
     if (e instanceof KernelError) throw new RecognizeError(t('recognize.sectionFailed', { why: e.message }));
     throw e;
   }
+  const reading = analyticRef.get(kernel);
+  const simple = !!reading?.on && reading.count > 0;
+  // twice the allowance: the curve is within it of the face's simple surface, and the line or circle fitted through the curve's own points is within
+  // it of that surface's section too
+  if (simple) edges = asSimple(edges, 2 * reading!.tol);
   try {
-    return chainLoops(approx ? asBiarcs(edges, approx) : edges, TOL * 10);
+    const loops = chainLoops(approx ? asBiarcs(edges, approx) : edges, simple ? Math.max(TOL * 10, 2 * reading!.tol) : TOL * 10);
+    return simple ? healCorners(loops, reading!.tol) : loops;
   } catch (e) {
     if (e instanceof LoopError) throw new RecognizeError(e.curve ? t('recognize.unsupportedCurve', { curve: e.curve }) : t('recognize.sectionOpen'));
     throw e;
@@ -785,6 +931,42 @@ function freeWalls(kernel: Kernel, shape: ShapeId, approx?: SplineApproximation)
     }
     return v;
   };
+}
+
+/** Whether faces with no simple surface are being read as the simple surface they are within tolerance (C4), and how many were, for the recognition running on a kernel. */
+const analyticRef = new WeakMap<Kernel, { on: boolean; count: number; tol: number }>();
+
+/**
+ * `topo` with each of `faces` that is a plane, cylinder, cone, sphere or torus to within `ANALYTIC_FACE_TOLERANCE` or its own gap in the file
+ * (`Kernel.analyticFace`) described as that surface. The shape keeps its surfaces: only what is read of them changes.
+ */
+function withAnalytic(kernel: Kernel, shape: ShapeId, topo: Topology, faces: number[]): Topology {
+  const ctx = analyticRef.get(kernel);
+  if (!ctx?.on || faces.length === 0) return topo;
+  const gap = kernel.fileTolerance(shape).faces;
+  const found = new Map<number, SurfaceGeometry>();
+  for (const i of faces) {
+    const tol = Math.max(ANALYTIC_FACE_TOLERANCE, gap[i] ?? 0);
+    const a = kernel.analyticFace(shape, i, tol);
+    if (!a) continue;
+    found.set(i, a.geometry);
+    ctx.tol = Math.max(ctx.tol, tol);
+  }
+  if (found.size === 0) return topo;
+  ctx.count += found.size;
+  return {
+    ...topo,
+    faces: topo.faces.map((f, i) => {
+      const g = found.get(i);
+      return g ? { ...f, surface: g.type, geometry: g, normal: g.type === 'plane' ? g.normal : f.normal } : f;
+    }),
+  };
+}
+
+/** The topology of a shape made on the way, its faces with no simple surface read as simple ones where they are (C4). */
+function readTopology(kernel: Kernel, shape: ShapeId): Topology {
+  const topo = kernel.topology(shape);
+  return withAnalytic(kernel, shape, topo, topo.faces.flatMap((f, i) => (f.geometry ? [] : [i])));
 }
 
 const unremovedFacesRef = new WeakMap<Topology, Set<number>>();
@@ -1073,7 +1255,7 @@ function mixedLayer(kernel: Kernel, shape: ShapeId, frame: Frame, d: Vec3, heigh
     if (pieces.length === 0) throw refusal;
     return pieces.flatMap((p) => {
       budget?.check();
-      const topo = kernel.topology(p.shape);
+      const topo = readTopology(kernel, p.shape);
       const free = freeWalls(kernel, p.shape, approx);
       if (blockers(topo, d, free).length) throw refusal;
       const pieceLeans = topo.faces.flatMap((f, i) => {
@@ -1180,7 +1362,7 @@ function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameF
         throw e;
       }
       made.push(rest);
-      const base = baseOf(kernel, rest, kernel.topology(rest), frameFor, depth + 1, budget, approx);
+      const base = baseOf(kernel, rest, readTopology(kernel, rest), frameFor, depth + 1, budget, approx);
       const extras: Extract<BaseRecord, { type: 'composite' }>['extras'] = [];
       const size = kernel.massProps(shape).volume;
       for (const [op, a, b] of [['boss', shape, rest], ['cut', rest, shape]] as const) {
@@ -1191,7 +1373,7 @@ function baseOf(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: FrameF
           if (kernel.massProps(piece.shape).volume <= 1e-9 * size) continue;
           let rec: BaseRecord;
           try {
-            rec = extrudeBase(kernel, piece.shape, kernel.topology(piece.shape), frameFor, budget, approx);
+            rec = extrudeBase(kernel, piece.shape, readTopology(kernel, piece.shape), frameFor, budget, approx);
           } catch (e) {
             if (e instanceof RecognizeError) throw first;
             throw e;
@@ -1416,6 +1598,10 @@ function loftBase(kernel: Kernel, shape: ShapeId, topo: Topology, odd: number[],
 export interface FreeRoundsOption {
   free?: boolean;
   nominated?: number;
+  /** C4: whether faces with no simple surface are read as the simple surface they are within tolerance (on unless false). Nomination, as the rounds are. */
+  analytic?: boolean;
+  /** How many faces were read so (set by `recognize`). */
+  substituted?: number;
 }
 
 /**
@@ -1425,15 +1611,19 @@ export interface FreeRoundsOption {
 export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, budget?: Budget, approx?: SplineApproximation, rounds: FreeRoundsOption = {}): Recognition {
   if (kernel.solidCount(shape) !== 1) throw new RecognizeError(t('recognize.oneSolid', { n: kernel.solidCount(shape) }));
   const made: ShapeId[] = [];
+  const reading = { on: rounds.analytic !== false, count: 0, tol: 0 };
+  analyticRef.set(kernel, reading);
   try {
-    const topo0 = kernel.topology(shape);
-    const odd0 = topo0.faces.flatMap((f, i) => (ANALYTIC.has(f.surface) && f.geometry ? [] : [i]));
+    const raw = kernel.topology(shape);
+    const odd0 = raw.faces.flatMap((f, i) => (ANALYTIC.has(f.surface) && f.geometry ? [] : [i]));
     // C2: those that are rolling-ball rounds are rounds, not freeform faces
     const rounds0 =
-      odd0.length && rounds.free !== false ? freeRounds(kernel, shape, topo0, odd0, kernel.smoothEdges(shape, topo0.edges.map((_, i) => i)), adjacency(topo0)) : [];
+      odd0.length && rounds.free !== false ? freeRounds(kernel, shape, raw, odd0, kernel.smoothEdges(shape, raw.edges.map((_, i) => i)), adjacency(raw)) : [];
     rounds.nominated = rounds0.length;
     const roundSet = new Set(rounds0.map((c) => c.face));
-    const odd = odd0.filter((i) => !roundSet.has(i));
+    // C4: of the rest, those that are a simple surface the file wrote as a spline are read as that surface
+    const topo0 = withAnalytic(kernel, shape, raw, odd0.filter((i) => !roundSet.has(i)));
+    const odd = odd0.filter((i) => !roundSet.has(i) && !topo0.faces[i]!.geometry);
     if (odd.length) {
       const loft = loftBase(kernel, shape, topo0, odd, frameFor, budget);
       if (loft) {
@@ -1463,7 +1653,7 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
       );
       const checkDirs = zeroAnalyticDirs.length > 0 ? [...zeroAnalyticDirs, ...planeDirs.filter((d) => !zeroAnalyticDirs.includes(d))] : planeDirs;
       const walls = free && checkDirs.some((d) => along(d));
-      if (!walls) throw new RecognizeError(`${t('recognize.freeform', { n: odd.length, faces: describe(topo0, odd) })}${approx ? '' : ` ${t('recognize.freeformHint')}`}`);
+      if (!walls) throw new RecognizeError(`${t('recognize.freeform', { n: odd.length, faces: describe(topo0, odd) })}${approx ? '' : ` ${t('recognize.freeformHint')}`}`, true);
     }
     let current = shape;
     const allBlends: BlendRecord[] = [];
@@ -1472,7 +1662,7 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
     // rounds with no simple surface are left in the body (C2.8), and with them every other blend, read off where it is
     const skipDeleteFaces = topo0.faces.length > 500 || rounds0.length > 0;
     for (let pass = 0; pass < 4; pass++) {
-      const topoPass = pass === 0 ? topo0 : kernel.topology(current);
+      const topoPass = pass === 0 ? topo0 : readTopology(kernel, current);
       const smooth = kernel.smoothEdges(current, topoPass.edges.map((_, i) => i));
       const allCands = [...blendCandidates(topoPass, smooth, adjacency(topoPass)), ...(pass === 0 ? rounds0 : [])];
       if (allCands.length === 0) break;
@@ -1491,7 +1681,7 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
       // A failed batch can leave some candidates on the new body. Reclassify those against its restored faces.
       if (res.analyticOnly || res.removed === allCands.length) break;
     }
-    const topo1 = current === shape ? topo0 : kernel.topology(current);
+    const topo1 = current === shape ? topo0 : readTopology(kernel, current);
     const adj1 = adjacency(topo1);
     if (analyticUnremoved.size) {
       // Connect support faces across analytically unremoved blends so findHoles sees through-hole entrance/exit rims.
@@ -1542,7 +1732,7 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
         }
       }
     }
-    const topo2 = current === shape ? topo0 : kernel.topology(current);
+    const topo2 = current === shape ? topo0 : readTopology(kernel, current);
     if (analyticUnremoved.size) {
       unremovedFacesRef.set(topo2, analyticUnremoved);
       unremovedHolesRef.set(topo2, holes.map((h) => h.record));
@@ -1558,6 +1748,8 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
       counts: { faces: topo0.faces.length, blendFaces: totalBlendFaces, holeFaces, baseFaces: topo2.faces.length - analyticUnremoved.size },
     };
   } finally {
+    rounds.substituted = reading.count;
+    analyticRef.delete(kernel);
     for (const id of made) kernel.release(id);
   }
 }

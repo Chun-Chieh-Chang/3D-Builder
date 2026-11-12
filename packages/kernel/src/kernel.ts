@@ -3013,34 +3013,56 @@ export class Kernel {
     const at = xyz(d1.Point);
     const n = cross3(xyz(d1.D1U), xyz(d1.D1V));
     const out: Vec3 = reversed ? [-n[0], -n[1], -n[2]] : n;
+    const geometry = this.analyticGeometry(ad, surface, center, at, out, arena);
+    const normal = geometry?.type === 'plane' ? geometry.normal : null;
+    return { surface, area: props.Mass(), center, normal, ...(geometry ? { geometry } : {}) };
+  }
+
+  /**
+   * What a plane, cylinder, cone, sphere or torus is, from an adaptor that carries one (`surface` is its kind): the axis and sizes are the surface's own,
+   * the side (`convex`, a plane's normal) from the face's outward normal `out` at its point `at`. Undefined for any other kind.
+   */
+  private analyticGeometry(
+    ad: { Plane(): any; Cylinder(): any; Cone(): any; Sphere(): any; Torus(): any },
+    surface: string,
+    center: Vec3,
+    at: Vec3,
+    out: Vec3,
+    arena: Arena,
+  ): SurfaceGeometry | undefined {
+    const xyz = (v: { X(): number; Y(): number; Z(): number; delete(): void }) => this.xyz(arena.own(v));
     /** Whether the outward normal points away from `from` (seen across `axis`, when given). */
     const away = (from: Vec3, axis?: Vec3) => {
       const v: Vec3 = [at[0] - from[0], at[1] - from[1], at[2] - from[2]];
       const r = axis ? sub3(v, scale3(axis, dot3(v, axis))) : v;
       return dot3(out, r) > 0;
     };
-    let normal: Vec3 | null = null;
-    let geometry: SurfaceGeometry | undefined;
     if (surface === 'plane') {
-      const d = xyz(arena.own(arena.own(ad.Plane()).Axis()).Direction());
-      normal = dot3(d, out) < 0 ? [-d[0], -d[1], -d[2]] : d;
-      geometry = { type: 'plane', origin: center, normal };
-    } else if (surface === 'cylinder') {
+      const ax = arena.own(arena.own(ad.Plane()).Axis());
+      const d = xyz(ax.Direction());
+      // the face's centre put on the plane: the same point for a face that has the plane, and on it for a face only near it (C4, `analyticFace`)
+      const off = dot3(sub3(center, xyz(ax.Location())), d);
+      return { type: 'plane', origin: sub3(center, scale3(d, off)), normal: dot3(d, out) < 0 ? [-d[0], -d[1], -d[2]] : d };
+    }
+    if (surface === 'cylinder') {
       const s = arena.own(ad.Cylinder());
       const axis = arena.own(s.Axis());
       const origin = xyz(axis.Location());
       const dir = xyz(axis.Direction());
-      geometry = { type: 'cylinder', origin, axis: dir, radius: s.Radius(), convex: away(origin, dir) };
-    } else if (surface === 'cone') {
+      return { type: 'cylinder', origin, axis: dir, radius: s.Radius(), convex: away(origin, dir) };
+    }
+    if (surface === 'cone') {
       const s = arena.own(ad.Cone());
       const apex = xyz(s.Apex());
       const dir = xyz(arena.own(s.Axis()).Direction());
-      geometry = { type: 'cone', apex, axis: dir, halfAngle: s.SemiAngle(), convex: away(apex, dir) };
-    } else if (surface === 'sphere') {
+      return { type: 'cone', apex, axis: dir, halfAngle: s.SemiAngle(), convex: away(apex, dir) };
+    }
+    if (surface === 'sphere') {
       const s = arena.own(ad.Sphere());
       const c = xyz(s.Location());
-      geometry = { type: 'sphere', center: c, radius: s.Radius(), convex: away(c) };
-    } else if (surface === 'torus') {
+      return { type: 'sphere', center: c, radius: s.Radius(), convex: away(c) };
+    }
+    if (surface === 'torus') {
       const s = arena.own(ad.Torus());
       const c = xyz(s.Location());
       const dir = xyz(arena.own(s.Axis()).Direction());
@@ -3048,9 +3070,73 @@ export class Kernel {
       const v: Vec3 = [at[0] - c[0], at[1] - c[1], at[2] - c[2]];
       const radial = sub3(v, scale3(dir, dot3(v, dir)));
       const ring = scale3(radial, s.MajorRadius() / (Math.hypot(...radial) || 1));
-      geometry = { type: 'torus', center: c, axis: dir, major: s.MajorRadius(), minor: s.MinorRadius(), convex: away([c[0] + ring[0], c[1] + ring[1], c[2] + ring[2]]) };
+      return { type: 'torus', center: c, axis: dir, major: s.MajorRadius(), minor: s.MinorRadius(), convex: away([c[0] + ring[0], c[1] + ring[1], c[2] + ring[2]]) };
     }
-    return { surface, area: props.Mass(), center, normal, ...(geometry ? { geometry } : {}) };
+    return undefined;
+  }
+
+  /**
+   * C4: a face whose surface is stored as something else (a B-spline, a surface of revolution or of extrusion) read as the plane, cylinder, cone,
+   * sphere or torus it is, when it is one to within `tol` mm. OCCT proposes the surface (`GeomConvert_SurfToAnaSurf`); how far the face is from it is
+   * measured here, at 13 × 13 places over the face's own parameter range against the proposed surface's equation, and that figure decides, not OCCT's
+   * estimate. Null for a face that already has such a surface, and for one that is none of them to within `tol`. The shape is not changed.
+   */
+  analyticFace(target: ShapeId, faceIndex: number, tol: number): { geometry: SurfaceGeometry; deviation: number } | null {
+    if (!Number.isFinite(tol) || tol <= 0) throw new KernelError(t('kernel.analyticTolerance'));
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const key = ShapeIndex.of(oc, this.get(target), T.FACE, arena).keys[faceIndex];
+      if (!key) throw new KernelError(t('edit.faceOutOfRange', { index: faceIndex }));
+      const face = arena.own(oc.TopoDS.Face(key));
+      const ad = arena.own(new oc.BRepAdaptor_Surface(face, true));
+      const own = String(ad.GetType()).replace('GeomAbs_', '').toLowerCase();
+      if (['plane', 'cylinder', 'cone', 'sphere', 'torus'].includes(own)) return null;
+      const conv = arena.own(new oc.GeomConvert_SurfToAnaSurf(arena.own(oc.BRep_Tool.Surface(face))));
+      const found = conv.ConvertToAnalytical(tol);
+      if (!found || found.isNull()) return null;
+      arena.own(found);
+      const ga = arena.own(new oc.GeomAdaptor_Surface(found));
+      const kind = String(ga.GetType()).replace('GeomAbs_', '').toLowerCase();
+      const [u0, u1, v0, v1] = [ad.FirstUParameter(), ad.LastUParameter(), ad.FirstVParameter(), ad.LastVParameter()];
+      if (![u0, u1, v0, v1].every(Number.isFinite)) return null;
+      const reversed = face.Orientation() === oc.TopAbs_Orientation.TopAbs_REVERSED;
+      const P = arena.own(new oc.gp_Pnt());
+      const U = arena.own(new oc.gp_Vec());
+      const V = arena.own(new oc.gp_Vec());
+      ad.D1((u0 + u1) / 2, (v0 + v1) / 2, P, U, V);
+      const at: Vec3 = [P.X(), P.Y(), P.Z()];
+      const n = cross3([U.X(), U.Y(), U.Z()], [V.X(), V.Y(), V.Z()]);
+      const out: Vec3 = reversed ? [-n[0], -n[1], -n[2]] : n;
+      const props = arena.own(new oc.GProp_GProps());
+      oc.BRepGProp.SurfaceProperties(face, props, false, false);
+      const geometry = this.analyticGeometry(ga, kind, this.xyz(arena.own(props.CentreOfMass())), at, out, arena);
+      if (!geometry) return null;
+      // how far the face's own surface is from the proposed one, by the proposed one's equation
+      const off = (p: Vec3): number => {
+        const g = geometry;
+        if (g.type === 'plane') return Math.abs(dot3(sub3(p, g.origin), g.normal));
+        if (g.type === 'sphere') return Math.abs(Math.hypot(...sub3(p, g.center)) - g.radius);
+        const from = g.type === 'cylinder' ? g.origin : g.type === 'cone' ? g.apex : g.center;
+        const w = sub3(p, from);
+        const z = dot3(w, g.axis);
+        const rho = Math.hypot(...sub3(w, scale3(g.axis, z)));
+        if (g.type === 'cylinder') return Math.abs(rho - g.radius);
+        if (g.type === 'cone') return Math.abs(rho * Math.cos(g.halfAngle) - Math.abs(z) * Math.sin(Math.abs(g.halfAngle)));
+        return Math.abs(Math.hypot(rho - g.major, z) - g.minor);
+      };
+      let deviation = 0;
+      const N = 13;
+      for (let i = 0; i < N; i++) {
+        for (let j = 0; j < N; j++) {
+          ad.D0(u0 + ((u1 - u0) * i) / (N - 1), v0 + ((v1 - v0) * j) / (N - 1), P);
+          deviation = Math.max(deviation, off([P.X(), P.Y(), P.Z()]));
+        }
+      }
+      return deviation <= tol ? { geometry, deviation } : null;
+    } finally {
+      arena.dispose();
+    }
   }
 
   private edgeInfo(e: TopoDS_Shape, arena: Arena): Omit<EdgeInfo, 'faces' | 'vertices'> {

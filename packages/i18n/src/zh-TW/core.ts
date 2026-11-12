@@ -51,6 +51,7 @@ export const core = {
   'kernel.noRevolveRegion': '沒有可旋轉的封閉輪廓',
   'kernel.opCut': '除料',
   'kernel.fullRoundSides': '完整圓角的兩個側面要是互相平行的平面，而且都垂直於中央面',
+  'kernel.analyticTolerance': '把面讀成簡單曲面的容差必須是有限的正數。',
   'kernel.fullRoundNotAdjacent': '完整圓角的中央面要和兩個側面各有一條共同的邊',
   'kernel.fullRoundShape': '完整圓角做不出來：中央面要是夾在兩個平行側面之間的長方形，而且兩側面不能比寬度的一半矮',
   'kernel.filletNeedsEdge': '圓角至少需要一條邊線',

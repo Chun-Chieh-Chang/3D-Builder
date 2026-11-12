@@ -26,7 +26,7 @@ it('fails closed on missing, absolute, escaping or invalid-encoded local targets
  expect(localLinkProblems(root,'docs/a.md','[missing](gone.md)\n[escape](../../x.md)\n[absolute](/etc/passwd)\n[bad](%ZZ)')).toHaveLength(4);expect(localLinkProblems(root,'docs/a.md','[web](https://example.com/x)\n[mail](mailto:a@example.com)\n[here](#heading)')).toEqual([]);
 });
 it('requires a single explicit role for new documents and distinguishes proposals from current claims',()=>{
- expect(documentRole('docs/project-state.md')).toBe('產品現況');expect(documentRole('docs/adr/0203-example.md')).toBe('架構決策');expect(documentRole('docs/design/menu-redesign/plan.md')).toBe('設計提案');expect(documentRole('docs/phase3-plan.md')).toBe('階段計畫快照');expect(()=>documentRole('wiki/unreviewed.md')).toThrow(/owner\/role/);
+ expect(documentRole('docs/project-state.md')).toBe('產品現況');expect(documentRole('docs/adr/0203-example.md')).toBe('架構決策');expect(documentRole('docs/design/menu-redesign/plan.md')).toBe('設計提案');expect(documentRole('docs/phase3-plan.md')).toBe('階段計畫快照');expect(documentRole('.claude/agents/test-runner.md')).toBe('代理定義');expect(()=>documentRole('.claude/agents/nested/x.md')).toThrow(/owner\/role/);expect(()=>documentRole('wiki/unreviewed.md')).toThrow(/owner\/role/);
 });
 it('materializes measured counts without treating inventory as a passing acceptance report',()=>{
  const facts={schemas:{part:84,assembly:7,drawing:30},workspaces:[],adrCount:202,ui:{files:185,scripts:181,calls:228},manualItems:91,wiki:false,scripts:[['dev','vite']],documents:[{file:'README.md',title:'入口',role:'入口'}],duplicateFiles:[],dependencies:[],cargoLockPackages:417};

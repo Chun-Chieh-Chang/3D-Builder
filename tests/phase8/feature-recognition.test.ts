@@ -417,7 +417,20 @@ describe('refusals', () => {
   }
 
   it('freeform faces', async () => {
-    expect(await refusal(keep(kernel.toBSpline(prism(rect(0, 0, 10, 10), 0, 10))))).toContain('自由曲面');
+    // a spline turned half way about an axis: no plane, cylinder, cone, sphere or torus, and no wall of an extrusion. (A box stored as B-splines was the case
+    // here until C4 read such faces as the planes they are: recognize-analytic-faces.test.ts.)
+    const profile: Region = {
+      outer: [
+        { kind: 'line', a: [0, 0], b: [10, 0], source: 'a' },
+        { kind: 'spline', points: [[10, 0], [13, 4], [9, 7], [8, 10]], source: 's' },
+        { kind: 'line', a: [8, 10], b: [0, 10], source: 'b' },
+        { kind: 'line', a: [0, 10], b: [0, 0], source: 'c' },
+      ] as never,
+      holes: [],
+    };
+    const turned = keep(kernel.revolve(at(0), [profile], { origin: [0, 0, 0], dir: [0, 1, 0] }, Math.PI).shape);
+    expect(kernel.topology(turned).faces.some((f) => !f.geometry)).toBe(true);
+    expect(await refusal(turned)).toContain('自由曲面');
   });
 
   it('two solids', async () => {

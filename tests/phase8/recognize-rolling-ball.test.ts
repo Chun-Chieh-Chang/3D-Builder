@@ -117,7 +117,8 @@ describe('recognized through a STEP file', () => {
   // A nomination is only a proposal (ADR 0249). An exact elliptical quarter (a rational quadratic) at the corner of a box, semi-axes 2 and 2 + e, is
   // tangent to both walls and within 1e-3 of a ball of its radius, so it is nominated; but it is no round, and the exact round of that corner does
   // not rebuild it. Before the retry the part was refused ('no edge for the round'), though without the nomination it is an extrusion of its exact
-  // outline (C1). e = 0, a true round drawn as a spline, was refused even before ADR 0249: a round at the corner of an extrusion is in its outline.
+  // outline (C1). e = 0, a true round drawn as a spline, was refused before ADR 0249 and rebuilt in the outline after it; since C4 its face is read as
+  // the cylinder it is, and it comes back as a round of radius 2 on the sharp-cornered extrusion.
   for (const e of [0, 2e-4, 1e-3]) {
     it(`an elliptical corner (semi-axes 2 and ${2 + e}) near a ball: nominated, refused as a round, then rebuilt as one extrusion of its exact outline`, async () => {
       const [a, b, w] = [2, 2 + e, Math.SQRT1_2];
@@ -137,8 +138,12 @@ describe('recognized through a STEP file', () => {
       expect(ball).not.toBeNull();
       expect(ball!.deviation).toBeLessThanOrEqual(1e-3 * ball!.radius);
       const out = await recognizeStep(kernel, solver, box);
-      expect(out.report.features).toMatchObject({ extrude: 1, fillet: 0 });
-      expect(out.report.difference).toBeLessThan(1e-12);
+      expect(out.report.features).toMatchObject({ extrude: 1, fillet: e === 0 ? 1 : 0 });
+      if (e === 0) {
+        const fillet = out.doc.features.find((f) => f.type === 'fillet');
+        expect(Math.abs(Number(fillet?.type === 'fillet' && fillet.radius) - 2)).toBeLessThan(1e-9);
+      }
+      expect(out.report.difference).toBeLessThan(e === 0 ? 1e-9 : 1e-12);
     }, 120_000);
   }
 

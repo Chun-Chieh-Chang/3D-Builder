@@ -34,6 +34,7 @@ export function documentRole(file) {
   if (file.startsWith('apps/web/src/icons/')) return '圖示授權';
   if (file.startsWith('tests/')) return '測試資料說明';
   if (file.startsWith('spikes/')) return '研究證據';
+  if (/^\.claude\/agents\/[^/]+\.md$/.test(file)) return '代理定義';
   throw new Error(`Document needs a single owner/role: ${file}`);
 }
 /** Ignore code examples; preserve line numbers. Accept ordinary and angle-delimited Markdown targets. */

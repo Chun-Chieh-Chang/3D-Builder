@@ -613,7 +613,11 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
         const report = approximateReport(kernel, whole, after.body.shape, rec, approx, { features: { ...b.counts }, faces: [facesBefore, after.body.topology.faces.length] });
         return { doc: next, commands, report };
       }
-      const m0 = kernel.massProps(whole);
+      // a body some of whose spline faces were read as simple surfaces (C4) is rebuilt with those surfaces themselves, and OCCT's usual volume of the
+      // spline original is then the coarser figure (measured: a disc of B-spline faces 1.97e-6 off its true volume, 1.0e-8 integrated to 1e-10): both
+      // volumes are integrated that finely, so the check compares the bodies and not the rule
+      const fine = rounds.substituted ? { eps: 1e-10 } : {};
+      const m0 = kernel.massProps(whole, fine);
       const area0 = kernel.surfaceArea(whole);
       // a file whose faces meet only to a tolerance past 1e-7: a solid whose faces really meet may differ from it by that much, face by face (ADR 0249,
       // the user's ruling of 2026-11-11); a file joined to working precision has no allowance and is held to RECOGNIZE_TOLERANCE as before
@@ -621,7 +625,7 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
       const allow = own.count > 0 ? own : null;
       const compare = (body: NonNullable<RebuildResult['body']>): ReconstructReport => {
         budget.check();
-        const m1 = kernel.massProps(body.shape);
+        const m1 = kernel.massProps(body.shape, fine);
         const volumeError = Math.abs(m1.volume - m0.volume) / m0.volume;
         // the area to a set precision: the fixed rule is off by more than the tolerance on faces with many B-spline holes (C1)
         const areaError = Math.abs(kernel.surfaceArea(body.shape) - area0) / area0;
@@ -659,19 +663,35 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
       }
       throw new RecognizeError(t('recognize.notSame', { volume: report.volumeError.toExponential(2), area: report.areaError.toExponential(2), difference: report.difference.toExponential(2) }));
     };
+    // A face read as the simple surface it is within tolerance is nominated the same way (C4): an attempt refused with such faces is asked once more
+    // with every face as the file has it, which is what was done before. Only an attempt that read some face so is asked again: one that read none
+    // would be the same computation twice (rolling-ball fuzz seed 46 takes 264 s of its 300 s limit at the previous HEAD).
+    type Outcome = { done: ReturnType<typeof attempt> } | { refused: RecognizeError; nominated: number };
+    const tried = (free: boolean): Outcome => {
+      const opt: FreeRoundsOption = { ...(free ? {} : { free: false }), analytic: true };
+      try {
+        return { done: attempt(opt) };
+      } catch (e) {
+        if (!(e instanceof RecognizeError)) throw e;
+        const refused = { refused: e, nominated: opt.nominated ?? 0 };
+        // refused at the freeform-face check, the same body with fewer faces read as simple ones has those faces and more to pass it: it cannot
+        if (!opt.substituted || e.freeform) return refused;
+        try {
+          return { done: attempt({ ...opt, analytic: false }) };
+        } catch (again) {
+          if (!(again instanceof RecognizeError)) throw again;
+          return refused;
+        }
+      }
+    };
     // a face read as a rolling-ball round is only nominated (ADR 0249): refused with the rounds, the body is asked again without them, as it was before
     // C2.8 (an elliptical corner of an extrusion is near a ball, and an extrusion without it); refused again, the first answer says more
-    const first: FreeRoundsOption = {};
-    try {
-      return attempt(first);
-    } catch (e) {
-      if (!(e instanceof RecognizeError) || !first.nominated) throw e;
-      try {
-        return attempt({ free: false });
-      } catch (again) {
-        throw again instanceof RecognizeError ? e : again;
-      }
-    }
+    const first = tried(true);
+    if ('done' in first) return first.done;
+    if (!first.nominated) throw first.refused;
+    const second = tried(false);
+    if ('done' in second) return second.done;
+    throw first.refused;
   } finally {
     for (const id of keep) kernel.release(id);
   }

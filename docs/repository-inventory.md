@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 95／7／38 |
-| ADR 文件 | 248 |
+| ADR 文件 | 249 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 231／226／278 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -299,6 +299,10 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 - [舊交接歷史](<handoff-history.md>)
 
+### 代理定義
+
+- [.claude/agents/test-runner.md](<../.claude/agents/test-runner.md>)
+
 ### 入口
 
 - [3D-Builder](<../README.md>)
@@ -583,6 +587,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0247 — Native drill points in Hole Wizard](<adr/0247-hole-wizard-drill-point.md>)
 - [ADR 0248 — Recognition compares a rebuild by surface deviation, not by a boolean](<adr/0248-recognition-compares-by-surface-deviation.md>)
 - [ADR 0249: Recognition allows each face its file's own precision](<adr/0249-recognition-allows-the-file-precision.md>)
+- [ADR 0250: Recognition reads spline faces as the simple surfaces they are](<adr/0250-recognition-reads-spline-faces-as-analytic.md>)
 
 ### 歷史驗證
 

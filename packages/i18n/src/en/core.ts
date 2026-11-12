@@ -53,6 +53,7 @@ export const core: Translation = {
   'kernel.noRevolveRegion': 'There is no closed contour to revolve',
   'kernel.opCut': 'Cut',
   'kernel.fullRoundSides': 'The two sides of a full round fillet have to be flat, parallel to each other and square to the center face',
+  'kernel.analyticTolerance': 'The tolerance for reading a face as a simple surface must be a positive, finite length.',
   'kernel.fullRoundNotAdjacent': 'The center face of a full round fillet has to share an edge with each of the two sides',
   'kernel.fullRoundShape': 'The full round fillet cannot be made: the center face has to be a rectangle between two parallel sides, and the sides cannot be lower than half the width',
   'kernel.filletNeedsEdge': 'A fillet needs at least one edge',
