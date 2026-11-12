@@ -83,6 +83,7 @@
         <text id="g-pct" x="170" y="140" text-anchor="middle" font-size="50" font-weight="700" fill="#e6edf3">0%</text>
         <text id="g-sub" x="170" y="166" text-anchor="middle" font-size="13" fill="#8b949e"></text>
         <text id="g-t-txt" x="170" y="186" text-anchor="middle" font-size="12" fill="#3fb950"></text>
+        <text id="g-sub2" x="170" y="205" text-anchor="middle" font-size="12" fill="#8b949e"></text>
       </svg>
       <div class="legend"><span>外圈：開發細項完成度</span><span>內圈：可編輯目標 / 35</span></div>
     </section>
@@ -126,7 +127,11 @@ function render(){
   const pct=done/Math.max(tot,1);
   $('g-arc').style.strokeDashoffset=(722.6*(1-pct)).toFixed(1);
   $('g-pct').textContent=Math.round(pct*100)+'%';
-  $('g-sub').textContent=`${data.phases.reduce((a,p)=>a+p.items.filter(i=>i.st==='ok').length,0)} / ${tot} 細項完成`;
+  // the percentage is items done over items listed, so it falls when more items are listed than finished: say what the total is made of
+  const cnt=s=>data.phases.reduce((a,p)=>a+p.items.filter(i=>i.st===s).length,0);
+  const nOk=cnt('ok'),nRun=cnt('run'),nWait=cnt('wait');
+  $('g-sub').textContent=`${nOk} / ${tot} 細項完成`;
+  $('g-sub2').textContent=`執行中 ${nRun} · 待辦 ${nWait}`+(nOk+nRun+nWait<tot?` · 不明 ${tot-nOk-nRun-nWait}`:'');
   const okT=data.targets.filter(t=>t.st==='ok').length;
   $('g-t').style.strokeDashoffset=(578*(1-okT/35)).toFixed(1);
   $('g-t-txt').textContent=`可編輯 ${okT} / 35`;
