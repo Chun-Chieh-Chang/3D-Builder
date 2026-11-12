@@ -1,6 +1,6 @@
 # 交接與接續工作
 
-更新日期 2026-11-10。Claude Code 以本節為接手入口。下方舊盤點與「27/30」等數字保留供追溯。
+更新日期 2026-11-12。Claude Code 以本節為接手入口。下方舊盤點與「27/30」等數字保留供追溯。
 
 ## Claude Code 接手入口
 
@@ -9,6 +9,16 @@
 > **2026-11-10（Claude Code）C2.7 原型。** 精確滾球圓角的幾何與「替換 OCCT 圓角面」已在 scratch 原型做出來：偏差 2.4e-12 mm、替換後 BRepCheck 有效、圓環對照體積差 ≤2e-11。結果與限制見[設計文件第 6b 節](docs/design/feature-recognition/freeform-generalization.md)。封閉、開放與兩面相切鏈共 10 組全部有效（見第 6b 節，`rb-chain.ts` 為最新版）；下一步是多面封閉鏈、角落球面，再接進 `Kernel.fillet`。**C2.4 量測顯示只靠 C2 四件都過不了**：part-3 有 43 張、MT17203 有 110 張不是圓角的自由曲面，E13 另含螺紋，實件驗收要和 C4／C5 一起做，**使用者裁定（2026-11-10）：先做完 C2 核心**——把 `rb-chain.ts` 的精確滾球圓角接進 `Kernel.fillet`（產品路徑），補多面封閉鏈、角落球面，跑 100 組以上 fuzz 與 heap 量測；實件驗收（C2.15～C2.17）等 C4／C5 之後再一起做（設計文件第 6a 節）。產品程式碼本日未改，C1 仍未 commit。
 
 > **2026-11-10 晚（Claude Code）C2.7f 產品路徑。** 精確滾球圓角已接進 `Kernel.fillet`（新檔 `packages/kernel/src/exactRound.ts`、測試 `packages/kernel/test/exact-round.test.ts` 9 項通過、型別與 `lint:rules` 通過），工作樹未 commit。代價：含 B-spline 支撐面時每個圓角約 2.8 秒，`surface-spike` 由 8.6 s／0.87 GB 變 39 s／2.5 GB。**使用者裁定只用於辨識重建**：`FilletFeature.exact`（v95，選填）由辨識重建設定，`Kernel.fillet` 預設關；使用者自己做的圓角速度不變（DEV_LOG 2026-11-10）。之後：C2.11 角落、C2.14 fuzz＋heap、C2.8～C2.10 辨識端。
+
+> **2026-11-12（換電腦交接）接手從這段開始。**
+> - **狀態**：`main` 與 `origin/main` 同步，最新程式 commit `bc552845`（ADR 0249），其上只有本交接 commit。GitHub Actions「Repository integrity」對 `bc552845` 成功（run 43051697431）。實件 30/35 可編輯，0 退步；未過的 5 件見下一段「ADR 0249」的下一步（part-4 需 C4 三項能力，見設計文件 §6i；MT17203 接合誤差未量；E13 需 C3 螺紋；C5「控制點可編輯曲面片」§6f 未開工）。最近一次完整驗證：分批單元測試 82 檔僅既有 `recognize-approximate` 2 項失敗、`verify:ui` 277/278（唯一失敗為已知偶發 `manual-browser-projects`，單跑通過）。
+> - **新電腦開工**：`git clone https://github.com/Chun-Chieh-Chang/3D-Builder.git`（或在既有副本 `git pull`），`npm ci`，讀 AGENTS.md 與本檔。舊電腦的 `laptop` 遠端（`F:\Self-developed_Apps\G3\3D-Builder`）只存在那台的設定裡。
+> - **不在 git 裡、要另外帶走的東西**（`scratch/` 整個被 `.gitignore` 排除）：
+>   1. **進度頁與工具**：`scratch/claude-takeover/dev/`（`index.html`、`state.json`、`data.js`）與 `scratch/claude-takeover/tools/`（`prog.mjs`、`livebeat.mjs`、量測與稽核腳本）。已另推到分支 **`handoff/scratch-tools`**（只有這些工具與 `scratch/ff/*.ts` 量測腳本，不含記錄檔與實件），新電腦上 `git fetch origin handoff/scratch-tools && git checkout origin/handoff/scratch-tools -- scratch` 取回後，`git reset scratch` 讓它們維持未追蹤（`scratch/` 被忽略，取回後不會出現在 `git status`）。
+>   2. **實件 STEP**：`D:\3DB實機確認`（35 個目標）與副本 `scratch/feature-recognition/samples/`。含實件幾何，**未放上 GitHub**，請用隨身碟／FreeFileSync 帶過去；全量稽核與 C2.15～C2.17 需要它們。
+>   3. 量測記錄（`scratch/ff/*.log`、`*.json`、稽核輸出）只供追溯，不必帶。
+> - **進度頁用法**：瀏覽器開 `scratch/claude-takeover/dev/index.html`（每 30 秒刷新）。工作中以 `node scratch/claude-takeover/tools/prog.mjs item|now|log|add|find …` 更新，停下或等使用者時 `prog.mjs stop "<原因>"`。`prog.mjs` 每次執行會記錄最近檔案變動，並在沒有心跳時以背景啟動 `livebeat.mjs`（每 30 秒寫 `dev/beat.js`，工作標為停止或 6 小時無進度即自行結束）。頁面以「進度 8 分鐘內有更新，或檔案 8 分鐘內有變動」判定執行中。`scratch/claude-takeover/start-cli.cmd` 的路徑寫死為 `D:\...`，新電腦路徑不同時要改。進度頁目前標為停止（換電腦）。
+> - **Linux VM 副本**（Claude 桌面版的雲端工作階段才需要）：依下方「新工作階段的環境重建」。
 
 > **2026-11-11 深夜（Claude Code CLI，Windows）ADR 0249 原檔精度容許＋圓角推舉重試，使用者已同意 commit 與 push。接手從這段開始。**
 > - **使用者裁定**：驗收門檻隨原檔精度調整（設計文件 §6h）；C5 方向為「控制點可編輯曲面片」（§6f，尚未開工）。
