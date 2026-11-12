@@ -109,7 +109,7 @@
   </div>
 </main>
 <script>
-const INTERVAL=30;let countdown=INTERVAL,data=null;
+const INTERVAL=180;let countdown=INTERVAL,data=null;
 const $=id=>document.getElementById(id);
 const tl=t=>new Date(t*1000).toLocaleTimeString('zh-TW',{hour12:false});
 const fmt=s=>{s=Math.max(0,Math.round(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h} 小時 ${m} 分`:`${m} 分 ${s%60} 秒`};
