@@ -2863,21 +2863,22 @@ export class Kernel {
           return out;
         });
         const result = this.put(unified.shape);
-        if (!(this.massProps(result).volume > 1e-12)) {
-          this.release(result);
-          if (square && distance < 0) throw new KernelError(t('edit.moveTooFar'));
-          throw new KernelError(t('edit.moveInvalid'));
-        }
+        const after = this.massProps(result).volume;
         // Pushed into the material by more than the body is thick there, the sweep comes out of the far side:
         // what is taken away is then less than the face's area times the distance. Never hand that over as done.
+        // Asked before the empty result below: pushed through the whole body, the cut leaves nothing, and this is why.
         if (square && distance < 0) {
           // volumes of a body of thousands of faces are good to about 1e-6 of the whole, so only a clear shortfall counts
           const before = this.massProps(target).volume;
-          const taken = before - this.massProps(result).volume;
+          const taken = before - after;
           if (taken < info.area * -distance * (1 - 1e-3) - 1e-6 * before) {
             this.release(result);
             throw new KernelError(t('edit.moveTooFar'));
           }
+        }
+        if (!(after > 1e-12)) {
+          this.release(result);
+          throw new KernelError(t('edit.moveInvalid'));
         }
         return { shape: result, faceOrigins };
       } finally {

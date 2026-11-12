@@ -941,6 +941,35 @@ STL 輸入成為**網格參考**(特徵 `importedMesh`):純 TypeScript 讀檔、
 - typecheck 0 錯；`tests/phase7/extrude-direction-editor.test.ts`＋`tests/phase3/extrude-p1.test.ts` 18 項通過（含以結構式建衝突文件、再生層仍照實回報的既有語意）；`lint:repo` Repository OK（273 documents）。
 - 登記待辦其餘兩項（反向切空氣時操控器的可見退路、除料類 fuzz 補 `reverse` 維度——螺旋掃出 fuzz 檔須獨立，AGENTS §3.5）未做，另行規劃。
 
+## 2026-10-30：移動面往材料內推穿整個實體時回報錯誤的原因（C10.1 回歸）
+
+### 1. 現象
+`packages/kernel/test/direct-edit.test.ts` 的「refuses to push a face further into the material than the body is thick behind it」在 main 與乾淨 HEAD 都失敗：40×30×20 方塊頂面移動 −25，預期「往材料內移動的距離超過了這個面後面的厚度」（`edit.moveTooFar`），實得「移動面的結果不是有效的實體」（`edit.moveInvalid`）。仍然拒絕，但給了錯誤的原因。
+
+### 2. 根因（RCA）
+ADR 0218（`2ab5718`，移動面至目標平面）在 `Kernel.moveFace` 加入「零體積結果不得回報成功」的檢查，放在原有（`78e0cad`，C10.1）厚度檢查**之前**。推穿整個實體時，布林 Cut 的結果是空形狀，以真實 OCCT 量測（同一方塊，掃出板深 d 的 Cut）：
+
+| d | 結果體積 | `isValid` | 面數 |
+|---|---|---|---|
+| 19.5 | 600 | true | 6 |
+| 20、20.5、25、40 | 0 | true | 0 |
+
+空形狀通過 `valid()`，接著被新的零體積檢查以 `moveInvalid` 擋下，厚度檢查（拿走的體積 24000 < 面積 1200 × 25）再也輪不到。測試寫的是原始設計，錯的是程式碼的檢查順序。
+
+### 3. 修正（CAPA）
+`moveFace` 結果體積只算一次；先做厚度檢查（`square && distance < 0`），再做零體積檢查。兩項拒絕都保留，門檻（`1 - 1e-3`、`1e-6 × before`、`1e-12`）不變。
+
+### 4. 紅隊四問
+1. **輸入破壞**：恰好等於厚度（−20）時，拿走的體積等於面積 × 距離，不算「超過」，結果是空的 → 仍以 `moveInvalid` 拒絕，不會交出空實體（新增測試「refuses a push of exactly the thickness」，並斷言 `liveShapes` 不變）。超過一點（−20.5）→ `moveTooFar`。零距離、NaN 在函式開頭既有檢查。
+2. **幾何**：底下挖空一半的方塊（左 20 厚、右 5 厚）：−4.5、−5 成功（體積 9600、9000，與手算相符）；−6、−19.5 為 `moveTooFar`（修正前後相同）；−25 推穿全部，修正前 `moveInvalid`、修正後 `moveTooFar`。
+3. **依賴鏈**：只改 kernel 內兩項檢查的順序；`engine.ts` 的殼體面厚度與移動面特徵只看是否丟 `KernelError`，訊息照轉。`tests/phase3/direct-edit.test.ts` 的 ADR 0218 情境（含完全切穿）只斷言 status 為 error，不受影響。
+4. **真值**：上表與第 2 點皆為真實 OCCT 量測（暫存探針，不進 repo）。
+
+### 5. 驗證
+- `packages/kernel/test/direct-edit.test.ts` 20/20、`tests/phase3/direct-edit.test.ts` 通過。
+- `npm run check`：typecheck、四項 lint 通過；345 檔 4026 項通過、0 失敗（508 s）。
+- 第一次完整執行時，另一工作階段（worktree `verify-solver-ui`）同時在跑整套 `npm run check`，`thread`、`knurl`、`sequential-bends` 三項逾時（898 s）；三檔都不呼叫 `moveFace`，單獨重跑皆通過。等該執行結束後重跑整套，0 失敗。逾時與門檻未改（AGENTS.md §3.3）。
+
 ---
 
 ## 2026-10-30：草圖互動 P1 第一批：繪製時輸入尺寸（G01：直線／中心線、圓、邊角／中心矩形）
