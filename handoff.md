@@ -5,7 +5,7 @@
 ## 2026-11-13 22:30 — Claude Code 接手 Codex：MCP 驗收完成（以本段為準）
 
 - **最終驗收（Codex 最後修改之後）**：MCP 全套以全新行程重跑 **10 檔／68 項全過**（`out/mcp-rerun.log`）；`typecheck`、`lint:rules/deps/i18n/repo`、`docs:sync`、`git diff --check` 全 exit 0；ADR 0252 在 `origin/main` 未被佔用。
-- **全量測試**（Codex 21:20 啟動，3148.9 s，`out/ai-cad-full-tests.log`）：444/451 檔、5453/5483 項過，4 項失敗。MCP 的 2 項（`cad-tools` 修復耗盡實得 8 次、`e2e` 事件混入前一案例）是該輪早於 21:46 的缺邊防禦與事件隔離修正，vitest 整輪沿用舊的 `cadTools.ts` 轉換；上述全新重跑通過。`recognize-approximate` 2 項單跑同訊息（草圖求解器記憶體不足，68／82 段圓弧），與 2026-11-10 起的既有紀錄一致；本批未動 `packages/regen` 與求解器，lockfile 只新增兩個 workspace 套件。本次**未**跑乾淨 HEAD 對照。
+- **全量測試**（Codex 21:20 啟動，3148.9 s，`out/ai-cad-full-tests.log`）：444/451 檔、5453/5483 項過，4 項失敗。MCP 的 2 項（`cad-tools` 修復耗盡實得 8 次、`e2e` 事件混入前一案例）是該輪早於 21:46 的缺邊防禦與事件隔離修正，vitest 整輪沿用舊的 `cadTools.ts` 轉換；上述全新重跑通過。`recognize-approximate` 2 項單跑同訊息（草圖求解器記憶體不足，68／82 段圓弧），與 2026-11-10 起的既有紀錄一致；本批未動 `packages/regen` 與求解器，lockfile 只新增兩個 workspace 套件。本機未跑乾淨 HEAD 對照，但 CI 排程 Nightly（run 43399671973，2026-11-13 09:14 UTC，跑的是 MCP 修改前的 `a97b0dd1`）同樣只有這 2 項失敗（441/446 檔、5433/5460 項過），可作為對照：此 2 項為既有失敗，與本批無關。
 - **使用者裁定（2026-11-13）**：MCP 這批驗收後單獨 commit（不 push）；**STEP 特徵辨識（C4-2／C4-3）先擱置**。擱置前的審查結論：設計文件 §6j 指出 C4-3（不刪面的多方向分解）是最大風險，若恢復，建議先做 C4-3 可行性閘門（scratch 探針量 part-4 正向建構耗時／heap），再寫產品碼。
 - **進度頁**：`scratch/claude-takeover/dev/dashboard.html`（SVG 儀表板，30 秒刷新）與原 `index.html` 共用 `data.js`。實件目標依稽核更正為 30/35（治具：可精確重建但 heap 793 MiB 超過 512 MiB 預算）。
 
