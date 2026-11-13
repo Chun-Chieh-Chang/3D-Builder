@@ -1,5 +1,33 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-14 — Drafted extrusion of outlines with splines (ADR 0251)
+
+The kernel now drafts an extrusion whose outline has splines or ellipses. Lines and arcs still go through `DraftAngle`. Other outlines get their walls built directly (planes, cones, ruled surfaces between a curve and its offset) and split into cells by `BOPAlgo_MakerVolume`.
+
+Red-team four questions:
+- **Input corruption.** A draft of ±90° or beyond, NaN or ±∞ is refused (`feature.draftInvalid`). Before, NaN was read as no draft. `liveShapes` is unchanged after each refusal.
+- **Self-intersection.** A draft that closes the outline before the far end is refused before any Boolean (`feature.draftCloses`, saying how far each side moves in). It is caught at a cone apex, at a curve bending tighter than the inset, and at a profile whose offset vanishes. In the fuzz, each of the 13 closing refusals is justified by a hole radius or a sampled bend within the inset.
+- **Dependency chain.** Faces keep the plain extrusion's names (`profileEdge`, `cap:start`, `cap:end`), compared sorted in the feature-level tests: narrowing, widening, second direction, cut and up-to-next. Help text (`help.extrude.body`, en and zh-TW) states the capability and the refusal.
+- **Ground truth.**
+  - Each wall is measured against its own source edge's exact draft. Splines are ≤ 8.4e-10 mm off, planes < 1e-9.
+  - A concave L with a hole drawn with splines matches the same L by lines (`DraftAngle`) within 1e-12 relative.
+  - The collinear-spline box matches its closed form.
+
+Measurements:
+- Fuzz: 120 seeds, 122/122 pass. 105 made, 0 invalid, 0 crashes.
+- Mutations: 10 of 10 red. "A closing hole is not refused" survived at first because circular holes are also caught by the cone apex check. A square hole and a narrow outline with a spline top were added, and it turned red.
+- Heap: 40 drafts gave +254.4 MiB against a straight control of +0.0. This is OCCT's `MakerVolume` with B-spline walls (AGENTS §3.5; 400 isolated calls gave 458.9 MiB against 153.6 for planes). It is printed, not asserted flat.
+- Regression (by directory, 3 workers; log `scratch/ff/full-0251.log`): 22 directories pass except 4 in phase8.
+  - Rolling-ball seeds 46 and 96 time out under load; each passes run alone.
+  - `recognize-approximate`'s S curve and closed spline fail the same way with HEAD's kernel.ts (the sketch solver runs out of memory at 68 and 82 arcs).
+- typecheck, lint:rules/deps/i18n/repo and docs:sync are all at 0 errors.
+- Full `verify:ui`: 276/278 passed. `manual-browser-projects` and `manual-design-mating` each passed 2/2 when run alone.
+
+RCA:
+- **`MakeDraft` traps in `BRepFill_TrimShellCorner::Perform`.** It trapped on whole wires, joined curves, C0 joins, smooth extensions and a single line. CAPA: no `MakeDraft`; the walls are built by this program.
+- **False closing refusals.** The check used the wall top at 1.05·H. CAPA: check at the real height, and lower the wall top to halfway to the closing point.
+- **Six invalid shapes.** They came from curves bending tighter than the inset. CAPA: a curvature precheck.
+
 ## 2026-11-12 — Spline faces read as the simple surfaces they are (C4-1, ADR 0250); rounds on drafted supports
 
 - **Why.** The user chose (2026-11-12) to build C4's general capabilities first, after the probe showed part-4 needs more than C4's three items (design doc §6j). part-4 has 26 faces that are tori or cylinders stored as splines (20 within 3.3e-7, 6 within their file gaps); a body converted to B-splines was refused for its sections (spline curves), its volume (OCCT's usual integral of a spline disc is 1.97e-6 off) and, in a sloppy file, corners that miss.

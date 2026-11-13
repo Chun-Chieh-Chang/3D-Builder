@@ -247,6 +247,7 @@ export const features = {
   'feature.draft': '拔模',
   'feature.draftFailed': '第 {index} 個面不能拔模（面與拔模方向平行，或這種形狀不允許）',
   'feature.draftInvalid': '拔模的結果不是有效的實體（角度太大？）',
+  'feature.draftCloses': '拔模會在到達終點前讓輪廓收合：牆面在整個高度上每側內縮 {inset} mm，輪廓（或其中的孔）不夠寬。請減小角度或縮短伸長距離。',
   'feature.upToBody': '成形至本體',
   'feature.upToNext': '成形到下一面',
   'feature.bodyNotReached': '伸長沒有碰到選取的本體（本體在伸長方向的另一側，或與輪廓不相交）',

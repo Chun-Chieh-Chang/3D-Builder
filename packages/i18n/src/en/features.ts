@@ -249,6 +249,7 @@ export const features: Translation = {
   'feature.draft': 'Draft',
   'feature.draftFailed': 'Face {index} cannot be drafted (the face is parallel to the pull direction, or the shape does not allow it)',
   'feature.draftInvalid': 'The result of the draft is not a valid solid (is the angle too big?)',
+  'feature.draftCloses': 'The draft closes the outline before the end: its walls move in {inset} mm on each side over the height, and the outline (or a hole in it) is too narrow for that. Use a smaller angle or a shorter extrusion.',
   'feature.upToBody': 'Up To Body',
   'feature.upToNext': 'Up To Next',
   'feature.bodyNotReached': 'The extrusion does not reach the selected body (the body is on the other side, or does not meet the profile)',

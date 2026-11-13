@@ -655,11 +655,16 @@ export class Kernel {
     const profile = this.profile(arena, f, regions, sources);
     const vec = arena.own(new oc.gp_Vec(spec.vector[0], spec.vector[1], spec.vector[2]));
     const mk = arena.own(new oc.BRepPrimAPI_MakePrism(profile, vec, false, true));
+    // a draft that is no angle is refused, not read as none (NaN is falsy: it used to give a straight extrusion)
+    if (spec.draft !== undefined && !(Number.isFinite(spec.draft) && Math.abs(spec.draft) < Math.PI / 2)) throw new KernelError(t('feature.draftInvalid'));
     let out = this.build(mk, t('feature.extrude'), arena);
     let origins = this.sweepOrigins(mk, out, sources, arena);
     if (spec.draft) {
       const sides = origins.flatMap((o, i) => (o.some((x) => x.rel === 'generated' && x.kind === 'profileEdge') ? [i] : []));
-      const drafted = this.draftFaces(out, origins, sides, spec.vector, { origin: f.origin, normal: f.normal }, spec.draft, arena);
+      // OCCT's DraftAngle leans planes and cylinders only (a spline's wall: "cannot draft face"); a profile with any other edge is drafted by its wires
+      const drafted = this.sidesDraftable(out, sides, arena)
+        ? this.draftFaces(out, origins, sides, spec.vector, { origin: f.origin, normal: f.normal }, spec.draft, arena)
+        : this.draftWires(profile, sources, spec.vector, spec.draft, arena);
       out.delete();
       out = drafted.shape;
       origins = drafted.origins;
@@ -676,7 +681,8 @@ export class Kernel {
   extrude(frame: Frame, regions: Region[], vector: Vec3, offset = 0, until?: Until, draft?: number): OpResult {
     const arena = new Arena();
     try {
-      const r = this.sweep(frame, regions, { vector, offset, ...(until ? { until } : {}), ...(draft ? { draft } : {}) }, arena);
+      // passed on whenever given: a draft that is no number is refused by the sweep, not dropped here (0 is no draft)
+      const r = this.sweep(frame, regions, { vector, offset, ...(until ? { until } : {}), ...(draft !== undefined ? { draft } : {}) }, arena);
       return { shape: this.put(r.shape), faceOrigins: r.origins };
     } finally {
       arena.dispose();
@@ -765,6 +771,342 @@ export class Kernel {
       }
     } finally {
       index.dispose();
+    }
+  }
+
+  /** Whether every one of `faces` is a plane or a cylinder: what `BRepOffsetAPI_DraftAngle` leans. */
+  private sidesDraftable(shape: TopoDS_Shape, faces: number[], arena: Arena): boolean {
+    const oc = this.oc;
+    const index = ShapeIndex.of(oc, shape, T.FACE, arena);
+    try {
+      return faces.every((i) => {
+        const type = String(arena.own(new oc.BRepAdaptor_Surface(arena.own(oc.TopoDS.Face(index.keys[i]!)), true)).GetType());
+        return type.endsWith('Plane') || type.endsWith('Cylinder');
+      });
+    } finally {
+      index.dispose();
+    }
+  }
+
+  /**
+   * A drafted extrusion of a profile whose walls `DraftAngle` cannot lean (a spline's, an ellipse's), edge by edge (the user's rulings of 2026-11-13,
+   * ADR 0251). Each profile edge's wall is made here on its own, extended past the edge's ends where it meets its neighbour at a corner (not at a
+   * tangent join): a line's as an exact plane, an arc's (or circle's) as an exact cone, any other curve's as the ruled surface between the curve and
+   * its offset `top` high (exact to about 1e-9 mm). OCCT's `BRepOffsetAPI_MakeDraft` is not used: drafting a whole wire it traps in
+   * `BRepFill_TrimShellCorner::Perform` on about 5% of random spline outlines, and drafting single edges it trapped on some lines and splines too.
+   * The walls and two planes, through the start and past the far end, are split into cells (`BOPAlgo_MakerVolume`); the cells whose start face lies
+   * inside the profile are the body (fused when more than one). A positive `angle` narrows along `vector`. Volumes equal DraftAngle's to 1e-15 on
+   * outlines it can do too (concave corners and holes included). Origins: a wall from its profile edge, the start face the start cap, the far face the
+   * end cap. Where a wall leaning into its wire closes it before the far end (a hole, an arc shrinking to its apex, a curve bending tighter than it
+   * moves), it is refused before anything is cut (AGENTS §2.2). The Boolean of B-spline walls holds Emscripten heap per call, as §3.5 records.
+   */
+  private draftWires(profile: TopoDS_Shape, sources: Map<TopoDS_Shape, string>, vector: Vec3, angle: number, arena: Arena): { shape: TopoDS_Shape; origins: FaceOrigin[][] } {
+    const oc = this.oc;
+    const height = Math.hypot(...vector);
+    if (!(height > 0) || !Number.isFinite(angle) || !(Math.abs(angle) < Math.PI / 2)) throw new KernelError(t('feature.draftInvalid'));
+    const up: Vec3 = [vector[0] / height, vector[1] / height, vector[2] / height];
+    const dir = this.dir(arena, up);
+    const inset = height * Math.tan(Math.abs(angle));
+    const sourceOf = (edge: TopoDS_Shape): string | undefined => {
+      for (const [e, s] of sources) if (e.IsSame(edge)) return s;
+      return undefined;
+    };
+    // indexes hold shapes the arena does not own: disposed at the end, after the last comparison against them
+    const indexes: ShapeIndex[] = [];
+    const indexOf = (shape: TopoDS_Shape, type: string) => {
+      const i = ShapeIndex.of(oc, shape, type, arena);
+      indexes.push(i);
+      return i;
+    };
+    try {
+      const regions = indexOf(profile, T.FACE);
+      const box = arena.own(new oc.Bnd_Box());
+      oc.BRepBndLib.Add(profile, box, false);
+      const [lo, hi] = [this.xyz(arena.own(box.CornerMin())), this.xyz(arena.own(box.CornerMax()))];
+      const size = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+      // long enough for the sheets of two neighbouring edges to meet past a corner, short of crossing the whole profile
+      const reach = Math.min(size, 4 * inset + 1);
+      const base = this.xyz(arena.own(oc.BRep_Tool.Pnt(arena.own(oc.TopoDS.Vertex(arena.own(arena.own(new oc.TopExp_Explorer(profile, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)).Current()))))));
+      const level = (p: Vec3) => dot3(sub3(p, base), up);
+      // whether a point (put onto the profile's plane) lies inside the profile: in a region, not in a hole
+      const inProfile = (p: Vec3): boolean => {
+        const q = this.pnt(arena, sub3(p, scale3(up, level(p))));
+        return regions.keys.some((key) => {
+          const face = arena.own(oc.TopoDS.Face(key));
+          const uv = oc.GeomLib_Tool.Parameters(arena.own(oc.BRep_Tool.Surface(face)), q, 1e-6);
+          if (!uv.returnValue) return false;
+          return String(arena.own(new oc.BRepClass_FaceClassifier(face, arena.own(new oc.gp_Pnt2d(uv.U, uv.V)), 1e-9)).State()).endsWith('_IN');
+        });
+      };
+      const areaOf = (s: TopoDS_Shape) => {
+        const p = arena.own(new oc.GProp_GProps());
+        oc.BRepGProp.SurfaceProperties(s, p, false, false);
+        return p.Mass();
+      };
+      const faceOf = (wire: TopoDS_Shape) => arena.own(arena.own(new oc.BRepBuilderAPI_MakeFace(arena.own(oc.TopoDS.Wire(wire)), true)).Face());
+      // a wire whose walls lean into it must still enclose something at the far end: offset in its plane by the inset, the side that shrinks must
+      // leave one closed wire with an area (where neither side can be told, it is let through: the result is checked after)
+      const closes = (wire: TopoDS_Shape): boolean => {
+        const face = faceOf(wire);
+        const whole = areaOf(face);
+        for (const sign of [-1, 1]) {
+          const mk = arena.own(new oc.BRepOffsetAPI_MakeOffset(face, oc.GeomAbs_JoinType.GeomAbs_Intersection, false));
+          try {
+            mk.Perform(sign * inset);
+          } catch (e) {
+            rethrowTrap(e);
+            continue;
+          }
+          if (!mk.IsDone()) continue;
+          const wires = indexOf(arena.own(mk.Shape()), 'TopAbs_WIRE');
+          if (wires.size === 0) return true;
+          if (wires.size !== 1) continue;
+          const a = areaOf(faceOf(wires.keys[0]!));
+          if (a < whole - 1e-9 * whole) return !(a > 1e-9 * whole);
+        }
+        return false;
+      };
+      // how high the walls made here reach: a little past the far end, so the end plane cuts them (not further: a cone that narrows could reach
+      // its apex)
+      const top = height * 1.05 + 1e-3;
+      const nudge = Math.max(1e-6, 1e-4 * size);
+      /**
+       * A line's wall, exactly: the plane through the line (from `a` to `b`, extended by `before` and `after`) along up − tan(α)·out, out the
+       * side of the line away from the material (a positive α leans it toward the material). A quadrilateral reaching `top` high.
+       */
+      const planeWall = (a: { p: Vec3; t: Vec3 }, b: { p: Vec3; t: Vec3 }, before: number, after: number): TopoDS_Shape => {
+        const left = cross3(up, a.t);
+        const middle = scale3(add(a.p, b.p), 0.5);
+        const out = inProfile(add(middle, left, nudge)) ? scale3(left, -1) : left;
+        const rise = add(up, out, -Math.tan(angle));
+        const [p, q] = [add(a.p, a.t, -before), add(b.p, b.t, after)];
+        const poly = arena.own(new oc.BRepBuilderAPI_MakePolygon(this.pnt(arena, p), this.pnt(arena, q), this.pnt(arena, add(q, rise, top)), this.pnt(arena, add(p, rise, top)), true));
+        return arena.own(arena.own(new oc.BRepBuilderAPI_MakeFace(arena.own(poly.Wire()), true)).Face());
+      };
+      /**
+       * An arc's (or a whole circle's) wall, exactly: the cone about the circle's axis whose radius at the profile is the arc's and changes by
+       * tan(α) per unit of height toward the material (smaller when the material is inside the circle), over the arc's angle extended by
+       * `before` and `after` mm at its own first and last parameter. Refused when it would reach its apex below `top`: the arc closes.
+       */
+      const coneWall = (e: { ad: InstanceType<OC['BRepAdaptor_Curve']>; from: number; to: number; sign: number }, before: number, after: number, whole = false): TopoDS_Shape => {
+        const circ = arena.own(e.ad.Circle());
+        const c = this.xyz(arena.own(circ.Location()));
+        const r = circ.Radius();
+        const [u0, u1] = [e.ad.FirstParameter(), e.ad.LastParameter()];
+        e.ad.D0(u0, P);
+        const x = sub3([P.X(), P.Y(), P.Z()], c);
+        const X: Vec3 = scale3(x, 1 / Math.hypot(...x));
+        e.ad.D0((u0 + u1) / 2, P);
+        const m = sub3([P.X(), P.Y(), P.Z()], c);
+        const radial: Vec3 = scale3(m, 1 / Math.hypot(...m));
+        const inside = inProfile(add([P.X(), P.Y(), P.Z()], radial, -nudge));
+        const k = inside ? -Math.tan(angle) : Math.tan(angle);
+        // a shrinking cone reaches its apex at r / |k|: at or below the far end the arc closes; just past it, the wall stops short of the apex
+        const apex = k < 0 ? r / -k : Infinity;
+        if (!(apex > height)) throw new KernelError(t('feature.draftCloses', { inset: inset.toFixed(3) }));
+        const reachUp = Math.min(top, (height + apex) / 2);
+        const ccw = dot3(this.xyz(arena.own(arena.own(circ.Axis()).Direction())), up) > 0;
+        const span = u1 - u0;
+        const room = (2 * Math.PI - span) / 2 - 1e-3;
+        const [m0, m1] = [Math.min(before / r, room), Math.min(after / r, room)];
+        const [lo, hi] = whole ? [0, 2 * Math.PI] : ccw ? [-m0, span + m1] : [-span - m1, m0];
+        const semi = Math.atan(k);
+        const cone = arena.own(new oc.gp_Cone(arena.own(new oc.gp_Ax3(this.pnt(arena, c), dir, this.dir(arena, X))), semi, r));
+        return arena.own(arena.own(new oc.BRepBuilderAPI_MakeFace(cone, lo, hi, 0, reachUp / Math.cos(semi))).Face());
+      };
+      /**
+       * Any other curve's wall: the ruled surface (GeomFill) between the curve and, `top` high, the same curve offset in its plane by
+       * top·tan(α) toward the material (`Geom_OffsetCurve`, the same parameter as the curve, approximated to 1e-9 mm), so each ruling joins a point
+       * of the curve to the point straight above it moved square to the curve: the draft itself. The curve is first carried on past its ends along
+       * its tangents where they are corners. Not OCCT's MakeDraft: it traps on some single edges (measured: lines and splines of fuzz parts).
+       * Refused where the curve bends toward its move tighter than the move at the far end (the draft closes it there), or the offset cannot be
+       * made as one smooth curve.
+       */
+      const curveWall = (e: { edge: TopoDS_Shape; ad: InstanceType<OC['BRepAdaptor_Curve']>; from: number; to: number; sign: number }, before: number, after: number): TopoDS_Shape => {
+        const [u0, u1] = [e.ad.FirstParameter(), e.ad.LastParameter()];
+        const raw = oc.BRep_Tool.Curve(arena.own(oc.TopoDS.Edge(e.edge)), 0, 0) as unknown as { returnValue?: unknown };
+        const curve = arena.own((raw?.returnValue ?? raw) as never);
+        const own = arena.own(oc.GeomConvert.CurveToBSplineCurve(arena.own(new oc.Geom_TrimmedCurve(curve, u0, u1, true, true))));
+        // the material's side, seen along the curve's own direction (the wire may run it the other way)
+        e.ad.D1((u0 + u1) / 2, P, V);
+        const along: Vec3 = scale3([V.X(), V.Y(), V.Z()], 1 / V.Magnitude());
+        const left = cross3(up, along);
+        const materialLeft = inProfile(add([P.X(), P.Y(), P.Z()], left, nudge));
+        // per unit of height the curve moves tan(α) toward the material (a negative α: away from it), to its left when this is positive
+        const lean = Math.tan(angle) * (materialLeft ? 1 : -1);
+        // a curve moved toward the side it bends to, by more than its radius of curvature there, ties into a loop: at the height where the move
+        // reaches the tightest such radius the draft closes the outline (measured: the six fuzz parts refused as invalid all bend tighter than the
+        // inset, 0.49 to 1.74 mm against 1.55 to 3.0). At or below the far end it is refused; just past it, the wall stops short of it.
+        const D2 = arena.own(new oc.gp_Vec());
+        let tightest = Infinity;
+        for (let i = 0; i <= 400; i++) {
+          e.ad.D2(u0 + ((u1 - u0) * i) / 400, P, V, D2);
+          const speed = V.Magnitude();
+          const turn = dot3(cross3([V.X(), V.Y(), V.Z()], [D2.X(), D2.Y(), D2.Z()]), up) / speed ** 3;
+          if (turn * lean > 0) tightest = Math.min(tightest, 1 / Math.abs(turn));
+        }
+        const loop = tightest / Math.abs(lean);
+        if (!(loop > height)) throw new KernelError(t('feature.draftCloses', { inset: inset.toFixed(3) }));
+        const reachUp = Math.min(top, (height + loop) / 2);
+        const toward = reachUp * lean;
+        // carried on past its ends along its tangents, joined into one B-spline made C1 at the joins (WithRatio): a straight extension does not bend,
+        // so moving it never ties it (the curve's own end polynomials, carried on, can bend tight: measured, one fuzz part refused for it)
+        const line = (p: Vec3, q: Vec3) => {
+          const l = arena.own(arena.own(new oc.GC_MakeLine(this.pnt(arena, p), this.pnt(arena, q))).Value());
+          return arena.own(oc.GeomConvert.CurveToBSplineCurve(arena.own(new oc.Geom_TrimmedCurve(l, 0, Math.hypot(...sub3(q, p)), true, true))));
+        };
+        const ends = (u: number) => {
+          e.ad.D1(u, P, V);
+          return { p: [P.X(), P.Y(), P.Z()] as Vec3, t: scale3([V.X(), V.Y(), V.Z()], 1 / V.Magnitude()) };
+        };
+        const [c0, c1] = [ends(u0), ends(u1)];
+        const joined = arena.own(new oc.GeomConvert_CompCurveToBSplineCurve(own, oc.Convert_ParameterisationType.Convert_TgtThetaOver2));
+        if ((before > 0 && !joined.Add(line(add(c0.p, c0.t, -before), c0.p), 1e-7, false, true, 0)) || (after > 0 && !joined.Add(line(c1.p, add(c1.p, c1.t, after)), 1e-7, true, true, 0))) {
+          throw new KernelError(t('kernel.opFailed', { label: t('feature.draft') }));
+        }
+        const longer = before > 0 || after > 0 ? arena.own(joined.BSplineCurve()) : own;
+        // Geom_OffsetCurve moves a curve by d along (curve′ × up) = −left
+        const offset = arena.own(new oc.Geom_OffsetCurve(longer, -toward, dir, false));
+        offset.Translate(arena.own(new oc.gp_Vec(up[0] * reachUp, up[1] * reachUp, up[2] * reachUp)));
+        let far: Geom_BSplineCurve;
+        try {
+          const ap = arena.own(new oc.GeomConvert_ApproxCurve(offset, 1e-9, oc.GeomAbs_Shape.GeomAbs_C1, 200, 14));
+          if (!ap.IsDone() || !(ap.MaxError() <= 1e-7)) throw new KernelError(t('feature.draftCloses', { inset: inset.toFixed(3) }));
+          far = arena.own(ap.Curve());
+        } catch (err) {
+          rethrowTrap(err);
+          if (err instanceof KernelError) throw err;
+          throw new KernelError(t('feature.draftCloses', { inset: inset.toFixed(3) }));
+        }
+        const surface = arena.own(oc.GeomFill.Surface(longer, far));
+        return arena.own(arena.own(new oc.BRepBuilderAPI_MakeFace(surface, 1e-7)).Face());
+      };
+      const mv = arena.own(new oc.BOPAlgo_MakerVolume());
+      const origin = new Map<TopoDS_Shape, FaceOrigin>();
+      const tag = (sheet: TopoDS_Shape, o: FaceOrigin | null) => {
+        if (o) for (const f of indexOf(sheet, T.FACE).keys) origin.set(f, o);
+        mv.AddArgument(sheet);
+      };
+      const P = arena.own(new oc.gp_Pnt());
+      const V = arena.own(new oc.gp_Vec());
+      for (const key of regions.keys) {
+        const face = arena.own(oc.TopoDS.Face(key));
+        for (const wx = arena.own(new oc.TopExp_Explorer(face, oc.TopAbs_ShapeEnum.TopAbs_WIRE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); wx.More(); wx.Next()) {
+          const wire = arena.own(oc.TopoDS.Wire(arena.own(wx.Current())));
+          type Edge = { edge: TopoDS_Shape; ad: InstanceType<OC['BRepAdaptor_Curve']>; from: number; to: number; sign: number };
+          const edges: Edge[] = [];
+          for (const ex = arena.own(new oc.BRepTools_WireExplorer(wire, face)); ex.More(); ex.Next()) {
+            const edge = arena.own(ex.Current());
+            const ad = arena.own(new oc.BRepAdaptor_Curve(arena.own(oc.TopoDS.Edge(edge))));
+            const reversed = edge.Orientation() === oc.TopAbs_Orientation.TopAbs_REVERSED;
+            edges.push({ edge, ad, from: reversed ? ad.LastParameter() : ad.FirstParameter(), to: reversed ? ad.FirstParameter() : ad.LastParameter(), sign: reversed ? -1 : 1 });
+          }
+          // walls leaning into this wire: the outline of a narrowing draft, a hole of a widening one
+          const outer = wire.IsSame(arena.own(oc.BRepTools.OuterWire(face)));
+          if (outer === angle > 0 && closes(wire)) throw new KernelError(t('feature.draftCloses', { inset: inset.toFixed(3) }));
+          const at = (e: Edge, u: number): { p: Vec3; t: Vec3 } => {
+            e.ad.D1(u, P, V);
+            const l = V.Magnitude();
+            return { p: [P.X(), P.Y(), P.Z()], t: [(e.sign * V.X()) / l, (e.sign * V.Y()) / l, (e.sign * V.Z()) / l] };
+          };
+          if (edges.length === 1) {
+            // one closed edge (a circle, a closed spline): no corner at all; a circle's wall is the whole cone, another curve's drafted as it is
+            const e = edges[0]!;
+            const s = sourceOf(e.edge);
+            const o: FaceOrigin | null = s !== undefined ? { rel: 'generated', kind: 'profileEdge', source: s } : null;
+            tag(String(e.ad.GetType()).endsWith('Circle') ? coneWall(e, 0, 0, true) : curveWall(e, 0, 0), o);
+            continue;
+          }
+          // where two edges meet tangent (a round run into a line) there is no corner: neither is extended there, their walls meet along a ruling
+          // (extended past a tangent join, the two sheets lie almost on each other and are cut into slivers)
+          const corner = (e: Edge, f: Edge) => {
+            const [p, q] = [at(e, e.to).t, at(f, f.from).t];
+            return 1 - dot3(p, q) > 1e-10;
+          };
+          edges.forEach((e, i) => {
+            const [prev, next] = [edges[(i + edges.length - 1) % edges.length]!, edges[(i + 1) % edges.length]!];
+            // how far to extend at the wire's start and end of this edge, and at the curve's own first and last parameter
+            const [atFrom, atTo] = [corner(prev, e) ? reach : 0, corner(e, next) ? reach : 0];
+            const [first, last] = e.sign > 0 ? [atFrom, atTo] : [atTo, atFrom];
+            const [a, b] = [at(e, e.from), at(e, e.to)];
+            const type = String(e.ad.GetType());
+            const s = sourceOf(e.edge);
+            const o: FaceOrigin | null = s !== undefined ? { rel: 'generated', kind: 'profileEdge', source: s } : null;
+            if (type.endsWith('Line')) {
+              // a line's wall is a plane, made here exactly (MakeDraft traps on some single lines: measured, both ways, on the vertical sides of two
+              // fuzz parts): the line, extended, swept along up − tan(α)·(the side away from the material)
+              tag(planeWall(a, b, atFrom, atTo), o);
+            } else if (type.endsWith('Circle')) {
+              tag(coneWall(e, first, last), o);
+            } else {
+              tag(curveWall(e, first, last), o);
+            }
+          });
+        }
+      }
+      // the start plane and the end plane, wide enough for every sheet
+      const pad = size + reach + inset + 10;
+      const across = this.dir(arena, Math.abs(up[2]) < 0.9 ? cross3(up, [0, 0, 1]) : cross3(up, [1, 0, 0]));
+      const planeAt = (p: Vec3) => {
+        const pln = arena.own(new oc.gp_Pln(arena.own(new oc.gp_Ax3(this.pnt(arena, p), dir, across))));
+        return arena.own(arena.own(new oc.BRepBuilderAPI_MakeFace(pln, -pad, pad, -pad, pad)).Face());
+      };
+      const centre: Vec3 = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+      const startPlane = planeAt(sub3(centre, scale3(up, level(centre))));
+      tag(startPlane, { rel: 'cap', which: 'start' });
+      tag(planeAt(add(sub3(centre, scale3(up, level(centre))), up, height)), { rel: 'cap', which: 'end' });
+      mv.SetIntersect(true);
+      mv.Perform(arena.own(new oc.Message_ProgressRange()));
+      if (mv.HasErrors()) throw new KernelError(t('kernel.opFailed', { label: t('feature.draft') }));
+      const cellsShape = arena.own(mv.Shape());
+      // what each input face became: the face of a cell is one of them
+      const images: { face: TopoDS_Shape; origin: FaceOrigin }[] = [];
+      for (const [f, o] of origin) {
+        const modified = this.list(mv.Modified(f));
+        for (const m of modified.length ? modified : [f]) images.push({ face: arena.own(m), origin: o });
+      }
+      const originOf = (f: TopoDS_Shape) => images.find((x) => x.face.IsSame(f))?.origin ?? null;
+      // the cells of the body: those with a start face inside the profile
+      const keep: TopoDS_Shape[] = [];
+      for (const cell of indexOf(cellsShape, 'TopAbs_SOLID').keys) {
+        const inside = indexOf(cell, T.FACE).keys.some((f) => {
+          const o = originOf(f);
+          if (o?.rel !== 'cap' || o.which !== 'start') return false;
+          // a point inside this piece of the start plane
+          const face = arena.own(oc.TopoDS.Face(f));
+          const ad = arena.own(new oc.BRepAdaptor_Surface(face, true));
+          const [u0, u1, v0, v1] = [ad.FirstUParameter(), ad.LastUParameter(), ad.FirstVParameter(), ad.LastVParameter()];
+          for (let i = 0; i < 9; i++) {
+            for (let j = 0; j < 9; j++) {
+              const [u, v] = [u0 + ((u1 - u0) * (i + 0.5)) / 9, v0 + ((v1 - v0) * (j + 0.5)) / 9];
+              if (!String(arena.own(new oc.BRepClass_FaceClassifier(face, arena.own(new oc.gp_Pnt2d(u, v)), 1e-9)).State()).endsWith('_IN')) continue;
+              ad.D0(u, v, P);
+              return inProfile([P.X(), P.Y(), P.Z()]);
+            }
+          }
+          return false;
+        });
+        if (inside) keep.push(cell);
+      }
+      if (keep.length === 0) throw new KernelError(t('feature.draftInvalid'));
+      let body: { shape: TopoDS_Shape; origins: FaceOrigin[][] } = { shape: keep[0]!, origins: indexOf(keep[0]!, T.FACE).keys.map((f) => [originOf(f)].flatMap((o) => (o ? [o] : []))) };
+      for (const cell of keep.slice(1)) {
+        const inputs = [...indexOf(body.shape, T.FACE).keys, ...indexOf(cell, T.FACE).keys];
+        const all = [...body.origins, ...indexOf(cell, T.FACE).keys.map((f) => [originOf(f)].flatMap((o) => (o ? [o] : [])))];
+        const mk = this.boolOp('fuse', body.shape, cell, t('feature.draft'), arena);
+        const fused = arena.own(mk.Shape());
+        const from = this.faceSources(mk, inputs, fused, arena);
+        body = this.unify(fused, from.map((list) => list.flatMap((i) => all[i] ?? [])), arena);
+        arena.own(body.shape);
+      }
+      if (!this.valid(body.shape)) throw new KernelError(t('feature.draftInvalid'));
+      const props = arena.own(new oc.GProp_GProps());
+      oc.BRepGProp.VolumeProperties(body.shape, props, false, false, false);
+      if (!(props.Mass() > 0)) throw new KernelError(t('feature.draftInvalid'));
+      // the caller deletes what it is given: a handle of its own, which neither the arena nor an index owns
+      return { shape: body.shape.Oriented(body.shape.Orientation()), origins: body.origins };
+    } finally {
+      for (const i of indexes) i.dispose();
     }
   }
 
