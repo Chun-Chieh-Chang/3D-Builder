@@ -686,4 +686,6 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 ## 資源盤點
 
-逐位元相同的檔案群組：0。相同內容只是候選，不能據此刪除不同平台圖示、測試探針或授權原稿。
+逐位元相同的檔案群組：1。相同內容只是候選，不能據此刪除不同平台圖示、測試探針或授權原稿。
+
+- `scratch/claude-takeover/tools/ff/ff.config.mts`、`scratch/ff/ff.config.mts`

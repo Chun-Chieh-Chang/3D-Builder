@@ -1,11 +1,12 @@
 // Node port of prog.py for the Windows host (same state.json/data.js format).
 // usage: node prog.mjs stop <why> | item <phase> <idx> <st> [frac|-] [note] | now <html> | log <msg> | target <idx1based> <st> [note] | add <phase> <text> | find <text>
-import { readFileSync, writeFileSync, renameSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const D = join(dirname(fileURLToPath(import.meta.url)), '..', 'dev'); const S = join(D, 'state.json');
-const s = JSON.parse(readFileSync(S, 'utf8')); const a = process.argv.slice(2); const now = Date.now() / 1000;
+// state.json is local (rewritten on every update, not tracked); a fresh clone starts from the tracked seed
+const s = JSON.parse(readFileSync(existsSync(S) ? S : join(D, 'state.seed.json'), 'utf8')); const a = process.argv.slice(2); const now = Date.now() / 1000;
 if (a[0] === 'find') { s.phases.forEach((p, i) => p.items.forEach((it, j) => { if ((p.name + it.t).includes(a[1])) console.log(i, j, it.st, it.t); })); process.exit(0); }
 s.run = a[0] === 'stop' ? { state: 'stopped', t: now, why: a[1] ?? '' } : { state: 'running', t: now };
 if (a[0] === 'item') { const it = s.phases[+a[1]].items[+a[2]]; it.st = a[3]; if (a[4] !== undefined && a[4] !== '-') it.frac = +a[4]; if (a[5] !== undefined) it.note = a[5]; }
