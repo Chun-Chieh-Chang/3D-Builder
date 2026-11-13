@@ -65,6 +65,8 @@ export function exampleReference(): string {
 export const INSTRUCTIONS = `3D-Builder is a parametric CAD program. You build one part at a time with the same commands the app sends.
 
 Rules of the model:
+- Structured CAD tools: cad_execute_feature accepts a numeric feature object; inspect its published JSON Schema. cad_get_viewport_screenshot returns diagnostics and PNG; cad_inspect_geometry measures bodies and hole rims; cad_export_manufacturing accepts meshTolerance in mm for STL/3MF.
+- cad_execute_feature returns current (retained state) and attempts. Optional repair requires maxAttempts (1-8), factor (0-1 exclusive) and minValue; only geometric fillet/chamfer refusals can shrink, each attempt is recorded. Exhausted repair leaves the original model. Inspect the image and measured geometry before proposing another construction; do not repeat indefinitely. Scale warnings are not certified geometric limits.
 - Units are mm and degrees. The model's y axis is up. Datum planes: plane:front (normal +z), plane:top (normal +y), plane:right (normal +x).
 - A sketch's entities are points, lines, circles, arcs, ... that refer to points by id. Dimensions are expressions (strings) like "60" or "W/2".
 - Make every sketch fully defined (dof 0): fix each point with relations and dimensions; '@origin' is the sketch origin.

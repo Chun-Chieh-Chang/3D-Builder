@@ -9,12 +9,14 @@ import { RENDER_VIEWS, renderView, type RenderOptions } from './render';
 import { commandReference, exampleReference, INSTRUCTIONS, typeReference } from './reference';
 import { isTrap } from '@3db/kernel';
 import type { LiveBridge } from './bridge';
+import { CAD_TOOLS, callCadTool } from './cadTools';
 
 const vec3 = { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 } as const;
 const path = { type: 'string', description: 'A file path relative to the workspace folder.' } as const;
 const viewProps = { view: { type: 'string', enum: [...RENDER_VIEWS] }, dir: vec3, up: vec3, size: { type: 'integer', minimum: 64, maximum: 2048 }, hidden: { type: 'boolean', description: 'Hidden edges as thin grey lines.' } } as const;
 
 export const TOOLS: Tool[] = [
+  ...CAD_TOOLS,
   { name: 'part_new', description: 'Starts a new, empty part (the open part is closed without saving).', inputSchema: { type: 'object', properties: {} } },
   { name: 'part_open', description: 'Opens a .3dbx part file from the workspace folder and rebuilds it.', inputSchema: { type: 'object', properties: { path }, required: ['path'] } },
   { name: 'part_save', description: 'Saves the part as a .3dbx file (to its own file when no path is given).', inputSchema: { type: 'object', properties: { path } } },
@@ -97,11 +99,15 @@ export async function callTool(session: CadSession, name: string, raw: unknown, 
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) return refused(`no tool ${name}`);
   try {
-    const a = argsOf(tool, raw);
+    const a = CAD_TOOLS.some((t) => t.name === name) ? (raw ?? {}) as Record<string, unknown> : argsOf(tool, raw);
     // what the app sent before this call is in the part first
     const pending = live?.takePending();
     if (pending) await session.load(pending.doc, pending.blobs);
     const linked = live?.connected === true;
+    if (CAD_TOOLS.some((t) => t.name === name)) return await callCadTool(session, name, a, linked ? async (commands) => {
+      const result = await live!.request({ kind: 'apply', commands, label: label(commands.length) });
+      if (!result.ok) throw new AgentError(appRefusal(result));
+    } : undefined);
     switch (name) {
       case 'part_new':
         if (linked) throw new AgentError('the app is connected: you work on the part open in it. The user opens another part there, or ends the link.');

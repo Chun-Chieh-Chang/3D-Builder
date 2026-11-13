@@ -16,6 +16,7 @@ const ALLOWED = {
   library: ['model', 'i18n'],
   drawing: ['model', 'i18n'],
   render: [],
+  mcp: ['model'],
 };
 
 /** Main-thread UI files may use these only as `import type` (runtime code stays in the worker). */

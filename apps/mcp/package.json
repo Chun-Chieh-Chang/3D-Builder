@@ -8,6 +8,7 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@3db/cad-protocol": "*",
     "@3db/drawing": "*",
     "@3db/i18n": "*",
     "@3db/io": "*",
@@ -19,6 +20,7 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "@salusoft89/planegcs": "^1.2.0",
     "libcascade": "3.0.2",
-    "ws": "8.18.3"
+    "ws": "8.18.3",
+    "zod": "^4.6.7"
   }
 }

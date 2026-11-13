@@ -1,6 +1,50 @@
 # 交接與接續工作
 
-更新日期 2026-11-12。Claude Code 以本節為接手入口。下方舊盤點與「27/30」等數字保留供追溯。
+更新日期 2026-11-13。先讀下方最新工作，再讀原有 Claude Code 交接紀錄。下方舊盤點與「27/30」等數字保留供追溯。
+
+## 2026-11-13 22:30 — Claude Code 接手 Codex：MCP 驗收完成（以本段為準）
+
+- **最終驗收（Codex 最後修改之後）**：MCP 全套以全新行程重跑 **10 檔／68 項全過**（`out/mcp-rerun.log`）；`typecheck`、`lint:rules/deps/i18n/repo`、`docs:sync`、`git diff --check` 全 exit 0；ADR 0252 在 `origin/main` 未被佔用。
+- **全量測試**（Codex 21:20 啟動，3148.9 s，`out/ai-cad-full-tests.log`）：444/451 檔、5453/5483 項過，4 項失敗。MCP 的 2 項（`cad-tools` 修復耗盡實得 8 次、`e2e` 事件混入前一案例）是該輪早於 21:46 的缺邊防禦與事件隔離修正，vitest 整輪沿用舊的 `cadTools.ts` 轉換；上述全新重跑通過。`recognize-approximate` 2 項單跑同訊息（草圖求解器記憶體不足，68／82 段圓弧），與 2026-11-10 起的既有紀錄一致；本批未動 `packages/regen` 與求解器，lockfile 只新增兩個 workspace 套件。本次**未**跑乾淨 HEAD 對照。
+- **使用者裁定（2026-11-13）**：MCP 這批驗收後單獨 commit（不 push）；**STEP 特徵辨識（C4-2／C4-3）先擱置**。擱置前的審查結論：設計文件 §6j 指出 C4-3（不刪面的多方向分解）是最大風險，若恢復，建議先做 C4-3 可行性閘門（scratch 探針量 part-4 正向建構耗時／heap），再寫產品碼。
+- **進度頁**：`scratch/claude-takeover/dev/dashboard.html`（SVG 儀表板，30 秒刷新）與原 `index.html` 共用 `data.js`。實件目標依稽核更正為 30/35（治具：可精確重建但 heap 793 MiB 超過 512 MiB 預算）。
+
+## 2026-11-13 — AI 參數化 CAD／MCP 閉環控制（Codex，下方為中斷前紀錄）
+
+**定時更新：2026-11-13 21:47（Asia/Taipei）**。依使用者要求，任務進行期間每 5 分鐘更新此節。21:43 開始的 MCP 全套已 **10 檔／68 項通過**，型別、四個 lint、docs:sync、diff 檢查也通過。原 stdio 案例失敗已單跑重現，根因是新增測試的歷史事件混入原案例；已依開始時的事件序號隔離，仍嚴格斷言兩筆預期事件，不放寬門檻。
+
+21:46 又補了一個明確防禦：遺失／過時的邊名稱或 periodic seam 不做縮半徑修復，原生解析先試一次；只有目前確定存在且非 seam 的邊，以及本特徵的 error 狀態，才可進入修復。新增斷言要求缺邊時 attempts 嚴格為 1 且快照不變。這一筆後 **MCP 全套重跑中，session `95707`**，尚未取得結果。
+
+全量 `out/ai-cad-full-tests.log`（session `76588`）仍未結束；目前紀錄有 approximate 兩項失敗，以及上述已修正的舊事件隔離失敗，不能將舊 log 視為修正後結果。下一次定時更新目標 **21:52**。網格容差下限為 0.0001 mm；STEP 使用原生 `freeEdges === 0`，不能以不同相鄰面數判定 periodic seam 是否開口。已生成並目視檢查 `out/ai-cad-preview.png`。
+
+使用者要求四個標準 MCP 工具、診斷＋PNG 回饋、參數修復重試、三個無 GUI CLI 指令，以及法蘭／漸開線齒輪、回滾、製造輸出的 CI 驗收。起點是 `main` 的 `a97b0dd1`；沿用既有 `apps/mcp`（ADR 0237／0238），沒有另建幾何核心。**目前尚未完成最終驗收，不得把下列實作直接當成已交付；所有變更均未 commit／push。**
+
+### 已落檔的實作
+
+- `packages/mcp`：套件名 `@3db/cad-protocol`，Zod 嚴格 Schema 與 `featureCommands`。支援 box／cylinder 基本體、extrude、fillet、等距 chamfer、hole、boolean、線性 pattern；基本體實際建立原生草圖＋伸長，保留特徵歷史。尺寸為有限正數 mm，上限 100000；陣列數量為 2–200 整數；持久參照支援 fingerprint。
+- `apps/mcp/src/cadTools.ts`／`server.ts`：四個 `cad_*` 工具接進原有伺服器，保留 live bridge 的交易閘控與序列化執行。特徵回覆中 `current` 是回滾後保留狀態，`attempts` 是每次嘗試；PNG 使用既有無 GUI 軟體渲染。
+- 修復必須明確給 `repair: { maxAttempts, factor, minValue }`，最多 8 次，僅縮減失敗圓角／倒角的數值；成功只留一次 undo，耗盡保留原件。外部 LLM 負責視覺判斷或改換構建方式，**沒有內建視覺模型，也不保證任何模型都可修復**。邊長比例警示不冒充最大可行半徑，`certifiedLimit` 明確為 null。
+- `session.ts`：`exportFile` 新增絕對 `meshTolerance`（STL／3MF，STEP 不受影響）；`inspectBodies` 量測指定本體及參考本體，提供質量性質、外框與凹圓柱孔壁軸線／孔口中心。最後一筆修改把孔壁的暫時索引改為持久 `ref`，**尚待重跑測試**。孔的安裝用途不由幾何自行推定。
+- `packages/cli/bin/3d-builder.mjs` 與 `apps/mcp/src/headless.ts`：`headless --input ... --inspect --output ...`、`render --input ... --camera ... --output ...`、`export --input ... --format ... --output ...`。腳本沿用 `{ commands, variables? }`；新 CLI 拒絕腳本內另帶 `outputs`，舊 CLI 維持相容。
+- 文件：`docs/adr/0252-ai-cad-structured-control.md`、`apps/mcp/README.md`、`DEV_LOG.md`；CI 新增三平台 MCP 測試，`check-deps.mjs` 納入 mcp 套件。規劃暫存檔在 `docs/design/ai-cad-control/`，其中 `task_plan.md` 等被既有 gitignore 忽略，不是已追蹤交付檔。
+
+### 已量到的驗證（注意版本時間點）
+
+- 第一輪 `npx vitest run apps/mcp/test --maxWorkers 1`：**10 檔、65 項通過**。之後又修改 Schema／孔壁參照、補了相機／修復耗盡／stdio 測試，因此此數字**不是最終版本驗收**。
+- 法蘭及真正漸開線齒輪與解析體積比對通過 0.05%，外框通過 0.01 mm；STL 每條焊接邊恰有兩個反向三角面，STEP 讀回為有效單一實體。這不代表其他 CAD 軟體讀檔已驗證。
+- 真實過大圓角的多次修復、一次 undo 回復原始序列化文件已通過。七種操作類別的測試已加入；相機與耗盡修復等新增項目須在最後重跑。
+- 100 組固定種子 primitive fuzz 已跑過；後續加了實際 heap 成長 ≤512 MiB 斷言，需再跑。基準存在且 >0，不宣稱零洩漏。
+- meshTolerance 測試先紅後綠：原本非法值被忽略、兩種容差皆 300 個三角形；接線後細網格變 908。OCCT 可重用細網格，比較不同容差時必須獨立重建形狀。
+- `typecheck`、`lint:rules`、`lint:deps`、`lint:i18n`、`lint:repo` 與建置曾通過；最後程式修改後仍需重新核對。
+
+### 接手後的具體步驟
+
+1. 先查正在執行的 `npm test -- --maxWorkers 2`，不要再啟動第二輪全量。此 Codex 執行 session 為 `76588`，輸出在 `out/ai-cad-full-tests.log`；其他工作階段不能用此 session ID 時，查行程與 log 是否已出現最終 Test Files／Tests 摘要。已看到 `tests/phase8/recognize-approximate.test.ts` 的 S curve／closed spline 兩項失敗，名稱與舊 handoff 一致，但本輪尚未取得完整結論。
+2. 最後修改後重跑 `npm test -- apps/mcp/test --maxWorkers 1`（e2e 會建置 dist，不要和其他建置同時跑）；核對實際測試總數、退出碼及七種操作、所有相機、修復耗盡、stdio 工具與新 CLI。
+3. 跑 `npm run typecheck`、四個 lint、`npm run docs:sync`、`git diff --check`；核對 ADR 號碼仍未撞號。全量執行期間有補 MCP 程式，故必須以最終 MCP 重跑結果補足，不得只引用先前 65 項。
+4. 依全量失敗實際訊息判斷是否既有問題；不要只因名字相同就宣稱已證明。更新 DEV_LOG、此節與最後驗證紀錄；未經要求不 commit／push。
+
+實作能力邊界：新工具是明確的數值子集（基本體 box／cylinder、等距倒角、直孔、線性陣列）；進階草圖、表達式及其他特徵仍透過原有 `apply_commands`。請勿把它描述成涵蓋全部 CAD 特徵或能自行判斷所有視覺缺陷。
 
 ## Claude Code 接手入口
 

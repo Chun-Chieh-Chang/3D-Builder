@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 95／7／38 |
-| ADR 文件 | 250 |
+| ADR 文件 | 251 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 231／226／278 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -20,11 +20,13 @@
 | @3db/mcp | [apps/mcp/package.json](../apps/mcp/package.json) |
 | @3db/web | [apps/web/package.json](../apps/web/package.json) |
 | @3db/assembly | [packages/assembly/package.json](../packages/assembly/package.json) |
+| @3db/cli | [packages/cli/package.json](../packages/cli/package.json) |
 | @3db/drawing | [packages/drawing/package.json](../packages/drawing/package.json) |
 | @3db/i18n | [packages/i18n/package.json](../packages/i18n/package.json) |
 | @3db/io | [packages/io/package.json](../packages/io/package.json) |
 | @3db/kernel | [packages/kernel/package.json](../packages/kernel/package.json) |
 | @3db/library | [packages/library/package.json](../packages/library/package.json) |
+| @3db/cad-protocol | [packages/mcp/package.json](../packages/mcp/package.json) |
 | @3db/model | [packages/model/package.json](../packages/model/package.json) |
 | @3db/naming | [packages/naming/package.json](../packages/naming/package.json) |
 | @3db/regen | [packages/regen/package.json](../packages/regen/package.json) |
@@ -589,6 +591,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0249: Recognition allows each face its file's own precision](<adr/0249-recognition-allows-the-file-precision.md>)
 - [ADR 0250: Recognition reads spline faces as the simple surfaces they are](<adr/0250-recognition-reads-spline-faces-as-analytic.md>)
 - [ADR 0251: Drafted extrusion of outlines with splines](<adr/0251-drafted-extrusion-of-spline-outlines.md>)
+- [ADR 0252 — Structured CAD control and headless acceptance](<adr/0252-ai-cad-structured-control.md>)
 
 ### 歷史驗證
 

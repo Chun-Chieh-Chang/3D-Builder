@@ -10,7 +10,7 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     target: 'node22',
-    rollupOptions: { input: { server: 'src/main.ts', cli: 'src/cli.ts' }, output: { entryFileNames: '[name].mjs' } },
+    rollupOptions: { input: { server: 'src/main.ts', cli: 'src/cli.ts', headless: 'src/headless.ts' }, output: { entryFileNames: '[name].mjs' } },
   },
   ssr: { noExternal: [/^@3db\//] },
 });

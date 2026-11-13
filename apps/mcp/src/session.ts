@@ -117,6 +117,8 @@ export interface RebuildEvent {
 
 export type ExportFormat = 'step' | 'stl' | '3mf';
 export const EXPORT_FORMATS: readonly ExportFormat[] = ['step', 'stl', '3mf'];
+/** Public export budget: sub-0.1-micron tessellation is not accepted through agent tools. */
+export const MIN_MESH_TOLERANCE = 0.0001;
 
 const MAX_COMMANDS = 200;
 const MAX_EVENTS = 50;
@@ -304,7 +306,8 @@ export class CadSession {
   }
 
   /** Writes the part's own bodies (not the reference bodies, C7.1) as STEP AP214 with colors, binary STL in mm, or 3MF (one object a body). */
-  async exportFile(path: string, format: ExportFormat): Promise<{ path: string; bytes: number; warnings: string[] }> {
+  async exportFile(path: string, format: ExportFormat, meshTolerance?: number): Promise<{ path: string; bytes: number; warnings: string[] }> {
+    if (meshTolerance !== undefined && !(Number.isFinite(meshTolerance) && meshTolerance >= MIN_MESH_TOLERANCE)) throw new AgentError(`meshTolerance must be finite and at least ${MIN_MESH_TOLERANCE} mm (agent tessellation budget), not ${meshTolerance}`);
     if (!EXPORT_FORMATS.includes(format)) throw new AgentError(`format must be ${EXPORT_FORMATS.join(', ')}, not ${JSON.stringify(format)}`);
     const ext = format === 'step' ? ['.step', '.stp'] : [`.${format}`];
     if (!ext.some((e) => path.toLowerCase().endsWith(e))) throw new AgentError(`a ${format.toUpperCase()} file name ends in ${ext.join(' or ')}`);
@@ -317,7 +320,7 @@ export class CadSession {
     if (format === 'step') {
       data = new TextEncoder().encode(exportPartStep(this.kernel, own.shapes, this.partName(full), { schema: 'AP214', faceColors: own.colors, warnings }));
     } else {
-      const meshes = own.shapes.map((shape) => this.kernel.mesh(shape, { relative: 0.001, angular: 0.25 }));
+      const meshes = own.shapes.map((shape) => this.kernel.mesh(shape, meshTolerance === undefined ? { relative: 0.001, angular: 0.25 } : { tolerance: meshTolerance, angular: 0.25 }));
       const name = this.partName(full);
       data = format === 'stl' ? writeStl(meshes, name, { format: 'binary', unit: 'mm' }) : await writeThreeMf(meshes.map((mesh, i) => ({ name: meshes.length > 1 ? `${name}-${i + 1}` : name, mesh })));
     }
@@ -465,6 +468,30 @@ export class CadSession {
 
   private ownVolume(): number {
     return this.ownBodies().reduce((n, b) => n + this.kernel.massProps(b.shape).volume, 0);
+  }
+
+  /** Per-body measurements include reference geometry; querying never changes the document. */
+  inspectBodies(id?: string) {
+    const bodies = this.result.bodies.filter((b) => id === undefined || b.id === id);
+    if (id !== undefined && bodies.length === 0) throw new AgentError(`no body ${id}`);
+    return bodies.map((b) => {
+      const topology = this.kernel.topology(b.shape);
+      const holes = topology.faces.flatMap((face, index) => {
+        const g = face.geometry;
+        if (g?.type !== 'cylinder' || g.convex) return [];
+        const rims = topology.edges.filter((edge) => edge.faces.includes(index) && edge.geometry?.type === 'circle').map((edge) => {
+          const geometry = edge.geometry;
+          return geometry?.type === 'circle' ? { center: geometry.center, radius: geometry.radius } : null;
+        }).filter((rim) => rim !== null);
+        const view = this.result.body;
+        const offset = view?.parts.find((part) => part.id === b.id)?.face0 ?? 0;
+        const name = view?.names.faces[offset + index];
+        if (!name) throw new AgentError(`missing persistent face name for body ${b.id}, face ${index}`);
+        return [{ ref: { kind: 'face' as const, name, fingerprint: faceFingerprint(topology, index) }, axis: g.axis, axisOrigin: g.origin, radius: g.radius, rims }];
+      });
+      const box = this.kernel.bounds(b.shape);
+      return { id: b.id, name: b.name, reference: b.reference, mass: b.curve || b.surface ? null : this.kernel.massPropsExact(b.shape), box: { ...box, size: box.max.map((v, i) => v - box.min[i]!) }, holes, holeInterpretation: 'Concave cylindrical walls and circular rim centers in model mm. Mounting purpose is not inferred.' };
+    });
   }
 
   /** What is answered after every batch, quickly; `exact` integrates the centre too, in seconds on spline faces, for when the summary itself is asked for (ADR 0241). */

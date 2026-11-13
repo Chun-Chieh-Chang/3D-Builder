@@ -9,6 +9,8 @@
 
 ## 1. 摘要
 
+2026-11-13 補充（ADR 0252）：Node MCP／CLI 的結構化工具直接依賴 `zod` 4.6.7（MIT；套件內 `LICENSE`），用於參數驗證及 JSON Schema 產生。它原已由 MCP SDK 間接引入，本次改為明確直接依賴；不納入下方歷史網頁版數量。
+
 | 範圍 | 數量 | 授權種類 | 要特別處理的 |
 |---|---|---|---|
 | **隨網頁版一起散佈的 npm 套件**（第 2 節） | 9 | MIT ×6、LGPL-2.0-or-later ×1、Apache-2.0 ×1、LGPL-2.1-only WITH Open-CASCADE-Exception-1.0 ×1 | libcascade 與 planegcs（LGPL） |

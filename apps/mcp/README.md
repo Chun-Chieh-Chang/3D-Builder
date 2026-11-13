@@ -1,5 +1,48 @@
 # @3db/mcp — 讓 AI 代理操作 3D-Builder（ADR 0237）
 
+## 標準 CAD 工具（ADR 0252）
+
+`cad_execute_feature` 接受 `{ feature, repair? }`。尺寸為有限正數 mm（上限 100000），不接受未知欄位，也不自動四捨五入。操作如下：
+
+| operation | 必要參數（另需唯一 `id`） |
+|---|---|
+| create_primitive | `shape: "box"`, `width`, `depth`, `height`；或 `shape: "cylinder"`, `radius`, `height` |
+| extrude | `sketch`, `depth`；選填 `mode: "boss" / "cut"`, `reverse` |
+| fillet | `edges`, `radius` |
+| chamfer | `edges`, `distance`（等距） |
+| hole | `sketch`（獨立孔位點）, `diameter`；選填 `depth`, `reverse` |
+| boolean | `mode: "add" / "subtract" / "common"`, `main`, `tools`（本體參照） |
+| pattern | `seeds`, `direction`（參照）, `count`（2–200 整數）, `spacing` |
+
+基本體在 top 平面居中，向 +y 伸長，各自成為本體。`edges` 可直接使用 `query_elements` 回傳的 `ref`。需要額外草圖、不同陣列或表達式時，使用既有 `apply_commands`／`command_reference`。
+
+```json
+{"feature":{"operation":"create_primitive","shape":"box","id":"base","width":40,"depth":30,"height":10}}
+```
+
+每次特徵回覆包含文字 JSON 與實體渲染 PNG。`current` 是目前保留模型；`attempts` 記錄每次嘗試的值、錯誤與失敗特徵。無實體可渲染時回傳 `imageError`，不偽造圖片。
+
+修復必須明確傳入，例如 `repair: {"maxAttempts":6,"factor":0.5,"minValue":0.1}`。僅對幾何重建失敗的圓角／倒角縮小數值，最多 8 次，成功才保留一筆 undo；耗盡後保留原件。外部 LLM 可讀圖片與診斷後改用其他構建指令。此處沒有內建視覺 LLM，也不保證所有設計皆可修復。
+
+- `cad_get_viewport_screenshot`: `camera` 為 `isometric/top/front/right/custom`；custom 必須提供三維 `dir` 與 `up`。選填 `size`（64–2048）。回傳診斷及 Base64 PNG 的 MCP image block。
+- `cad_inspect_geometry`: 選填 `body` ID。每個本體回傳體積、面積、質心、包絡盒、凹圓柱孔壁軸線及圓形孔口中心；包含參考本體。幾何孔位不代表已判定安裝用途。
+- `cad_export_manufacturing`: `path`, `format: "step"/"stl"/"3mf"`，選填有限 `meshTolerance`（mm，至少 0.0001；過密網格的資源防護下限，越界明確拒絕）；STEP 不使用網格容差。
+
+## 新 CLI
+
+先 `npm install` 及 `npm run mcp:build`，再使用：
+
+```sh
+npx 3d-builder headless --input script.json --inspect --output metrics.json
+npx 3d-builder render --input script.json --camera isometric --output preview.png
+npx 3d-builder export --input script.json --format step --output model.step
+npx 3d-builder export --input script.json --format stl --meshTolerance 0.01 --output model.stl
+```
+
+`script.json` 是 `{ "commands": [...], "variables": {...} }`，與舊 CLI 共用原生命令。新 CLI 的輸出由 `--output` 決定，腳本不得另含 `outputs`。成功結束碼 0，失敗非 0。現有帶 `outputs` 的腳本仍使用下方舊 CLI。
+
+驗證：`npm test -- apps/mcp/test --maxWorkers 1`；CI 在三個作業系統執行同套測試。
+
 這個套件提供兩種用法：
 - **MCP 伺服器**：給 Claude Code 等 AI 代理使用。
 - **無頭 CLI**：執行 JSON 建模腳本，不需要視窗。

@@ -1,0 +1,8 @@
+{
+  "name": "@3db/cad-protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@3db/model": "*", "zod": "4.6.7" }
+}

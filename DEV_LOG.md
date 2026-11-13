@@ -1,5 +1,20 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-13 — Structured AI CAD control (ADR 0252)
+
+Added `packages/mcp` strict numeric feature translation, four `cad_*` tools in the existing MCP host, per-body/reference-body inspection with cylindrical hole rim coordinates, absolute manufacturing mesh tolerance, bounded opt-in correction and the `packages/cli` executable. Existing native commands, live-app gating, undo and software PNG rendering are reused. The external LLM performs visual judgment; no claim of an embedded vision model is made.
+
+Red-team four questions:
+- **Input corruption:** Zod strict schemas reject unknown fields, nonfinite/nonpositive dimensions, dimensions over the adapter budget and fractional pattern/retry counts. No rounding or absolute-value coercion of requested dimensions. Invalid mesh tolerances are rejected before writing output; a failing test confirmed the old export path ignored them.
+- **Geometric failure:** real oversized fillets are refused and original serialized snapshots are retained. Explicit repair records every decreasing value, stops at its count/floor and only commits the successful attempt. Undo restores the pre-repair snapshot. Selected-edge scale warnings explicitly have no certified feasibility limit; edge length is not misrepresented as a maximum radius. Kernel geometry algorithms and their existing preconditions are unchanged.
+- **Dependency integrity:** generated primitives use native sketch/extrude features; other operations translate to existing Feature types and persistent references (including fingerprints). The existing schema/command/ref/DAG/engine/UI interpretation remains authoritative. New package layering is checked by `check-deps.mjs`; no main-thread WASM import is introduced.
+- **Ground truth:** actual OCCT volumes are compared to analytic flange/involute-gear values (0.05%); bounds to analytic sizes (0.01 mm). Binary STL welded edges must occur exactly twice with opposing orientation; STEP must import as a valid single solid. This is not independent-reader interoperability proof. One hundred seeded primitive cases check both variants succeed and measure real heap with a positive baseline; no zero-leak claim. Actual Node processes exercise CLI files, and the official MCP client exercises stdio tools.
+
+Validation (final, after the last Codex edits; run by Claude Code on takeover):
+- MCP suite `npx vitest run apps/mcp/test --maxWorkers 1` in a fresh process: **10 files / 68 tests passed** (exit 0), including the seven operation kinds, all cameras, repair exhaustion (missing edge: exactly one attempt, snapshot unchanged), stdio tools and the new CLI.
+- `typecheck`, `lint:rules`, `lint:deps`, `lint:i18n`, `lint:repo`, `docs:sync`, `git diff --check`: all exit 0. ADR 0252 is not used on `origin/main`.
+- Full suite `npm test -- --maxWorkers 2` (started 21:20, 3148.9 s): 444 / 451 files, 5453 / 5483 tests passed, 4 failed. Two MCP failures (`cad-tools` repair exhaustion got 8 attempts instead of 1; `e2e` event list mixed with the previous case) came from that run predating the 21:46 missing-edge guard and the event-isolation fix: vitest kept the earlier transform of `cadTools.ts` for the whole run. Both pass in the fresh MCP run above. The other two (`recognize-approximate`: S curve, closed spline; sketch solver out of memory at 68 / 82 arcs) fail alone with the same message as recorded since 2026-11-10; this change touches neither `packages/regen` nor the sketch solver, and `package-lock.json` only adds the two workspace packages. No clean-HEAD control was run this time.
+
 ## 2026-11-14 — Drafted extrusion of outlines with splines (ADR 0251)
 
 The kernel now drafts an extrusion whose outline has splines or ellipses. Lines and arcs still go through `DraftAngle`. Other outlines get their walls built directly (planes, cones, ruled surfaces between a curve and its offset) and split into cells by `BOPAlgo_MakerVolume`.

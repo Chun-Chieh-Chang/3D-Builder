@@ -5,7 +5,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -38,10 +38,42 @@ const json = (r: CallToolResult) => JSON.parse((r.content[0] as { text: string }
 it('tells the client how to work, and lists its tools', async () => {
   expect(client.getInstructions()).toMatch(/apply_commands/);
   const { tools } = await client.listTools();
-  expect(tools.map((t) => t.name).sort()).toEqual(['apply_commands', 'command_reference', 'export_file', 'live_status', 'part_new', 'part_open', 'part_save', 'part_summary', 'query_elements', 'rebuild_events', 'recognize_features', 'render_view', 'session_status', 'undo']);
+  expect(tools.map((t) => t.name).sort()).toEqual(['apply_commands', 'cad_execute_feature', 'cad_export_manufacturing', 'cad_get_viewport_screenshot', 'cad_inspect_geometry', 'command_reference', 'export_file', 'live_status', 'part_new', 'part_open', 'part_save', 'part_summary', 'query_elements', 'rebuild_events', 'recognize_features', 'render_view', 'session_status', 'undo']);
+});
+
+it('serves the four standard CAD tools over the real stdio transport', async () => {
+  await call('part_new');
+  const built = await call('cad_execute_feature', { feature: { operation: 'create_primitive', shape: 'box', id: 'standard', width: 10, depth: 20, height: 30 } });
+  expect(built.isError, JSON.stringify(built.content[0])).toBeFalsy();
+  expect(json(built).current.mass.volume).toBeCloseTo(6000, 6);
+  expect(built.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+  const inspection = await call('cad_inspect_geometry');
+  expect(json(inspection)[0].mass.volume).toBeCloseTo(6000, 6);
+  expect((await call('cad_get_viewport_screenshot', { camera: 'right', size: 128 })).content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+  expect((await call('cad_export_manufacturing', { path: 'standard.stl', format: 'stl', meshTolerance: 0.01 })).isError).toBeFalsy();
+  expect(existsSync(join(root, 'standard.stl'))).toBe(true);
+  await call('part_new');
+});
+
+it('runs the new headless, render and export commands as real processes', () => {
+  const input = join(root, 'input.json');
+  writeFileSync(input, JSON.stringify({ commands: PLATE_WITH_HOLE }));
+  const cli = resolve(here, '../../packages/cli/bin/3d-builder.mjs');
+  for (const [verb, extra, file] of [
+    ['headless', ['--inspect'], 'metrics.json'],
+    ['render', ['--camera', 'isometric'], 'preview.png'],
+    ['export', ['--format', 'step'], 'model.step'],
+  ] as const) {
+    const result = spawnSync(process.execPath, [cli, verb, '--input', input, ...extra, '--output', join(root, file)], { encoding: 'utf8' });
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(join(root, file)).length).toBeGreaterThan(0);
+  }
+  expect(JSON.parse(readFileSync(join(root, 'metrics.json'), 'utf8')).summary.mass.volume).toBeCloseTo(PLATE_WITH_HOLE_VOLUME, 3);
+  expect(readFileSync(join(root, 'preview.png')).subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
 });
 
 it('builds, previews, checks, looks at and writes a part', async () => {
+  const previousEvents = new Set<number>(json(await call('rebuild_events', { limit: 50 })).map((event: { seq: number }) => event.seq));
   // preview first: nothing kept, a picture to show the user
   const dry = await call('apply_commands', { commands: PLATE_WITH_HOLE, dry_run: true, preview: { view: 'isometric', size: 300 } });
   expect(json(dry)).toMatchObject({ committed: false, dryRun: true });
@@ -64,7 +96,7 @@ it('builds, previews, checks, looks at and writes a part', async () => {
   const refused = await call('apply_commands', { commands: [{ type: 'explode' }] });
   expect(refused.isError).toBe(true);
 
-  const events = json(await call('rebuild_events', { limit: 5 }));
+  const events = json(await call('rebuild_events', { limit: 5 })).filter((event: { seq: number }) => !previousEvents.has(event.seq));
   expect(events.map((e: { cause: string; committed: boolean; dryRun?: boolean }) => [e.cause, e.committed, !!e.dryRun])).toEqual([['apply', false, true], ['apply', true, false]]);
   // the same events came as notifications, as they happened
   await new Promise((r) => setTimeout(r, 50));
