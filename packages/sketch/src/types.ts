@@ -41,6 +41,11 @@ export interface SolvedSketch {
   /** With entityStatus: the free parts of each under-defined entity. */
   entityFreedom?: Map<Id, EntityFreedom>;
   message?: string;
+  /**
+   * The solve did not happen: the system is larger than the solver holds, or no solver module was there (one aborted and its replacement still loads).
+   * The status is then `failed`. A caller that tries systems of its own making stops on it rather than try another: each abort uses up a module.
+   */
+  tooLarge?: true;
   /** The lines the sketch's relations could only be met by shrinking to a point (ADR 0211): the solve is then `failed`. */
   collapsed?: Id[];
 }

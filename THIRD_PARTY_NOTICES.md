@@ -35,6 +35,7 @@
 ### LGPL 元件的義務（libcascade、planegcs）
 
 - **libcascade**（授權：LGPL-2.1-only 加 Open CASCADE 例外條款，全文在 `node_modules/libcascade/LICENSE` 與 `LICENSE.OCCT-Exception`）與 **@salusoft89/planegcs**（LGPL-2.0-or-later）是以 WebAssembly 檔案的形式載入，本專案的程式碼只透過它們的公開介面呼叫，沒有修改它們的原始碼。
+- **planegcs 的記憶體大小在載入時改寫（2026-11-13）**：套件內的 `planegcs.wasm` 宣告固定 16 MiB 記憶體，本專案在載入時把記憶體區段的初始與上限頁數改為 512 頁（32 MiB），再交給套件自己的載入程式（`packages/sketch/src/planegcs.ts` 的 `withHeap`）。只改這兩個數字，套件檔案本身與其程式碼都不變。換成其他版本（例如使用者自行建置的 planegcs）時，記憶體區段版面不是量測過的那一種，就不改寫、照該模組自己的宣告載入，並在主控台警告一次，不妨礙替換。
 - 內部使用（不對外散佈）：LGPL 對這種使用沒有額外要求。
 - **對外散佈時要做的事（尚未做）：**
   1. 在成品裡附上這些元件的授權全文與著作權聲明（可以用本檔加各套件的 LICENSE）。

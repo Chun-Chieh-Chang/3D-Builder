@@ -765,13 +765,100 @@ function batches(prims: Prim[]): Batch[] {
  * `console.error` and then throws a `RuntimeError` with the same text, which `runBatch` turns into the refusal the user sees. Anything else it prints is
  * printed as before.
  */
+/**
+ * The solver's fixed heap, in 64 KiB pages (2026-11-13). planegcs 1.2.0 is built with a memory of 256 pages (16 MiB) as both its initial and its maximum
+ * size, and its `emscripten_resize_heap` aborts; but its allocator takes the heap up to the memory's actual size, so a memory declared larger is a larger
+ * heap with no rebuild. Measured on a closed chain of arcs, fully defined (7 unknowns and 7 equations an arc), each on a fresh module: 16 MiB held 94
+ * arcs, 24 MiB 126, 32 MiB 151, 64 MiB 225. At 16 MiB a spline outline recognized as 82 arcs (ADR 0243) did not fit once defined (nightly #189/#194/#198).
+ * 32 MiB is the size taken: twice the arcs of the shipped heap for 16 MiB more a module (a worker keeps two, `PlaneGcsSolver.spare`).
+ */
+export const SOLVER_HEAP_PAGES = 512;
+const SHIPPED_PAGES = 256;
+
+/**
+ * The largest system, in `sketchSystemSize`'s measure, a caller that makes sketches of its own (feature recognition) sends the solver at `SOLVER_HEAP_PAGES`
+ * (2026-11-13). The measure counts a relation as one whatever its equations, so what aborts depends on the shape as well: recognized closed splines of
+ * 82–158 arcs, each on a fresh solver, solved their base sketch up to 1422 and failed from 1143 (127 arcs) up, both ways in between; fully defined
+ * they held up to 1056 (96 arcs). 1100 is under the smallest failure seen.
+ */
+export const SOLVER_SAFE_SIZE = 1100;
+
+/**
+ * The largest connected part of a sketch in the solver's own measure (unknowns plus equations, `UNKNOWNS`, the one `batches` and the overflow refusal use),
+ * worked out without solving: for a caller to refuse a sketch of its own making before it is tried (each abort uses up a module).
+ */
+export function sketchSystemSize(sketch: SketchFeature): number {
+  const { parts } = split(toPrimitives(sketch, startValues(undefined)));
+  return Math.max(0, ...[...parts.values()].map((p) => p.size));
+}
+
+/** The module's bytes with its memory declared `SOLVER_HEAP_PAGES` pages, both initial and maximum. Refuses a module not laid out as the one measured. */
+export function withHeap(bytes: Uint8Array, pages = SOLVER_HEAP_PAGES): Uint8Array<ArrayBuffer> {
+  if (!(Number.isInteger(pages) && pages >= SHIPPED_PAGES && pages % 128 === 0 && pages < 128 * 128)) throw new Error(`solver heap of ${pages} pages: a multiple of 128 from ${SHIPPED_PAGES}`);
+  const out = new Uint8Array(bytes);
+  const leb = (at: number): [number, number] => {
+    let n = 0;
+    let shift = 0;
+    let i = at;
+    for (;;) {
+      const c = out[i++]!;
+      n |= (c & 127) << shift;
+      shift += 7;
+      if (!(c & 128)) return [n, i];
+    }
+  };
+  let i = 8;
+  while (i < out.length) {
+    const id = out[i++]!;
+    const [size, body] = leb(i);
+    if (id === 5) {
+      // one memory, with a maximum, of 256 pages both (two bytes each as LEB128); a page count that is a multiple of 128 is two bytes as well
+      const shipped = [1, 1, 0x80, SHIPPED_PAGES >> 7];
+      if (size !== 6 || shipped.some((b, k) => out[body + k] !== b) || out[body + 4] !== 0x80 || out[body + 5] !== SHIPPED_PAGES >> 7) throw new Error('planegcs.wasm: its memory is not the one measured (256 pages)');
+      out[body + 3] = pages >> 7;
+      out[body + 5] = pages >> 7;
+      return out;
+    }
+    i = body + size;
+  }
+  throw new Error('planegcs.wasm: no memory section');
+}
+
+/** The module's bytes: from `wasmUrl` when given (the app's workers), else the package's own file (Node, as planegcs itself finds it). */
+async function wasmBytes(wasmUrl?: string): Promise<Uint8Array> {
+  if (wasmUrl) return new Uint8Array(await (await fetch(wasmUrl)).arrayBuffer());
+  const { createRequire } = await import('node:module');
+  const { readFile } = await import('node:fs/promises');
+  return new Uint8Array(await readFile(createRequire(import.meta.url).resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')));
+}
+
+let heapBytes: Promise<Uint8Array> | null = null;
+const heapUrl = { url: undefined as string | undefined };
+
 async function loadModule(wasmUrl?: string): Promise<GcsWrapper> {
+  if (!heapBytes || heapUrl.url !== wasmUrl) {
+    heapUrl.url = wasmUrl;
+    heapBytes = wasmBytes(wasmUrl).then((b) => {
+      try {
+        return withHeap(b);
+      } catch (e) {
+        // a planegcs other than the one measured (a user's own build, which the LGPL lets them put in) keeps the memory it declares; said once
+        console.warn(`planegcs: solver heap left as the module declares it (${(e as Error).message})`);
+        return b;
+      }
+    });
+    // a fetch that failed is asked again next time, not kept
+    heapBytes.catch(() => {
+      heapBytes = null;
+    });
+  }
+  const bytes = await heapBytes;
   const module = await init_planegcs_module({
-    ...(wasmUrl ? { locateFile: () => wasmUrl } : {}),
+    wasmBinary: bytes,
     printErr: (text: string) => {
       if (text !== 'Aborted(OOM)') console.error(text);
     },
-  });
+  } as Parameters<typeof init_planegcs_module>[0]);
   return new GcsWrapper(new module.GcsSystem(), module);
 }
 
@@ -1030,7 +1117,7 @@ export class PlaneGcsSolver implements SketchSolver {
     } catch (e) {
       // too large for the solver, or no solver while one loads: refused, where it was stored (as for any solve that does not get there)
       if (!(e instanceof SolverOverflow || e instanceof SolverUnavailable)) throw e;
-      return { geometry: readGeometry(startValuesOf(prims), sketch), status: 'failed', dof: 0, conflicting: [], redundant: [], message: e.message };
+      return { geometry: readGeometry(startValuesOf(prims), sketch), status: 'failed', dof: 0, conflicting: [], redundant: [], message: e.message, tooLarge: true };
     }
   }
 

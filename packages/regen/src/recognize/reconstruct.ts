@@ -26,7 +26,7 @@ import {
   type SketchFeature,
 } from '@3db/model';
 import { edgeFingerprint, faceFingerprint, ownerFeatures } from '@3db/naming';
-import type { SketchSolver } from '@3db/sketch';
+import { sketchSystemSize, SOLVER_SAFE_SIZE, type SketchSolver } from '@3db/sketch';
 import { RECOGNIZE_LIMITS, startBudget, type BudgetLimits } from '../budget';
 import type { Regenerator, RebuildResult } from '../engine';
 import { addv, distanceToSharp, dot, len, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type BaseRecord, type FreeRoundsOption, type HoleRecord, type Recognition, type SharpEdge, type SplineApproximation } from './analyze';
@@ -210,6 +210,13 @@ class Builder {
     }
     const id = this.ids.take('sketch');
     const sketch: SketchFeature = { id, type: 'sketch', name: this.name('sketch'), suppressed: false, plane, entities, constraints };
+    // A sketch larger than the solver is measured to hold is refused here, before it is tried: trying it aborts the solver's module, twice in a rebuild
+    // leaves none (nightly #189/#194/#198), and what comes of it is a feature that fails all the same
+    const size = sketchSystemSize(sketch);
+    if (size > SOLVER_SAFE_SIZE) {
+      const arcs = entities.filter((e) => e.type === 'arc').length;
+      throw new RecognizeError(t('recognize.sketchTooLarge', { size, limit: SOLVER_SAFE_SIZE, arcs }));
+    }
     if (this.solver) this.define(sketch, pts);
     this.feature<SketchFeature>(sketch);
     return { id, ...(centerline ? { centerline } : {}) };
@@ -258,14 +265,37 @@ class Builder {
       const part = parts.of(c);
       byPart.set(part, [...(byPart.get(part) ?? []), c]);
     }
+    // A system the solver cannot hold ends the defining (the sketch stays as defined so far, as one the solver cannot finish): halving after it would ask
+    // with smaller and smaller systems, each of which can abort again, and two aborts in one rebuild leave no solver module (nightly #189/#194/#198).
+    let tooLarge = false;
     for (const [part, list] of byPart) {
+      if (tooLarge) break;
       const sub: SketchFeature = { ...sketch, entities: sketch.entities.filter((e) => parts.entity(e) === part), constraints: sketch.constraints.filter((c) => parts.of(c) === part) };
       let st = solver.solve(sub);
+      if (st.tooLarge) tooLarge = true;
       if (st.status === 'over' || st.status === 'failed') continue;
       const settle = (run: SketchConstraint[]): void => {
-        if (run.length === 0 || st.dof === 0) return;
+        if (run.length === 0 || st.dof === 0 || tooLarge) return;
+        // A run longer than the freedoms left cannot take exactly one each, so trying it whole can only fail; it is halved without asking the solver. The
+        // choice is the same, and the solver never sees more than the fully defined sketch: asked with all 280 candidates of a 68-arc outline at once it
+        // ran out of its fixed heap (903 unknowns and equations; the defined sketch is 762), which C1's batching brought in (nightly #189/#194/#198).
+        // Nor is a run that would take the part past what the solver is measured to hold (`SOLVER_SAFE_SIZE`; each candidate is one in its measure): halved
+        // the same way, and a single candidate past it is left out (the part stays under-defined), so that the solver is not made to abort
+        const over = sketchSystemSize(sub) + run.length > SOLVER_SAFE_SIZE;
+        if (over && run.length === 1) return;
+        if (run.length > st.dof || over) {
+          const half = Math.ceil(run.length / 2);
+          settle(run.slice(0, half));
+          settle(run.slice(half));
+          return;
+        }
         sub.constraints.push(...run);
         const next = solver.solve(sub);
+        if (next.tooLarge) {
+          tooLarge = true;
+          sub.constraints.splice(sub.constraints.length - run.length, run.length);
+          return;
+        }
         if (!(next.status === 'over' || next.status === 'failed' || next.redundant.length || next.conflicting.length) && next.dof === st.dof - run.length) {
           st = next;
           for (const c of run) kept.add(c);

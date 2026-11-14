@@ -1,6 +1,31 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-13 (night) — Nightly red three nights: `recognize-approximate` was a C1 regression, not a known failure
+
+Nightly #189 / #194 / #198 failed on `tests/phase8/recognize-approximate.test.ts` (S curve, 68 arcs; closed spline, 82 arcs; "sketch solver out of memory"). Since 2026-11-10 every session, this one included (entry below, and handoff), recorded them as "existing". That was wrong.
+
+**Root cause, measured (probes `scratch/ci/cap1`–`cap4`, `sweep*`):**
+- On a clean worktree of `3b1ba1f6^` (before C1) the file passes **21 / 21**. C1 (`3b1ba1f6`) changed `define()` in `reconstruct.ts` (making a recognized sketch fully defined) from "one candidate at a time" to "the whole run at once, halved on failure". The first try sent all 280 candidates of the 68-arc sketch (903 in the solver's measure; the defined sketch is 762). Every smaller half was under the solver's overflow mark and aborted again (902 → 820 → 779 → 759); the second abort used up the spare module, and every solve after it, the extrusion's too, came back "reloading". Before C1 the tries only grew: one abort (768), then clean refusals at the mark, an under-defined sketch and a good rebuild.
+- Underneath, a real limit: planegcs 1.2.0 declares 256 pages (16 MiB) as both initial and maximum memory and aborts on growth. Fresh module, closed ring of fully defined arcs (7 unknowns + 7 equations an arc): 16 MiB 94 arcs, 24 MiB 126, 32 MiB 151, 64 MiB 225. The 82-arc recognized sketch, defined, is 902 and a fresh 16 MiB module aborts from 759.
+- Option (a), fewer unknowns or relations an arc, is not available: planegcs's arc is 7 parameters, and the recognized sketch has no surplus relation.
+
+**Fix:**
+- `packages/sketch/src/planegcs.ts`: `SOLVER_HEAP_PAGES = 512` (32 MiB). `withHeap()` rewrites the two page counts of the memory section at load (only for the layout measured; otherwise the module loads as it declares itself, with one warning, so that an LGPL replacement still works). `loadModule` passes the bytes as `wasmBinary` (browser: `fetch(wasmUrl)`; Node: the package's own file). `sketchSystemSize()` gives the solver's own measure without solving. `SOLVER_SAFE_SIZE = 1100`: recognized closed splines of 82–158 arcs on fresh solvers solved base sketches up to 1422 and failed from 1143 (127 arcs), both ways in between; 1100 is under the smallest failure.
+- `SolvedSketch.tooLarge` marks a solve refused for size or for no module.
+- `reconstruct.ts`: a sketch above `SOLVER_SAFE_SIZE` is refused before solving (`recognize.sketchTooLarge`, with its size, arcs and the limit). `define()` never sends a run longer than the freedoms left, nor one that takes the part past `SOLVER_SAFE_SIZE` (halved without asking; a single candidate past it is left out), and stops at the first `tooLarge`. The "about 100 arcs" in `recognize.approxArcs` and the import help (both languages) is now the measured 120.
+- `THIRD_PARTY_NOTICES.md`: the runtime change of planegcs's memory declaration is stated.
+
+**Red-team four questions:**
+- **Input corruption:** `withHeap` refuses page counts that are not a multiple of 128 from 256 (NaN, 100, 255, 300, 16384) and a memory section not laid out as measured, rather than write over it.
+- **Geometric / capacity failure:** no recognition try aborts the solver now: 112 arcs rebuilt (under-defined) with zero aborts and the overflow mark unset; 150 arcs refused before any solve. A solver that holds less than measured (simulated at 700) gets exactly one too-large system and nothing smaller after it.
+- **Dependency integrity:** `@3db/regen` already depends on `@3db/sketch` (`check-deps`); new exports `sketchSystemSize`, `SOLVER_SAFE_SIZE`, `SOLVER_HEAP_PAGES`, `withHeap`. Browser workers pass `wasmUrl` as before; MCP (Node bundle) resolves the package file.
+- **Ground truth:** the heap is read from the module itself (`HEAP8.buffer.byteLength` = 32 MiB, > 0). The 120-arc ring is checked against a control: the same system on the shipped 16 MiB module aborts, on 32 MiB it solves fully, every centre and end within 1e-6 mm of where it was built.
+
+**Validation:** `recognize-approximate` 22 / 22; the two approximate fuzz files and all of phase 8 with MCP `recognize`: 67 files, 1417 passed, 0 failed; sketch package 23 files / 264 (the 600-chain overflow cases still overflow at 32 MiB); new `packages/sketch/test/solver-heap.test.ts` (10) and `tests/phase8/recognize-approximate-capacity.test.ts` (4); 35-part audit 30 / 35, the same as `audit-c41b` (0 regressions; six files only moved into `tmp\`); typecheck, `lint:rules/deps/i18n/repo`, `docs:sync` clean. Mutations 6 / 6 red: heap back to 16 MiB, no refusal before solving, no 1100 cap in `define`, no freedom cap (first survived: added the test that no system exceeds the defined sketch), no stop on `tooLarge` (first survived: added the 700 simulation), `tooLarge` not set.
+
 ## 2026-11-13 — Structured AI CAD control (ADR 0252)
+
+> **Correction (later the same night):** the two `recognize-approximate` failures below are **not** pre-existing; they are a C1 regression (entry above). The nightly cited as a "control" ran on code that already had C1 in it, so it showed only that they predate the MCP change.
 
 Added `packages/mcp` strict numeric feature translation, four `cad_*` tools in the existing MCP host, per-body/reference-body inspection with cylindrical hole rim coordinates, absolute manufacturing mesh tolerance, bounded opt-in correction and the `packages/cli` executable. Existing native commands, live-app gating, undo and software PNG rendering are reused. The external LLM performs visual judgment; no claim of an embedded vision model is made.
 
