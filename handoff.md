@@ -23,7 +23,9 @@
 - **分片版首輪（run 43549138821）**：7／8 片綠、整輪約 22.7 分；runner 4 核（EPYC 7763）、16 GB。第 2 片「a closed spline」60 s 逾時：是 `2074f4b4` 把它從 2.3 s 拖到 28.7 s（加大記憶體後 `define()` 一路定義到底，631 次求解、467 次多餘）。已修：候選順序把弧心排在其他點之後，同案 4 次求解、約 2 s；新測試鎖「≤ 10 次求解」（突變改回舊順序 632 次轉紅）。phase8＋MCP 68 檔過、35 件稽核 30/35 0 退步；使用者 2026-11-14 同意後 commit 為 `db5a4af0` 並推送。逾時 60 s 未動。
 - **分片版確認全綠（run 43561427221，`db5a4af0`，workflow_dispatch）**：integrity 三平台＋full-suite 8 片全過；452 檔、略過同為 4 個實樣本檔；「a closed spline」2.6 s、新容量測試 2.8 s；整輪約 15.1 分（最慢第 7 片）。
 - **`--maxWorkers 4` 試跑作廢（run 43563208784）**：我改 workflow 時漏了空格，指令成了 `--maxWorkers 4--shard=…`，`--shard` 失效，8 片各跑整套（取消時 196–401／452 檔、0 失敗、無記憶體不足）。對 4 worker 什麼也沒證明；未合併，main 仍為 2。已加 `timeout-minutes`：integrity 15、full-suite 40。使用者同意（2026-11-14）刪除 `ci/max-workers-4`，並在新分支改正後重試 4 worker、印出記憶體用量。
-- **下一步**：依 4 核決定是否調 `--maxWorkers`；若要更平均，可改依實測耗時分片（需自訂 sequencer 與耗時檔）。`.claude/worktrees/pre-c1` 為對照用 worktree，用完可 `git worktree remove`。
+- **`--maxWorkers 4` 重試，不採用（run 43565198967，`ci/max-workers-4b`，已刪）**：指令與分片正確；記憶體高峰 8.1／16 GB，不是記憶體。第 3、7 片三項逾時（兩個 section 測試的第一項 35 → > 60 s、`recognize-rolling-ball-fuzz-5` seed 46 151 → > 300 s），沒有斷言失敗；最慢的第 7 片反而變慢，整輪 17.8 分（2 worker 15.1）。要用 4 就得放寬逾時（§3.3 不准），故 main 維持 2。重測試變慢的原因未量（推測 4 vCPU＝2 核×2 執行緒，未印 `lscpu`）。
+- **待辦（使用者 2026-11-14 裁定先記下，未處理）**：2 worker 下，`tests/phase6/section-spline-isolation.test.ts` 的 smooth=false、`tests/phase6/section-clearance-probe.test.ts` 的 gap 0 各約 35 s（上限 60 s，59%），`tests/phase8/recognize-rolling-ball-fuzz-5.test.ts` seed 46 為 151 s（上限 300 s，50%）。runner 慢 1.72 倍時會到 85–100%，Nightly 可能變紅。處理方式是 profile 後讓測試本身變快，不得放寬逾時（§3.3）。（先前跟使用者說 section 測試 87%，是拿整檔時間比單項上限，錯了，已更正。）
+- **下一步**：若要分片更平均，可改依實測耗時分片（需自訂 sequencer 與耗時檔）。
 
 ## 2026-11-13 22:30 — Claude Code 接手 Codex：MCP 驗收完成
 
