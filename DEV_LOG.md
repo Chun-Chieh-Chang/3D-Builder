@@ -23,6 +23,7 @@
 - 紅隊參照檢查：同檔兩個實例分別回傳元件身分。配合使用原生面名與基準，遺失面名和幾何不符的配合均拒絕。組合件未新增 schema、求解方程或 GUI 特徵。
 - 紅隊真值檢查：定位板與銷使用真實零件及配合，驗證一個剩餘旋轉自由度、衝突拒絕、PNG、存檔重開與重求解一致。定位銷樣本會重疊，另用立方體的解析體積驗證干涉量測。
 - 驗證：MCP、組合件命令、存檔、黃金組合件與干涉回歸共 15 檔、126 項通過。typecheck、四個 lint、docs:sync 與 diff 檢查通過。
+- CI 修正（推送後 integrity 在 macOS、Windows 紅，ubuntu 綠）：`assembly.test` 2 項與 `e2e` 組合件 1 項回報「path … is outside the workspace folder」。根因是 `CadSession.inside()` 以字面路徑比對 `this.root`，組合件路徑卻先經 `realpath`；runner 的暫存資料夾經連結（macOS `/var` → `/private/var`，Windows 8.3 短名 `RUNNER~1`），同一個資料夾兩種寫法對不上，工作區內的檔案被拒。本機暫存路徑無連結，所以本機全綠。修法：真實名稱下的路徑同樣算在工作區內，`workspaceRelative` 依所在的根取相對路徑；「所在資料夾解析後須在工作區內」的檢查不變。測試改為經 junction／symlink 進入工作區（修正前本機即重現同樣 2 項紅），並補上逃逸案例：前綴相同的鄰居資料夾、根本身、工作區內指向外部的連結、以及不存在的外部資料夾。突變：拿掉真實根、拿掉字面檢查、拿掉所在資料夾檢查，三者皆轉紅（第二項原本存活，因所在資料夾檢查重疊擋下；補「不存在的資料夾」後才轉紅）。MCP 11 檔 72 項通過。
 - 接手驗證（Claude Code，Codex 中斷後）：typecheck、`lint:rules/deps/i18n/repo` 通過；範圍擴大為 25 檔（MCP 全部 11 檔、組合件求解／存讀、黃金組合件、配合、干涉、組合件與配合 fuzz），297 項全過。rebase 到含互動拆解的 `main` 後重驗。
 
 ## 2026-11-14 — 從 Agent 發起照片建模

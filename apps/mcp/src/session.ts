@@ -124,6 +124,12 @@ const MAX_COMMANDS = 200;
 const MAX_EVENTS = 50;
 const ANGLE_1_DEG = Math.cos((1 * Math.PI) / 180);
 
+/** A file strictly inside `base` (not `base` itself, no `..` step). */
+function under(base: string, path: string): boolean {
+  const rel = relative(base, path);
+  return !(rel === '' || rel.startsWith('..') || isAbsolute(rel) || rel.split(sep).includes('..'));
+}
+
 export class CadSession {
   private kernel!: Kernel;
   private solver!: PlaneGcsSolver;
@@ -239,16 +245,14 @@ export class CadSession {
   async inside(path: string): Promise<string> {
     if (typeof path !== 'string' || path.trim() === '') throw new AgentError('path must be a file name inside the workspace folder');
     const full = resolve(this.root, path);
-    const check = (p: string) => {
-      const rel = relative(this.root, p);
-      if (rel === '' || rel.startsWith('..') || isAbsolute(rel) || rel.split(sep).includes('..')) throw new AgentError(`path ${path} is outside the workspace folder ${this.root}`);
-    };
-    check(full);
+    // The root may itself be reached through a link (macOS /var -> /private/var, Windows 8.3 short names, a junction):
+    // a path already resolved with realpath names the same folder by its real name, and is inside as well.
+    const real = await realpath(this.root).catch(() => this.root);
+    if (!under(this.root, full) && !under(real, full)) throw new AgentError(`path ${path} is outside the workspace folder ${this.root}`);
     // a link inside the folder may point outside it: the folder that holds the file must really be inside
     const parent = await realpath(dirname(full)).catch(() => null);
     if (parent !== null) {
-      const root = await realpath(this.root);
-      const rel = relative(root, parent);
+      const rel = relative(real, parent);
       if (rel.startsWith('..') || isAbsolute(rel)) throw new AgentError(`path ${path} is outside the workspace folder ${this.root}`);
     }
     return full;
@@ -256,7 +260,9 @@ export class CadSession {
 
   /** Make a workspace-relative file reference from a checked local path. */
   async workspaceRelative(path: string): Promise<string> {
-    return relative(this.root, await this.inside(path)).split(sep).join('/');
+    const full = await this.inside(path);
+    const base = under(this.root, full) ? this.root : await realpath(this.root);
+    return relative(base, full).split(sep).join('/');
   }
 
   async newPart(): Promise<PartSummary> {

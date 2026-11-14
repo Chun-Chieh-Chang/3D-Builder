@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
@@ -9,9 +9,14 @@ import { CadSession } from '../src/session';
 import { callTool } from '../src/server';
 
 let root: string;
+let real: string;
 let session: CadSession;
 beforeAll(async () => {
-  root = await mkdtemp(join(tmpdir(), '3db-assembly-'));
+  // The workspace is reached through a link, as on CI runners (macOS /var -> /private/var, Windows 8.3 names):
+  // checks that resolve links must still treat the files in it as inside.
+  real = await mkdtemp(join(tmpdir(), '3db-assembly-'));
+  root = real + '-link';
+  await symlink(real, root, process.platform === 'win32' ? 'junction' : 'dir');
   session = await CadSession.create({ root, locale: 'en' });
   for (const name of ['locating-plate.3dbx', 'diamond-pin.3dbx']) {
     await writeFile(join(root, name), await readFile(new URL(`../../../tests/golden/${name}`, import.meta.url)));
@@ -19,7 +24,8 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   session?.dispose();
-  if (root) await rm(root, { recursive: true, force: true });
+  if (root) await rm(root, { force: true });
+  if (real) await rm(real, { recursive: true, force: true });
 });
 
 const data = (result: CallToolResult) => JSON.parse((result.content[0] as { text: string }).text);
@@ -153,6 +159,26 @@ it('refuses escaped paths and malformed inputs without mutating either session',
   expect((await call('assembly_query_elements', { path: 'cube.3dbx', component: 'a' })).isError).toBe(true);
   expect((await call('assembly_save', { path: '../outside.3dba' })).isError).toBe(true);
   expect((await call('assembly_open', { path: 'assemblies/jig.3dba' })).isError).toBe(true);
+  // The real name of the workspace is inside; its neighbours and links out of it are not, by either name.
+  const outside = real + '-outside';
+  await mkdir(outside, { recursive: true });
+  try {
+    await writeFile(join(outside, 'locating-plate.3dbx'), await readFile(join(root, 'locating-plate.3dbx')));
+    await symlink(outside, join(root, 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
+    expect(await session.inside(join(real, 'locating-plate.3dbx'))).toBe(join(real, 'locating-plate.3dbx'));
+    expect(await session.workspaceRelative(join(real, 'locating-plate.3dbx'))).toBe('locating-plate.3dbx');
+    // Folders that do not exist cannot be resolved: only the check on the name itself stands between them and the outside.
+    const missing = [join(outside, 'missing', 'x.3dbx'), '../3db-nowhere/x.3dbx', join(real, '..', 'nowhere', 'x.3dbx')];
+    for (const path of [...missing, join(outside, 'locating-plate.3dbx'), real, root,join(root, 'escape', 'locating-plate.3dbx'), join(real, 'escape', 'locating-plate.3dbx')]) {
+      await expect(session.inside(path), path).rejects.toThrow(/outside the workspace/);
+    }
+    const escaped = await call('assembly_query_elements', { path: 'escape/locating-plate.3dbx' });
+    expect(escaped.isError).toBe(true);
+    expect((escaped.content[0] as { text: string }).text).toMatch(/outside the workspace/);
+  } finally {
+    await rm(join(root, 'escape'), { force: true });
+    await rm(outside, { recursive: true, force: true });
+  }
   for (const placement of [pose([NaN, 0, 0]), { ...pose([0, 0, 0]), rotation: [0, 0, 0, 0] }]) {
     expect((await call('assembly_apply_commands', {
       commands: [{ type: 'setPlacements', placements: [{ componentId: 'b', placement }] }],
