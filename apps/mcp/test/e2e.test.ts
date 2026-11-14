@@ -38,7 +38,7 @@ const json = (r: CallToolResult) => JSON.parse((r.content[0] as { text: string }
 it('tells the client how to work, and lists its tools', async () => {
   expect(client.getInstructions()).toMatch(/apply_commands/);
   const { tools } = await client.listTools();
-  expect(tools.map((t) => t.name).sort()).toEqual(['apply_commands', 'assembly_apply_commands', 'assembly_inspect', 'assembly_new', 'assembly_open', 'assembly_query_elements', 'assembly_save', 'cad_execute_feature', 'cad_export_manufacturing', 'cad_get_viewport_screenshot', 'cad_inspect_geometry', 'command_reference', 'export_file', 'live_status', 'part_new', 'part_open', 'part_save', 'part_summary', 'query_elements', 'rebuild_events', 'recognize_features', 'render_view', 'session_status', 'undo']);
+  expect(tools.map((t) => t.name).sort()).toEqual(['apply_commands', 'assembly_apply_commands', 'assembly_export', 'assembly_inspect', 'assembly_new', 'assembly_open', 'assembly_query_elements', 'assembly_save', 'cad_execute_feature', 'cad_export_manufacturing', 'cad_get_viewport_screenshot', 'cad_inspect_geometry', 'command_reference', 'export_file', 'live_status', 'part_new', 'part_open', 'part_save', 'part_summary', 'query_elements', 'rebuild_events', 'recognize_features', 'render_view', 'session_status', 'undo']);
 });
 
 it('serves the four standard CAD tools over the real stdio transport', async () => {
@@ -73,6 +73,12 @@ it('builds a separate assembly over stdio and leaves the part session intact', a
   expect(json(applied)).toMatchObject({ committed: true, components: [{ id: 'plate', dof: 0 }] });
   expect((await call('assembly_save', { path: 'jig.3dba' })).isError).toBeFalsy();
   expect(existsSync(join(root, 'jig.3dba'))).toBe(true);
+  // the delivery files, through the built server
+  expect(json(await call('assembly_export', { path: 'jig.step', format: 'step' }))).toMatchObject({ format: 'step', parts: 1, instances: 1 });
+  expect(readFileSync(join(root, 'jig.step'), 'latin1')).toMatch(/^ISO-10303-21;/);
+  expect(json(await call('assembly_export', { path: 'jig.csv', format: 'bom_csv' })).rows).toEqual([
+    { item: '1', name: 'assembly-source', qty: 1, vendor: '', partNo: '', file: 'assembly-source.3dbx' },
+  ]);
   expect((await call('assembly_new')).isError).toBeFalsy();
   expect(json(await call('assembly_open', { path: 'jig.3dba' }))).toMatchObject({ opened: true, components: [{ id: 'plate', dof: 0 }] });
   expect(json(await call('part_summary')).features).toEqual([]);

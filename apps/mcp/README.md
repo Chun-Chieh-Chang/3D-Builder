@@ -37,8 +37,9 @@
 3. 用 `assembly_apply_commands` 傳入 `dry_run: true`、`interference: true`、`preview: {"view":"isometric"}`。核對 PNG、姿態、自由度與干涉，再以相同命令正式套用。
 4. 用 `assembly_inspect` 查詢已套用的結果，最後用 `assembly_save` 儲存新 `.3dba`。目的資料夾須已存在，來源 `.3dbx` 仍由組合件相對路徑參照。
 5. 用 `assembly_open` 重新開啟同一工作區內的 `.3dba`，核對來源、配合與自由度。它會先重建零件及求解，通過後才切換工作階段。先儲存目前未儲存的組合件。
+6. 用 `assembly_export` 輸出交付檔：`format: "step"` 寫 `.step`／`.stp`（每個來源零件一次、每個元件在求解後的位置、保留面顏色），`format: "bom_csv"` 寫 `.csv`（與 3D-Builder「零件表」相同的欄位，Excel 可直接開啟）。輸出的是目前已套用的組合件，不必先存檔；沒有元件、配合未解、副檔名與格式不符或檔案已存在都會拒絕。
 
-> 請用 3D-Builder MCP 把定位板固定，將定位銷與左側孔設為同心，讓銷肩貼合板面。先查詢真實參照，再試建給我預覽、自由度及干涉結果。我確認後才儲存成 jig.3dba。
+> 請用 3D-Builder MCP 把定位板固定，將定位銷與左側孔設為同心，讓銷肩貼合板面。先查詢真實參照，再試建給我預覽、自由度及干涉結果。我確認後才儲存成 jig.3dba，再輸出 jig.step 和零件表 jig.csv。
 
 第一版最多 32 個元件、64 個配合，來源為直接引用的實體零件。若干涉結果是 `incomplete`，檢查其中的 `unknown` 或 `failed`。配合成立後仍可能有干涉。各 Agent 的連線說明見[共用建模指引](../../docs/photo-to-cad.md)。
 

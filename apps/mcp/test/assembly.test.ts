@@ -115,6 +115,120 @@ it('queries actual mating faces, previews a batch, preserves state on refusal an
   expect(data(await call('assembly_inspect', { interference: true }))).toEqual(before);
 });
 
+it('exports the solved assembly as STEP and as the parts list, and keeps existing files', async () => {
+  // The plate and pin of the previous test, reopened from its file, with a second plate: the parts list must count that file twice.
+  // A third part painted red, so the STEP must carry face colors (the two golden parts have none).
+  expect(data(await call('assembly_inspect')).components.map((c: { id: string }) => c.id)).toEqual(['plate', 'pin']);
+  expect((await call('part_new')).isError).toBeFalsy();
+  expect((await call('cad_execute_feature', { feature: { operation: 'create_primitive', shape: 'box', id: 'tint', width: 8, depth: 6, height: 4 } })).isError).toBeFalsy();
+  expect((await call('apply_commands', { commands: [{ type: 'setAppearance', target: { kind: 'part' }, color: '#ff0000' }] })).isError).toBeFalsy();
+  expect((await call('part_save', { path: 'tinted.3dbx' })).isError).toBeFalsy();
+  expect((await call('part_new')).isError).toBeFalsy();
+  const extra = await call('assembly_apply_commands', {
+    commands: [
+      { type: 'insertComponent', component: { id: 'plate2', file: 'locating-plate', instance: 2, fixed: true, placement: pose([0, 0, 50]) } },
+      { type: 'insertComponent', file: { id: 'tinted', path: 'tinted.3dbx' }, component: { id: 'red', file: 'tinted', instance: 1, fixed: true,
+        // turned 90° about z: a rotation that is not its own transpose, so the matrix check below tells rows from columns
+        placement: { position: [0, 80, 0], rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2] } } },
+    ],
+  });
+  expect(extra.isError, JSON.stringify(extra.content[0])).toBeFalsy();
+  const solved = data(await call('assembly_inspect'));
+  const poseOf = new Map<string, { position: number[]; rotation: number[] }>(solved.components.map((c: { id: string; pose: never }) => [c.id, c.pose]));
+  expect(poseOf.get('pin')!.position[0]).toBeCloseTo(-40, 6); // where the mates put the pin (first test), known from the parts' geometry
+  await mkdir(join(root, 'deliver'));
+
+  // STEP: read back by the kernel, not by the writer; each part's volume against its own source rebuilt here.
+  const step = await call('assembly_export', { path: 'deliver/jig.step', format: 'step' });
+  expect(step.isError, JSON.stringify(step.content[0])).toBeFalsy();
+  const stepBytes = await readFile(join(root, 'deliver', 'jig.step'));
+  expect(data(step)).toMatchObject({ format: 'step', parts: 3, instances: 4, warnings: [], bytes: stepBytes.length });
+  const { kernel, solver } = await session.assemblyGeometry();
+  const volumeOf = new Map<string, { volume: number; faces: number }>();
+  const regen: Regenerator[] = [];
+  try {
+    for (const name of ['locating-plate', 'diamond-pin', 'tinted']) {
+      const source = await readDocumentFile(await readFile(join(root, `${name}.3dbx`)));
+      if (source.kind !== 'part') throw new Error('expected a part source');
+      const builder = new Regenerator(kernel, solver, source.blobs);
+      regen.push(builder);
+      await solver.fresh();
+      const body = builder.rebuild(source.doc).body!;
+      volumeOf.set(name, { volume: kernel.massProps(body.shape).volume, faces: body.topology.faces.length });
+    }
+  } finally {
+    for (const builder of regen) builder.dispose();
+  }
+  const contents = kernel.readAssemblyStep(stepBytes);
+  try {
+    const top = contents.prototypes[contents.root]!;
+    expect(top.children).toHaveLength(4);
+    const parts = contents.prototypes.filter((p) => p.shape);
+    expect(parts.map((p) => p.name).sort()).toEqual(['diamond-pin', 'locating-plate', 'tinted']);
+    for (const part of parts) {
+      const truth = volumeOf.get(part.name!)!;
+      expect(kernel.massProps(part.shape!).volume / truth.volume, part.name!).toBeCloseTo(1, 6);
+      expect(kernel.topology(part.shape!).faces.length, part.name!).toBe(truth.faces);
+    }
+    const red = parts.find((p) => p.name === 'tinted')!;
+    expect(kernel.massProps(red.shape!).volume).toBeCloseTo(8 * 6 * 4, 6); // the box as drawn
+    expect(red.faceColors ?? (red.color ? Array(6).fill(red.color) : null), JSON.stringify({ faceColors: red.faceColors, color: red.color })).toEqual(Array(6).fill('#ff0000'));
+    for (const plain of parts.filter((p) => p.name !== 'tinted')) expect((plain.faceColors ?? []).every((c) => c === null), plain.name!).toBe(true);
+    // Each component where the solver put it: positions in mm; rotations come back as 3x3 matrices, compared with the solved quaternion's matrix.
+    const placed = top.children!.map((c) => ({ part: contents.prototypes[c.prototype]!.name, position: c.translation, rotation: c.rotation }));
+    const want = [['plate', 'locating-plate'], ['pin', 'diamond-pin'], ['plate2', 'locating-plate'], ['red', 'tinted']] as const;
+    for (const [id, file] of want) {
+      const pose = poseOf.get(id)!;
+      const match = placed.find((p) => p.part === file && p.position.every((v, i) => Math.abs(v - pose.position[i]!) < 1e-6));
+      expect(match, `${id} at ${pose.position}`).toBeDefined();
+      const [x, y, z, w] = pose.rotation as [number, number, number, number];
+      const matrix = [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w), 2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w), 2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)];
+      expect(match!.rotation, id).toHaveLength(9);
+      match!.rotation.forEach((v, i) => expect(v, `${id} rotation[${i}]`).toBeCloseTo(matrix[i]!, 9));
+    }
+  } finally {
+    for (const p of contents.prototypes) if (p.shape) kernel.release(p.shape);
+  }
+
+  // The parts list: one row per file, the second plate counted, columns as the app writes them.
+  const bom = await call('assembly_export', { path: 'deliver/jig.csv', format: 'bom_csv' });
+  expect(bom.isError, JSON.stringify(bom.content[0])).toBeFalsy();
+  const csvBytes = await readFile(join(root, 'deliver', 'jig.csv'));
+  expect([...csvBytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]); // the byte order mark Excel needs to read UTF-8 (TextDecoder drops it)
+  const lines = new TextDecoder().decode(csvBytes).split('\r\n').filter((line) => line !== '');
+  expect(lines[0]).toBe('Item No.,Name,Qty.,Vendor,Part Number,File');
+  expect(lines.slice(1).map((line) => line.split(',')).sort((a, b) => a[1]!.localeCompare(b[1]!))).toEqual([
+    ['2', 'diamond-pin', '1', '', '', 'diamond-pin.3dbx'],
+    ['1', 'locating-plate', '2', '', '', 'locating-plate.3dbx'],
+    ['3', 'tinted', '1', '', '', 'tinted.3dbx'],
+  ]);
+  expect(data(bom).rows).toHaveLength(3);
+
+  // Refusals: nothing is written and existing files keep their bytes.
+  const refused = [
+    { path: 'deliver/jig.step', format: 'step' }, // already there
+    { path: 'deliver/jig.csv', format: 'bom_csv' },
+    { path: 'deliver/other.csv', format: 'step' }, // extension of another format
+    { path: 'deliver/other.step', format: 'bom_csv' },
+    { path: 'nowhere/jig.step', format: 'step' }, // a folder that does not exist
+    { path: '../jig.step', format: 'step' },
+  ];
+  for (const args of refused) expect((await call('assembly_export', args)).isError, JSON.stringify(args)).toBe(true);
+  expect((await readFile(join(root, 'deliver', 'jig.step'))).equals(stepBytes)).toBe(true);
+  expect((await readdir(join(root, 'deliver'))).sort()).toEqual(['jig.csv', 'jig.step']);
+
+  // Save, so the next test can start a new assembly.
+  expect((await call('assembly_save', { path: 'deliver/jig2.3dba' })).isError).toBeFalsy();
+  expect((await call('assembly_new')).isError).toBeFalsy();
+  // An empty assembly has nothing to deliver: no header-only parts list, no empty STEP.
+  for (const args of [{ path: 'deliver/empty.step', format: 'step' }, { path: 'deliver/empty.csv', format: 'bom_csv' }]) {
+    const empty = await call('assembly_export', args);
+    expect(empty.isError, args.format).toBe(true);
+    expect((empty.content[0] as { text: string }).text).toMatch(/no components/);
+  }
+  expect((await readdir(join(root, 'deliver'))).sort()).toEqual(['jig.csv', 'jig.step', 'jig2.3dba']);
+});
+
 it('distinguishes separation, touching and known overlap between two instances of one solid', async () => {
   expect((await call('assembly_new')).isError).toBeFalsy();
   expect((await call('cad_execute_feature', { feature: { operation: 'create_primitive', shape: 'box', id: 'cube', width: 10, depth: 10, height: 10 } })).isError).toBeFalsy();

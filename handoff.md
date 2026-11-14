@@ -1,5 +1,13 @@
 # 交接與接續工作
 
+## 2026-11-14 晚 — 組合件 MCP 後續 ①：交付輸出（Claude Code）
+
+- 使用者同意依建議順序做組合件 MCP 後續：① 交付輸出 BOM／組合件 STEP → ② GUI 即時連線 → ③ 多張照片建組合件 → ④ 各客戶端驗收（理由與契約見[組合件 MCP 計畫](docs/design/ai-cad-control/assembly-mcp-plan.md) D 節）。
+- ① 完成：新工具 `assembly_export { path, format: 'step' | 'bom_csv' }`，重用 GUI 的 `stepStructure`／`exportAssemblyStep` 與 `buildBom`／`bomCsv`。MCP 現有 25 個工具。驗收與突變見計畫與 DEV_LOG。
+- 圖面（工程圖）未做，① 之後另行評估。下一步 ②：組合件的 GUI 即時連線，延伸零件的 ADR 0238 橋接，需要新 ADR 與完整 `verify:ui`。
+- 進度頁另有本工作的階段「組合件 MCP 後續 1：交付輸出 BOM／組合件 STEP（2026-11-14）」，只用 `scratch/ci/phase9.mjs` 更新。
+- 本日桌面版發佈為 0.5.0（Release `v0.5.0`，Latest）；0.4.1 只建置未發佈，見[桌面版版本履歷](docs/desktop-release-history.md)。
+
 ## 2026-11-14 — 無視窗組合件 MCP
 
 - 18:20 更新：Claude Code 2.1.325 以隔離設定查詢、試組、預覽、套用並儲存 `out/assembly-agent-smoke/claude/claude-jig.3dba`。用新增的 `assembly_open` 獨立重開並求解，兩配合成立，銷 x = −40 mm、保留 1 DOF，干涉 405.396352 mm³，回傳 PNG。Ø10 銷與 Ø8 孔的同心配合成立但會干涉，這是測試特意保留的結果。

@@ -45,6 +45,7 @@ const schemas = {
   }),
   assembly_inspect: z.strictObject(options),
   assembly_save: z.strictObject({ path: filePath }),
+  assembly_export: z.strictObject({ path: filePath, format: z.enum(['step', 'bom_csv']) }),
 };
 type AssemblyToolName = keyof typeof schemas;
 const descriptions: Record<AssemblyToolName, string> = {
@@ -54,6 +55,7 @@ const descriptions: Record<AssemblyToolName, string> = {
   assembly_apply_commands: 'Solve an atomic batch of component and mate operations. Set dry_run with preview to inspect the result before committing.',
   assembly_inspect: 'Report assembly poses and mate status, optionally check interference and render the committed assembly.',
   assembly_save: 'Write a new editable .3dba referencing workspace .3dbx files. Existing files are kept.',
+  assembly_export: 'Write the committed, fully solved assembly as a delivery file: format step (.step/.stp, each source part once, each component at its solved pose, face colors kept) or bom_csv (.csv, the flat parts list the app writes). Existing files are kept.',
 };
 export const ASSEMBLY_TOOLS = (Object.keys(schemas) as AssemblyToolName[]).map((name): Tool => ({
   name,
@@ -87,6 +89,10 @@ export async function callAssemblyTool(session: CadSession, name: AssemblyToolNa
     }
     case 'assembly_save':
       return json(await assembly.save(schemas.assembly_save.parse(args).path));
+    case 'assembly_export': {
+      const a = schemas.assembly_export.parse(args);
+      return json(await assembly.export(a.path, a.format));
+    }
     case 'assembly_apply_commands':
     case 'assembly_inspect': {
       const result = name === 'assembly_apply_commands'
