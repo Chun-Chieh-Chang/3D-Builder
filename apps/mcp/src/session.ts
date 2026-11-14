@@ -5,7 +5,7 @@
  * box), so the agent checks its work on the geometry and not on a picture alone.
  */
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { setLocale, type Locale } from '@3db/i18n';
 import { applyCommand, createEmptyPart, parsePart, type Command, type PartDoc, type Ref } from '@3db/model';
 import { Kernel, isTrap, type MassProps, type ShapeId } from '@3db/kernel';
@@ -130,6 +130,22 @@ function under(base: string, path: string): boolean {
   return !(rel === '' || rel.startsWith('..') || isAbsolute(rel) || rel.split(sep).includes('..'));
 }
 
+/** Where a path really is: the real path of its deepest existing part, followed by the parts that do not exist yet. */
+async function located(path: string): Promise<string> {
+  const rest: string[] = [];
+  let head = path;
+  for (;;) {
+    try {
+      return join(await realpath(head), ...rest);
+    } catch {
+      const up = dirname(head);
+      if (up === head) return path;
+      rest.unshift(basename(head));
+      head = up;
+    }
+  }
+}
+
 export class CadSession {
   private kernel!: Kernel;
   private solver!: PlaneGcsSolver;
@@ -245,24 +261,18 @@ export class CadSession {
   async inside(path: string): Promise<string> {
     if (typeof path !== 'string' || path.trim() === '') throw new AgentError('path must be a file name inside the workspace folder');
     const full = resolve(this.root, path);
-    // The root may itself be reached through a link (macOS /var -> /private/var, Windows 8.3 short names, a junction):
-    // a path already resolved with realpath names the same folder by its real name, and is inside as well.
+    // Decide by where the path really is, not by how it is spelled: the root and the path may each be reached through
+    // links (macOS /var -> /private/var, Windows 8.3 short names, junctions), and a link inside the folder may point
+    // outside it, also through folders that do not exist yet and would be created by a save.
     const real = await realpath(this.root).catch(() => this.root);
-    if (!under(this.root, full) && !under(real, full)) throw new AgentError(`path ${path} is outside the workspace folder ${this.root}`);
-    // a link inside the folder may point outside it: the folder that holds the file must really be inside
-    const parent = await realpath(dirname(full)).catch(() => null);
-    if (parent !== null) {
-      const rel = relative(real, parent);
-      if (rel.startsWith('..') || isAbsolute(rel)) throw new AgentError(`path ${path} is outside the workspace folder ${this.root}`);
-    }
+    if (!under(real, await located(full))) throw new AgentError(`path ${path} is outside the workspace folder ${this.root}`);
     return full;
   }
 
   /** Make a workspace-relative file reference from a checked local path. */
   async workspaceRelative(path: string): Promise<string> {
     const full = await this.inside(path);
-    const base = under(this.root, full) ? this.root : await realpath(this.root);
-    return relative(base, full).split(sep).join('/');
+    return relative(await realpath(this.root), await located(full)).split(sep).join('/');
   }
 
   async newPart(): Promise<PartSummary> {

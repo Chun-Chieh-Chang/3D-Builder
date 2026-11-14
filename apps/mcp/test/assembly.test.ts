@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
@@ -161,12 +161,30 @@ it('refuses escaped paths and malformed inputs without mutating either session',
   expect((await call('assembly_open', { path: 'assemblies/jig.3dba' })).isError).toBe(true);
   // The real name of the workspace is inside; its neighbours and links out of it are not, by either name.
   const outside = real + '-outside';
+  // A third spelling of the workspace, as on CI where tmpdir() itself is reached through a link.
+  const other = real + '-other';
+  const link = process.platform === 'win32' ? 'junction' : 'dir';
   await mkdir(outside, { recursive: true });
   try {
+    await symlink(real, other, link);
     await writeFile(join(outside, 'locating-plate.3dbx'), await readFile(join(root, 'locating-plate.3dbx')));
-    await symlink(outside, join(root, 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
-    expect(await session.inside(join(real, 'locating-plate.3dbx'))).toBe(join(real, 'locating-plate.3dbx'));
-    expect(await session.workspaceRelative(join(real, 'locating-plate.3dbx'))).toBe('locating-plate.3dbx');
+    await symlink(outside, join(root, 'escape'), link);
+    // Saving creates missing folders: a link out of the workspace followed by a folder that does not exist yet must not
+    // let a save or an export write outside.
+    const escapes = [
+      ['part_save', { path: 'escape/new/x.3dbx' }], ['export_file', { path: 'escape/new/x.step', format: 'step' }],
+      ['part_save', { path: join(real, 'escape', 'new', 'x.3dbx') }], ['export_file', { path: join(real, 'escape', 'new', 'x.step'), format: 'step' }],
+    ] as const;
+    for (const [tool, args] of escapes) {
+      const refused = await call(tool, args);
+      expect(refused.isError, `${tool} ${args.path}`).toBe(true);
+      expect((refused.content[0] as { text: string }).text).toMatch(/outside the workspace/);
+    }
+    expect(await readdir(outside)).toEqual(['locating-plate.3dbx']);
+    for (const spelling of [real, other]) {
+      expect(await session.inside(join(spelling, 'locating-plate.3dbx'))).toBe(join(spelling, 'locating-plate.3dbx'));
+      expect(await session.workspaceRelative(join(spelling, 'locating-plate.3dbx'))).toBe('locating-plate.3dbx');
+    }
     // Folders that do not exist cannot be resolved: only the check on the name itself stands between them and the outside.
     const missing = [join(outside, 'missing', 'x.3dbx'), '../3db-nowhere/x.3dbx', join(real, '..', 'nowhere', 'x.3dbx')];
     for (const path of [...missing, join(outside, 'locating-plate.3dbx'), real, root,join(root, 'escape', 'locating-plate.3dbx'), join(real, 'escape', 'locating-plate.3dbx')]) {
@@ -177,6 +195,7 @@ it('refuses escaped paths and malformed inputs without mutating either session',
     expect((escaped.content[0] as { text: string }).text).toMatch(/outside the workspace/);
   } finally {
     await rm(join(root, 'escape'), { force: true });
+    await rm(other, { force: true });
     await rm(outside, { recursive: true, force: true });
   }
   for (const placement of [pose([NaN, 0, 0]), { ...pose([0, 0, 0]), rotation: [0, 0, 0, 0] }]) {
