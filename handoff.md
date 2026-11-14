@@ -22,6 +22,7 @@
 - **full-suite 分 8 片平行（使用者同意，2026-11-14）**：`vitest --shard=i/8`，每片仍 `--maxWorkers 2`，`section-offset-cost` 仍單獨跑在第 1 片；第一步印出核心數與記憶體。門檻、逾時、檔案都沒改。vitest 依路徑雜湊分片、不依時間，以 #202 耗時模擬最慢一片約 11.6 分（4 片 20.5、6 片 15.2）。本機 47 個新檔逐一計時已跑完、全過（`scratch/ci/timing/times.tsv`），CI／本機整體 1.32 倍（0.83–1.57）。
 - **分片版首輪（run 43549138821）**：7／8 片綠、整輪約 22.7 分；runner 4 核（EPYC 7763）、16 GB。第 2 片「a closed spline」60 s 逾時：是 `2074f4b4` 把它從 2.3 s 拖到 28.7 s（加大記憶體後 `define()` 一路定義到底，631 次求解、467 次多餘）。已修：候選順序把弧心排在其他點之後，同案 4 次求解、約 2 s；新測試鎖「≤ 10 次求解」（突變改回舊順序 632 次轉紅）。phase8＋MCP 68 檔過、35 件稽核 30/35 0 退步；使用者 2026-11-14 同意後 commit 為 `db5a4af0` 並推送。逾時 60 s 未動。
 - **分片版確認全綠（run 43561427221，`db5a4af0`，workflow_dispatch）**：integrity 三平台＋full-suite 8 片全過；452 檔、略過同為 4 個實樣本檔；「a closed spline」2.6 s、新容量測試 2.8 s；整輪約 15.1 分（最慢第 7 片）。
+- **`--maxWorkers 4` 試跑作廢（run 43563208784）**：我改 workflow 時漏了空格，指令成了 `--maxWorkers 4--shard=…`，`--shard` 失效，8 片各跑整套（取消時 196–401／452 檔、0 失敗、無記憶體不足）。對 4 worker 什麼也沒證明；未合併，main 仍為 2。已加 `timeout-minutes`：integrity 15、full-suite 40。使用者同意（2026-11-14）刪除 `ci/max-workers-4`，並在新分支改正後重試 4 worker、印出記憶體用量。
 - **下一步**：依 4 核決定是否調 `--maxWorkers`；若要更平均，可改依實測耗時分片（需自訂 sequencer 與耗時檔）。`.claude/worktrees/pre-c1` 為對照用 worktree，用完可 `git worktree remove`。
 
 ## 2026-11-13 22:30 — Claude Code 接手 Codex：MCP 驗收完成

@@ -67,6 +67,10 @@ Nightly #189 / #194 / #198 failed on `tests/phase8/recognize-approximate.test.ts
 
 **Sharded run with the fix (#43561427221, on `db5a4af0`, workflow_dispatch): all green.** `integrity` on ubuntu, macOS and Windows and all 8 `full-suite` shards passed; 452 files (57/57/57/57/56/56/56/56, shard 1 plus `section-offset-cost` alone), the same four skipped. "a closed spline" 2.6 s in shard 2 (> 61 s the run before); the new capacity test 2.8 s in shard 1. Wall ≈ 15.1 min (slowest shard 7; shards 3 and 5 under 6 min). Most of the drop from 22.7 is the removed slowdown, but runners differ (1.72× above), so this is no baseline.
 
+**`--maxWorkers 4` try (#209, run 43563208784, branch `ci/max-workers-4`): void, my typo.** After 21 min 0 of 8 shards had finished (the shards of 2 workers: 4–15 min); cancelled at the user's request. The log shows the command run was `--maxWorkers 4--shard=3/8`: the space after `4` was gone, so `--shard` was never seen and **each of the 8 shards ran the whole suite** (196–401 of 452 files done when cancelled, `sketch-collapse` in all 8; 57 per shard before). No failure, no out-of-memory, kill or timeout in the log; its 58–84 k lines each (2–12 k before) are PlaneGCS's usual `Redundant solving` lines, printed by every file of the whole suite. So it says nothing about 4 workers either way. Not merged; `main` stays at 2.
+- Added `timeout-minutes`: `integrity` 15 (about 2 min each), `full-suite` 40 (slowest shard 15–23 min with `npm ci`). A shard that hangs, or runs the whole suite as here, now stops at 40 min, not at GitHub's 6 h. No test threshold or timeout changed.
+- Lesson: after changing a workflow command, read the command as the log prints it (`##[group]Run …`) before reading the results; here it showed the cause at once, and no memory or CPU story was needed.
+
 ## 2026-11-13 — Structured AI CAD control (ADR 0252)
 
 > **Correction (later the same night):** the two `recognize-approximate` failures below are **not** pre-existing; they are a C1 regression (entry above). The nightly cited as a "control" ran on code that already had C1 in it, so it showed only that they predate the MCP change.

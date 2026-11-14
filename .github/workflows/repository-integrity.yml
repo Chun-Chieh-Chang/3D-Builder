@@ -20,6 +20,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # about 2 min on each platform (2026-11-14); a hung job is stopped here, not at GitHub's 6 h
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -75,6 +77,9 @@ jobs:
   full-suite:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    # the slowest shard took 22.7 min with npm ci (run 43549138821) and 15.1 (43561427221); a hung shard, or one that
+    # runs the whole suite (run 43563208784: a missing space dropped --shard), is stopped here, not at GitHub's 6 h
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
