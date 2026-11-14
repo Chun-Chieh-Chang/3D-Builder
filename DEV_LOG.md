@@ -65,6 +65,8 @@ Nightly #189 / #194 / #198 failed on `tests/phase8/recognize-approximate.test.ts
 - Validation: phase 8 + MCP `recognize` 68 files, 1422 passed, 1 skipped, 0 failed; typecheck, `lint:rules/deps/i18n/repo`, `git diff --check` clean; 35-part audit 30 / 35 rebuilt, 0 regressions (`scratch/ci/audit-order.jsonl` vs `audit-c41b`; all 35 statuses as in `audit-nightly-fix`). No threshold or timeout changed (the 60 s stays).
 - A local run of phase 8 from the earlier session was still alive when I started the next; the two ran at once, the old one ended with 8 files and 60 worker-start errors (0xC0000142) and both wrote one log. Void; the second, alone, is the one above. Before starting a long run, check `Get-Process node` for one still running.
 
+**Sharded run with the fix (#43561427221, on `db5a4af0`, workflow_dispatch): all green.** `integrity` on ubuntu, macOS and Windows and all 8 `full-suite` shards passed; 452 files (57/57/57/57/56/56/56/56, shard 1 plus `section-offset-cost` alone), the same four skipped. "a closed spline" 2.6 s in shard 2 (> 61 s the run before); the new capacity test 2.8 s in shard 1. Wall ≈ 15.1 min (slowest shard 7; shards 3 and 5 under 6 min). Most of the drop from 22.7 is the removed slowdown, but runners differ (1.72× above), so this is no baseline.
+
 ## 2026-11-13 — Structured AI CAD control (ADR 0252)
 
 > **Correction (later the same night):** the two `recognize-approximate` failures below are **not** pre-existing; they are a C1 regression (entry above). The nightly cited as a "control" ran on code that already had C1 in it, so it showed only that they predate the MCP change.
