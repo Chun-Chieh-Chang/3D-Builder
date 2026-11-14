@@ -231,6 +231,10 @@ export const help: Translation = {
   'help.exportImage.keywords': 'export image png picture screenshot',
 
   'help.exportImage.see': 'export-stl view-iso',
+  'help.exportDisassembly.summary': 'Exports the current exploded view and assembly BOM as interactive offline HTML.',
+  'help.exportDisassembly.body': 'Add at least one step to an assembly exploded view, then choose File > Export Interactive Disassembly. Open the downloaded HTML in a WebGL 2 browser to step through the disassembly and select visible instances from the view or BOM. BOM quantities include hidden parts.',
+  'help.exportDisassembly.keywords': 'export disassembly exploded view HTML offline BOM',
+  'help.exportDisassembly.see': 'explode bom',
   'help.newDrawing.summary': 'Makes a drawing of a saved part or assembly (not while the file has unsaved changes).',
 
   'help.newDrawing.body':

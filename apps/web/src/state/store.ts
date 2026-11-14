@@ -3671,6 +3671,21 @@ class AppStore {
     }
   }
 
+  async exportDisassembly(): Promise<void> {
+    const assembly = this.assembly;
+    if (!assembly) return;
+    try {
+      const { disassemblyHtml } = await import('../disassembly/export');
+      if (this.assembly !== assembly) return;
+      const snapshot = assembly.disassemblySnapshot();
+      const file = `${safeFileName(snapshot.name)}-disassembly.html`;
+      download(file, disassemblyHtml(snapshot), 'text/html;charset=utf-8');
+      this.notify(t('export.done', { file }));
+    } catch (e) {
+      this.notify(t('export.failed', { what: t('export.disassemblyTitle'), why: e instanceof Error ? e.message : String(e) }), 'error');
+    }
+  }
+
   /** 「輸出影像」 (F3.3): what the graphics area shows, as a PNG. */
   async exportImage(): Promise<void> {
     try {

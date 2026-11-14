@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { autoClose, graceFromEnv } from './dev/autoClose.ts';
 import { shutdown } from './dev/shutdown.ts';
+import { disassemblyBundle } from './dev/disassemblyBundle.ts';
 
 // `npm run dev:auto` runs this with `--mode autoclose`: the dev server stops by itself 30 seconds (or `DEV_AUTO_CLOSE_SECONDS`) after the last page connected to it is gone.
 export default defineConfig(({ mode }) => ({
@@ -9,7 +10,7 @@ export default defineConfig(({ mode }) => ({
   // a local build and the other systems' builds (empty) stay at /.
   base: process.env.PAGES_BASE || '/',
   // `shutdown()` (ADR 0135) serves the 「關閉伺服器」 button in every dev mode: it is `apply: 'serve'`, so a production build never carries it.
-  plugins: [react(), shutdown(), ...(mode === 'autoclose' ? [autoClose({ graceSeconds: graceFromEnv(process.env.DEV_AUTO_CLOSE_SECONDS) })] : [])],
+  plugins: [react(), shutdown(), disassemblyBundle(), ...(mode === 'autoclose' ? [autoClose({ graceSeconds: graceFromEnv(process.env.DEV_AUTO_CLOSE_SECONDS) })] : [])],
   worker: { format: 'es' },
   // The WASM packages locate their binaries via import.meta.url; pre-bundling would break that.
   optimizeDeps: { exclude: ['libcascade', '@salusoft89/planegcs'] },

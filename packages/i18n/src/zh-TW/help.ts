@@ -238,6 +238,10 @@ export const help = {
   'help.exportImage.keywords': '輸出影像 圖片 PNG 截圖',
 
   'help.exportImage.see': 'export-stl view-iso',
+  'help.exportDisassembly.summary': '把目前的組合件爆炸視圖與零件表輸出成可離線開啟的互動 HTML。',
+  'help.exportDisassembly.body': '在組合件的爆炸視圖建立至少一個步驟，再從「檔案」選擇「輸出互動拆解示意」。用支援 WebGL 2 的瀏覽器開啟下載的 HTML，即可逐步查看拆解位置，並從圖面或零件表高亮同項次的可見零件。BOM 數量包含隱藏的零件。',
+  'help.exportDisassembly.keywords': '輸出 拆解 爆炸視圖 HTML 離線 零件表',
+  'help.exportDisassembly.see': 'explode bom',
   'help.newDrawing.summary': '為已儲存的零件或組合件建立工程圖（檔案有未儲存的修改時不能用）。',
 
   'help.newDrawing.body':

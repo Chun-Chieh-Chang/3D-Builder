@@ -197,7 +197,8 @@
     "bom"
   ],
   "D5": [
-    "explode"
+    "explode",
+    "export-disassembly"
   ],
   "D6": [
     "measure-part",

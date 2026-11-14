@@ -186,6 +186,7 @@ export const ACTIONS: UiAction[] = [
   { id: 'export-iges', get label() { return t('export.iges'); }, group: 'file', enabled: (s) => partIdle(s) && hasBody(s) && s.bootMs !== null, run: () => store.exportIges() },
   { id: 'export-stl', get label() { return t('export.stl'); }, group: 'file', enabled: (s) => (hasBody(s) || (assemblyIdle(s) && hasComponents(s))) && s.bootMs !== null, run: () => store.exportStl() },
   { id: 'export-image', get label() { return t('export.image'); }, group: 'file', enabled: (s) => (s.active === 'assembly' ? assemblyIdle(s) && hasComponents(s) : hasBody(s)), run: () => void store.exportImage() },
+  { id: 'export-disassembly', get label() { return t('export.disassembly'); }, group: 'file', enabled: (s) => assemblyIdle(s) && hasComponents(s) && s.bootMs !== null, run: () => void store.exportDisassembly() },
   { id: 'new-drawing', get label() { return t('drawing.act'); }, group: 'file', enabled: (s) => s.bootMs !== null && (s.active === 'assembly' ? assemblyIdle(s) && !!s.asm?.fileName && !s.asm.dirty : partIdle(s) && s.fileName !== null && !s.dirty), run: () => void store.newDrawing() },
   { id: 'generate-assembly', get label() { return t('derived.act'); }, group: 'file', enabled: (s) => partIdle(s) && !!s.result?.mesh && s.bootMs !== null, run: () => void store.generateAssembly() },
   { id: 'import-step-assembly', get label() { return t('stepasm.act'); }, group: 'file', enabled: (s) => idle(s) && s.bootMs !== null, run: () => store.importStepAssembly() },

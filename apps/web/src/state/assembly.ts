@@ -91,6 +91,7 @@ import {
 } from '@3db/assembly';
 import { contentKey, gatherSources } from './sources';
 import { ASSEMBLY_FILE_EXTENSION, assemblyFileName, assemblyName, componentName, PART_FILE_EXTENSION, readDocumentFile, sha256Hex, stepStructure, writeAssemblyFile, writePartFile } from '@3db/io';
+import type { DisassemblySnapshot } from '../disassembly/export';
 import { t } from '@3db/i18n';
 import type { MassProps } from '@3db/kernel';
 import type { AssemblyResult } from '@3db/regen';
@@ -769,6 +770,56 @@ export class AssemblyStore {
   /** The parts list (C15.16) of the assembly as it is now: flat and indented. Derived from the document and the parts read, never stored. */
   bom(): { flat: BomRow[]; indented: BomRow[] } {
     return buildBom({ doc: this.history.doc, trees: this.trees(), propsOf: (key) => this.state.builds.get(key)?.properties, isReference: (key) => this.state.builds.get(key)?.referenceOnly === true, problems: this.patternProblems() });
+  }
+
+  /** Capture the active explosion at each authored step without editing document or display state. */
+  disassemblySnapshot(): DisassemblySnapshot {
+    const doc = this.history.doc;
+    const view = activeExplosion(doc);
+    if (!view?.steps.length) throw new Error(t('export.disassemblyNoSteps'));
+    this.stepRequest(); // validate the resolved sources and solver readiness, as with other assembly exports
+    const assembled = this.assembledLeaves();
+    const base = assembled.filter((leaf) => !leaf.instanceOf);
+    const axisOf = (axis: PatternAxis) => this.lineOf(axis, base);
+    const { paths, problems } = explosionOffsets(doc, axisOf);
+    if (problems.size) throw new Error([...problems.values()].join(' · '));
+    const visible = assembled.filter((leaf) => !leaf.hidden);
+    if (!visible.length) throw new Error(t('export.disassemblyNoParts'));
+    const bom = this.bom().flat;
+    const rows = new Map(bom.map((row) => [JSON.stringify([row.path, row.mirrored]), row.item]));
+    const meshes: DisassemblySnapshot['meshes'] = [];
+    const meshIndices = new Map<string, number>();
+    const parts = visible.map((leaf) => {
+      const label = this.ownerLabel(leaf.top, leaf.path);
+      let mesh = meshIndices.get(leaf.key);
+      if (mesh === undefined) {
+        const build = this.state.builds.get(leaf.key);
+        if (!build?.mesh?.indices.length || build.problems.length) throw new Error(t('export.disassemblyMissingMesh', { part: label }));
+        mesh = meshes.length;
+        meshIndices.set(leaf.key, mesh);
+        meshes.push(build.mesh);
+      }
+      return { id: leaf.id, label, mesh, item: rows.get(JSON.stringify([leaf.file ?? '', !!leaf.mirrored])), transparent: leaf.transparent };
+    });
+    const poses = (leaves: readonly Leaf[]) => Object.fromEntries(leaves.map(({ id, pose }) => {
+      if (!pose.position.every(Number.isFinite) || !pose.rotation.every(Number.isFinite)) throw new Error(t('export.disassemblyInvalidPose'));
+      return [id, pose];
+    }));
+    const stepsTaken = new Map<Id, number>();
+    const offsets = new Map<Id, Vec3>();
+    const stages = [{ name: t('export.disassemblyAssembled'), poses: poses(visible) }];
+    for (const step of view.steps) {
+      for (const id of step.components) {
+        const index = stepsTaken.get(id) ?? 0;
+        const position = paths.get(id)?.[index];
+        if (position) {
+          offsets.set(id, position);
+          stepsTaken.set(id, index + 1);
+        }
+      }
+      stages.push({ name: step.name, poses: poses(explodeLeaves(visible, offsets)) });
+    }
+    return { name: this.name(), meshes, parts, bom: bom.map(({ item, name, qty, partNo }) => ({ item, name, qty, partNo })), stages };
   }
 
   /** Why a pattern has no instances (its axis is gone, its definition does not read); empty when all is well. Derived. */

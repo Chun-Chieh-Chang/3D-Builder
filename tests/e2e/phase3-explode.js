@@ -196,5 +196,62 @@ exp.run = async () => {
   folder.click();
   await H.wait(300);
   H.check(H.asm().exploded === true && !near(store.assembly.leaves().find((l) => l.id === 's1/p1').pose.position[2], before.find(([i]) => i === 's1/p1')[1][2]), 'the folder row explodes the view');
+  await H.waitFor(() => H.asm().explodeT === 1, 3000, 'full explosion before HTML export');
+  const downloads = [];
+  const click = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function () {
+    if (this.download.endsWith('.html')) downloads.push({ name: this.download, text: fetch(this.href).then((response) => response.text()) });
+    else click.call(this);
+  };
+  let frame;
+  const active = store.assembly;
+  const snapshot = () => Object.fromEntries(active.leaves().map(({ id, pose }) => [id, pose]));
+  try {
+    const complete = snapshot();
+    await H.action('檔案', '輸出互動拆解示意');
+    await H.waitFor(() => downloads.length === 1, 10000, 'the offline HTML download');
+    H.check(downloads[0].name === '夾具-爆炸-disassembly.html', 'the HTML uses the saved assembly name');
+    H.check(JSON.stringify(snapshot()) === JSON.stringify(complete), 'export does not change the CAD view');
+    frame = document.createElement('iframe');
+    frame.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:99999;background:white';
+    frame.srcdoc = await downloads[0].text;
+    document.body.append(frame);
+    await H.waitFor(() => frame.contentWindow.fixtureView, 8000, 'the standalone viewer');
+    const page = frame.contentDocument;
+    const viewer = frame.contentWindow.fixtureView;
+    const assembled = Object.fromEntries(active.assembledLeaves().map(({ id, pose }) => [id, pose]));
+    H.check(JSON.stringify(viewer.poses()) === JSON.stringify(assembled), 'HTML opens assembled');
+    page.querySelector('#next').click();
+    active.deleteExplodeSteps([steps()[1].id]);
+    H.check(JSON.stringify(viewer.poses()) === JSON.stringify(snapshot()), 'HTML first step matches live CAD');
+    active.undo();
+    page.querySelector('#next').click();
+    H.check(JSON.stringify(viewer.poses()) === JSON.stringify(complete), 'HTML final step matches live CAD');
+    for (const [name, qty] of [['定位板', 2], ['削邊銷', 4]]) {
+      const row = [...page.querySelectorAll('.bom-row')].find((el) => el.textContent.includes(name));
+      row.click();
+      H.check(viewer.highlighted().length === qty, `HTML highlights all ${qty} instances of ${name}`);
+    }
+    page.querySelector('#reset').click();
+    H.check(JSON.stringify(viewer.poses()) === JSON.stringify(assembled), 'HTML reset restores assembled poses');
+    frame.remove();
+    frame = undefined;
+    active.setComponentState(['s1'], 'hidden', true);
+    await H.action('檔案', '輸出互動拆解示意');
+    await H.waitFor(() => downloads.length === 2, 10000, 'the HTML with hidden parts');
+    const exported = new DOMParser().parseFromString(await downloads[1].text, 'text/html');
+    const data = JSON.parse(exported.querySelector('#fixture').textContent);
+    H.check(data.parts.length === 3 && data.parts.every(({ id }) => id.startsWith('s0/')), 'hidden parts are left out of the viewer');
+    H.check(data.bom.map(({ qty }) => qty).join(',') === '2,4', 'hidden parts remain counted in the BOM');
+    active.undo();
+    active.deleteExplodeSteps(steps().map(({ id }) => id));
+    await H.action('檔案', '輸出互動拆解示意');
+    await H.waitFor(() => store.getState().notice?.text.includes('至少一個步驟'), 5000, 'missing steps report');
+    H.check(downloads.length === 2, 'an empty explosion does not download a file');
+    active.undo();
+  } finally {
+    HTMLAnchorElement.prototype.click = click;
+    frame?.remove();
+  }
   return { before: before.length, steps: steps().map((s) => [s.name, s.components, s.distance, s.flip]) };
 };

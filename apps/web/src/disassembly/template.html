@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<title>3D-Builder</title>
+<style>
+  :root { color-scheme: light; font: 16px/1.5 Inter, 'Microsoft JhengHei', system-ui, sans-serif; color: #18282c; background: #edf1ef; }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  main { width: min(100%, 1248px); margin: auto; padding: clamp(16px, 4vw, 56px); }
+  header { border-top: 4px solid #195d55; padding: 23px 0 27px; }
+  header p, h1, h2, p { margin: 0; }
+  header p { color: #195d55; font-weight: 700; }
+  h1 { font-size: clamp(30px, 4.5vw, 52px); line-height: 1.22; margin-top: 5px; letter-spacing: -.035em; overflow-wrap: anywhere; }
+  h2 { font-size: 20px; }
+  .workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 28%); gap: 16px; align-items: start; }
+  .card { background: #fff; border: 1px solid #ccd7d3; border-radius: 12px; overflow: hidden; }
+  .scene { position: relative; background: radial-gradient(ellipse at 45% 35%, #f7faf9, #dfe8e5); }
+  canvas { display: block; width: 100%; height: clamp(285px, 49vw, 485px); cursor: pointer; }
+  canvas[hidden] { display: none; }
+  .caption { position: absolute; top: 16px; left: 16px; color: #465b57; pointer-events: none; font-size: 14px; }
+  .controls { padding: 18px 20px; border-top: 1px solid #dde6e2; }
+  #stage-name { font-weight: 750; color: #195d55; }
+  #movement { color: #4b5e5b; margin-top: 4px; overflow-wrap: anywhere; }
+  nav { margin-top: 15px; display: flex; flex-wrap: wrap; gap: 8px; }
+  button { min-height: 44px; min-width: 44px; padding: 8px 12px; border: 1px solid #9db1ab; background: #fff; color: #1b332f; border-radius: 7px; font: inherit; font-weight: 650; cursor: pointer; }
+  button:hover:not(:disabled) { background: #e9f2ee; }
+  button:focus-visible { outline: 3px solid #a94e23; outline-offset: 2px; }
+  button:disabled { color: #5e6c67; border-color: #d7dfdc; background: #f0f3f1; cursor: default; }
+  #next:not(:disabled) { background: #195d55; color: white; border-color: #195d55; }
+  aside { padding: 18px; }
+  aside p { font-size: 14px; color: #445853; margin-top: 4px; }
+  #bom { display: grid; gap: 8px; margin-top: 15px; }
+  .bom-row { display: grid; grid-template-columns: minmax(28px, auto) minmax(0, 1fr) auto; align-items: center; gap: 8px; text-align: left; overflow-wrap: anywhere; }
+  .bom-row[aria-pressed=true] { background: #fff0e3; border-color: #a94e23; color: #682e17; }
+  .bom-num { font-variant-numeric: tabular-nums; color: #516660; }
+  .part-no { display: block; font-size: 14px; font-weight: 400; overflow-wrap: anywhere; }
+  #selection { margin-top: 12px; min-height: 21px; overflow-wrap: anywhere; }
+  #error:not(:empty) { padding: 16px; color: #792f2b; }
+  @media (max-width: 800px) { .workspace { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 420px) { .controls { padding: 14px; } nav { gap: 6px; } nav button { padding-inline: 8px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<main>
+  <header><p id="title"></p><h1 id="assembly-name"></h1></header>
+  <div class="workspace">
+    <section class="card" aria-labelledby="view-title">
+      <div class="scene">
+        <canvas id="view" aria-labelledby="view-title"></canvas>
+        <div class="caption" id="view-title"></div>
+        <p id="error" role="alert"></p>
+      </div>
+      <div class="controls">
+        <div aria-live="polite"><p id="stage-name"></p><p id="movement"></p></div>
+        <nav aria-labelledby="title">
+          <button id="previous"></button><button id="next"></button><button id="reset"></button>
+        </nav>
+      </div>
+    </section>
+    <aside class="card" aria-labelledby="bom-title">
+      <h2 id="bom-title"></h2>
+      <p id="hint"></p>
+      <div id="bom"></div>
+      <p id="selection" aria-live="polite"></p>
+    </aside>
+  </div>
+</main>
+<script type="application/json" id="fixture">FIXTURE_JSON</script>
+<script>VIEWER_JS</script>
+</body>
+</html>

@@ -528,6 +528,7 @@
     "export-iges": "export",
     "export-stl": "export",
     "export-image": "export",
+    "export-disassembly": "export",
     "drw-pdf": "export",
     "drw-dxf": "export",
     "drw-svg": "export",

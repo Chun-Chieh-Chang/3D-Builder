@@ -2,6 +2,12 @@
 
 更新日期 2026-11-14。請先讀最新的照片建模工作。下方舊盤點與「27/30」等數字保留供追溯。
 
+## 2026-11-14 晚 — 組合件互動拆解 HTML 匯出（Codex 實作，Claude Code 接手整合）
+
+- 「檔案 → 輸出互動拆解示意」：作用中爆炸視圖＋BOM 匯出成離線單檔 HTML（`apps/web/src/disassembly/`）。Codex 中斷後由 Claude Code 驗證：typecheck、四項 lint、help 相關 42 項（補 `help-manual` 同步）、完整 `verify:ui` 278/278。細節見 DEV_LOG。
+- 使用者裁定（2026-11-14）：先整合互動拆解與組合件 MCP 兩個首版，再發桌面版 0.4.1。組合件 MCP 在 worktree `codex/assembly-mcp`，待驗證後 rebase 合併。
+- Codex 以 0.4.0 版號建的驗收包曾覆寫本機正式安裝檔，已從 Release 還原（桌面版版本履歷）。
+
 ## 2026-11-14 — 從各 Agent 發起照片建模
 
 - 使用入口與各 Agent 設定見 [照片建模指引](docs/photo-to-cad.md)。Claude Code 使用 `/photo-to-cad`，其他 Agent 附圖後請它依共用指引操作。
