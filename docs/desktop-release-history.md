@@ -8,7 +8,7 @@
 
 | 版本 | 首次建置 | 含到的提交 | 安裝檔大小 | 狀態 |
 |---|---|---|---|---|
-| 0.4.0 | 2026-11-14 16:38 | `ff6e2db6`＋升版提交 | 13,042,489 B | **目前本機安裝包** |
+| 0.4.0 | 2026-11-14 16:38 | `ff6e2db6`＋升版提交 `8c18cb4e` | 13,042,489 B | **目前本機安裝包**；GitHub Release `v0.4.0`（Latest） |
 | 0.3.0 | 2026-11-08 16:41 | `f775c534` | 12,962,665 B | 本機保留；從未發佈成 Release |
 | 0.2.5 | 2026-11-06 07:24 | `a1cec186` | 12,556,912 B | 保留為本機升級基準 |
 | 0.2.4 | 2026-11-04 16:42 | `252555fd` | 12,533,978 B | 在另一台電腦建置；本機無安裝檔 |
@@ -27,6 +27,7 @@
 - **為什麼升版**：使用者從 GitHub 拿到的仍是 0.2.5：Release 最新一直是 `v0.2.5`，0.3.0 只在本機建置、從未發佈，而且只含到 `f775c534`，之後 `main` 又有 36 個提交（16 個改產品程式）。使用者選擇從 `main` 升 0.4.0 並發佈（2026-11-14）。
 - **升版提交**：`tauri.conf.json`、`Cargo.toml`、`Cargo.lock` 的 `desktop` 項改為 0.4.0，與 0.3.0 相同的三處。建置來源 `ff6e2db6`（工作樹只有這三處變更）。零件格式為 Schema 95。
 - **安裝包**：`apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.4.0_x64-setup.exe`，13,042,489 B，SHA-256 `905c6f1103e8515700d39dbcaf7ea5ba36638522ef264182f748d65a9627a4b1`。
+- **下載**：GitHub Release [`v0.4.0`](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.4.0)（2026-11-14 發佈，標記為 Latest；標籤指向升版提交 `8c18cb4e`），附件 `3D-Builder_0.4.0_x64-setup.exe` 從 Release 重新下載核對，大小與 SHA-256 與本機建置一致。另一台電腦以 `gh release download v0.4.0` 取得，安裝檔不進 git。第一次建立時 `--target` 給了不完整的 SHA，GitHub 以 422 拒絕，未留下 Release 或標籤，改用完整 SHA 重建。
 - **驗證**：
   - Tauri 建置 exit 0。日誌有一則 Vite 警告 `new URL("./", import.meta.url) doesn't exist at build time`，出自相依套件 `@salusoft89/planegcs` 自帶的 `planegcs.js`，不是本專案程式。另有數則 Node 模組「為瀏覽器外部化」的提示，其中 `packages/sketch/src/planegcs.ts` 的 `node:module`／`node:fs/promises` 只在沒有 `wasmUrl` 時（Node）載入；頁面的兩個 Worker（`job.worker.ts`、`kernel.worker.ts`）都傳 `wasmUrl`，走 `fetch`。
   - `desktop.exe` 檔案與產品版本皆為 0.4.0，啟動 10 秒仍運行，視窗標題為 `3D-Builder`。
