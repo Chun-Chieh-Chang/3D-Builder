@@ -39,7 +39,8 @@
   - **移動面**：位移過大先回報 `moveTooFar`（`78264823`）。
   - 零件格式 Schema 94 → 95（`FilletFeature.exact`，辨識重建用）。
   - **不在安裝包內**：MCP 的 AI CAD 工具與無 GUI CLI（ADR 0252、`f673f11a`）屬 `apps/mcp`／`packages/cli`，不隨桌面版發佈。
-- **本機升級待驗**：0.3.0 → 0.4.0、0.2.5 → 0.4.0 的實際覆蓋安裝與使用者檔案重開未做。
+- **覆蓋安裝（2026-11-14 18:11，本機）**：本機原本沒有安裝任何版本。以 `/S` 靜默安裝 0.2.5（`scratch/feature-recognition/installer-baselines/`，SHA-256 與 Release 一致）到 `%LOCALAPPDATA%\3D-Builder`，啟動正常；不解除安裝，直接以 `/S` 執行 0.4.0 安裝檔，exit 0。之後登錄（`HKCU\…\Uninstall\3D-Builder`）只有一筆、版本 0.4.0；`desktop.exe`、`uninstall.exe` 都是 0.4.0；開始功能表與桌面捷徑指向 `%LOCALAPPDATA%\3D-Builder\desktop.exe`；啟動 10 秒仍運行，標題 `3D-Builder`。本機留著 0.4.0。
+- **未驗**：以安裝好的 0.4.0 開啟舊版存的零件檔（要在畫面操作；舊格式升級只有單元測試）；0.3.0 → 0.4.0（0.3.0 從未發佈）。
 
 ## 0.3.0（2026-11-08）
 
