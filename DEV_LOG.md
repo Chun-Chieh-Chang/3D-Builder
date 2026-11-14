@@ -32,6 +32,32 @@ Nightly #189 / #194 / #198 failed on `tests/phase8/recognize-approximate.test.ts
 
 **Validation:** `recognize-approximate` 22 / 22; the two approximate fuzz files and all of phase 8 with MCP `recognize`: 67 files, 1417 passed, 0 failed; sketch package 23 files / 264 (the 600-chain overflow cases still overflow at 32 MiB); new `packages/sketch/test/solver-heap.test.ts` (10) and `tests/phase8/recognize-approximate-capacity.test.ts` (4); 35-part audit 30 / 35, the same as `audit-c41b` (0 regressions; six files only moved into `tmp\`); typecheck, `lint:rules/deps/i18n/repo`, `docs:sync` clean. Mutations 6 / 6 red: heap back to 16 MiB, no refusal before solving, no 1100 cap in `define`, no freedom cap (first survived: added the test that no system exceeds the defined sketch), no stop on `tooLarge` (first survived: added the 700 simulation), `tooLarge` not set.
 
+**CI after the commit (`2074f4b4`):** push run 43538148844 green; workflow_dispatch #202 (run 43538157639) green on all jobs, full-suite 448 files passed / 4 skipped (452), 5463 tests passed / 25 skipped. The skips are the same four real-sample files as #187 (the samples are not in the repository).
+
+**Why the nightly went from 11 to 80 minutes (measured from the #187 and #202 logs, `scratch/ci/n187.log`, `n202.log`, `j.txt`):**
+- Main vitest step: #187 27.5 min (3336 s summed over 402 files, `--maxWorkers 2`); #202 59 min (7087 s summed over 449 files). Wall time follows the summed time over two workers.
+- The 47 test files added since `fb4a966d` take **4448 s**; 27 of them are fuzz files at 3914 s. The files that existed at #187 went **down**, 3336 → 2639 s (part of it: `section-offset-cost` now runs in its own step, 137 s; `recognize-approximate-fuzz` 428 → 256 s). So the growth is the new fuzz files, not slower old ones.
+- Slowest 10 in #202 (CI s / the same file alone on the development machine, s; `scratch/ci/timing/times.tsv`, all 47 new files run one at a time, all passed):
+
+  | file | CI | alone |
+  |---|---|---|
+  | `recognize-drafted-rounds-fuzz` | 303 | 219 |
+  | `recognize-approximate-fuzz-2` | 301 | 228 |
+  | `recognize-drafted-rounds-fuzz-2` | 300 | 195 |
+  | `recognize-drafted-rounds-fuzz-5` | 299 | 212 |
+  | `recognize-drafted-rounds-fuzz-4` | 298 | 198 |
+  | `recognize-drafted-rounds-fuzz-3` | 292 | 193 |
+  | `recognize-rolling-ball-fuzz-10` | 280 | 284 |
+  | `recognize-approximate-fuzz` | 256 | (not new, not timed) |
+  | `recognize-rolling-ball-fuzz-5` | 213 | 199 |
+  | `recognize-rolling-ball-fuzz-2` | 183 | 145 |
+
+  The ten rolling-ball fuzz files together ≈ 1.5 k s, the five drafted-rounds fuzz files ≈ 1.5 k s. This fix's own `recognize-approximate-capacity` costs 109 s.
+- The 80 minutes of #198 itself (vs 61.6 min for the whole #202 full-suite job) is not explained: its log is gone (404). It ran with the C1 regression (two tests failing after the solver module was used up); that it cost the extra ~18 min is a guess, not a measurement.
+- CI over alone, the 34 new files of 20 s or more (`scratch/ci/ratio.txt`): 0.83–1.57, overall 1.32 (4344 / 3290 s). Kernel and drafted-rounds files sit at 1.4–1.55; the rolling-ball files at 0.83–1.43, `rolling-ball-fuzz-10` 0.99. Why the rolling-ball files differ is not known: they ran last locally, when the machine was short of memory (Claude Code stopped the watching shell for that), so the local side may be the slow one. Local wall time also includes about 3 s of vitest start. The runner's core count was not printed; the 2026-11-08 note (2 vCPU) has not been checked against the current runner.
+
+**Full suite sharded (same day):** `full-suite` now runs as 8 matrix jobs, `vitest --shard=i/8`, each `--maxWorkers 2` as before; `section-offset-cost` still runs alone, in shard 1; a first step prints `nproc`, `availableParallelism`, the CPU model and `free -m`. No threshold, timeout or file changed. vitest shards by a sha1 of the path, not by time; reproducing its split (`scratch/ci/shardsim.mjs`, against #202's file times) gives the slowest shard ≈ 20.5 min of 4, 15.2 of 6, 11.6 of 8 (fastest of 8 ≈ 2.7). A split by measured time would balance better but needs a custom sequencer and a durations file to keep up to date; not done.
+
 ## 2026-11-13 — Structured AI CAD control (ADR 0252)
 
 > **Correction (later the same night):** the two `recognize-approximate` failures below are **not** pre-existing; they are a C1 regression (entry above). The nightly cited as a "control" ran on code that already had C1 in it, so it showed only that they predate the MCP change.

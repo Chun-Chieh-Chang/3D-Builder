@@ -68,20 +68,37 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@v4
 
+  # The whole suite on one runner took 59 min by #202 (2026-11-14; 7087 s of file time over two workers, most of it
+  # the fuzz files added since 2026-11-10). Split it over SHARDS runners instead: no threshold, timeout or file is changed.
+  # vitest shards by a hash of the path, not by time; with #202's file times the slowest shard is ~20.5 min of 4,
+  # ~15.2 of 6 and ~11.6 of 8 (scratch/ci shard simulation), so 8.
   full-suite:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    env:
+      SHARDS: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '26'
           cache: npm
+      # what the runner has, so that worker counts are chosen from a measurement and not from memory
+      - name: Runner cores and memory
+        run: |
+          echo "nproc: $(nproc)"
+          node -e "const os = require('node:os'); console.log('availableParallelism:', os.availableParallelism(), 'cpus:', os.cpus().length, os.cpus()[0].model)"
+          free -m
       - id: install
         run: npm ci
       # This cost probe measures OCCT wall time. Run it alone so it does not compete with the suite's workers.
       - name: Section offset cost, alone
+        if: matrix.shard == 1
         run: npm test -- --no-file-parallelism tests/phase6/section-offset-cost.test.ts
-      - name: Full unit suite (nightly)
+      - name: Full unit suite (nightly, shard ${{ matrix.shard }})
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: npm test -- --maxWorkers 2 --exclude tests/phase6/section-offset-cost.test.ts
+        run: npm test -- --maxWorkers 2 --shard=${{ matrix.shard }}/${{ env.SHARDS }} --exclude tests/phase6/section-offset-cost.test.ts

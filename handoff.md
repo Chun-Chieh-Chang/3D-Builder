@@ -17,8 +17,10 @@
 - **根因**：C1（`3b1ba1f6`）的 `define()` 改為整批試＋對半，嘗試大小一路遞減，每個都在求解器 overflow 記號之下而 abort，第二次 abort 用掉備用模組後所有求解失敗（C1 前的乾淨 worktree `fb4a966d` 此檔 21/21 過）。底層上限：planegcs 固定 16 MiB（94 段圓弧）。細節與量測見 DEV_LOG 同日（night）條目，探針 `scratch/ci/`。
 - **修正**：planegcs 載入時記憶體改 32 MiB（`withHeap`，151 段）；`SOLVER_SAFE_SIZE = 1100`（實測最小失敗 1143）求解前預檢拒絕；`define()` 不送超過剩餘自由度或 1100 的嘗試、第一次 `tooLarge` 即停；說明「100 段」改實測 120；THIRD_PARTY_NOTICES 註明記憶體改寫（版面不符時照原樣載入，保 LGPL 可替換）。
 - **驗收**：approximate 22/22；phase8 全部＋兩 fuzz＋MCP recognize 67 檔 1417 過 0 失敗；sketch 套件 264；新測試 `packages/sketch/test/solver-heap.test.ts`、`tests/phase8/recognize-approximate-capacity.test.ts`；35 件稽核 30/35、0 退步（`scratch/ci/audit-nightly-fix.jsonl` 對 `scratch/ff/audit-c41b.jsonl`）；突變 6/6 轉紅；typecheck／4 lint／docs:sync 過。
-- **夜間 11→80 分鐘**：#187 之後的失敗紀錄（#189/#194/#198）在 GitHub 已查無（404）。可得：#107 11.3 分、#118 16.7、#137 17.0、#159 13.9、#187 30.8。本機 `CI=true` 全量（`out/full-ci.log`）的逐檔耗時見 DEV_LOG。
-- **驗證追蹤**：等待上方已觸發的 full-suite 結果。`.claude/worktrees/pre-c1` 為對照用 worktree，用完可 `git worktree remove`。
+- **CI 已轉綠**：手動觸發 #202（run 43538157639）全部 job 通過，full-suite 448 檔過、4 檔略過（與 #187 相同的實樣本檔），5463 項通過，耗時 61.6 分。
+- **夜間 11→80 分鐘（以 #187、#202 日誌逐檔比對，細節見 DEV_LOG）**：主步驟 27.5 → 59 分；C1 之後新增的 47 個測試檔共 4448 s（其中 27 個 fuzz 檔 3914 s），原有檔案反而 3336 → 2639 s。最慢：drafted-rounds fuzz 五檔各約 300 s、approximate-fuzz-2 301 s、rolling-ball-fuzz-10 280 s。#198 的 80 分（比 #202 多約 18 分）因日誌已 404 無法證實原因。先前本機 `CI=true` 全量因記憶體不足中斷（440 個 worker 啟動錯誤），**沒有**產出逐檔耗時。
+- **full-suite 分 8 片平行（使用者同意，2026-11-14）**：`vitest --shard=i/8`，每片仍 `--maxWorkers 2`，`section-offset-cost` 仍單獨跑在第 1 片；第一步印出核心數與記憶體。門檻、逾時、檔案都沒改。vitest 依路徑雜湊分片、不依時間，以 #202 耗時模擬最慢一片約 11.6 分（4 片 20.5、6 片 15.2）。本機 47 個新檔逐一計時已跑完、全過（`scratch/ci/timing/times.tsv`），CI／本機整體 1.32 倍（0.83–1.57）。
+- **下一步**：確認分片版 workflow_dispatch 綠燈，並依印出的核心數決定 `--maxWorkers`；若要更平均，可改依實測耗時分片（需自訂 sequencer 與耗時檔）。`.claude/worktrees/pre-c1` 為對照用 worktree，用完可 `git worktree remove`。
 
 ## 2026-11-13 22:30 — Claude Code 接手 Codex：MCP 驗收完成
 
