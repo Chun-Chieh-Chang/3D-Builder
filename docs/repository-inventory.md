@@ -305,6 +305,10 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 - [.claude/agents/test-runner.md](<../.claude/agents/test-runner.md>)
 
+### 代理技能
+
+- [從照片建模](<../.claude/skills/photo-to-cad/SKILL.md>)
+
 ### 入口
 
 - [3D-Builder](<../README.md>)
@@ -326,6 +330,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 - [3D-Builder 桌面版（Tauri 2）](<../apps/desktop/README.md>)
 - [@3db/mcp — 讓 AI 代理操作 3D-Builder（ADR 0237）](<../apps/mcp/README.md>)
+- [從 Agent 發起照片建模](<photo-to-cad.md>)
 
 ### 授權
 
@@ -638,6 +643,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 ### 設計提案
 
+- [Agent 照片建模接入](<design/ai-cad-control/multi-agent-plan.md>)
 - [自由曲面特徵化通則：調查結果與推進計畫](<design/feature-recognition/freeform-generalization.md>)
 - [STEP 特徵辨識與重建（藍圖 F2.4）](<design/feature-recognition/plan.md>)
 - [`D:\3DB實機確認` 全量 STEP → `.3dbx` 100% 原生特徵樹轉換推進計畫與驗證規格書](<design/feature-recognition/step-100-plan.md>)

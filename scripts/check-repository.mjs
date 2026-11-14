@@ -20,6 +20,7 @@ export function documentRole(file) {
     'docs/repository-inventory.md': '衍生盤點', 'docs/cleanup-candidates.md': '清理紀錄',
     'docs/phase0-verification.md': '歷史驗證', 'docs/phase1-verification.md': '歷史驗證',
     'docs/blueprint.md': '範圍規格', 'docs/automated-acceptance.md': '驗證操作', 'docs/verification-coverage.md': '歷史驗證',
+    'docs/photo-to-cad.md': '平台操作',
     'docs/implementation-sequence.md': '交付歷史', 'docs/sketch-constraint-expansion.md': '能力規格',
     'docs/fillet-picking-impact.md': '設計歷史', 'docs/ui-interaction-audit.md': '設計歷史', 'docs/handoff-history.md': '交接歷史',
     'docs/desktop-release-history.md': '版本履歷',
@@ -35,6 +36,7 @@ export function documentRole(file) {
   if (file.startsWith('tests/')) return '測試資料說明';
   if (file.startsWith('spikes/')) return '研究證據';
   if (/^\.claude\/agents\/[^/]+\.md$/.test(file)) return '代理定義';
+  if (/^\.claude\/skills\/[^/]+\/SKILL\.md$/.test(file)) return '代理技能';
   throw new Error(`Document needs a single owner/role: ${file}`);
 }
 /** Ignore code examples; preserve line numbers. Accept ordinary and angle-delimited Markdown targets. */

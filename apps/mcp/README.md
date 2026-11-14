@@ -66,7 +66,21 @@ npm run mcp:build
 
 零件只會讀寫在 `out/agent/`（`THREEDB_WORKSPACE`）。
 
-建議的工作流程：
+### 從照片建模
+
+使用其他 Agent 時，請參考[共用照片建模流程與 MCP 設定](../../docs/photo-to-cad.md)。
+
+在 Claude Code 桌面版開啟本機的 3D-Builder 專案，附上物件的正面、側面或斜角照，接著在訊息開頭輸入 `/photo-to-cad`，再填上零件名稱與已知尺寸，例如：
+
+```text
+/photo-to-cad L 型支架，底板寬 60 mm、板厚 4 mm
+```
+
+Claude 會依照片與實測尺寸提出特徵，遇到無法判定的尺寸會請你確認。它會試跑並回傳模型預覽與量測。確認後才套用並儲存可編輯的 `.3dbx`，也可依要求匯出 STEP、STL 或 3MF。預設輸出在 `out/agent/`，可稍後再用 3D-Builder 開啟。只做獨立零件時，Claude Code 視窗就足夠。
+
+先從板件、法蘭或支架開始。單張照片適合建立近似初稿，遮蔽的孔深、背面與製造公差需要另外提供。[Claude Code 指令定義](../../.claude/skills/photo-to-cad/SKILL.md)
+
+### 手動呼叫 MCP 工具
 1. 讀 `command_reference`（`commands`、`types`、`example`）。
 2. 用 `apply_commands` 加 `dry_run: true` 與 `preview: {}` 試跑。把截圖給使用者確認。
 3. 確認後，不加 `dry_run` 再送一次。整批全部成功才保留。

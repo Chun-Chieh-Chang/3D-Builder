@@ -1,5 +1,14 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-14 — 從 Agent 發起照片建模
+
+- 新增專案技能 `/photo-to-cad`，讓使用者附照片與實測值後，沿用 ADR 0252 的 MCP 工具試建、預覽、確認與儲存。
+- 紅隊檢查：尺寸來源分成實測與經確認的估計值，由原生指令驗證數值與幾何。預設操作獨立零件，查明目前連線與零件狀態後才切換。邊面參照透過原生命令工具取得，試跑期間維持交易回滾，預覽失敗會回報原因。此工作未新增幾何演算法。
+- 本機 MCP 建置、`lint:repo`、diff 檢查，以及儲存庫維護與 MCP stdio／CLI 測試共 12 項通過。真實照片經 Claude Code 辨識、追問及建模的整段流程仍待實機驗證。
+
+- [共用照片建模指引](docs/photo-to-cad.md) 收錄各 Agent 的 MCP 設定與提示詞。Claude Code 快捷指令讀取同一份流程。
+- Codex 已在開發機註冊本機 stdio，App Server 找到四個必要工具。無人值守呼叫停在工具核准。OpenCode 1.17.4 在隔離設定中顯示 connected，原環境仍有 `data_migration` 錯誤。其餘客戶端的接入及照片辨識到模型儲存的完整流程仍待實機驗證。
+
 ## 2026-11-13 (night) — Nightly red three nights: `recognize-approximate` was a C1 regression, not a known failure
 
 Nightly #189 / #194 / #198 failed on `tests/phase8/recognize-approximate.test.ts` (S curve, 68 arcs; closed spline, 82 arcs; "sketch solver out of memory"). Since 2026-11-10 every session, this one included (entry below, and handoff), recorded them as "existing". That was wrong.
