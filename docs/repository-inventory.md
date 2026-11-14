@@ -643,6 +643,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 ### 設計提案
 
+- [AI 組合件 MCP 實施計畫](<design/ai-cad-control/assembly-mcp-plan.md>)
 - [Agent 照片建模接入](<design/ai-cad-control/multi-agent-plan.md>)
 - [自由曲面特徵化通則：調查結果與推進計畫](<design/feature-recognition/freeform-generalization.md>)
 - [STEP 特徵辨識與重建（藍圖 F2.4）](<design/feature-recognition/plan.md>)

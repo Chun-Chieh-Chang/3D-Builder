@@ -5,7 +5,8 @@
  */
 import { encodeShade, rasterizeShade, type ShadeRaster } from '@3db/drawing';
 import { normalizedViewAxes, viewVectors, type ViewAxes, type ViewName } from '@3db/model';
-import { projectDrawingView } from '@3db/regen';
+import { projectDrawingView, type ViewPart } from '@3db/regen';
+import type { Kernel } from '@3db/kernel';
 import { AgentError, type CadSession } from './session';
 
 export const RENDER_VIEWS = ['isometric', 'front', 'back', 'top', 'bottom', 'left', 'right'] as const satisfies readonly ViewName[];
@@ -34,6 +35,17 @@ const EDGE: [number, number, number] = [20, 24, 32];
 const HIDDEN: [number, number, number] = [150, 155, 165];
 
 export async function renderView(session: CadSession, options: RenderOptions = {}): Promise<RenderResult> {
+  const target = session.shapeForView();
+  if (!target) throw new AgentError('the part has no body to show yet');
+  const kernel = session.kernelForView;
+  try {
+    return await renderPlacedView(kernel, [{ shape: target.shape, pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] }, mirrored: false }], options);
+  } finally {
+    for (const id of target.made) kernel.release(id);
+  }
+}
+
+export async function renderPlacedView(kernel: Kernel, parts: readonly ViewPart[], options: RenderOptions = {}): Promise<RenderResult> {
   const size = options.size ?? 800;
   if (!(Number.isInteger(size) && size >= 64 && size <= 2048)) throw new AgentError(`size must be a whole number of pixels from 64 to 2048, not ${size}`);
   let axes: ViewAxes;
@@ -52,24 +64,17 @@ export async function renderView(session: CadSession, options: RenderOptions = {
     axes = normalizedViewAxes(viewVectors(view));
   }
 
-  const target = session.shapeForView();
-  if (!target) throw new AgentError('the part has no body to show yet');
-  const kernel = session.kernelForView;
-  try {
-    const projection = projectDrawingView(kernel, [{ shape: target.shape, pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] }, mirrored: false }], axes, undefined, true);
-    const box = projection.box;
-    if (!box || !projection.mesh) throw new AgentError('the part shows nothing from this direction');
-    const span = Math.max(box.max[0] - box.min[0], box.max[1] - box.min[1], 1e-6);
-    const raster = rasterizeShade(projection.mesh, (size - 2 * MARGIN) / span);
-    if (!raster) throw new AgentError('the part shows no faces from this direction');
-    const image = onWhite(raster, MARGIN);
-    if (options.hidden) for (const line of projection.hidden) stroke(image, line, HIDDEN, 1);
-    for (const line of projection.visible) stroke(image, line, EDGE, 2);
-    const shade = await encodeShade(image);
-    return { png: shade.png, width: shade.width, height: shade.height, axes };
-  } finally {
-    for (const id of target.made) kernel.release(id);
-  }
+  const projection = projectDrawingView(kernel, parts, axes, undefined, true);
+  const box = projection.box;
+  if (!box || !projection.mesh) throw new AgentError('the model shows nothing from this direction');
+  const span = Math.max(box.max[0] - box.min[0], box.max[1] - box.min[1], 1e-6);
+  const raster = rasterizeShade(projection.mesh, (size - 2 * MARGIN) / span);
+  if (!raster) throw new AgentError('the model shows no faces from this direction');
+  const image = onWhite(raster, MARGIN);
+  if (options.hidden) for (const line of projection.hidden) stroke(image, line, HIDDEN, 1);
+  for (const line of projection.visible) stroke(image, line, EDGE, 2);
+  const shade = await encodeShade(image);
+  return { png: shade.png, width: shade.width, height: shade.height, axes };
 }
 
 /** The raster on a white ground with `m` pixels of margin; the same pixel scale, so the lines map onto it with `raster`'s box and `m`. */

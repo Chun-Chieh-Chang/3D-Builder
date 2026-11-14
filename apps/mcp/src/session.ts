@@ -196,6 +196,14 @@ export class CadSession {
     return this.result;
   }
 
+  /** Use the current kernel for transient assembly geometry, rebuilding the part after recycling if needed. */
+  async assemblyGeometry() {
+    if (shouldRestartHeap(this.heapBytes(), this.heapBase, this.heapLimit) || this.kernel.trapsAbsorbed > 0) {
+      await this.rebuild(this.doc);
+    }
+    return { kernel: this.kernel, solver: this.solver };
+  }
+
   /** The module stopped (a WebAssembly trap, ADR 0242): whatever it says from now on cannot be trusted, and every shape it held is gone with it. */
   private async replaceKernel(): Promise<void> {
     await this.loadKernel();
@@ -244,6 +252,11 @@ export class CadSession {
       if (rel.startsWith('..') || isAbsolute(rel)) throw new AgentError(`path ${path} is outside the workspace folder ${this.root}`);
     }
     return full;
+  }
+
+  /** Make a workspace-relative file reference from a checked local path. */
+  async workspaceRelative(path: string): Promise<string> {
+    return relative(this.root, await this.inside(path)).split(sep).join('/');
   }
 
   async newPart(): Promise<PartSummary> {

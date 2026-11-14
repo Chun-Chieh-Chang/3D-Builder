@@ -1,11 +1,21 @@
 # 交接與接續工作
 
+## 2026-11-14 — 無視窗組合件 MCP
+
+- 18:20 更新：Claude Code 2.1.325 以隔離設定查詢、試組、預覽、套用並儲存 `out/assembly-agent-smoke/claude/claude-jig.3dba`。用新增的 `assembly_open` 獨立重開並求解，兩配合成立，銷 x = −40 mm、保留 1 DOF，干涉 405.396352 mm³，回傳 PNG。Ø10 銷與 Ø8 孔的同心配合成立但會干涉，這是測試特意保留的結果。
+- 同時段 Codex 隔離自動測試停在工具核准，尚未儲存。接續驗證 OpenCode 與其他客戶端，再做 GUI 版本衝突及原生歷史批次操作。
+
+- 隔離分支 `codex/assembly-mcp` 完成首批五個工具，支援直接插入 `.3dbx`、固定／放置元件、平面重合／距離與圓柱同心、試建 PNG、自由度及干涉，以及儲存 `.3dba`。操作見 [MCP 說明](apps/mcp/README.md)。
+- Codex App Server 已從工作樹建置產物列出五個工具，OpenCode 已於隔離設定連線，Claude Code 已發現設定並等待互動核准。MCP SDK 已跑完整 stdio 工作流。
+- 15 檔、126 項相關測試通過，typecheck 與四個 lint 通過。這批實作保留於隔離工作樹。
+- 後續以同一實例完成各 Agent 互動驗收，再進入 GUI 即時組合件及照片拆件。各客戶端範圍與驗收條件見 [組合件 MCP 計畫](docs/design/ai-cad-control/assembly-mcp-plan.md)。
+
 更新日期 2026-11-14。請先讀最新的照片建模工作。下方舊盤點與「27/30」等數字保留供追溯。
 
 ## 2026-11-14 晚 — 組合件互動拆解 HTML 匯出（Codex 實作，Claude Code 接手整合）
 
 - 「檔案 → 輸出互動拆解示意」：作用中爆炸視圖＋BOM 匯出成離線單檔 HTML（`apps/web/src/disassembly/`）。Codex 中斷後由 Claude Code 驗證：typecheck、四項 lint、help 相關 42 項（補 `help-manual` 同步）、完整 `verify:ui` 278/278。細節見 DEV_LOG。
-- 使用者裁定（2026-11-14）：先整合互動拆解與組合件 MCP 兩個首版，再發桌面版 0.4.1。組合件 MCP 在 worktree `codex/assembly-mcp`，待驗證後 rebase 合併。
+- 使用者裁定（2026-11-14）：先整合互動拆解與組合件 MCP 兩個首版，再發桌面版 0.4.1。組合件 MCP（worktree `codex/assembly-mcp`）接手驗證：typecheck、四項 lint、相關 25 檔 297 項全過，rebase 到互動拆解之後合併進 `main`。
 - Codex 以 0.4.0 版號建的驗收包曾覆寫本機正式安裝檔，已從 Release 還原（桌面版版本履歷）。
 
 ## 2026-11-14 — 從各 Agent 發起照片建模

@@ -28,6 +28,20 @@
 - `cad_inspect_geometry`: 選填 `body` ID。每個本體回傳體積、面積、質心、包絡盒、凹圓柱孔壁軸線及圓形孔口中心；包含參考本體。幾何孔位不代表已判定安裝用途。
 - `cad_export_manufacturing`: `path`, `format: "step"/"stl"/"3mf"`，選填有限 `meshTolerance`（mm，至少 0.0001；過密網格的資源防護下限，越界明確拒絕）；STEP 不使用網格容差。
 
+## 透過 Agent 組裝零件
+
+先把來源 `.3dbx` 放進 MCP 工作區。Agent 可用獨立的組合件工作階段，不必開啟 CAD 視窗。
+
+1. 呼叫 `assembly_new`，再用 `assembly_query_elements` 依來源路徑取得參照。插入後可用 `component` 查詢特定實例。
+2. 依工具公布的 JSON Schema 準備 `insertComponent`、`setFixed`、`setPlacements` 或 `insertMate`。配合支援平面重合、平面距離及圓柱同心。將查到的 `ref` 原樣傳入配合端點，並指定元件 ID。
+3. 用 `assembly_apply_commands` 傳入 `dry_run: true`、`interference: true`、`preview: {"view":"isometric"}`。核對 PNG、姿態、自由度與干涉，再以相同命令正式套用。
+4. 用 `assembly_inspect` 查詢已套用的結果，最後用 `assembly_save` 儲存新 `.3dba`。目的資料夾須已存在，來源 `.3dbx` 仍由組合件相對路徑參照。
+5. 用 `assembly_open` 重新開啟同一工作區內的 `.3dba`，核對來源、配合與自由度。它會先重建零件及求解，通過後才切換工作階段。先儲存目前未儲存的組合件。
+
+> 請用 3D-Builder MCP 把定位板固定，將定位銷與左側孔設為同心，讓銷肩貼合板面。先查詢真實參照，再試建給我預覽、自由度及干涉結果。我確認後才儲存成 jig.3dba。
+
+第一版最多 32 個元件、64 個配合，來源為直接引用的實體零件。若干涉結果是 `incomplete`，檢查其中的 `unknown` 或 `failed`。配合成立後仍可能有干涉。各 Agent 的連線說明見[共用建模指引](../../docs/photo-to-cad.md)。
+
 ## 新 CLI
 
 先 `npm install` 及 `npm run mcp:build`，再使用：

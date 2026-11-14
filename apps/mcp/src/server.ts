@@ -4,6 +4,7 @@
  */
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, type Tool } from '@modelcontextprotocol/sdk/types.js';
+import { ASSEMBLY_TOOLS, callAssemblyTool, isAssemblyTool } from './assemblyTools';
 import { AgentError, EXPORT_FORMATS, messageOf, type CadSession, type ElementQuery, type ExportFormat } from './session';
 import { RENDER_VIEWS, renderView, type RenderOptions } from './render';
 import { commandReference, exampleReference, INSTRUCTIONS, typeReference } from './reference';
@@ -16,6 +17,7 @@ const path = { type: 'string', description: 'A file path relative to the workspa
 const viewProps = { view: { type: 'string', enum: [...RENDER_VIEWS] }, dir: vec3, up: vec3, size: { type: 'integer', minimum: 64, maximum: 2048 }, hidden: { type: 'boolean', description: 'Hidden edges as thin grey lines.' } } as const;
 
 export const TOOLS: Tool[] = [
+  ...ASSEMBLY_TOOLS,
   ...CAD_TOOLS,
   { name: 'part_new', description: 'Starts a new, empty part (the open part is closed without saving).', inputSchema: { type: 'object', properties: {} } },
   { name: 'part_open', description: 'Opens a .3dbx part file from the workspace folder and rebuilds it.', inputSchema: { type: 'object', properties: { path }, required: ['path'] } },
@@ -99,6 +101,7 @@ export async function callTool(session: CadSession, name: string, raw: unknown, 
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) return refused(`no tool ${name}`);
   try {
+    if (isAssemblyTool(name)) return await callAssemblyTool(session, name, raw);
     const a = CAD_TOOLS.some((t) => t.name === name) ? (raw ?? {}) as Record<string, unknown> : argsOf(tool, raw);
     // what the app sent before this call is in the part first
     const pending = live?.takePending();

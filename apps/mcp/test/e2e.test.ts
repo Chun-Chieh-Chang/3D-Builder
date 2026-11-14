@@ -38,7 +38,7 @@ const json = (r: CallToolResult) => JSON.parse((r.content[0] as { text: string }
 it('tells the client how to work, and lists its tools', async () => {
   expect(client.getInstructions()).toMatch(/apply_commands/);
   const { tools } = await client.listTools();
-  expect(tools.map((t) => t.name).sort()).toEqual(['apply_commands', 'cad_execute_feature', 'cad_export_manufacturing', 'cad_get_viewport_screenshot', 'cad_inspect_geometry', 'command_reference', 'export_file', 'live_status', 'part_new', 'part_open', 'part_save', 'part_summary', 'query_elements', 'rebuild_events', 'recognize_features', 'render_view', 'session_status', 'undo']);
+  expect(tools.map((t) => t.name).sort()).toEqual(['apply_commands', 'assembly_apply_commands', 'assembly_inspect', 'assembly_new', 'assembly_open', 'assembly_query_elements', 'assembly_save', 'cad_execute_feature', 'cad_export_manufacturing', 'cad_get_viewport_screenshot', 'cad_inspect_geometry', 'command_reference', 'export_file', 'live_status', 'part_new', 'part_open', 'part_save', 'part_summary', 'query_elements', 'rebuild_events', 'recognize_features', 'render_view', 'session_status', 'undo']);
 });
 
 it('serves the four standard CAD tools over the real stdio transport', async () => {
@@ -53,6 +53,29 @@ it('serves the four standard CAD tools over the real stdio transport', async () 
   expect((await call('cad_export_manufacturing', { path: 'standard.stl', format: 'stl', meshTolerance: 0.01 })).isError).toBeFalsy();
   expect(existsSync(join(root, 'standard.stl'))).toBe(true);
   await call('part_new');
+});
+
+it('builds a separate assembly over stdio and leaves the part session intact', async () => {
+  const file = 'assembly-source.3dbx';
+  writeFileSync(join(root, file), readFileSync(resolve(here, '../../tests/golden/locating-plate.3dbx')));
+  expect((await call('assembly_new')).isError).toBeFalsy();
+  const source = await call('assembly_query_elements', { path: file });
+  expect(source.isError, JSON.stringify(source.content[0])).toBeFalsy();
+  expect(json(source).elements).toContainEqual(expect.objectContaining({ ref: expect.objectContaining({ name: 'extrude1:cap:end' }) }));
+  const commands = [{ type: 'insertComponent', file: { id: 'file', path: file }, component: {
+    id: 'plate', file: 'file', instance: 1, fixed: true, placement: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+  } }];
+  const trial = await call('assembly_apply_commands', { commands, dry_run: true, preview: { size: 128 } });
+  expect(trial.isError, JSON.stringify(trial.content[0])).toBeFalsy();
+  expect(trial.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+  expect(json(await call('assembly_inspect')).components).toEqual([]);
+  const applied = await call('assembly_apply_commands', { commands });
+  expect(json(applied)).toMatchObject({ committed: true, components: [{ id: 'plate', dof: 0 }] });
+  expect((await call('assembly_save', { path: 'jig.3dba' })).isError).toBeFalsy();
+  expect(existsSync(join(root, 'jig.3dba'))).toBe(true);
+  expect((await call('assembly_new')).isError).toBeFalsy();
+  expect(json(await call('assembly_open', { path: 'jig.3dba' }))).toMatchObject({ opened: true, components: [{ id: 'plate', dof: 0 }] });
+  expect(json(await call('part_summary')).features).toEqual([]);
 });
 
 it('runs the new headless, render and export commands as real processes', () => {
