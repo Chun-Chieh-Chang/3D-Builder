@@ -25,7 +25,8 @@
 - **`--maxWorkers 4` 試跑作廢（run 43563208784）**：我改 workflow 時漏了空格，指令成了 `--maxWorkers 4--shard=…`，`--shard` 失效，8 片各跑整套（取消時 196–401／452 檔、0 失敗、無記憶體不足）。對 4 worker 什麼也沒證明；未合併，main 仍為 2。已加 `timeout-minutes`：integrity 15、full-suite 40。使用者同意（2026-11-14）刪除 `ci/max-workers-4`，並在新分支改正後重試 4 worker、印出記憶體用量。
 - **`--maxWorkers 4` 重試，不採用（run 43565198967，`ci/max-workers-4b`，已刪）**：指令與分片正確；記憶體高峰 8.1／16 GB，不是記憶體。第 3、7 片三項逾時（兩個 section 測試的第一項 35 → > 60 s、`recognize-rolling-ball-fuzz-5` seed 46 151 → > 300 s），沒有斷言失敗；最慢的第 7 片反而變慢，整輪 17.8 分（2 worker 15.1）。要用 4 就得放寬逾時（§3.3 不准），故 main 維持 2。重測試變慢的原因未量（推測 4 vCPU＝2 核×2 執行緒，未印 `lscpu`）。
 - **待辦（使用者 2026-11-14 裁定先記下，未處理）**：2 worker 下，`tests/phase6/section-spline-isolation.test.ts` 的 smooth=false、`tests/phase6/section-clearance-probe.test.ts` 的 gap 0 各約 35 s（上限 60 s，59%），`tests/phase8/recognize-rolling-ball-fuzz-5.test.ts` seed 46 為 151 s（上限 300 s，50%）。runner 慢 1.72 倍時會到 85–100%，Nightly 可能變紅。處理方式是 profile 後讓測試本身變快，不得放寬逾時（§3.3）。（先前跟使用者說 section 測試 87%，是拿整檔時間比單項上限，錯了，已更正。）
-- **下一步**：若要分片更平均，可改依實測耗時分片（需自訂 sequencer 與耗時檔）。
+- **依實測耗時分片（使用者選擇，2026-11-14）**：`scripts/test-shards.ts`（最長的先放、放進目前最輕的一片）、`vitest.config.ts` 的 `DurationSequencer`（只在 `--shard` 時生效，本機不變）、耗時表 `scripts/test-durations.json`（以 `node scripts/test-durations.mjs <run id>` 更新）。`section-offset-cost` 改為獨立 job；分片步驟印 `lscpu`。本機空跑 8 片：453 檔不重不漏、每片 882 s 檔案時間（雜湊分片為 381–1501 s）。估計最慢一片測試約 510–560 s（原 886 s），**尚未在 CI 實測**。
+- **下一步**：使用者同意後 commit，workflow_dispatch 實測分片時間；加新的重型測試檔後，用該晚的 run 更新耗時表（log 會列出沒有實測時間的檔）。
 
 ## 2026-11-13 22:30 — Claude Code 接手 Codex：MCP 驗收完成
 

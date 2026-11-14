@@ -72,8 +72,10 @@ jobs:
 
   # The whole suite on one runner took 59 min by #202 (2026-11-14; 7087 s of file time over two workers, most of it
   # the fuzz files added since 2026-11-10). Split it over SHARDS runners instead: no threshold, timeout or file is changed.
-  # vitest shards by a hash of the path, not by time; with #202's file times the slowest shard is ~20.5 min of 4,
-  # ~15.2 of 6 and ~11.6 of 8 (scratch/ci shard simulation), so 8.
+  # The split is by measured file time (vitest.config.ts DurationSequencer, scripts/test-shards.ts; the times are
+  # scripts/test-durations.json, updated with `node scripts/test-durations.mjs <run id>`), not vitest's path hash: by hash
+  # the shards held 381 to 1501 s of file time (run 43561427221), by time 882 s each. 2 workers a shard: 4 timed out
+  # three heavy tests (run 43565198967, DEV_LOG 2026-11-14).
   full-suite:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -97,13 +99,27 @@ jobs:
         run: |
           echo "nproc: $(nproc)"
           node -e "const os = require('node:os'); console.log('availableParallelism:', os.availableParallelism(), 'cpus:', os.cpus().length, os.cpus()[0].model)"
+          lscpu | grep -E '^(Thread|Core|Socket)'
           free -m
       - id: install
         run: npm ci
-      # This cost probe measures OCCT wall time. Run it alone so it does not compete with the suite's workers.
-      - name: Section offset cost, alone
-        if: matrix.shard == 1
-        run: npm test -- --no-file-parallelism tests/phase6/section-offset-cost.test.ts
+      # the log names the split ("shard i/n by measured time: ...") and any file without a measured time
       - name: Full unit suite (nightly, shard ${{ matrix.shard }})
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm test -- --maxWorkers 2 --shard=${{ matrix.shard }}/${{ env.SHARDS }} --exclude tests/phase6/section-offset-cost.test.ts
+
+  # This cost probe measures OCCT wall time. It runs alone, on a runner of its own, so nothing competes with it
+  # (it ran first in shard 1, which made that shard 160 s longer than the others).
+  section-offset-cost:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+      - run: npm ci
+      - name: Section offset cost, alone
+        run: npm test -- --no-file-parallelism tests/phase6/section-offset-cost.test.ts
