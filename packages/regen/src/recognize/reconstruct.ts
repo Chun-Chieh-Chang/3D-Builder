@@ -250,7 +250,11 @@ class Builder {
       const [a, b] = [at.get(l.p1)!, at.get(l.p2)!];
       take({ type: 'distance', a: l.id, value: num(Math.hypot(b[0] - a[0], b[1] - a[1])) });
     }
-    for (const [id, p] of at) {
+    // Arc centres after every other point, as a designer dimensions the ends and lets tangency and the arc place the centre: of a chain of tangent arcs
+    // the centres are redundant once the ends are given, and between the ends they broke every run, so the halving fell to single candidates (a closed
+    // spline of 82 arcs: 631 solves, 467 redundant, timed out in sharded CI #43549138821; with the centres last, 4). A centre that is needed still comes.
+    const centers = new Set(sketch.entities.flatMap((e) => (e.type === 'arc' ? [e.center] : [])));
+    for (const [id, p] of [...at].sort((x, y) => Number(centers.has(x[0])) - Number(centers.has(y[0])))) {
       take(Math.abs(p[0]) <= ZERO ? { type: 'vertical', a: id, b: '@origin' } : { type: 'distanceX', a: '@origin', b: id, value: num(Math.abs(p[0])) });
       take(Math.abs(p[1]) <= ZERO ? { type: 'horizontal', a: id, b: '@origin' } : { type: 'distanceY', a: '@origin', b: id, value: num(Math.abs(p[1])) });
     }

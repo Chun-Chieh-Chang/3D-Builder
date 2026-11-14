@@ -93,6 +93,25 @@ describe('the dimensioning of a recognized sketch', () => {
     }
   }, 300_000);
 
+  it('a closed spline of 82 tangent arcs is fully defined in a handful of solves: the centres, which the ends and tangency already fix, come last', async () => {
+    // Sharded CI #43549138821 (2026-11-14) timed out on recognize-approximate's "a closed spline" (> 60 s; 2.3 s before C1, 28.7 s in #202). The
+    // candidates went point by point, each arc's centre between ends; the centres are redundant once the ends are dimensioned (tangent arcs), so
+    // the halving fell to single candidates: 631 solves, 467 of them redundant. With the centres after the other points: 4 solves, measured.
+    const kernel = await Kernel.load();
+    const { solver, sizes } = await sized();
+    const outline = ({ outer: [{ kind: 'spline', closed: true, points: Array.from({ length: 6 }, (_, i) => { const a = (2 * Math.PI * i) / 6; const r = 25 + 2 * Math.cos(2 * a); return [r * Math.cos(a), r * Math.sin(a)]; }), source: 'c' }], holes: [] }) as Region;
+    const { doc, regen } = await recognizeIt(kernel, solver, near(kernel, outline));
+    try {
+      const sketch = doc.features.find((f): f is SketchFeature => f.type === 'sketch')!;
+      expect(sketch.entities.filter((e) => e.type === 'arc')).toHaveLength(82);
+      expect(solver.solve(sketch).status).toBe('fully');
+      expect(sizes.length).toBeGreaterThan(0);
+      expect(sizes.length).toBeLessThanOrEqual(10);
+    } finally {
+      regen.dispose();
+    }
+  }, 300_000);
+
   it('stops at the first system the solver cannot hold, and asks no smaller one after it (each would be an abort)', async () => {
     const kernel = await Kernel.load();
     // a solver that holds less than measured: any system past 700 comes back too large, as from an abort
