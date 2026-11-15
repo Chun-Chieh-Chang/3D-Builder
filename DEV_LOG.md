@@ -1,5 +1,16 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-14 — 組合件即時連線（ADR 0253）
+
+- AI 即時連線延伸到組合件。協定 v2：App 的 `hello`／`doc` 帶開著的文件（零件、組合件加各來源檔內容雜湊、其他），伺服器的 `apply`／`undo` 帶目標，新增 `read`／`file` 讓伺服器請 App 讀專案內的零件檔。伺服器先試算、只改 App 開著的組合件、新檔由 App 讀（三項皆使用者選定）。
+- 紅隊一：輸入破壞。路徑跳出專案、非 `.3dbx`、檔案不存在、偽造雜湊、超出無視窗子集（抑制、陣列、爆炸、次組合件、其他配合、非 `.3dbx` 來源）皆明確拒絕並說明原因，App 的組合件不變、沒有新的復原步驟。
+- 紅隊二：幾何。不新增幾何或求解；伺服器以 App 傳來的位元組重建來源並求解，App 套用後以自己的求解器算出相同位置（銷 x = −40 mm，Node 與真瀏覽器各驗一次）。
+- 紅隊三：依賴鏈。協定 → `LiveBridge` → `server.ts` 分派 → `AssemblySession` 即時模式 → `AiBridge` → `AssemblyStore.agentHost` → `store.ts` 文件切換；零件↔組合件↔工程圖切換、斷線後退出即時模式（App 的路徑不是工作區的路徑，所以丟棄）皆有測試。
+- 紅隊四：真值。Node 測試的工作區沒有任何零件檔，所以求解成功本身就證明來源來自 App；讀檔次數逐次斷言。第一版斷言「讀一次」是我想錯：每次呼叫都會重讀尚未用到的檔（呼叫之間檔案可能改過），套用之後才不再讀，已寫進 ADR。
+- 突變 16 項全部轉紅（`scratch/ci/mutate-0253.mjs`，每項先確認恰好比對一次、事後核對原始檔還原）。第一輪「讀檔不核對雜湊」、「讀檔逾時就斷線」存活：前者沒有偽造雜湊的測試，後者因關閉是非同步、斷言時仍顯示已連線；補上「逾時後下一次讀檔仍成功」才轉紅。
+- 從 `apps/mcp` 目錄直接跑 vitest 會用不到根目錄設定（逾時退回 5 秒），16 項重型測試因此逾時；從根目錄跑 79/79。不是門檻問題，跑 MCP 測試一律從根目錄。
+- 說明與 MCP 指示同步：「AI 控制」對話框範圍、說明內文（中英）、伺服器 `INSTRUCTIONS` 與 `live_status`（多回報 `open`）。
+
 ## 2026-11-14 — 組合件 MCP 交付輸出（`assembly_export`）
 
 - 新工具 `assembly_export { path, format: 'step' | 'bom_csv' }`，輸出目前已套用的組合件。STEP 走 GUI 相同的 `stepStructure`＋`exportAssemblyStep`（含 `portableShape` 與面顏色），BOM 走 `buildBom`＋`bomCsv`。`AssemblySession` 把載入、參照檢查與求解抽成 `solve`，由 `evaluate` 與 `export` 共用；目的路徑的檢查抽成 `destination`，由 `save` 與 `export` 共用。來源載入多記面顏色與零件屬性。

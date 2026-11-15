@@ -2,8 +2,8 @@
 export const evaluate = {
   'ai.title': 'AI 控制',
   'ai.code': '連線碼',
-  'ai.instructions': '在本機 MCP 伺服器呼叫 live_status，將取得的連線碼貼到這裡。連線後，AI 可修改目前開啟的零件。',
-  'ai.scope': '僅支援零件。編輯草圖或特徵時會拒絕 AI 修改。每批修改可一次復原；關閉此視窗不會中斷連線。',
+  'ai.instructions': '在本機 MCP 伺服器呼叫 live_status，將取得的連線碼貼到這裡。連線後，AI 可修改目前開啟的零件或組合件。',
+  'ai.scope': '支援零件與組合件，不支援工程圖。編輯草圖或特徵、或組合件的 PropertyManager 開著時，會拒絕 AI 修改。每批修改可一次復原；關閉此視窗不會中斷連線。',
   'ai.connect': '連線',
   'ai.disconnect': '中斷連線',
   'ai.close': '關閉',

@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 95／7／38 |
-| ADR 文件 | 251 |
+| ADR 文件 | 252 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 231／226／278 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -597,6 +597,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0250: Recognition reads spline faces as the simple surfaces they are](<adr/0250-recognition-reads-spline-faces-as-analytic.md>)
 - [ADR 0251: Drafted extrusion of outlines with splines](<adr/0251-drafted-extrusion-of-spline-outlines.md>)
 - [ADR 0252 — Structured CAD control and headless acceptance](<adr/0252-ai-cad-structured-control.md>)
+- [ADR 0253：AI／MCP 即時操作視窗中的組合件](<adr/0253-ai-live-assembly.md>)
 
 ### 歷史驗證
 

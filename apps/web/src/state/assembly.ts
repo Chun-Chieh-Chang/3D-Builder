@@ -16,6 +16,7 @@ import {
   IDENTITY_ROTATION,
   IdAllocator,
   isDatumPlaneName,
+  isFilePath,
   joinPath,
   ASSEMBLY_AXES,
   assemblyPhysical,
@@ -99,6 +100,7 @@ import type { AssemblyStepRequest, KernelApi, PartBuildPayload, PartStage } from
 import { fileIn, listFiles, pathIn, pickAssemblySaveTarget, pickPartFile, writeFile, writeFilesInto } from '../files';
 import { standardName, standardPartDoc, standardProblem, type StandardSpec } from '@3db/library';
 import { immovable } from './movability';
+import type { AiAssemblyHost } from './aiBridge';
 
 /** A part file of the assembly, by its path in the project folder: read and rebuilt, or why not. */
 export type FileStatus =
@@ -467,6 +469,61 @@ export class AssemblyStore {
 
   redo(): void {
     this.history.redo();
+  }
+
+  // ------------------------------------------------------------ the AI's live link (ADR 0253)
+
+  /** The part files' content as last read for the link, by project path: the same bytes while the file is unchanged, so they are hashed once. */
+  private agentBytes = new Map<string, { stamp: string; data: Uint8Array }>();
+
+  /** The bytes of a part file at a project path, read again only when it changed. */
+  private async agentRead(project: FileSystemDirectoryHandle, path: string): Promise<Uint8Array> {
+    const file = await (await fileIn(project, path)).getFile();
+    const stamp = `${file.lastModified}:${file.size}`;
+    const had = this.agentBytes.get(path);
+    if (had && had.stamp === stamp) return had.data;
+    const data = new Uint8Array(await file.arrayBuffer());
+    this.agentBytes.set(path, { stamp, data });
+    return data;
+  }
+
+  /** The assembly as the AI's live link works on it: its history, whether the user is in the middle of something, and its part files. */
+  agentHost(): AiAssemblyHost {
+    return {
+      history: this.history,
+      busy: () => {
+        const s = this.state;
+        return !!(s.insert || s.mate || s.smartMate || s.move || s.drag || s.triad || s.confirmDelete || s.relink || s.pattern || s.explode || s.exploded || s.formSub);
+      },
+      sources: async (doc) => {
+        const out = new Map<Id, Uint8Array>();
+        const project = this.project;
+        if (!project) return out;
+        for (const f of doc.files) {
+          const path = joinPath(this.folder, f.path);
+          if (path === '..' || path.startsWith('../')) continue;
+          try {
+            out.set(f.id, await this.agentRead(project, path));
+          } catch {
+            // a file that cannot be read has no entry: the agent is told so when it needs it
+          }
+        }
+        return out;
+      },
+      read: async (path) => {
+        const project = this.project;
+        if (!project) throw new Error('the assembly has no project folder yet');
+        if (!isFilePath(path) || !path.toLowerCase().endsWith(PART_FILE_EXTENSION)) throw new Error(`only ${PART_FILE_EXTENSION} part files are read, by their path from the assembly's folder: ${path}`);
+        const full = joinPath(this.folder, path);
+        if (full === '..' || full.startsWith('../')) throw new Error(`${path} is outside the project folder ${project.name}`);
+        try {
+          return await this.agentRead(project, full);
+        } catch (e) {
+          if (e instanceof DOMException && (e.name === 'NotFoundError' || e.name === 'TypeMismatchError')) throw new Error(`there is no part file ${path} in the project folder`);
+          throw e;
+        }
+      },
+    };
   }
 
   // ------------------------------------------------------------ part files (B9.4)

@@ -6,8 +6,8 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
-import { fromBase64, LIVE_CLOSE, LIVE_PROTOCOL, liveCode, liveOriginAllowed, type AppMessage, type LiveBlobs, type ServerMessage } from '@3db/io';
-import type { Command, PartDoc } from '@3db/model';
+import { fromBase64, LIVE_CLOSE, LIVE_PROTOCOL, liveCode, liveOriginAllowed, type AppMessage, type LiveBatch, type LiveBlobs, type LiveOpen, type ServerMessage } from '@3db/io';
+import type { PartDoc } from '@3db/model';
 
 export interface BridgeOptions {
   /** 0: a free port the system gives. */
@@ -22,6 +22,7 @@ export interface BridgeOptions {
 }
 
 export type AppAnswer = Extract<AppMessage, { type: 'result' }>;
+export type FileAnswer = Extract<AppMessage, { type: 'file' }>;
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const MAX_FAILURES = 5;
@@ -44,6 +45,15 @@ function blobsOf(raw: LiveBlobs | undefined): { blobs: Map<string, Uint8Array>; 
   return { blobs, bad };
 }
 
+/** The shape of an open document as a message carries it: an assembly needs its document and the hashes of its sources. */
+function validOpen(open: unknown): open is LiveOpen {
+  if (typeof open !== 'object' || open === null) return false;
+  const o = open as { kind?: unknown; doc?: unknown; sources?: unknown };
+  if (o.kind === 'part' || o.kind === 'other') return true;
+  if (o.kind !== 'assembly' || typeof o.doc !== 'object' || o.doc === null || typeof o.sources !== 'object' || o.sources === null) return false;
+  return Object.values(o.sources).every((sha) => typeof sha === 'string' && /^[0-9a-f]{64}$/.test(sha));
+}
+
 export class LiveBridge {
   readonly token: string;
   private wss: WebSocketServer | null = null;
@@ -52,19 +62,26 @@ export class LiveBridge {
   /** The part's version in the app as the server last knew it. */
   version = -1;
   private nextId = 1;
-  private waiting = new Map<number, { resolve: (a: AppAnswer) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  private waiting = new Map<number, { resolve: (a: AppAnswer | FileAnswer) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private failures = 0;
   private lockedUntil = 0;
   /**
    * The part the app sent last that the copy does not have yet. It is not loaded here: a tool call loads it first thing (`takePending`), in the same
    * queue as every other use of the part. Loading it here would wait on that queue, and a tool call waiting for the app's answer holds it.
    */
-  private pending: { doc: PartDoc; version: number } | null = null;
+  private pending: { doc: PartDoc; open: LiveOpen; version: number } | null = null;
+  /** The document open in the app as last sent (ADR 0253): what the tools may change. */
+  open: LiveOpen = { kind: 'part' };
   /** Every blob the app has sent, by hash: a part sent later may use one sent before. */
   private readonly blobs = new Map<string, Uint8Array>();
 
   constructor(private readonly options: BridgeOptions) {
     this.token = options.token ?? newToken();
+  }
+
+  /** Every blob the app has sent, by hash (kept up to date: the same map). */
+  get received(): ReadonlyMap<string, Uint8Array> {
+    return this.blobs;
   }
 
   get connected(): boolean {
@@ -152,49 +169,76 @@ export class LiveBridge {
   private handle(msg: AppMessage, first: boolean, ws: WebSocket): void {
     if (msg.type === 'hello' || msg.type === 'doc') {
       if (typeof msg.version !== 'number' || typeof msg.doc !== 'object' || msg.doc === null) return ws.close(LIVE_CLOSE.badMessage, 'a part is expected');
+      if (!validOpen(msg.open)) return ws.close(LIVE_CLOSE.badMessage, 'the open document is expected');
       const { blobs, bad } = blobsOf(msg.blobs);
       if (bad.length) this.options.log?.(`live link: ${bad.length} blob(s) did not match their hash and were left out`);
       for (const [k, v] of blobs) this.blobs.set(k, v);
-      this.pending = { doc: msg.doc, version: msg.version };
+      this.pending = { doc: msg.doc, open: msg.open, version: msg.version };
+      this.open = msg.open;
       this.version = msg.version;
       if (first) this.send({ type: 'welcome', protocol: LIVE_PROTOCOL, server: '3d-builder-mcp' });
       return;
     }
-    if (msg.type === 'result') {
+    if (msg.type === 'result' || msg.type === 'file') {
       const w = this.waiting.get(msg.id);
       if (!w) return;
       this.waiting.delete(msg.id);
       clearTimeout(w.timer);
-      this.version = msg.version;
+      if (msg.type === 'result') this.version = msg.version;
       w.resolve(msg);
     }
   }
 
-  /** The part the app sent that the copy does not have yet, with every blob it has sent; null when the copy is up to date. */
-  takePending(): { doc: PartDoc; blobs: ReadonlyMap<string, Uint8Array> } | null {
+  /** What the app sent that the copies do not have yet (its part, and the document open), with every blob it has sent; null when they are up to date. */
+  takePending(): { doc: PartDoc; open: LiveOpen; blobs: ReadonlyMap<string, Uint8Array> } | null {
     const p = this.pending;
     this.pending = null;
-    return p && { doc: p.doc, blobs: this.blobs };
+    return p && { doc: p.doc, open: p.open, blobs: this.blobs };
   }
 
   private send(msg: ServerMessage): void {
     this.app?.send(JSON.stringify(msg));
   }
 
-  /** Asks the app to apply a batch, or to take back the last one; resolves with its answer. */
-  request(what: { kind: 'apply'; commands: Command[]; label: string } | { kind: 'undo' }): Promise<AppAnswer> {
+  /** Asks the app to apply a batch to its part or assembly, or to take back the last one; resolves with its answer. */
+  request(what: ({ kind: 'apply'; label: string } & LiveBatch) | { kind: 'undo'; target: LiveBatch['target'] }): Promise<AppAnswer> {
     if (!this.app) return Promise.reject(new Error('no app is connected'));
     const id = this.nextId++;
-    const msg: ServerMessage = what.kind === 'apply' ? { type: 'apply', id, base: this.version, label: what.label, commands: what.commands } : { type: 'undo', id, base: this.version };
+    const msg: ServerMessage = what.kind === 'apply'
+      ? (what.target === 'part'
+          ? { type: 'apply', id, base: this.version, label: what.label, target: 'part', commands: what.commands }
+          : { type: 'apply', id, base: this.version, label: what.label, target: 'assembly', commands: what.commands })
+      : { type: 'undo', id, base: this.version, target: what.target };
+    // the app may still apply it later, and the copy here would no longer be the document on the screen: the link is closed, and a new one starts
+    // from the app's document (its hello)
+    return this.ask(msg, true) as Promise<AppAnswer>;
+  }
+
+  /**
+   * Asks the app for a part file of the open assembly (ADR 0253), by its path from the assembly's folder; resolves with its bytes, checked against
+   * the hash the app gives, or rejects saying why not. Reading changes nothing, so a read the app does not answer fails without closing the link.
+   */
+  async readFile(path: string): Promise<{ sha: string; data: Uint8Array }> {
+    if (!this.app) throw new Error('no app is connected');
+    const answer = (await this.ask({ type: 'read', id: this.nextId++, path }, false)) as FileAnswer;
+    if (!answer.ok) throw new Error(answer.message);
+    const data = fromBase64(answer.data);
+    if (createHash('sha256').update(data).digest('hex') !== answer.sha) throw new Error(`the app sent ${path} with a hash that does not match its bytes`);
+    this.blobs.set(answer.sha, data);
+    return { sha: answer.sha, data };
+  }
+
+  private ask(msg: Extract<ServerMessage, { id: number }>, closeOnTimeout: boolean): Promise<AppAnswer | FileAnswer> {
+    const ms = this.options.answerMs ?? 15_000;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.waiting.delete(id);
-        // the app may still apply it later, and the copy here would no longer be the part on the screen: the link is closed, and a new one starts
-        // from the app's part (its hello)
-        this.app?.close(LIVE_CLOSE.timeout, 'no answer');
-        reject(new Error(`the app did not answer in ${(this.options.answerMs ?? 15_000) / 1000} s: the live link is closed; connect again from the app`));
-      }, this.options.answerMs ?? 15_000);
-      this.waiting.set(id, { resolve, reject, timer });
+        this.waiting.delete(msg.id);
+        if (closeOnTimeout) {
+          this.app?.close(LIVE_CLOSE.timeout, 'no answer');
+          reject(new Error(`the app did not answer in ${ms / 1000} s: the live link is closed; connect again from the app`));
+        } else reject(new Error(`the app did not answer in ${ms / 1000} s`));
+      }, ms);
+      this.waiting.set(msg.id, { resolve, reject, timer });
       this.send(msg);
     });
   }

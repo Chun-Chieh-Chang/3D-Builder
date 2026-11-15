@@ -1,5 +1,12 @@
 # 交接與接續工作
 
+## 2026-11-14 深夜 — 組合件 MCP 後續 ②：組合件即時連線（Claude Code）
+
+- 完成 [ADR 0253](docs/adr/0253-ai-live-assembly.md)：App 開著組合件並連上 AI 控制時，Agent 的 `assembly_*` 工具操作該組合件；伺服器先試算，新零件檔請 App 從專案資料夾讀取；開檔、新建、存檔留給使用者。協定升為 v2，舊版 App 與新伺服器互相拒絕，**桌面版與 MCP 要一起更新**。
+- 驗證：Node 14 項即時連線測試、突變 16/16、`verify-live` 真瀏覽器組合件情境、完整 `verify:ui` 278/278、typecheck、四項 lint（細節 DEV_LOG）。
+- 下一步 ③ 多張照片建組合件：需要使用者提供實物照片與實測尺寸。④ 各客戶端驗收需使用者在各客戶端核准工具。
+- 進度頁本工作的階段「組合件 MCP 後續 2：組合件即時視窗控制（ADR 0253，2026-11-14）」只用 `scratch/ci/phase10.mjs` 更新。
+
 ## 2026-11-14 晚 — 組合件 MCP 後續 ①：交付輸出（Claude Code）
 
 - 使用者同意依建議順序做組合件 MCP 後續：① 交付輸出 BOM／組合件 STEP → ② GUI 即時連線 → ③ 多張照片建組合件 → ④ 各客戶端驗收（理由與契約見[組合件 MCP 計畫](docs/design/ai-cad-control/assembly-mcp-plan.md) D 節）。

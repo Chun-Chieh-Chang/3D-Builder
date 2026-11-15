@@ -2,7 +2,8 @@ import { z } from 'zod';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { AssemblySession, MAX_ASSEMBLY_COMPONENTS, MAX_ASSEMBLY_MATES } from './assemblySession';
 import { RENDER_VIEWS } from './render';
-import type { CadSession } from './session';
+import { AgentError, type CadSession } from './session';
+import type { LiveOpen } from '@3db/io';
 
 const name = z.string().min(1).max(256);
 const filePath = z.string().min(1);
@@ -65,14 +66,27 @@ export const ASSEMBLY_TOOLS = (Object.keys(schemas) as AssemblyToolName[]).map((
 export const isAssemblyTool = (name: string): name is AssemblyToolName => Object.hasOwn(schemas, name);
 
 const assemblies = new WeakMap<CadSession, AssemblySession>();
-const json = (value: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
 
-export async function callAssemblyTool(session: CadSession, name: AssemblyToolName, raw: unknown): Promise<CallToolResult> {
+/** The assembly session of a part session (one each), made when first asked for. */
+export function assemblyOf(session: CadSession): AssemblySession {
   let assembly = assemblies.get(session);
   if (!assembly) {
     assembly = new AssemblySession(session);
     assemblies.set(session, assembly);
   }
+  return assembly;
+}
+const json = (value: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
+
+/**
+ * Calls one assembly tool. `app`: what the open app shows while the live link is connected (ADR 0253), null without one: the tools then work only on
+ * the app's assembly, and refuse while it shows a part or a drawing.
+ */
+export async function callAssemblyTool(session: CadSession, name: AssemblyToolName, raw: unknown, app: LiveOpen['kind'] | null = null): Promise<CallToolResult> {
+  if (app !== null && app !== 'assembly') {
+    throw new AgentError(`the app is connected and shows ${app === 'part' ? 'a part' : 'a drawing'}: the assembly tools work on the assembly open in the app. Ask the user to open the assembly there, or to end the link to work on workspace assemblies.`);
+  }
+  const assembly = assemblyOf(session);
   const args = raw === undefined ? {} : raw;
   switch (name) {
     case 'assembly_new':

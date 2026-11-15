@@ -4,7 +4,8 @@
  */
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, type Tool } from '@modelcontextprotocol/sdk/types.js';
-import { ASSEMBLY_TOOLS, callAssemblyTool, isAssemblyTool } from './assemblyTools';
+import { ASSEMBLY_TOOLS, assemblyOf, callAssemblyTool, isAssemblyTool } from './assemblyTools';
+import type { LiveAssembly } from './assemblySession';
 import { AgentError, EXPORT_FORMATS, messageOf, type CadSession, type ElementQuery, type ExportFormat } from './session';
 import { RENDER_VIEWS, renderView, type RenderOptions } from './render';
 import { commandReference, exampleReference, INSTRUCTIONS, typeReference } from './reference';
@@ -64,7 +65,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'live_status',
     description:
-      "The live link to the open 3D-Builder app (ADR 0238). Not connected: give the user the connection code to type into the app (AI 控制…, in the 工具 menu). Connected: your batches are applied to the part on the user's screen as one undo step each, and the user's own changes come back to you.",
+      "The live link to the open 3D-Builder app (ADR 0238). Not connected: give the user the connection code to type into the app (AI 控制…, in the 工具 menu). Connected: your batches are applied to the part or assembly on the user's screen as one undo step each, and the user's own changes come back to you. open says which document the app shows.",
     inputSchema: { type: 'object', properties: {} },
   },
   { name: 'session_status', description: 'The kernel heap (bytes), the shapes the session holds, and how many times the kernel was loaded again because its heap grew.', inputSchema: { type: 'object', properties: {} } },
@@ -88,27 +89,52 @@ const label = (n: number) => `AI: ${n} command${n === 1 ? '' : 's'}`;
 /** What a refusal of the app means for the agent. */
 function appRefusal(r: { reason: string; message: string }): string {
   const why: Record<string, string> = {
-    conflict: 'the user changed the part in the meantime; read part_summary again and send the batch again if it still fits',
-    busy: 'the user is editing a sketch or a feature; wait until they finish, then send it again',
+    conflict: 'the user changed the document in the meantime; read it again (part_summary or assembly_inspect) and send the batch again if it still fits',
+    busy: "the user is editing a sketch, a feature or an assembly's PropertyManager; wait until they finish, then send it again",
     notPart: 'the app shows an assembly or a drawing, not the part',
+    wrongDocument: 'the app no longer shows an assembly',
     invalid: 'a command failed in the app',
   };
   return `${why[r.reason] ?? r.reason} (${r.message})`;
 }
+
+/** The app's assembly as the assembly session works on it (ADR 0253): batches and undo go to the app, part files come from it. */
+function liveAssembly(live: LiveBridge): LiveAssembly {
+  return {
+    blobs: live.received,
+    read: (path) => live.readFile(path),
+    apply: async (commands) => {
+      const r = await live.request({ kind: 'apply', target: 'assembly', commands, label: label(commands.length) });
+      if (!r.ok) throw new AgentError(appRefusal(r));
+    },
+    undo: async () => {
+      const r = await live.request({ kind: 'undo', target: 'assembly' });
+      if (!r.ok) throw new AgentError(appRefusal(r));
+    },
+  };
+}
+
+/** Tools that do not use the open part: they answer whatever the app shows. */
+const ANY_DOCUMENT = new Set(['command_reference', 'live_status', 'session_status', 'rebuild_events', 'undo']);
 
 /** Calls one tool. Exported so that tests drive it the same way the transport does. `live`: the link to the open app, when there is one (ADR 0238). */
 export async function callTool(session: CadSession, name: string, raw: unknown, live: LiveBridge | null = null): Promise<CallToolResult> {
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) return refused(`no tool ${name}`);
   try {
-    if (isAssemblyTool(name)) return await callAssemblyTool(session, name, raw);
-    const a = CAD_TOOLS.some((t) => t.name === name) ? (raw ?? {}) as Record<string, unknown> : argsOf(tool, raw);
-    // what the app sent before this call is in the part first
+    // what the app sent before this call is in the copies first: its part, and the assembly it shows (ADR 0253)
     const pending = live?.takePending();
     if (pending) await session.load(pending.doc, pending.blobs);
     const linked = live?.connected === true;
+    const shows = linked ? live!.open : null;
+    assemblyOf(session).follow(linked ? liveAssembly(live!) : null, shows?.kind === 'assembly' ? { doc: shows.doc, sources: shows.sources, fresh: pending !== null && pending !== undefined } : null);
+    if (isAssemblyTool(name)) return await callAssemblyTool(session, name, raw, shows?.kind ?? null);
+    if (shows && shows.kind !== 'part' && !ANY_DOCUMENT.has(name)) {
+      throw new AgentError(`the app is connected and shows ${shows.kind === 'assembly' ? 'an assembly: use the assembly_* tools' : 'a drawing'}; the part tools work on a part open in the app`);
+    }
+    const a = CAD_TOOLS.some((t) => t.name === name) ? (raw ?? {}) as Record<string, unknown> : argsOf(tool, raw);
     if (CAD_TOOLS.some((t) => t.name === name)) return await callCadTool(session, name, a, linked ? async (commands) => {
-      const result = await live!.request({ kind: 'apply', commands, label: label(commands.length) });
+      const result = await live!.request({ kind: 'apply', target: 'part', commands, label: label(commands.length) });
       if (!result.ok) throw new AgentError(appRefusal(result));
     } : undefined);
     switch (name) {
@@ -138,7 +164,7 @@ export async function callTool(session: CadSession, name: string, raw: unknown, 
         const options = a.preview as RenderOptions | undefined;
         const gate = linked
           ? async (commands: unknown[]) => {
-              const r = await live!.request({ kind: 'apply', commands: commands as never, label: label(commands.length) });
+              const r = await live!.request({ kind: 'apply', target: 'part', commands: commands as never, label: label(commands.length) });
               if (!r.ok) throw new AgentError(appRefusal(r));
             }
           : undefined;
@@ -151,7 +177,7 @@ export async function callTool(session: CadSession, name: string, raw: unknown, 
       case 'recognize_features': {
         const gate = linked
           ? async (commands: unknown[]) => {
-              const r = await live!.request({ kind: 'apply', commands: commands as never, label: 'AI: recognize features' });
+              const r = await live!.request({ kind: 'apply', target: 'part', commands: commands as never, label: 'AI: recognize features' });
               if (!r.ok) throw new AgentError(appRefusal(r));
             }
           : undefined;
@@ -160,11 +186,13 @@ export async function callTool(session: CadSession, name: string, raw: unknown, 
         return { ...json(report), ...(report.error ? { isError: true } : {}) };
       }
       case 'undo':
+        if (shows?.kind === 'assembly') return json(await assemblyOf(session).undoLive());
+        if (shows?.kind === 'other') throw new AgentError('the app shows a drawing: there is no batch of yours to take back there');
         return json(
           await session.undo(
             linked
               ? async () => {
-                  const r = await live!.request({ kind: 'undo' });
+                  const r = await live!.request({ kind: 'undo', target: 'part' });
                   if (!r.ok) throw new AgentError(appRefusal(r));
                 }
               : undefined,
@@ -173,7 +201,7 @@ export async function callTool(session: CadSession, name: string, raw: unknown, 
       case 'live_status':
         return json(
           live
-            ? { listening: true, connected: linked, code: live.code, ...(linked ? { appVersion: live.version } : { tell: 'In 3D-Builder: 工具 → AI 控制…, type this code, then 連線.' }) }
+            ? { listening: true, connected: linked, code: live.code, ...(linked ? { appVersion: live.version, open: live.open.kind } : { tell: 'In 3D-Builder: 工具 → AI 控制…, type this code, then 連線.' }) }
             : { listening: false, why: 'the live link is off (THREEDB_LIVE=off)' },
         );
       case 'query_elements':

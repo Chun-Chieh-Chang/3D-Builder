@@ -2,7 +2,7 @@
 // Run after npm run mcp:build. Ports are separate from verify-ui; downloads and browser data stay in a temporary directory.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -109,18 +109,82 @@ try {
   // An assembly is not a part: the same batch is refused. 「新組合件」 is the product's own path (the folder prompt it leaves is not answered).
   await evaluate(`(async()=>{ S.newAssembly(); if(S.getState().unsaved) await S.answerUnsaved('discard'); })()`);
   await until(() => evaluate(`S.getState().active==='assembly'`), 'assembly');
+  await pause(350);
   const asm = await client.callTool({ name: 'apply_commands', arguments: { commands: [{ type: 'addVariable', variable: { id: 'asm-var', name: 'AsmVar', expr: '1' } }] } });
-  assert(asm.isError); assert.match(asm.content[0].text, /assembly or a drawing/);
+  assert(asm.isError); assert.match(asm.content[0].text, /shows an assembly/);
+
+  // ADR 0253: the agent works on the assembly open in the app. A project folder (the browser's private file system) holds parts/ and asm/; the
+  // assembly in asm/ uses ../parts/locating-plate.3dbx, and the agent adds the pin from ../parts/diamond-pin.3dbx, which the server asks the app for.
+  const golden = (name) => readFileSync(join(root, 'tests/golden', name)).toString('base64');
+  await evaluate(`(async()=>{
+    const opfs = await navigator.storage.getDirectory();
+    try { await opfs.removeEntry('3db-live', { recursive: true }); } catch { /* not there yet */ }
+    const project = await opfs.getDirectoryHandle('3db-live', { create: true });
+    const parts = await project.getDirectoryHandle('parts', { create: true });
+    await project.getDirectoryHandle('asm', { create: true });
+    for (const [name, b64] of [['locating-plate.3dbx', ${JSON.stringify(golden('locating-plate.3dbx'))}], ['diamond-pin.3dbx', ${JSON.stringify(golden('diamond-pin.3dbx'))}]]) {
+      const w = await (await parts.getFileHandle(name, { create: true })).createWritable();
+      await w.write(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+      await w.close();
+    }
+    const M = await import('/@id/@3db/model');
+    const doc = M.applyAssemblyCommand(M.createEmptyAssembly(), { type: 'insertComponent', file: { id: 'plate-part', path: '../parts/locating-plate.3dbx' }, component: { id: 'plate', file: 'plate-part', instance: 1, fixed: true, placement: { position: [0, 0, 0], rotation: [0, 0, 0, 1] } } });
+    S.showAssembly({ doc, handle: null, fileName: null, folder: 'asm', untitled: 'Live1', project });
+  })()`);
+  await until(() => evaluate(`S.getState().active==='assembly' && [...S.getState().asm.files.values()].length===1 && [...S.getState().asm.files.values()].every(f=>f.status==='ok')`), 'assembly parts read', 60000);
+  await until(async () => (await call('assembly_inspect')).components.length === 1, 'the server follows the app assembly');
+  const plateEls = await call('assembly_query_elements', { component: 'plate' });
+  const pinEls = await call('assembly_query_elements', { path: '../parts/diamond-pin.3dbx' });
+  const refOf = (part, name) => { const m = part.elements.find((e) => e.ref.name === name); assert(m, name); return m.ref; };
+  const asmCommands = [
+    { type: 'insertComponent', file: { id: 'pin-part', path: '../parts/diamond-pin.3dbx' }, component: { id: 'pin', file: 'pin-part', instance: 1, fixed: false, placement: { position: [-39, 1, 0], rotation: [0, 0, 0, 1] } } },
+    { type: 'insertMate', mate: { id: 'axis', name: 'Axis', type: 'concentric', align: 'aligned', suppressed: false, a: { component: 'plate', ref: refOf(plateEls, 'cut1:side:sketch2.ci6') }, b: { component: 'pin', ref: refOf(pinEls, 'revolve1:side:sketch1.l3#1') } } },
+    { type: 'insertMate', mate: { id: 'seat', name: 'Seat', type: 'coincident', align: 'antiAligned', suppressed: false, a: { component: 'plate', ref: refOf(plateEls, 'extrude1:cap:end') }, b: { component: 'pin', ref: refOf(pinEls, 'revolve1:side:sketch1.l4') } } },
+  ];
+  const trial = await call('assembly_apply_commands', { commands: asmCommands, dry_run: true });
+  assert.equal(trial.committed, false);
+  assert(await evaluate(`S.getState().asm.doc.components.length===1 && !S.getState().asm.canUndo`), 'a trial changes nothing in the app');
+  // the user is in 「插入零組件」: the batch waits for them
+  await evaluate(`S.assembly.startInsert()`);
+  await until(() => evaluate(`!!S.getState().asm.insert`), 'insert PropertyManager');
+  const busyAsm = await client.callTool({ name: 'assembly_apply_commands', arguments: { commands: asmCommands } });
+  assert(busyAsm.isError); assert.match(busyAsm.content[0].text, /PropertyManager/);
+  await evaluate(`S.assembly.cancelInsert()`);
+  assert((await call('assembly_apply_commands', { commands: asmCommands })).committed);
+  await until(() => evaluate(`(()=>{ const a=S.getState().asm; const p=a.solution?.poses.get('pin'); return a.doc.components.length===2 && a.doc.mates.length===2 && !!p && Math.abs(p.position[0]+40)<1e-6 && [...a.files.values()].every(f=>f.status==='ok') && document.querySelector('.feature-tree')?.textContent.includes('diamond-pin<1>'); })()`), 'app solved the agent batch and lists it', 60000);
+  await evaluate('S.cancelFolder()'); // the folder prompt 「新組合件」 left above
+  await pause(300);
+  writeFileSync(resolve(root, 'out/live/assembly.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  // one step in the app's own undo
+  await evaluate(`A.find(a=>a.id==='undo').run()`);
+  await until(() => evaluate(`S.getState().asm.doc.components.length===1 && S.getState().asm.doc.mates.length===0`), 'one undo takes the batch back');
+  await evaluate(`A.find(a=>a.id==='redo').run()`);
+  await until(() => evaluate(`S.getState().asm.doc.components.length===2`), 'redo');
+  await pause(350);
+  assert.equal((await call('assembly_inspect')).components.length, 2);
+  // the agent's own undo of its next batch
+  assert((await call('assembly_apply_commands', { commands: [{ type: 'setPlacements', placements: [{ componentId: 'pin', placement: { position: [-39, 1, 0], rotation: [0, 0, 0, 1] } }] }] })).committed);
+  assert((await call('undo')).undone);
+  assert(await evaluate(`S.getState().asm.doc.components.length===2 && S.getState().asm.doc.mates.length===2`));
+  // the user's file is theirs to open and save; the part tools have no part here
+  for (const [name, args] of [['assembly_save', { path: 'x.3dba' }], ['assembly_new', {}], ['part_summary', {}]]) {
+    const r = await client.callTool({ name, arguments: args });
+    assert(r.isError, name); assert.match(r.content[0].text, /shows an assembly/, name);
+  }
+  const outside = await client.callTool({ name: 'assembly_query_elements', arguments: { path: '../../elsewhere.3dbx' } });
+  assert(outside.isError); assert.match(outside.content[0].text, /outside the project/);
+  const bom = await call('assembly_export', { path: 'live.csv', format: 'bom_csv' });
+  assert.equal(bom.rows.length, 2);
   // A drawing is not a part either. The real drawing store is put in place with an empty drawing (the file-handle steps of 「新工程圖」 need a project folder).
   await evaluate(`(async()=>{ const M = await import('/@id/@3db/model'); S.showDrawing({ doc: M.createEmptyDrawing(), handle: null, fileName: null, folder: '', untitled: 'Drawing1', project: null }); })()`);
   await until(() => evaluate(`S.getState().active==='drawing'`), 'drawing');
   const drw = await client.callTool({ name: 'apply_commands', arguments: { commands: [{ type: 'addVariable', variable: { id: 'drw-var', name: 'DrwVar', expr: '1' } }] } });
-  assert(drw.isError); assert.match(drw.content[0].text, /assembly or a drawing/);
+  assert(drw.isError); assert.match(drw.content[0].text, /shows a drawing/);
   assert(await evaluate(`S.getState().doc.variables.length===0`));
   await evaluate(`S.disconnectAi()`);
   await until(() => evaluate(`S.getState().ai.state==='off'`), 'disconnect');
   assert.deepEqual(errors, []);
-  console.log('PASS: GUI connection, real geometry/tree, batch undo, user edits, new document, busy/assembly/drawing refusal and disconnect');
+  console.log('PASS: GUI connection, real geometry/tree, batch undo, user edits, new document, busy/drawing refusal, live assembly (app files, trial, busy, batch, undo, refusals, BOM) and disconnect');
 } finally {
   await client.close(); ws?.close(); kill(chrome); kill(dev);
   writeFileSync(join(temp, 'vite.log'), log);

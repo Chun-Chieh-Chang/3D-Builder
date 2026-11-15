@@ -580,6 +580,7 @@ class AppStore {
       },
       blobs: () => self.blobs,
       isPart: () => !self.assembly && !self.drawing,
+      assembly: () => self.assembly?.agentHost() ?? null,
       onStatus: (status) => self.set({ ai: status }),
     }))(this);
   /** What the rest of the program calls: always the current worker, which is replaced when a rebuild stalls (`restartWorker`). */
@@ -4124,6 +4125,7 @@ class AppStore {
       source,
     );
     this.set({ active: 'drawing', drw: this.drawing.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
+    this.ai.historyReplaced();
   }
 
   private closeDrawing(): void {
@@ -4307,6 +4309,8 @@ class AppStore {
       source,
     );
     this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
+    // the AI's link sends the assembly now open (ADR 0253), and listens to its history
+    this.ai.historyReplaced();
   }
 
   private closeAssembly(): void {

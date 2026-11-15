@@ -64,7 +64,7 @@ export function exampleReference(): string {
 /** How to work with the part, sent to the agent when it connects. */
 export const INSTRUCTIONS = `3D-Builder is a parametric CAD program. Part and headless assembly work each have their own session.
 
-For assemblies, start with assembly_new. Use assembly_query_elements on .3dbx sources to discover persistent face and plane references. Use assembly_apply_commands with dry_run, preview and interference to review component poses, remaining degrees of freedom and overlaps. After confirmation, apply the same batch and save with assembly_save. A successful solve can still report interference.
+For assemblies, start with assembly_new. Use assembly_query_elements on .3dbx sources to discover persistent face and plane references. Use assembly_apply_commands with dry_run, preview and interference to review component poses, remaining degrees of freedom and overlaps. After confirmation, apply the same batch and save with assembly_save. A successful solve can still report interference. While the live link is connected and the app shows an assembly (live_status), the assembly tools work on that assembly instead: source paths are relative to its folder and read from the app, a kept batch is applied in the app as one undo step, undo takes back your last batch, and the user opens and saves files (assembly_new, assembly_open and assembly_save are refused).
 
 Rules of the model:
 - Structured CAD tools: cad_execute_feature accepts a numeric feature object; inspect its published JSON Schema. cad_get_viewport_screenshot returns diagnostics and PNG; cad_inspect_geometry measures bodies and hole rims; cad_export_manufacturing accepts meshTolerance in mm for STL/3MF.

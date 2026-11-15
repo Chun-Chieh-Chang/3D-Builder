@@ -105,7 +105,7 @@ Claude 會依照片與實測尺寸提出特徵，遇到無法判定的尺寸會�
 
 ## 連到開啟中的零件（S3）
 
-建置並啟動本機 MCP 伺服器後，呼叫 `live_status` 取得連線碼。在本機 3D-Builder 選「工具 → AI 控制」，貼上連線碼並按「連線」。狀態列會顯示連線與批次數。每批可一次復原，開啟另一零件後改為追蹤新文件。編輯中、版本不符或非零件狀態會拒絕修改。關閉對話框不會斷線；請按「中斷連線」。
+建置並啟動本機 MCP 伺服器後，呼叫 `live_status` 取得連線碼。在本機 3D-Builder 選「工具 → AI 控制」，貼上連線碼並按「連線」。狀態列會顯示連線與批次數。每批可一次復原，開啟另一零件或組合件後改為追蹤新文件。App 開著組合件時，`assembly_*` 工具操作的是該組合件（[ADR 0253](../../docs/adr/0253-ai-live-assembly.md)）：來源路徑相對於組合件所在資料夾，由 App 從專案資料夾讀取；批次先在伺服器求解，可行才送到 App 成為一筆復原步驟；`undo` 收回 Agent 的上一批；`assembly_new`／`assembly_open`／`assembly_save` 與零件工具此時拒絕，`assembly_export` 照常寫到工作區。編輯中（含組合件的 PropertyManager）、版本不符或工程圖會拒絕修改。關閉對話框不會斷線；請按「中斷連線」。
 
 GUI 整合檢查：`npm run mcp:build` 後執行 `node scripts/verify-live.mjs`。另需完整 `npm run check` 與 `npm run verify:ui`；局部腳本不能代替全量驗收。
 

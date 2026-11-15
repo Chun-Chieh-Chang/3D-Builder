@@ -4,8 +4,8 @@ import type { Translation } from '../index';
 export const evaluate: Translation = {
   'ai.title': 'AI Control',
   'ai.code': 'Connection code',
-  'ai.instructions': 'Call live_status on the local MCP server and paste its connection code here. Once connected, AI can change the open part.',
-  'ai.scope': 'Parts only. AI changes are refused while editing a sketch or feature. Undo reverses one batch. Closing this dialog keeps the connection active.',
+  'ai.instructions': 'Call live_status on the local MCP server and paste its connection code here. Once connected, AI can change the open part or assembly.',
+  'ai.scope': 'Parts and assemblies, not drawings. AI changes are refused while editing a sketch or feature, or while an assembly PropertyManager is open. Undo reverses one batch. Closing this dialog keeps the connection active.',
   'ai.connect': 'Connect',
   'ai.disconnect': 'Disconnect',
   'ai.close': 'Close',
