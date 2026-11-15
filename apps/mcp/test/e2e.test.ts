@@ -101,6 +101,54 @@ it('runs the new headless, render and export commands as real processes', () => 
   expect(readFileSync(join(root, 'preview.png')).subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
 });
 
+it('reassembles two newly feature-modeled source files and reopens the editable result', async () => {
+  const requireSuccess = async (name: string, args: Record<string, unknown> = {}) => {
+    const result = await call(name, args);
+    expect(result.isError, `${name}: ${JSON.stringify(result.content[0])}`).toBeFalsy();
+    return result;
+  };
+  await requireSuccess('part_new');
+  const plateTrial = await requireSuccess('apply_commands', { commands: PLATE_WITH_HOLE, dry_run: true, preview: { size: 128 } });
+  expect(json(plateTrial)).toMatchObject({ committed: false });
+  expect(plateTrial.content[1]).toMatchObject({ mimeType: 'image/png' });
+  expect(json(await requireSuccess('apply_commands', { commands: PLATE_WITH_HOLE })).after.mass.volume).toBeCloseTo(PLATE_WITH_HOLE_VOLUME, 3);
+  await requireSuccess('part_save', { path: 'reassembly-plate.3dbx' });
+  await requireSuccess('part_new');
+  const cap = await requireSuccess('cad_execute_feature', { feature: { operation: 'create_primitive', shape: 'box', id: 'cap', width: 16, depth: 16, height: 4 } });
+  expect(json(cap).current.mass.volume).toBeCloseTo(1024, 6);
+  await requireSuccess('part_save', { path: 'reassembly-cap.3dbx' });
+  await requireSuccess('part_new');
+  await requireSuccess('assembly_new');
+  const face = async (part: string, y: number) => {
+    const { elements } = json(await requireSuccess('assembly_query_elements', { path: `reassembly-${part}.3dbx` }));
+    const hits = elements.filter((element: { ref: { kind: string }; geometry?: { kind: string; normal?: number[] } }) =>
+      element.ref.kind === 'face' && element.geometry?.kind === 'plane' && element.geometry.normal![1]! * y > 0.999);
+    expect(hits).toHaveLength(1);
+    return hits[0];
+  };
+  const top = await face('plate', 1);
+  const bottom = await face('cap', -1);
+  const commands = [
+    ...['plate', 'cap'].map((id, index) => ({ type: 'insertComponent', file: { id: `file-${id}`, path: `reassembly-${id}.3dbx` },
+      component: { id, file: `file-${id}`, instance: 1, fixed: index === 0, placement: { position: [0, 20 * index, 0], rotation: [0, 0, 0, 1] } } })),
+    { type: 'insertMate', mate: { id: 'seat', name: 'Seat', type: 'coincident', align: 'antiAligned',
+      a: { component: 'plate', ref: top.ref }, b: { component: 'cap', ref: bottom.ref } } },
+  ];
+  const trial = await requireSuccess('assembly_apply_commands', { commands, dry_run: true, interference: true, preview: { size: 128 } });
+  expect(trial.content[1]).toMatchObject({ mimeType: 'image/png' });
+  expect(json(trial)).toMatchObject({ committed: false, mates: [{ status: 'ok' }], interference: { status: 'clear' } });
+  expect(json(await requireSuccess('assembly_inspect')).components).toEqual([]);
+  const solved = json(await requireSuccess('assembly_apply_commands', { commands }));
+  expect(solved).toMatchObject({ committed: true, components: [{ id: 'plate', dof: 0 }, { id: 'cap', dof: 3 }] });
+  expect(solved.components[1].pose.position[1]).toBeCloseTo(top.center[1] - bottom.center[1], 6);
+  const path = 'reassembly.3dba';
+  await requireSuccess('assembly_save', { path });
+  await requireSuccess('assembly_new');
+  const reopened = json(await requireSuccess('assembly_open', { path }));
+  expect(reopened).toMatchObject({ opened: true, mates: [{ id: 'seat', status: 'ok' }] });
+  expect(reopened.components).toEqual(solved.components);
+}, 30_000);
+
 it('builds, previews, checks, looks at and writes a part', async () => {
   const previousEvents = new Set<number>(json(await call('rebuild_events', { limit: 50 })).map((event: { seq: number }) => event.seq));
   // preview first: nothing kept, a picture to show the user

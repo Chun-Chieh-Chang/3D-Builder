@@ -30,6 +30,8 @@
 
 ## 透過 Agent 組裝零件
 
+若來源是組件照片，先依[從組件照片拆件與還原組立](../../docs/photo-to-cad.md#從組件照片拆件與還原組立)核對拆件、尺寸與配合，再建來源零件。
+
 先把來源 `.3dbx` 放進 MCP 工作區。Agent 可用獨立的組合件工作階段，不必開啟 CAD 視窗。
 
 1. 呼叫 `assembly_new`，再用 `assembly_query_elements` 依來源路徑取得參照。插入後可用 `component` 查詢特定實例。
