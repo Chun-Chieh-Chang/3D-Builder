@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react';
 import { t } from '@3db/i18n';
-import { absorbedSketches, bodyKey, isHideable, isShown, type Feature, type Id } from '@3db/model';
+import { absorbedSketches, bodyKey, formatQuantity, isHideable, isShown, Parameters, type Feature, type Id } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
 import { dependencies } from '@3db/regen/dag';
 import type { FeatureResult } from '@3db/regen';
@@ -51,7 +51,7 @@ export function FeatureTree() {
   const [moving, setMoving] = useState<Id | null>(null);
   const [dropAt, setDropAt] = useState<{ id: Id; after: boolean } | null>(null);
   /** Filter text (D1.7), the folders closed, the feature being renamed, the feature whose note is open. */
-  const [filter, setFilter] = useState('');
+  const [filter, setFilter] = useState<string | null>('');
   const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
   const [renamingFeature, setRenamingFeature] = useState<Id | null>(null);
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
@@ -63,6 +63,8 @@ export function FeatureTree() {
   const [collapsedFeatures, setCollapsedFeatures] = useState<ReadonlySet<Id>>(new Set());
   /** Hovered feature/datum ID for Dynamic Reference Visualization (D1.8). */
   const [hovered, setHovered] = useState<Id | null>(null);
+  /** Whether the parameters (the part's variables) are listed under their node, folded by default as SolidWorks folds its equations (ADR 0254). */
+  const [paramsOpen, setParamsOpen] = useState(false);
   const listRef = useRef<HTMLOListElement>(null);
 
   useEffect(() => {
@@ -96,7 +98,8 @@ export function FeatureTree() {
   // In hierarchy mode a sketch is shown under the feature that uses it, but only when both are in the same folder (or neither is in one): a folder
   // keeps what it holds, so a sketch in a folder whose feature is outside it stays in the folder, and folding the folder hides it.
   const byId = new Map(doc.features.map((x) => [x.id, x] as const));
-  const sketchesUnder = (f: Feature): Id[] => absorbedSketches(f).filter((sid) => byId.get(sid)?.folder === f.folder);
+  // Only sketches: a sweep's path can be a helix or another curve feature, which stays in the history where it is, once, as SolidWorks shows it (ADR 0254)
+  const sketchesUnder = (f: Feature): Id[] => absorbedSketches(f).filter((sid) => byId.get(sid)?.type === 'sketch' && byId.get(sid)?.folder === f.folder);
   const absorbedSketchSet = new Set<Id>();
   for (const f of doc.features) {
     for (const sid of sketchesUnder(f)) absorbedSketchSet.add(sid);
@@ -158,9 +161,12 @@ export function FeatureTree() {
   };
 
   const bodies = result?.bodies ?? [];
-  const needle = treeNeedle(filter);
-  const matches = (f: Feature) => treeFilterMatches(needle, [f.name, featureLabel(f), f.tag ?? '', f.comment ?? '']);
-  const canDrag = !editing && !needle;
+  const estimates = doc.features.filter((f) => f.estimate).length + doc.variables.filter((v) => v.estimate).length;
+  const estimatesOnly = filter === null && estimates > 0;
+  const needle = treeNeedle(filter ?? '');
+  const filtering = estimatesOnly || !!needle;
+  const matches = (f: Feature) => estimatesOnly ? f.estimate === true : treeFilterMatches(needle, [f.name, featureLabel(f), f.tag ?? '', f.comment ?? '', f.estimate ? t('tree.estimateWord') : '']);
+  const canDrag = !editing && !filtering;
   /** The id of the feature a dragged one lands before (null: at the end). */
   const landing = (): Id | null => {
     if (!dropAt) return null;
@@ -194,7 +200,7 @@ export function FeatureTree() {
       f.suppressed ? 'suppressed' : '',
       rolledBack ? 'rolled-back' : '',
       editing?.featureId === f.id ? 'editing' : '',
-      f.folder && !needle ? 'in-folder' : '',
+      f.folder && !filtering ? 'in-folder' : '',
       moving === f.id ? 'moving' : '',
       dropAt?.id === f.id ? (dropAt.after ? 'drop-after' : 'drop-before') : '',
       isAbsorbed ? 'absorbed-sketch' : '',
@@ -208,11 +214,13 @@ export function FeatureTree() {
     const prefix = f.type === 'sketch' && r?.sketch ? SKETCH_STATUS_PREFIX[r.sketch.status] : '';
     const tip = [r?.message, ...(r?.unresolved?.map((u) => t('tree.notFound', { name: u.ref.name })) ?? []), ...(r?.warnings ?? [])].filter(Boolean).join('\n');
     const pIds = deps.parents.get(f.id) ?? [];
-    const parentHint = !isAbsorbed && f.type !== 'sketch' && pIds[0] ? featureNameOf(pIds[0]) : null;
-    const parentHintTitle = parentHint ? t('tree.builtFrom', { parents: pIds.map(featureNameOf).join(', ') }) : '';
     const childSketches = sketchesUnder(f);
-    const hasChildren = treeMode === 'hierarchy' && !needle && childSketches.length > 0;
+    const hasChildren = treeMode === 'hierarchy' && !filtering && childSketches.length > 0;
     const isCollapsed = collapsedFeatures.has(f.id);
+    // the first parent, unless it is shown right under the row (an absorbed sketch, unfolded): the tree does not say the same thing twice (ADR 0254)
+    const parentShownBelow = hasChildren && !isCollapsed && !!pIds[0] && childSketches.includes(pIds[0]);
+    const parentHint = !isAbsorbed && f.type !== 'sketch' && pIds[0] && !parentShownBelow ? featureNameOf(pIds[0]) : null;
+    const parentHintTitle = pIds.length && !isAbsorbed && f.type !== 'sketch' ? t('tree.builtFrom', { parents: pIds.map(featureNameOf).join(', ') }) : '';
     // The bar dropped above a feature also rolls back the sketches shown under it that come right before it in the history (the usual 草圖1, 伸長1),
     // so nothing drawn below the bar is still built. A sketch further back stays: rolling back to it would take the features between with it.
     let slot = i;
@@ -311,6 +319,11 @@ export function FeatureTree() {
           </span>
         )}
         {f.tag && <span className="tag">{f.tag}</span>}
+        {f.estimate && (
+          <span className="estimate-mark" data-estimate title={t('tree.estimateTip')}>
+            {t('tree.estimateBadge')}
+          </span>
+        )}
         {f.comment && (
           <span className="note-mark" aria-hidden>
             ✎
@@ -333,6 +346,68 @@ export function FeatureTree() {
     );
   };
 
+  // Curves are not bodies (ADR 0254): the bodies folder counts the solids and surfaces, the curves have their own
+  const solids = bodies.filter((b) => !b.curve);
+  const curves = bodies.filter((b) => b.curve);
+  const variables = doc.variables.filter((v) => estimatesOnly ? v.estimate === true : treeFilterMatches(needle, [v.name, v.expr, v.estimate ? t('tree.estimateWord') : '']));
+  const showVariables = paramsOpen || (filtering && variables.length > 0);
+  const params = showVariables && variables.length > 0 ? new Parameters(doc) : null;
+  const renderBody = (b: (typeof bodies)[number]) => {
+    const key = bodyKey(b.id);
+    const isParent = activeParents.has(b.id);
+    const tip = t('tree.bodyTip', { name: b.name, volume: Math.round(b.volume * 1000) / 1000 });
+    const cls = `tree-row body ${selected === key ? 'selected' : ''} ${b.shown ? '' : 'suppressed'} ${isParent ? 'is-parent' : ''}`;
+    return (
+      <li
+        key={key}
+        className={cls}
+        data-body={b.id}
+        title={b.reference ? `${tip}\n${t('tree.referenceTip')}` : tip}
+        onClick={() => store.select(key)}
+        onDoubleClick={() => !editing && setRenaming(b.id)}
+        onPointerEnter={() => setHovered(b.id)}
+        onPointerLeave={() => setHovered(null)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          if (editing) return;
+          store.select(key);
+          setBodyMenu({ x: e.clientX, y: e.clientY, id: b.id });
+        }}
+      >
+        <Icon name="body" />
+        {renaming === b.id ? (
+          <input
+            className="rename"
+            autoFocus
+            defaultValue={b.name}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={(e) => {
+              store.setBody(b.id, { name: e.target.value });
+              setRenaming(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                store.setBody(b.id, { name: e.currentTarget.value });
+                setRenaming(null);
+              }
+              if (e.key === 'Escape') setRenaming(null);
+              e.stopPropagation();
+            }}
+          />
+        ) : (
+          <span className="name">
+            {b.name}
+            {b.reference && t('tree.reference')}
+            {b.locked && <span title={t('tree.lockedTip')}>{t('tree.locked')}</span>}
+            {!b.curve && b.surface && t('tree.surface')}
+          </span>
+        )}
+        {isParent && <span className="dep-badge parent-badge">{t('tree.bodyBadge')}</span>}
+        {eye(key)}
+      </li>
+    );
+  };
+
   return (
     <div className="feature-tree">
       {returnTo && (
@@ -348,7 +423,7 @@ export function FeatureTree() {
       <div className="tree-filter">
         <label className="search-field">
           <Icon name="search" />
-          <input type="search" value={filter} placeholder={t('tree.filter')} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.stopPropagation()} aria-label={t('tree.filter')} />
+          <input type="search" value={filter ?? ''} placeholder={t('tree.filter')} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.stopPropagation()} aria-label={t('tree.filter')} />
         </label>
         <button
           type="button"
@@ -359,7 +434,12 @@ export function FeatureTree() {
         >
           {treeMode === 'hierarchy' ? `🌿 ${t('tree.viewHierarchy')}` : `⏱ ${t('tree.viewFlat')}`}
         </button>
-        {needle && doc.features.every((f) => !matches(f)) && <span className="muted">{t('tree.filterNone')}</span>}
+        {estimates > 0 && (
+          <button type="button" className="estimate-filter" data-action="filter-estimates" aria-pressed={estimatesOnly} onClick={() => setFilter(estimatesOnly ? '' : null)} title={t('tree.estimateFilterTip')}>
+            {estimatesOnly ? t('tree.estimateFilterClear') : t('tree.estimateFilter', { n: estimates })}
+          </button>
+        )}
+        {filtering && doc.features.every((f) => !matches(f)) && variables.length === 0 && <span className="muted">{t('tree.filterNone')}</span>}
       </div>
       {bodies.some(b => !isShown(doc, bodyKey(b.id))) && <button className="show-hidden" data-action="show-hidden-bodies" disabled={!!editing} onClick={() => store.showHiddenBodies()}>{t('tree.showHiddenBodies')}</button>}
       <ol
@@ -392,71 +472,52 @@ export function FeatureTree() {
             </li>
           );
         })}
-        {bodies.length > 0 && (
-          <li key="bodies" className="tree-row folder">
-            <Icon name="body" />
-            <span className="name">{t('tree.bodies', { n: bodies.length })}</span>
+        {variables.length > 0 && (
+          <li key="parameters" className="tree-row folder parameters" data-tree-parameters onClick={() => setParamsOpen((o) => !o)} onDoubleClick={() => store.openDialog('equations')} title={t('tree.parametersTip')}>
+            <span className="twisty">{showVariables ? '▾' : '▸'}</span>
+            <span className="fx-icon" aria-hidden>
+              ƒx
+            </span>
+            <span className="name">{t('tree.parameters', { n: doc.variables.length })}</span>
           </li>
         )}
-        {bodies.map((b) => {
-          const key = bodyKey(b.id);
-          const isParent = activeParents.has(b.id);
-          const tip = t('tree.bodyTip', { name: b.name, volume: Math.round(b.volume * 1000) / 1000 });
-          const cls = `tree-row body ${selected === key ? 'selected' : ''} ${b.shown ? '' : 'suppressed'} ${isParent ? 'is-parent' : ''}`;
-          return (
-            <li
-              key={key}
-              className={cls}
-              data-body={b.id}
-              title={b.reference ? `${tip}\n${t('tree.referenceTip')}` : tip}
-              onClick={() => store.select(key)}
-              onDoubleClick={() => !editing && setRenaming(b.id)}
-              onPointerEnter={() => setHovered(b.id)}
-              onPointerLeave={() => setHovered(null)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                if (editing) return;
-                store.select(key);
-                setBodyMenu({ x: e.clientX, y: e.clientY, id: b.id });
-              }}
-            >
-              <Icon name="body" />
-              {renaming === b.id ? (
-                <input
-                  className="rename"
-                  autoFocus
-                  defaultValue={b.name}
-                  onClick={(e) => e.stopPropagation()}
-                  onBlur={(e) => {
-                    store.setBody(b.id, { name: e.target.value });
-                    setRenaming(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      store.setBody(b.id, { name: e.currentTarget.value });
-                      setRenaming(null);
-                    }
-                    if (e.key === 'Escape') setRenaming(null);
-                    e.stopPropagation();
-                  }}
-                />
-              ) : (
-                <span className="name">
-                  {b.name}
-                  {b.reference && t('tree.reference')}
-                  {b.locked && <span title={t('tree.lockedTip')}>{t('tree.locked')}</span>}
-                  {b.curve ? t('tree.curve') : b.surface && t('tree.surface')}
+        {params &&
+          variables.map((v) => {
+            const r = params.variableValue(v);
+            return (
+              <li key={`var:${v.id}`} className="tree-row variable" data-variable={v.name} onDoubleClick={() => store.openDialog('equations')} title={`${v.name} = ${v.expr}`}>
+                <span className="tree-branch-guide" aria-hidden>
+                  └──
                 </span>
-              )}
-              {isParent && <span className="dep-badge parent-badge">{t('tree.bodyBadge')}</span>}
-              {eye(key)}
-            </li>
-          );
-        })}
+                <span className="name mono">
+                  {v.name} = {'value' in r ? formatQuantity(r.value) : r.error}
+                </span>
+                {v.estimate && (
+                  <span className="estimate-mark" data-estimate title={t('tree.estimateTip')}>
+                    {t('tree.estimateBadge')}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        {solids.length > 0 && (
+          <li key="bodies" className="tree-row folder">
+            <Icon name="body" />
+            <span className="name">{t('tree.bodies', { n: solids.length })}</span>
+          </li>
+        )}
+        {solids.map(renderBody)}
+        {curves.length > 0 && (
+          <li key="curves" className="tree-row folder" data-tree-curves>
+            <Icon name="helix" />
+            <span className="name">{t('tree.curves', { n: curves.length })}</span>
+          </li>
+        )}
+        {curves.map(renderBody)}
         {doc.features.flatMap((f, i) => {
           if (!matches(f)) return [];
-          const startsFolder = !needle && f.folder !== undefined && doc.features[i - 1]?.folder !== f.folder;
-          const hidden = !needle && f.folder !== undefined && closed.has(f.folder);
+          const startsFolder = !filtering && f.folder !== undefined && doc.features[i - 1]?.folder !== f.folder;
+          const hidden = !filtering && f.folder !== undefined && closed.has(f.folder);
           const head = startsFolder ? (
             <li
               key={`folder:${f.folder}`}
@@ -506,7 +567,7 @@ export function FeatureTree() {
           // The bar goes before the first row shown at or after its index. The feature at the index itself may not be shown on its own (a sketch
           // drawn under the feature that uses it, or a feature in a closed folder); placing the bar only there would make it vanish.
           const withBar = (rows: ReactElement[]) => {
-            if (barPlaced || needle || i < barIndex || rows.length === 0) return rows;
+            if (barPlaced || filtering || i < barIndex || rows.length === 0) return rows;
             barPlaced = true;
             return [bar, ...rows];
           };
@@ -514,20 +575,20 @@ export function FeatureTree() {
           if (hidden) return withBar(head ? [head] : []);
 
           // In hierarchy mode, absorbed sketches are rendered under their consuming features
-          if (treeMode === 'hierarchy' && !needle && f.type === 'sketch' && absorbedSketchSet.has(f.id)) {
+          if (treeMode === 'hierarchy' && !filtering && f.type === 'sketch' && absorbedSketchSet.has(f.id)) {
             return withBar(head ? [head] : []);
           }
 
           const mainRow = renderRow(f, i);
           const childSketches =
-            treeMode === 'hierarchy' && !needle && !collapsedFeatures.has(f.id)
+            treeMode === 'hierarchy' && !filtering && !collapsedFeatures.has(f.id)
               ? doc.features.filter((x) => sketchesUnder(f).includes(x.id))
               : [];
           const childRows = childSketches.map((sk) => renderRow(sk, doc.features.indexOf(sk), true, f));
 
           return withBar([...(head ? [head] : []), mainRow, ...childRows]);
         })}
-        {!barPlaced && !needle && bar}
+        {!barPlaced && !filtering && bar}
       </ol>
 
       {/* Dynamic Reference Visualization (D1.8) Status Bar */}
@@ -588,6 +649,9 @@ export function FeatureTree() {
           <MenuEntries items={[command(store.getState(), 'toggle-visibility')].filter(enabledEntry)} onClose={() => setMenu(null)} />
           <li onClick={act(() => setRenamingFeature(menu.feature.id))}>{t('tree.renameFeature')}</li>
           <li onClick={act(() => setNoting(menu.feature))}>{t('tree.editNote')}</li>
+          <li data-action="toggle-estimate" onClick={act(() => store.execute({ type: 'setFeatureNote', featureId: menu.feature.id, estimate: !menu.feature.estimate }))}>
+            {t(menu.feature.estimate ? 'tree.unmarkEstimate' : 'tree.markEstimate')}
+          </li>
           {menu.feature.folder ? <li onClick={act(() => store.leaveFolder(menu.feature.id))}>{t('tree.leaveFolder')}</li> : <li onClick={act(() => store.newFolder(menu.feature.id))}>{t('tree.intoFolder')}</li>}
           <MenuEntries items={[command(store.getState(), 'delete-feature')]} onClose={() => setMenu(null)} />
           <li className="separator" />

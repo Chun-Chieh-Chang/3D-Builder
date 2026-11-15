@@ -13,6 +13,8 @@ export const equations: Translation = {
   'eq.name': 'Name',
   'eq.expression': 'Expression',
   'eq.value': 'Value',
+  'eq.estimate': 'Estimate',
+  'eq.estimateTip': 'Checked: this value is an estimate, not yet measured',
   'eq.add': 'Add',
   'eq.delete': 'Delete',
   'eq.newName': 'Name of the new variable',

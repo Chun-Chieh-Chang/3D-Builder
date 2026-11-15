@@ -98,8 +98,8 @@ export const help: Translation = {
   'help.conceptFeatureTree.title': 'The Tree (FeatureManager)',
   'help.conceptFeatureTree.summary': 'Lists the features of the part, in the order they were made.',
   'help.conceptFeatureTree.body':
-    '- Click to select, double-click to edit a feature or a sketch.\n- Right-click to suppress, delete, show or hide.\n- A feature that fails changes its icon; the message in the status bar says why.\n- The order is the order of rebuilding: a feature uses the result of those above it.',
-  'help.conceptFeatureTree.keywords': 'FeatureManager feature tree suppress delete',
+    '- Click to select, double-click to edit a feature or a sketch.\n- Right-click to suppress, delete, show or hide.\n- A feature that fails changes its icon; the message in the status bar says why.\n- The order is the order of rebuilding: a feature uses the result of those above it.\n- Feature names must be unique. If a name is taken, the message suggests an available one.\n- Curves have their own folder. Expand Parameters to see variable values or double-click it to open Equations.\n- Right-click a feature and choose Mark as estimate. For a variable, select Estimate in Equations. The Estimates button above the tree filters by these marks.',
+  'help.conceptFeatureTree.keywords': 'FeatureManager feature tree suppress delete parameters curves estimates',
 
   'help.conceptPropertyManager.title': 'The Panel (PropertyManager)',
   'help.conceptPropertyManager.summary': 'The panel on the left while you make or edit a feature; press ✔ to accept, ✖ to give up.',

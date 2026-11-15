@@ -72,7 +72,9 @@ Rules of the model:
 - Units are mm and degrees. The model's y axis is up. Datum planes: plane:front (normal +z), plane:top (normal +y), plane:right (normal +x).
 - A sketch's entities are points, lines, circles, arcs, ... that refer to points by id. Dimensions are expressions (strings) like "60" or "W/2".
 - Make every sketch fully defined (dof 0): fix each point with relations and dimensions; '@origin' is the sketch origin.
-- Every id in the part must be unique. Insert a new feature with { type: 'insertFeature', index: <number of features>, feature }.
+- Every id in the part must be unique, and so must every feature name: an insertFeature or renameFeature with a name another feature has is refused, and the error offers a free one. Insert a new feature with { type: 'insertFeature', index: <number of features>, feature }.
+- Estimates: a value you guessed (from a photo, a common size, a standard you could not read) is an estimate. Put such sizes in variables (addVariable) and mark them { estimate: true } on the variable, or setFeatureNote { featureId, estimate: true } on a feature whose geometry is guessed; the tree shows the mark and the user can list them. Never write 估, est or (估) into a name: clear the mark (estimate: false) when the user gives a measured value.
+- Design intent: drive the main sizes from variables; build a repeated feature once and repeat it with a pattern (circular: def { mode: 'circular', axis, count, angle, equal: true }; seeds can be extrude, revolve, sweep, loft, hole, fillet, chamfer ...) or a mirror rather than building each copy; group the features of one region (a shank, a head) in a folder with arrange { order, folders: { <featureId>: '<folder name>' } }.
 - A cut (extrude op 'cut') on a datum plane goes into the material only with reverse: true; on a model face it goes into the material by default.
 
 How to work:

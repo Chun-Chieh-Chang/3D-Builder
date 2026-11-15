@@ -45,11 +45,11 @@ function Field({ value, onCommit, placeholder, mono = true, list }: { value: str
   );
 }
 
-function Frame({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
+function Frame({ title, hint, children, className = '' }: { title: string; hint: string; children: React.ReactNode; className?: string }) {
   const close = () => store.openDialog(null);
   return (
     <div className="modal-backdrop" onPointerDown={close}>
-      <div className="modal wide parameters" role="dialog" aria-label={title} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && close()}>
+      <div className={`modal wide parameters ${className}`} role="dialog" aria-label={title} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && close()}>
         <h3>{title}</h3>
         <p className="hint">{hint}</p>
         {children}
@@ -80,7 +80,7 @@ export function EquationsDialog() {
     }
   };
   return (
-    <Frame title={t('eq.title')} hint={t('eq.hint')}>
+    <Frame title={t('eq.title')} hint={t('eq.hint')} className="equations">
       <h4>{t('eq.variables')}</h4>
       <table className="eq-table">
         <thead>
@@ -88,13 +88,14 @@ export function EquationsDialog() {
             <th>{t('eq.name')}</th>
             <th>{t('eq.expression')}</th>
             <th>{t('eq.value')}</th>
+            <th title={t('eq.estimateTip')}>{t('eq.estimate')}</th>
             <th />
           </tr>
         </thead>
         <tbody>
           {doc.variables.length === 0 && (
             <tr>
-              <td colSpan={4} className="muted">
+              <td colSpan={5} className="muted">
                 {t('eq.none')}
               </td>
             </tr>
@@ -111,6 +112,9 @@ export function EquationsDialog() {
                 </td>
                 <td className={'error' in r ? 'error-text' : ''} title={'error' in r ? r.error : undefined}>
                   {'value' in r ? formatQuantity(r.value) : r.error}
+                </td>
+                <td>
+                  <input type="checkbox" data-estimate-var={v.name} checked={!!v.estimate} title={t('eq.estimateTip')} aria-label={t('eq.estimate')} onChange={(e) => run({ type: 'setVariable', id: v.id, estimate: e.target.checked })} />
                 </td>
                 <td>
                   <button title={t('eq.delete')} aria-label={t('eq.delete')} onClick={() => run({ type: 'deleteVariable', id: v.id })}>
@@ -138,6 +142,7 @@ export function EquationsDialog() {
               />
             </td>
             <td className="error-text">{addError}</td>
+            <td />
             <td>
               <button onClick={add} disabled={!name.trim() || !expr.trim()}>
                 {t('eq.add')}

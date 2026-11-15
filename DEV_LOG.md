@@ -1,5 +1,24 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-15 — 特徵名稱唯一、估計值標記、特徵樹整理（ADR 0254，Claude 對話）
+
+- 使用者看鑽頭樣本的特徵樹，要求對照 SW／FreeCAD／SolidCraft 改善。做法與理由見 [ADR 0254](docs/adr/0254-feature-tree-names-estimates.md)。工作在雲端 Linux 工作副本完成（Windows 的建置工具無法在對話端的 VM 執行），再寫回本 repo。
+- 模型：`insertFeature`／`renameFeature` 拒絕重名（去掉前後空白比較）與空白名稱，錯誤附可用名稱（`freeFeatureName`）；特徵與變數加 `estimate?: true`（schema v96），由 `setFeatureNote`、`addVariable`、`setVariable` 設定。辨識（`reconstruct.ts`）與 MCP `create_primitive` 改用不重複的名稱。
+- 特徵樹：特徵下只放草圖（螺旋不再出現兩次）；「曲線(n)」與實體分開；「參數(n)」節點；估計值徽章、右鍵標記、「估計值 n」快速過濾；↳ 標籤不重複下方草圖；隱藏項目的眼睛平時不顯示。方程式對話框加估計值勾選欄。
+- Agent：MCP `INSTRUCTIONS` 與 `docs/photo-to-cad.md` 加上變數、估計值標記、陣列／鏡射、名稱唯一、資料夾的要求。
+- 「顯示隱藏實體」按鈕被蓋住：頁籤列是 sticky，那張截圖的樹已捲動，不是版面錯誤，不改。
+- 紅隊一：輸入破壞。空白名稱、前後空白的同名、`estimate` 非布林（字串、數字、null、新增時 false）皆拒絕，文件不變。
+- 紅隊二：幾何。不涉及。
+- 紅隊三：依賴鏈。名稱是 `D1@草圖` 找尺寸的鍵，唯一後不再不明確；舊檔的重名照樣開啟、不在背後改名。辨識流程無以名稱引用的運算式，改名安全。
+- 紅隊四：真值。單元測試以文件內容、檔案讀回、運算式讀到的值為真值；介面以真瀏覽器操作鑽頭檔。
+- 新規則抓到既有測試的同名固定資料：`tests/phase3/direct-edit.test.ts` 的 `target` 參考面複製了 `p` 的名稱；`tests/phase7/sheet-unfold-refold.test.ts` 的巢狀展開複製了 `u`，另有一項「錯誤的反折」複製了 `f`：它照樣 `toThrow()` 變綠，但拋的是重名而不是要測的錯誤。都改成各自的名稱（修固定資料，不放寬斷言）。
+- 測試：`packages/model/test/feature-names.test.ts` 10 項；突變 5 項中 4 項轉紅，1 項等價（編號起點，該數字必被占用）。`tests/e2e/manual-feature-tree-0254.js` 8 步通過。MCP 79 項中 `live-assembly` 1 項在全部平行執行時失敗一次，單獨重跑兩次皆過、改動前也過；全套 `tests/` 在雲端 2 核 VM 一次跑完超過 116 分鐘時限被中止：323/331 檔跑完，9 檔各 1 項失敗。單獨重跑：`sheet-unfold-refold` 是同名固定資料（見下），其餘 `sequential-bends`、`recognize-mixed-draft`、`golden/sds-plus-bit`、`gear-fuzz`、`fuzz-sheet`、`recognize-drafted-rounds-fuzz` 單獨皆通過（負載下逾時）；4 檔需要真實樣本、跳過。**尚未單獨重跑**：`recognize-drafted-rounds-fuzz-3`、`-4`、`recognize-rolling-ball-fuzz-2`、`-5`、`-10`、`phase6/section-offset-cost`（交接時中斷）。
+- 雲端 VM 的 `verify:ui` 在以瀏覽器私有檔案系統建專案時失敗（`TypeMismatchError`），改動前的提交上 `manual-action-icons.js` 也一樣：環境問題，與本次無關，未追查。新腳本直接讀檔交給 store。
+- Codex 接手複查：名稱建議使用精確整數遞增，覆蓋超過安全整數的尾碼；MCP 內部產生的輪廓草圖名稱避開既有同名特徵，保留使用者指定的實體名稱。模型測試從 `SCHEMA_VERSION` 判斷寫出的版本，並檢查支援標記的最低版本。估計值快速篩選直接檢查標記，E2E 加入未標記但備註含「估計值」的特徵。既有 `concept.feature-tree` 對應的中英文說明加入參數、曲線、名稱及估計值操作。
+- Windows Chrome 窄視口實測：375、390、768 px 各重播鑽頭驗收八步，並以實際點擊開啟估計值篩選、切換方程式的勾選框、捲動並關閉對話框。375 px 起初被視角方塊攔住點擊，篩選按鈕改為獨佔一列；按鈕與勾選框高度為 44 px。方程式對話框限制在視口內。整個應用程式的工具列在空白檔也有橫向溢出（827 px），窄視口驗證的範圍是本次特徵樹及方程式操作。截圖見 `out/verify-0254-mobile`。
+- Windows 接手重跑：`recognize-drafted-rounds-fuzz-3` 22/22（210 s）、`-4` 22/22（246 s）、`recognize-rolling-ball-fuzz-2` 12/12（155 s）、`-5` 12/12（219 s）、`-10` 12/12（305 s）、`section-offset-cost` 7/7（154 s）。每檔各自啟動 Vitest，限制一個 worker，原測試門檻照用。桌面 `verify:ui -- --only` 的操作圖示、右鍵選單、特徵樹與回溯棒 7/7，鑽頭腳本內部 8/8。TypeScript、四項 lint 及模型與說明測試 224/224 通過。
+- `npm run mcp:build` 產生新版 `apps/mcp/dist`；其後 MCP 單 worker 12 檔 79/79 通過，含即時組合件及輪廓草圖名稱避撞回歸。Web 生產建置通過。
+
 ## 2026-11-15 — AI 照片建模樣本：SDS-plus 鑽頭（tests/golden）
 
 - 以 `/photo-to-cad` 從照片建 SDS-plus 3/4" 鎚鑽鑽頭，經 MCP 即時連線逐批送進使用者開著的 App；存成 `tests/golden/sds-plus-bit.3dbx`，並附獨立測試檔（螺旋布林佔 Heap，§3.5）。

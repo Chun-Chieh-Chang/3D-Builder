@@ -69,6 +69,8 @@ export const model: Translation = {
   'cmd.revolveAxisMustBeLine': 'The axis of revolution must be a line in the sketch (usually a centerline)',
   'cmd.idInUse': 'The ID is already used: {id}',
   'cmd.nameEmpty': 'The name cannot be empty',
+  'cmd.featureNameTaken': 'There is already a feature named "{name}"; use another name, such as "{free}"',
+  'cmd.estimateInvalid': 'The estimate mark must be true or false',
   'cmd.sketchNeedsPlane': 'A sketch must lie on a plane or a planar face',
   'cmd.onlyFilletHasKind': 'Only a fillet has a kind of fillet',
   'cmd.filletSetsFaces': 'The groups of faces of a fillet take only faces (a constant radius has no second group or center)',

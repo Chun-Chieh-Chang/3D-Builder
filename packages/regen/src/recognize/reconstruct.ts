@@ -6,6 +6,7 @@
 import { t } from '@3db/i18n';
 import { type Frame, type Kernel, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
 import {
+  freeFeatureName,
   applyCommand,
   createEmptyPart,
   DATUM_PLANES,
@@ -618,7 +619,9 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
       // the commands, as the app applies them in one undoable step
       const commands: Command[] = [];
       let next = doc;
+      // names are numbered per kind within one recognition; a part that already has a feature of that name (an earlier recognition, the user's own) gets the next free one (ADR 0254)
       const run = (cmd: Command) => {
+        if (cmd.type === 'insertFeature') cmd = { ...cmd, feature: { ...cmd.feature, name: freeFeatureName(next, cmd.feature.name) } };
         commands.push(cmd);
         next = applyCommand(next, cmd);
       };
@@ -686,7 +689,7 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
         const faces = extraChamferCaps(after.body, kernel.topology(whole), chamfers);
         if (faces.length) {
           const id = ids.take('deleteFace');
-          const cmd: Command = { type: 'insertFeature', index: end, feature: { id, type: 'deleteFace', name: t('feature.deleteFace'), suppressed: false, faces } };
+          const cmd: Command = { type: 'insertFeature', index: end, feature: { id, type: 'deleteFace', name: freeFeatureName(next, t('feature.deleteFace')), suppressed: false, faces } };
           const candidate = applyCommand(next, cmd);
           const rebuilt = regen.rebuild(candidate);
           if (rebuilt.body && !failedOf(rebuilt, [...made, id, ...okBefore.filter((f) => f !== featureId)])) {

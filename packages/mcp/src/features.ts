@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Command, Feature, Ref, SketchEntity, PartDoc } from '@3db/model';
+import { freeFeatureName, type Command, type Feature, type Ref, type SketchEntity, type PartDoc } from '@3db/model';
 
 // mm budget for the public numeric adapter; native expression commands remain separately available.
 const positive = z.number().finite().positive().max(100000);
@@ -38,7 +38,8 @@ export function featureCommands(session: { doc: PartDoc }, input: CadFeature): C
           ...[[-f.width / 2, -f.depth / 2], [f.width / 2, -f.depth / 2], [f.width / 2, f.depth / 2], [-f.width / 2, f.depth / 2]].map(([x, y], i) => ({ id: `p${i}`, type: 'point' as const, x: x!, y: y! })),
           ...[0, 1, 2, 3].map((i) => ({ id: `l${i}`, type: 'line' as const, p1: `p${i}`, p2: `p${(i + 1) % 4}` })),
         ];
-      features.push({ ...common, id: `${f.id}:profile`, type: 'sketch', plane: { kind: 'datum', name: 'plane:top' }, entities, constraints: entities.filter((e) => e.type === 'point' || e.type === 'circle').map((e) => e.type === 'point' ? { id: `fix:${e.id}`, type: 'fix', point: e.id } : { id: `radius:${e.id}`, type: 'radius', circle: e.id, value: String(e.radius) }) });
+      const profileName = freeFeatureName(session.doc, `${common.name.trim()}:profile`);
+      features.push({ ...common, id: `${f.id}:profile`, name: profileName, type: 'sketch', plane: { kind: 'datum', name: 'plane:top' }, entities, constraints: entities.filter((e) => e.type === 'point' || e.type === 'circle').map((e) => e.type === 'point' ? { id: `fix:${e.id}`, type: 'fix', point: e.id } : { id: `radius:${e.id}`, type: 'radius', circle: e.id, value: String(e.radius) }) });
       features.push({ ...common, type: 'extrude', sketch: `${f.id}:profile`, op: 'boss', merge: false, dir1: { type: 'blind', depth: String(f.height) } });
       break;
     }

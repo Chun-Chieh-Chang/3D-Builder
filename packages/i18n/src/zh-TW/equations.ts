@@ -11,6 +11,8 @@ export const equations = {
   'eq.name': '名稱',
   'eq.expression': '運算式',
   'eq.value': '值',
+  'eq.estimate': '估計值',
+  'eq.estimateTip': '勾選：這個值是估計的，尚未實測',
   'eq.add': '新增',
   'eq.delete': '刪除',
   'eq.newName': '新變數的名稱',

@@ -12,7 +12,7 @@ const root = mkdtempSync(join(tmpdir(), 'cad-tools-'));
 beforeAll(async () => { s = await CadSession.create({ root, locale: 'en' }); });
 afterAll(() => { s?.dispose(); rmSync(root, { recursive: true, force: true }); });
 it('builds a box, refuses invalid input without changing its snapshot and continues', async () => {
-  const r = await callTool(s, 'cad_execute_feature', { feature: { operation: 'create_primitive', shape: 'box', id: 'box', width: 20, depth: 30, height: 10 } });
+  const r = await callTool(s, 'cad_execute_feature', { feature: { operation: 'create_primitive', shape: 'box', id: 'box', name: 'cyl:profile', width: 20, depth: 30, height: 10 } });
   expect(r.isError, JSON.stringify(r.content[0])).toBeFalsy();
   expect(r.content.some((c) => c.type === 'image')).toBe(true);
   expect(s.summary().mass!.volume).toBeCloseTo(6000, 6);
@@ -22,6 +22,7 @@ it('builds a box, refuses invalid input without changing its snapshot and contin
   expect(serializePart(s.doc)).toBe(snapshot);
   const next = await callTool(s, 'cad_execute_feature', { feature: { operation: 'create_primitive', shape: 'cylinder', id: 'cyl', radius: 2, height: 5 } });
   expect(next.isError, JSON.stringify(next.content[0])).toBeFalsy();
+  expect(s.doc.features.find((f) => f.id === 'cyl:profile')?.name).toBe('cyl:profile2');
 });
 it('returns exact body metrics and rejects fractional pattern counts', async () => {
   const result = await callTool(s, 'cad_inspect_geometry', {});

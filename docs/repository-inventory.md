@@ -6,9 +6,9 @@
 
 | 項目 | 程式來源值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 95／7／38 |
-| ADR 文件 | 252 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 231／226／278 |
+| 零件／組合件／工程圖 Schema | 96／7／38 |
+| ADR 文件 | 253 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 232／227／279 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -598,6 +598,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0251: Drafted extrusion of outlines with splines](<adr/0251-drafted-extrusion-of-spline-outlines.md>)
 - [ADR 0252 — Structured CAD control and headless acceptance](<adr/0252-ai-cad-structured-control.md>)
 - [ADR 0253：AI／MCP 即時操作視窗中的組合件](<adr/0253-ai-live-assembly.md>)
+- [ADR 0254：特徵名稱唯一、估計值標記與特徵樹的整理](<adr/0254-feature-tree-names-estimates.md>)
 
 ### 歷史驗證
 

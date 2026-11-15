@@ -285,7 +285,7 @@ describe('the two features in the document', () => {
 
 function coneTarget(height: number): PartDoc {
     const plane: Feature = { id: 'p', name: 'p', type: 'refPlane', suppressed: false, def: { mode: 'offset', plane: front, distance: '20' } };
-    const target: Feature = { ...plane, id: 'target', def: { mode: 'offset', plane: front, distance: String(Math.abs(height) || 1), ...(height < 0 ? { reverse: true } : {}) } };
+    const target: Feature = { ...plane, id: 'target', name: 'target', def: { mode: 'offset', plane: front, distance: String(Math.abs(height) || 1), ...(height < 0 ? { reverse: true } : {}) } };
     return build(sketch('a', front, circle('ca', 0, 0, 10)), plane,
       sketch('b', { kind: 'datum', name: 'p' }, circle('cb', 0, 0, 5)),
       { id: 'loft', name: 'loft', type: 'loft', suppressed: false, op: 'boss', sections: ['a', 'b'] }, target,

@@ -1,5 +1,15 @@
 # 交接與接續工作
 
+## 2026-11-15 — 特徵樹改善（ADR 0254，Claude 對話）
+
+- 依使用者對照 SW／FreeCAD／SolidCraft 的要求完成 [ADR 0254](docs/adr/0254-feature-tree-names-estimates.md)：特徵名稱唯一（新增與改名遇重名即拒絕並建議可用名稱）、估計值標記（特徵與變數 `estimate`，schema v96）、曲線與實體分開、「參數(n)」節點、估計值徽章與快速過濾、螺旋不再出現兩次、↳ 標籤不重複、隱藏眼睛平時不顯示、方程式對話框的估計值欄。Agent 指引（MCP `INSTRUCTIONS`、`docs/photo-to-cad.md`）要求變數化、估計值用標記、相同特徵用陣列／鏡射、依區域分資料夾。
+- Windows 工作區已用 `npm run mcp:build` 重建 MCP。其他工作區若仍有舊的 `apps/mcp/dist`，也要重建才能使用 `estimate` 標記與新指引。
+- **v96 檔案舊版程式打不開**：這次之後存的零件是 v96，目前已發佈的桌面版（0.5.0）會拒開。桌面版要一起發新版。
+- 鑽頭樣本 `tests/golden/sds-plus-bit.3dbx` 未改：仍用 `est_` 字首與「（估）」名稱、兩條排屑溝各建一次。要不要依新指引重建，等使用者決定。
+- 進度頁本工作的階段「特徵樹改善…（2026-11-15，Claude 對話）」只用 `scratch/ci/phase11.mjs` 更新；SVG 全貌頁 `scratch/claude-takeover/dev/plan-0254.html`（每 3 分鐘讀一次 data.js）。
+- **Codex 接手驗證**：原來尚待重跑的 6 檔（拔模圓角 fuzz 3／4、滾球圓角 fuzz 2／5／10、截面偏移成本）各自重跑，共 87/87。MCP 重建後單 worker 79/79，模型與說明 224/224，TypeScript、四項 lint 與 Web 建置通過。Windows Chrome 桌面 7 個流程通過，鑽頭腳本八步通過；375／390／768 px 可操作估計值篩選與方程式標記。驗證數字與全量測試原始狀態見 [DEV_LOG](DEV_LOG.md) 本日條目。
+- 交付提交為 `feat(tree): unique feature names, estimate marks, curves folder and parameters node (ADR 0254)`。以該提交的 GitHub Actions 推送 run 核對跨平台 CI，並以 `scratch/ci/phase11.mjs` 回填進度。
+
 ## 2026-11-14 深夜 — 組合件 MCP 後續 ②：組合件即時連線（Claude Code）
 
 - 完成 [ADR 0253](docs/adr/0253-ai-live-assembly.md)：App 開著組合件並連上 AI 控制時，Agent 的 `assembly_*` 工具操作該組合件；伺服器先試算，新零件檔請 App 從專案資料夾讀取；開檔、新建、存檔留給使用者。協定升為 v2，舊版 App 與新伺服器互相拒絕，**桌面版與 MCP 要一起更新**。

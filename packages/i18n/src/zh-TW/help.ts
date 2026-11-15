@@ -106,8 +106,8 @@ export const help = {
   'help.conceptFeatureTree.title': '設計樹（FeatureManager）',
   'help.conceptFeatureTree.summary': '列出零件的特徵，由上而下是建立的順序。',
   'help.conceptFeatureTree.body':
-    '- 單擊選取，雙擊編輯特徵或草圖。\n- 右鍵可以抑制、刪除、顯示或隱藏。\n- 特徵出錯時圖示會變色，點狀態列的訊息可以看原因。\n- 設計樹的順序就是重算的順序：後面的特徵用到前面的結果。',
-  'help.conceptFeatureTree.keywords': 'FeatureManager 特徵樹 抑制 刪除',
+    '- 單擊選取，雙擊編輯特徵或草圖。\n- 右鍵可以抑制、刪除、顯示或隱藏。\n- 特徵出錯時圖示會變色，點狀態列的訊息可以看原因。\n- 設計樹的順序就是重算的順序：後面的特徵用到前面的結果。\n- 特徵名稱必須唯一。名稱已被使用時，訊息會建議可用的名稱。\n- 曲線有自己的資料夾。展開「參數」可查看變數值，雙擊可開啟方程式。\n- 對特徵按右鍵選「標為估計值」，或在方程式勾選變數的「估計值」。樹上方的「估計值」按鈕會依標記篩選。',
+  'help.conceptFeatureTree.keywords': 'FeatureManager 特徵樹 抑制 刪除 參數 曲線 估計值',
 
   'help.conceptPropertyManager.title': '屬性面板（PropertyManager）',
   'help.conceptPropertyManager.summary': '建立或編輯特徵時，左邊出現的面板；設好後按 ✔，按 ✖ 放棄。',

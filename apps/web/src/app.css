@@ -203,6 +203,28 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .vis-toggle:hover:not(:disabled) { opacity: 1; background: var(--accent-line); }
 .vis-toggle.shown { opacity: 0.85; color: var(--accent); }
 .vis-toggle:disabled { cursor: default; opacity: 0.3; }
+/* A hidden item's eye stays out of the way until the row is pointed at, selected or the button is focused, as SolidWorks greys it (ADR 0254) */
+.tree-row .vis-toggle:not(.shown) { opacity: 0; }
+.tree-row:hover .vis-toggle:not(.shown), .tree-row.selected .vis-toggle:not(.shown), .tree-row .vis-toggle:not(.shown):focus-visible { opacity: 0.55; }
+.estimate-mark { margin-left: 6px; padding: 0 5px; border-radius: 8px; border: 1px dashed var(--warn); background: var(--warn-soft); color: var(--warn-ink); font-size: 11px; line-height: 16px; white-space: nowrap; }
+.estimate-filter { padding: 2px 8px; border: 1px dashed var(--warn); border-radius: 10px; background: var(--warn-soft); color: var(--warn-ink); font-size: 11px; cursor: pointer; }
+.tree-row.parameters .fx-icon { font-style: italic; font-weight: 600; color: var(--accent); width: 16px; text-align: center; }
+.tree-row.variable .name { font-size: 12px; }
+@media (max-width: 768px) {
+  .estimate-filter, .tree-row.parameters { min-height: 44px; font-size: 14px; }
+  .estimate-filter { flex-basis: 100%; }
+  .modal.wide.equations {
+    width: min(640px, calc(100vw - 16px));
+    min-width: 0;
+    max-height: calc(100dvh - 16px);
+    overflow: auto;
+  }
+  .equations .eq-table { table-layout: fixed; }
+  .equations .eq-table :is(th, td) { overflow-wrap: anywhere; white-space: normal; }
+  .equations .eq-table :is(th, input, button), .equations .modal-actions button { font-size: 14px; }
+  .equations .eq-table :is(input, button), .equations .modal-actions button { min-height: 44px; }
+  .equations .eq-table [data-estimate-var] { width: 44px; margin: 0; }
+}
 .status-error { color: var(--error); }
 .rollback-bar { height: 10px; padding: 3px 0; cursor: ns-resize; }
 .rollback-bar span { display: block; height: 4px; background: var(--accent); border-radius: 2px; }

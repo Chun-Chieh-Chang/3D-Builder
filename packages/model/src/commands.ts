@@ -221,7 +221,7 @@ ull). */
    */
   | { type: 'arrange'; order: Id[]; folders?: Record<Id, string | null> }
   /** A note and a label on a feature (D1.7); an empty text takes it away. */
-  | { type: 'setFeatureNote'; featureId: Id; comment?: string; tag?: string }
+  | { type: 'setFeatureNote'; featureId: Id; comment?: string; tag?: string; /** Marks the feature as holding estimates or clears the mark (ADR 0254). */ estimate?: boolean }
   | { type: 'setRollback'; index: number | null }
   /** Changes the plane or planar face a sketch lies in (SolidWorks 「編輯草圖基準面」). */
   | { type: 'redefineSketchPlane'; featureId: Id; plane: Ref }
@@ -252,7 +252,7 @@ ull). */
   /** Global variables (B5.2): a name and an expression. New ids come in the command, as everywhere. */
   | { type: 'addVariable'; variable: Variable }
   /** Renaming rewrites every expression that uses the name; a new expression must not make a cycle. */
-  | { type: 'setVariable'; id: Id; name?: string; expr?: Expr }
+  | { type: 'setVariable'; id: Id; name?: string; expr?: Expr; /** Marks the value as an estimate or clears the mark (ADR 0254). */ estimate?: boolean }
   /** Refused while an expression still uses the variable. */
   | { type: 'deleteVariable'; id: Id }
   /** File properties (B8.3): free text by name, e.g. a vendor or a part number. */
@@ -869,10 +869,40 @@ function checkDowel(f: HoleFeature): void {
   if (f.fit !== undefined && !DOWEL_FITS.includes(f.fit)) throw new CommandError(t('cmd.holeFitUnknown', { fit: String(f.fit) }));
 }
 
+/**
+ * A name no feature of the part has, from `name` (ADR 0254): `name` itself when free, else its base followed by the first free number ("開口槽" → "開口槽2", "Cut3" → "Cut4"),
+ * as SolidWorks numbers its features. `except` is the feature being renamed, whose own name does not count.
+ */
+export function freeFeatureName(doc: Pick<PartDoc, 'features'>, name: string, except?: Id): string {
+  // compared as the tree shows them: "A " and "A" read the same
+  const taken = new Set(doc.features.filter((f) => f.id !== except).map((f) => f.name.trim()));
+  name = name.trim();
+  if (!taken.has(name)) return name;
+  const m = /^(.*?)(\d+)$/u.exec(name);
+  const base = m ? m[1]! : name;
+  for (let n = m ? BigInt(m[2]!) + 1n : 2n; ; n++) {
+    const candidate = `${base}${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+/**
+ * Two features never share a name (ADR 0254): an expression finds a sketch's dimensions by the sketch's name (`D1@Sketch1`), and the tree, the agents and the user tell
+ * features apart by it. Refused, not renamed, so that a later expression or command written against the name never binds to another feature without a word.
+ */
+function assertNameFree(doc: Pick<PartDoc, 'features'>, name: string, except?: Id): void {
+  if (doc.features.some((f) => f.id !== except && f.name.trim() === name.trim())) {
+    throw new CommandError(t('cmd.featureNameTaken', { name, free: freeFeatureName(doc, name, except) }));
+  }
+}
+
 /** Inserts a feature at `index` (at or above the rollback bar) after checking it. */
 function insert(draft: Draft<PartDoc>, feature: Feature, index: number): void {
   const limit = draft.rollbackIndex ?? draft.features.length;
   if (!Number.isInteger(index) || index < 0 || index > limit) throw new CommandError(t('cmd.insertOutOfRange', { index }));
+  if (typeof feature.name !== 'string' || feature.name.trim() === '') throw new CommandError(t('cmd.nameEmpty'));
+  assertNameFree(draft as PartDoc, feature.name);
+  if ('estimate' in feature && feature.estimate !== undefined && feature.estimate !== true) throw new CommandError(t('cmd.estimateInvalid'));
   const ids = featureIds(feature);
   assertFresh(draft as PartDoc, ids);
   validateNewFeature(draft as PartDoc, feature, index);
@@ -1767,6 +1797,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const name = cmd.name.trim();
       if (!name) throw new CommandError(t('cmd.nameEmpty'));
       const target = feature(draft, cmd.featureId);
+      assertNameFree(draft as PartDoc, name, target.id);
       const old = target.name;
       target.name = name;
       if (target.type === 'sketch' && old !== name) rewriteNames(draft, (r) => (r.kind === 'dimension' && r.owner === old ? { ...r, owner: name } : null));
@@ -1805,6 +1836,11 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
         if (value === undefined) continue;
         if (value.trim() === '') delete target[key];
         else target[key] = key === 'tag' ? value.trim() : value;
+      }
+      if (cmd.estimate !== undefined) {
+        if (typeof cmd.estimate !== 'boolean') throw new CommandError(t('cmd.estimateInvalid'));
+        if (cmd.estimate) target.estimate = true;
+        else delete target.estimate;
       }
       return;
     }
@@ -1999,6 +2035,7 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
       const { variable } = cmd;
       if (!NAME.test(variable.name)) throw new CommandError(t('cmd.variableNameInvalid', { name: variable.name }));
       if (draft.variables.some((v) => v.name === variable.name)) throw new CommandError(t('cmd.variableNameTaken', { name: variable.name }));
+      if (variable.estimate !== undefined && variable.estimate !== true) throw new CommandError(t('cmd.estimateInvalid'));
       assertFresh(draft as PartDoc, [variable.id]);
       draft.variables.push(variable as Draft<Variable>);
       countersFor([variable.id], draft.idCounters);
@@ -2017,6 +2054,11 @@ export function mutate(draft: Draft<PartDoc>, cmd: Command): void {
         rewriteNames(draft, (r) => (r.kind === 'variable' && r.name === old ? { kind: 'variable', name } : null));
       }
       if (cmd.expr !== undefined) draft.variables[at]!.expr = cmd.expr;
+      if (cmd.estimate !== undefined) {
+        if (typeof cmd.estimate !== 'boolean') throw new CommandError(t('cmd.estimateInvalid'));
+        if (cmd.estimate) draft.variables[at]!.estimate = true;
+        else delete draft.variables[at]!.estimate;
+      }
       checkVariable(draft as PartDoc, cmd.id);
       return;
     }

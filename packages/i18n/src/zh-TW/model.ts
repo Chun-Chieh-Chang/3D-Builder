@@ -67,6 +67,8 @@ export const model = {
   'cmd.revolveAxisMustBeLine': '旋轉軸必須是草圖中的一條直線（通常是中心線）',
   'cmd.idInUse': 'ID 已被使用：{id}',
   'cmd.nameEmpty': '名稱不可空白',
+  'cmd.featureNameTaken': '已經有名稱是「{name}」的特徵，請改用其他名稱，例如「{free}」',
+  'cmd.estimateInvalid': '估計值標記只能是 true 或 false',
   'cmd.sketchNeedsPlane': '草圖必須放在基準面或平面上',
   'cmd.onlyFilletHasKind': '只有圓角特徵有圓角種類',
   'cmd.filletSetsFaces': '圓角的面組只能放面（固定半徑沒有第二組與中央面組）',

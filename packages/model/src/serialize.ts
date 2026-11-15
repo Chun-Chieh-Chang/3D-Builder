@@ -263,6 +263,9 @@ const migrations: Record<number, (doc: Json) => Json> = {
   93: (doc) => doc,
   // v95: a sketch spline can be a clamped (rational) B-spline of its poles (`nurbs`), and a fillet can be the exact rolling ball (`exact`, set by recognition). Existing splines and fillets keep their definitions; an older version refuses the file rather than drawing such a spline as a curve through its poles.
   94: (doc) => doc,
+  // v96: a feature or a variable can be marked as holding estimates (`estimate`, ADR 0254). Absent is a measured value; nothing to convert. An older version refuses the file
+  // rather than drop the mark and let an estimate pass for a measurement.
+  95: (doc) => doc,
 };
 
 /**

@@ -34,7 +34,7 @@ it('accepts bend-zone machining but rejects nested unfolds, mismatched refolds a
  const reg=new Regenerator(k,solver,new Map());
  try{
   const bad=reg.rebuild(build([...base,unfold,...cut(50),refold]));expect(bad.features.at(-1)).toMatchObject({status:'ok'});
-  const nested=reg.rebuild(build([...base,unfold,{...unfold,id:'u2'}]));expect(nested.features.at(-1)).toMatchObject({status:'error'});
+  const nested=reg.rebuild(build([...base,unfold,{...unfold,id:'u2',name:'u2'}]));expect(nested.features.at(-1)).toMatchObject({status:'error'});
   expect(()=>build([...base,{...refold,unfold:'absent'}])).toThrow();
   const more=reg.rebuild(build([...base,unfold,sketch('boss',front,circle('bc',10,10,3)),extrude('bossE','boss','boss',{type:'blind',depth:'4'}),refold]));expect(more.features.at(-1)).toMatchObject({status:'error',message:expect.stringContaining('除料')});
  }finally{reg.dispose();}
@@ -57,7 +57,7 @@ it('state references survive serialization and undo; dangling refolds fail atomi
  expect(parentsOf(refold,h.doc)).toEqual(expect.arrayContaining(['u','hole','cut']));
  expect(parsePart(serializePart(h.doc))).toEqual(h.doc);expect(h.doc.schemaVersion).toBe(SCHEMA_VERSION);expect(h.doc.schemaVersion).toBeGreaterThanOrEqual(83);
  h.undo();expect(activeSheetUnfold(h.doc.features)?.id).toBe('u');h.redo();expect(activeSheetUnfold(h.doc.features)).toBeNull();
- const before=serializePart(h.doc);expect(()=>h.execute({type:'insertFeature',feature:{...refold,id:'bad',unfold:'bend'},index:h.doc.features.length})).toThrow();expect(serializePart(h.doc)).toBe(before);
+ const before=serializePart(h.doc);expect(()=>h.execute({type:'insertFeature',feature:{...refold,id:'bad',name:'bad',unfold:'bend'},index:h.doc.features.length})).toThrow();expect(serializePart(h.doc)).toBe(before);
 });
 it('a small off-bend through hole is retained in the true blank rather than lost to a relative volume threshold',()=>{
  const reg=new Regenerator(k,solver,new Map());
