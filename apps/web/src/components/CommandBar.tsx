@@ -85,7 +85,10 @@ export function CommandBar() {
   const quick = ACTIONS.filter((a) => a.id === 'undo' || a.id === 'redo');
   return (
     <header className="command-bar" ref={bar}>
-      <div className="brand">3D-Builder</div>
+      <div className="brand">
+        3D-Builder
+        <span className="brand-version" data-app-version>v{__APP_VERSION__}</span>
+      </div>
       <nav className="tabs" role="menubar">
         {tabs.map((m) => {
           const here = m.id === current.id;

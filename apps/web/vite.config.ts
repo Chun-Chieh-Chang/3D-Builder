@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import desktopConfig from '../desktop/src-tauri/tauri.conf.json' with { type: 'json' };
 import { autoClose, graceFromEnv } from './dev/autoClose.ts';
 import { shutdown } from './dev/shutdown.ts';
 import { disassemblyBundle } from './dev/disassemblyBundle.ts';
@@ -9,6 +10,7 @@ export default defineConfig(({ mode }) => ({
   // GitHub Pages serves the site under /<repository>/ (ADR 0233): the Linux build of the integrity workflow sets PAGES_BASE; the dev server, the e2e runs,
   // a local build and the other systems' builds (empty) stay at /.
   base: process.env.PAGES_BASE || '/',
+  define: { __APP_VERSION__: JSON.stringify(desktopConfig.version) },
   // `shutdown()` (ADR 0135) serves the 「關閉伺服器」 button in every dev mode: it is `apply: 'serve'`, so a production build never carries it.
   plugins: [react(), shutdown(), disassemblyBundle(), ...(mode === 'autoclose' ? [autoClose({ graceSeconds: graceFromEnv(process.env.DEV_AUTO_CLOSE_SECONDS) })] : [])],
   worker: { format: 'es' },

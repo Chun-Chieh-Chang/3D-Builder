@@ -12,6 +12,9 @@ const openTab=async name=>{H.tab(name);await H.wait(150);await loaded();};
 async function setup(body=false){H.ready();await H.project({});const fs=[B.sketch('s',B.front,B.rectangle('r',0,0,30,20))];if(body)fs.push(B.extrude('e','s','boss',{type:'blind',depth:'10'}));await H.writeAt('圖示驗收.3dbx',await io.writePartFile(B.build(...fs)));await H.open('圖示驗收.3dbx');await ready();}
 function bounds(){const p=document.querySelector('.menu-panel:not(.folded)'),r=p.getBoundingClientRect();must(r.right<=innerWidth+1&&r.left>=0,'menu fits viewport '+JSON.stringify(r));must(document.documentElement.scrollWidth<=innerWidth,'no document horizontal overflow');}
 M.workflow=async()=>{
+ const { default: desktopConfig } = await import(`${root}apps/desktop/src-tauri/tauri.conf.json`);
+ const version = document.querySelector('[data-app-version]');
+ must(version?.checkVisibility() && version.textContent === `v${desktopConfig.version}`, 'visible version matches the desktop build configuration');
  await setup();await openTab('特徵');const fillet=document.querySelector('[data-help="fillet"]');must(fillet.disabled,'fillet disabled without body');must(fillet.querySelector('.tool-label').textContent.trim(),'visible label');must(fillet.title.length>20,'existing usage tooltip');must(fillet.querySelector('img').getAttribute('alt')==='','decorative artwork');bounds();await window.__shot?.('icons-disabled-menu');
  document.querySelector('.tabs .tab.active').click();await H.treeClick('s');await H.action('特徵','伸長填料/基材');await H.pmInput('深度','12');document.querySelector('.property-manager .pm-ok').click();await ready();must(Math.abs(state().result.mass.volume-7200)<1e-5,'actual native extrusion through icon+label action');
  await openTab('特徵');must(!document.querySelector('[data-help="fillet"]').disabled,'fillet enabled after solid');bounds();await window.__shot?.('icons-model-tools');document.querySelector('.tabs .tab.active').click();
