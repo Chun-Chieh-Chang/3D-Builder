@@ -348,6 +348,14 @@ export const help = {
   'help.thicknessAnalysis.keywords': '厚度分析 壁厚 太薄 太厚 塑膠 量測',
 
   'help.thicknessAnalysis.see': 'draft-analysis undercut-analysis shell',
+  'help.cavityDistribution.summary': '以半透明外殼、彩色實體與引線標籤顯示零件內部的空腔分布與體積。',
+
+  'help.cavityDistribution.body':
+    '沿用特徵除料與組合相減的歷程核對條件，自動隔離各獨立封閉空腔，並標註各自的容積大小。\n\n- 視窗列出所有辨識出的獨立空腔名稱、彩色色塊、各自體積與空腔體積合計。\n- 3D 圖形區以半透明外殼呈現，並將各空腔以彩色網格實體與引線標籤直接標示在幾何中心。\n- 若零件無可辨識之封閉空腔，將提示「找不到可顯示的空腔」。',
+
+  'help.cavityDistribution.keywords': '空腔分布 內腔 容積 減除 除料 體積 模具',
+
+  'help.cavityDistribution.see': 'physical-part check-part',
   'help.checkPart.summary': '檢查模型幾何：是否通過有效性檢查、外殼是否封閉（有沒有開放邊）、體積是否為正。',
 
   'help.checkPart.body':

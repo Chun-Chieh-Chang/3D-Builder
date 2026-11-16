@@ -545,6 +545,7 @@
     "draft-analysis": "draft_analysis",
     "undercut-analysis": "accessibility",
     "thickness-analysis": "inspect",
+    "cavity-distribution": "inspect",
     "check-part": "inspect",
     "check-assembly": "inspect",
     "drw-detail": "inspect",

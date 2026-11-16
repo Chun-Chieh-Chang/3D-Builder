@@ -79,7 +79,7 @@ import type { SolvedGeometry } from '@3db/sketch';
 import type { UnresolvedRef } from '../sketcher/sketch-references';
 import type { PickFilter, Snap, Viewer } from '@3db/render';
 import { captureVertexAnchor, resolveVertexAnchor } from './measureAnchors';
-import type { JobApi, KernelApi, PartExportOptions, PartIgesOptions, StlExportOptions, ProbeApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
+import type { CavityGraphic, JobApi, KernelApi, PartExportOptions, PartIgesOptions, StlExportOptions, ProbeApi, RebuildPayload, SketchSolvePayload, SketchSolveRequest, SourceFileData } from '../worker/protocol';
 import { isWorkerCrash } from '../worker/crash';
 import { shouldRestartHeap } from '../worker/heap';
 import { JobStopped, startJob, type RunningJob } from '../worker/job';
@@ -204,6 +204,12 @@ export interface ThicknessState {
   greatest: string;
   status: 'running' | 'done' | 'error';
   report: ThicknessReport | null;
+  error: string | null;
+}
+
+export interface CavityDistributionState {
+  status: 'running' | 'done' | 'error';
+  graphics: CavityGraphic[];
   error: string | null;
 }
 
@@ -431,6 +437,7 @@ export interface UiState {
   draft: DraftState | null;
   undercut: UndercutState | null;
   thickness: ThicknessState | null;
+  cavityDistribution: CavityDistributionState | null;
   /** The flat pattern of a sheet metal part (C11.3) while its window is open. Null when closed. */
   flat: FlatState | null;
   /** What a face picked in the view is while a shell is edited: one to take away (open), or one with a wall of its own (C5.4). */
@@ -721,6 +728,7 @@ class AppStore {
       flat: null,
       undercut: null,
       draft: null,
+      cavityDistribution: null,
       check: null,
     };
     this.sketchRunner = new LatestRunner(
@@ -780,16 +788,19 @@ class AppStore {
     if (this.state.draft && 'result' in patch) void this.runDraft();
     if (this.state.undercut && 'result' in patch) void this.runUndercut();
     if (this.state.thickness && 'result' in patch) void this.runThickness();
+    if (this.state.cavityDistribution && 'result' in patch) void this.runCavityDistribution();
     if (this.state.flat && 'result' in patch) void this.runFlat();
   }
 
   private draftSeq = 0;
+  private cavitySeq = 0;
 
   /** 「拔模分析」 (E3.2) on: along +z to start with (the way a part grows from the front plane), 1° required; it is worked out for the part as shown. */
   startDraft(): void {
     this.undercutSeq++;
     this.thicknessSeq++;
-    this.set({ undercut: null, thickness: null, draft: { pull: [0, 0, 1], label: '+z', required: '1', status: 'running', report: null, error: null } });
+    this.cavitySeq++;
+    this.set({ undercut: null, thickness: null, cavityDistribution: null, draft: { pull: [0, 0, 1], label: '+z', required: '1', status: 'running', report: null, error: null } });
     void this.runDraft();
   }
 
@@ -844,7 +855,8 @@ class AppStore {
     const from = this.state.draft;
     this.draftSeq++;
     this.thicknessSeq++;
-    this.set({ draft: null, thickness: null, undercut: { pull: from?.pull ?? [0, 0, 1], label: from?.label ?? '+z', status: 'running', report: null, error: null } });
+    this.cavitySeq++;
+    this.set({ draft: null, thickness: null, cavityDistribution: null, undercut: { pull: from?.pull ?? [0, 0, 1], label: from?.label ?? '+z', status: 'running', report: null, error: null } });
     void this.runUndercut();
   }
 
@@ -877,7 +889,8 @@ class AppStore {
   startThickness(): void {
     this.draftSeq++;
     this.undercutSeq++;
-    this.set({ draft: null, undercut: null, thickness: { least: '1', greatest: '4', status: 'running', report: null, error: null } });
+    this.cavitySeq++;
+    this.set({ draft: null, undercut: null, cavityDistribution: null, thickness: { least: '1', greatest: '4', status: 'running', report: null, error: null } });
     void this.runThickness();
   }
 
@@ -903,6 +916,42 @@ class AppStore {
       if (seq === this.thicknessSeq && this.state.thickness) this.set({ thickness: { ...this.state.thickness, status: 'done', report, error: null } });
     } catch (e) {
       if (seq === this.thicknessSeq && this.state.thickness) this.set({ thickness: { ...this.state.thickness, status: 'error', report: null, error: t('thicknessAnalysis.failed', { why: e instanceof Error ? e.message : String(e) }) } });
+    }
+  }
+
+  startCavityDistribution(): void {
+    this.undercutSeq++;
+    this.draftSeq++;
+    this.thicknessSeq++;
+    this.set({ draft: null, undercut: null, thickness: null, flat: null, cavityDistribution: { status: 'running', graphics: [], error: null } });
+    void this.runCavityDistribution();
+  }
+
+  stopCavityDistribution(): void {
+    this.cavitySeq++;
+    if (this.state.cavityDistribution) this.set({ cavityDistribution: null });
+  }
+
+  toggleCavityDistribution(): void {
+    if (this.state.cavityDistribution) this.stopCavityDistribution();
+    else this.startCavityDistribution();
+  }
+
+  private async runCavityDistribution(): Promise<void> {
+    const c = this.state.cavityDistribution;
+    if (!c) return;
+    const seq = ++this.cavitySeq;
+    const resultSeq = this.state.result?.seq ?? null;
+    if (resultSeq === null) return;
+    try {
+      const graphics = await this.api.cavityGraphics(resultSeq);
+      if (seq === this.cavitySeq && this.state.cavityDistribution) {
+        this.set({ cavityDistribution: { status: 'done', graphics, error: null } });
+      }
+    } catch (e) {
+      if (seq === this.cavitySeq && this.state.cavityDistribution) {
+        this.set({ cavityDistribution: { status: 'error', graphics: [], error: e instanceof Error ? e.message : String(e) } });
+      }
     }
   }
 
@@ -4118,7 +4167,7 @@ class AppStore {
     this.savedText = serializePart(doc);
     this.retainedMeasures = [];
     if (!this.state.recovery) void this.autosave.clear();
-    this.set({ active: 'part', selected: null, selectedFace: null, selectedElements: [], result: null, pendingSketch: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'part', selected: null, selectedFace: null, selectedElements: [], result: null, pendingSketch: null, fileName, untitled, fitRequest: this.state.fitRequest + 1, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, cavityDistribution: null, flat: null, interference: null, clearance: null, check: null });
     this.onDocChanged();
   }
 
@@ -4144,7 +4193,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'drawing', drw: this.drawing.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'drawing', drw: this.drawing.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, cavityDistribution: null, flat: null, interference: null, clearance: null, check: null });
     this.ai.historyReplaced();
   }
 
@@ -4328,7 +4377,7 @@ class AppStore {
       },
       source,
     );
-    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, flat: null, interference: null, clearance: null, check: null });
+    this.set({ active: 'assembly', asm: this.assembly.getState(), returnTo: null, documentSerial: this.state.documentSerial + 1, measure: null, draft: null, undercut: null, thickness: null, cavityDistribution: null, flat: null, interference: null, clearance: null, check: null });
     // the AI's link sends the assembly now open (ADR 0253), and listens to its history
     this.ai.historyReplaced();
   }

@@ -6,7 +6,7 @@ import { allTopics, contextTopic, helpTopic, tooltipOf, type HelpContext, type H
 export function currentContext(s: UiState = store.getState()): HelpContext {
   const feature = s.editing ? s.doc.features.find((f) => f.id === s.editing!.featureId) : undefined;
   const op = feature && 'op' in feature ? (feature as { op?: string }).op : undefined;
-  const analysis = s.measure ? 'measure' : s.draft ? 'draft' : s.undercut ? 'undercut' : s.thickness ? 'thickness' : s.check ? 'check' : s.interference ? 'interference' : s.clearance ? 'clearance' : null;
+  const analysis = s.measure ? 'measure' : s.draft ? 'draft' : s.undercut ? 'undercut' : s.thickness ? 'thickness' : s.check ? 'check' : s.interference ? 'interference' : s.clearance ? 'clearance' : s.cavityDistribution ? 'cavity' : null;
   const asm = s.asm;
   return {
     active: s.active,

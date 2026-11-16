@@ -411,6 +411,7 @@ export const ACTIONS: UiAction[] = [
   // The filter narrows what a command in progress asks for, so F5/F6 stay on in a PropertyManager session, as in SW (ADR 0145); an assembly has the same bar (ADR 0148).
   { id: 'filter-bar', get label() { return t('act.filterBar'); }, shortcut: 'F5', group: 'view', enabled: (s) => s.active === 'part' || s.active === 'assembly', run: () => store.togglePickFilterBar() },
   { id: 'clear-filters', get label() { return t('act.clearFilters'); }, shortcut: 'F6', group: 'view', enabled: (s) => s.active === 'part' || s.active === 'assembly', run: () => store.clearPickFilter() },
+  { id: 'cavity-distribution', get label() { return t('cavity.distribution'); }, group: 'view', enabled: (s) => s.active === 'part' && hasBody(s) && s.bootMs !== null, run: () => (store.getState().cavityDistribution ? store.stopCavityDistribution() : store.startCavityDistribution()), active: () => store.getState().cavityDistribution !== null },
 ];
 
 // Only creation tools are repeatable; file, delete, undo, view and toggle commands never replace this intent.

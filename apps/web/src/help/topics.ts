@@ -126,7 +126,7 @@ export interface HelpContext {
   /** What an assembly is busy with. */
   assembly?: 'insert' | 'mate' | 'move' | 'pattern' | 'explode' | null;
   /** The analysis or check that is on. */
-  analysis?: 'measure' | 'draft' | 'undercut' | 'thickness' | 'check' | 'interference' | 'clearance' | null;
+  analysis?: 'measure' | 'draft' | 'undercut' | 'thickness' | 'check' | 'interference' | 'clearance' | 'cavity' | null;
   active?: 'part' | 'assembly' | 'drawing';
 }
 
@@ -184,6 +184,7 @@ export function contextTopic(c: HelpContext): string {
   if (c.analysis === 'check') return c.active === 'assembly' ? 'check-assembly' : 'check-part';
   if (c.analysis === 'interference') return 'interference';
   if (c.analysis === 'clearance') return 'clearance';
+  if (c.analysis === 'cavity') return 'cavity-distribution';
   if (c.sketching) return c.sketchTool && c.sketchTool !== 'select' ? `tool-${c.sketchTool}` : 'sketch';
   if (c.feature) {
     const f = c.feature;

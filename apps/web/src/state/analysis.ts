@@ -46,3 +46,7 @@ export function thicknessColors(report: ThicknessReport): (string | null)[] {
   for (const f of report.faces) if (f.kind !== 'unknown') colors[f.face] = THICKNESS_COLORS[f.kind];
   return colors;
 }
+
+export const CAVITY_COLORS = ['#f48bd0', '#57d9f0', '#b39af8', '#ffc76b', '#6bdfb0', '#ff9288'];
+export const CAVITY_LEADERS: [number, number][] = [[-88, -37], [-92, 52], [87, -62], [92, 55], [0, 79], [0, -81]];
+

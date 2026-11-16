@@ -341,6 +341,14 @@ export const help: Translation = {
   'help.thicknessAnalysis.keywords': 'thickness analysis wall thin thick plastic measure',
 
   'help.thicknessAnalysis.see': 'draft-analysis undercut-analysis shell',
+  'help.cavityDistribution.summary': 'Displays the internal cavity distribution and volume with a transparent shell, colored bodies, and leader callouts.',
+
+  'help.cavityDistribution.body':
+    'Isolates internal closed cavities created by cuts and subtraction features, displaying individual and total volumes.\n\n- The window lists every identified cavity name, color swatch, individual volume, and total volume.\n- The 3D graphics view displays a transparent shell with colored cavity bodies and leader callouts anchored to their geometric centers.\n- If no closed cavities are found, the window displays a notice that no cavities could be shown.',
+
+  'help.cavityDistribution.keywords': 'cavity distribution internal volume subtraction cut mold',
+
+  'help.cavityDistribution.see': 'physical-part check-part',
   'help.checkPart.summary': 'Checks the geometry: whether it passes the validity check, whether the shell is closed (no open edges) and whether the volume is positive.',
 
   'help.checkPart.body':
