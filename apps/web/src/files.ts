@@ -26,7 +26,7 @@ interface PickerOptions {
   id?: string;
   types?: PickerType[];
   suggestedName?: string;
-  /** The folder the dialog opens in. */
+  /** A directory or a file whose parent is where the dialog opens. */
   startIn?: FileSystemHandle;
 }
 
@@ -46,8 +46,10 @@ declare global {
   }
 }
 
-/** One id: the pickers reopen in the folder last used for parts. */
+/** Save and import keep their shared browser history. Open has its own. */
 const PICKER_ID = '3d-builder-parts';
+const OPEN_PICKER_ID = '3d-builder-open';
+const LAST_OPEN = 'last-open-file';
 const PART_TYPE: PickerType = { get description() { return t('picker.part'); }, accept: { 'application/octet-stream': [PART_FILE_EXTENSION] } };
 /** Parts saved before `.3dbx` were bare document text (`.3db.json`). */
 const OLD_PART_TYPE: PickerType = { get description() { return t('picker.oldPart'); }, accept: { 'application/json': ['.json'] } };
@@ -95,7 +97,7 @@ const cancelled = (e: unknown) => e instanceof DOMException && e.name === 'Abort
 
 /** 「開啟舊檔」: a part, an assembly, or a STEP or IGES file to start a part from; null when the user cancels. */
 export function pickFileToOpen(startIn: FileSystemDirectoryHandle | null = null): Promise<OpenedFile | null> {
-  return pick([ANY_TYPE, PART_TYPE, ASSEMBLY_TYPE, DRAWING_TYPE, PACKAGE_TYPE, STEP_TYPE, IGES_TYPE, STL_TYPE, OLD_PART_TYPE], startIn);
+  return pick([ANY_TYPE, PART_TYPE, ASSEMBLY_TYPE, DRAWING_TYPE, PACKAGE_TYPE, STEP_TYPE, IGES_TYPE, STL_TYPE, OLD_PART_TYPE], startIn, 'open', OPEN_PICKER_ID);
 }
 
 /** 「輸入 STEP 組合件」: a STEP file. */
@@ -133,7 +135,7 @@ export function pickPartFile(startIn: FileSystemDirectoryHandle): Promise<Opened
   return pick([either, PART_TYPE, STEP_TYPE], startIn, 'copy');
 }
 
-async function pick(types: PickerType[], startIn: FileSystemDirectoryHandle | null = null, outside: 'open' | 'copy' = 'open'): Promise<OpenedFile | null> {
+async function pick(types: PickerType[], startIn: FileSystemDirectoryHandle | null = null, outside: 'open' | 'copy' = 'open', id = PICKER_ID): Promise<OpenedFile | null> {
   const projectName = await browserProjectName(startIn);
   if (startIn && projectName !== null) {
     const extensions = [...new Set(types.flatMap((x) => Object.values(x.accept).flat()))].map((e) => e.toLowerCase());
@@ -144,10 +146,13 @@ async function pick(types: PickerType[], startIn: FileSystemDirectoryHandle | nu
   }
   if (window.showOpenFilePicker) {
     try {
-      const [handle] = await window.showOpenFilePicker({ id: PICKER_ID, types, ...(startIn ? { startIn } : {}) });
+      const location = (id === OPEN_PICKER_ID ? await lastOpenedFile() : null) ?? startIn;
+      const [handle] = await window.showOpenFilePicker({ id, types, ...(location ? { startIn: location } : {}) });
       if (!handle) return null;
       const file = await handle.getFile();
-      return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()), handle };
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (id === OPEN_PICKER_ID) await handles('readwrite', (s) => s.put(handle, LAST_OPEN)).catch(() => {});
+      return { name: file.name, bytes, handle };
     } catch (e) {
       if (cancelled(e)) return null;
       throw e;
@@ -253,6 +258,18 @@ async function handles<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore)
     });
   } finally {
     db.close();
+  }
+}
+
+/** The picker can use a file's parent even when the previous session's read permission has expired. */
+async function lastOpenedFile(): Promise<FileSystemFileHandle | null> {
+  const handle = await handles<FileSystemFileHandle | undefined>('readonly', (s) => s.get(LAST_OPEN)).catch(() => undefined);
+  if (handle?.kind !== 'file') return null;
+  try {
+    await handle.getFile();
+    return handle;
+  } catch (e) {
+    return e instanceof DOMException && e.name === 'NotAllowedError' ? handle : null;
   }
 }
 
