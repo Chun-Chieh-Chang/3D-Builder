@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type MouseEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { t } from '@3db/i18n';
 import { activeExplosion, componentPatternLabels, explosionSteps, joinPath, type Component, type ComponentPattern, type Id, type Mate } from '@3db/model';
 import { componentName } from '@3db/io';
@@ -8,7 +8,7 @@ import { DATUM_ITEMS, PART_STAGE_LABEL } from '../strings';
 import { Icon } from './Icon';
 import { ContextMenu } from './ContextMenu';
 import { treeFilterMatches, treeNeedle } from './treeFilter';
-import { assemblyMenu, withGrid } from '../contextMenus';
+import { assemblyMenu, componentFeatureMenu, withGrid } from '../contextMenus';
 import { MenuEntries } from './GraphicsMenu';
 
 type Menu = { x: number; y: number } & ({ component: Component } | { mate: Mate } | { pattern: ComponentPattern });
@@ -48,11 +48,11 @@ export function mateProblem(asm: AssemblyState, m: Mate): string | undefined {
  * A component's context menu (the tree's row, or the component in the graphics area): what to do with it, as SolidWorks offers it. The component is the one
  * selected (the right click selects it first), and the lines are the registry's commands (ADR 0176), the same in both places.
  */
-export function ComponentMenu({ x, y, component, onClose }: { x: number; y: number; component: Component; onClose: () => void }) {
+export function ComponentMenu({ x, y, component, feature, onClose }: { x: number; y: number; component: Component; feature?: Id; onClose: () => void }) {
   if (!store.assembly) return null;
   return (
-    <ContextMenu x={x} y={y} onPointerDown={(e) => e.stopPropagation()} data-component-menu={component.id}>
-      <MenuEntries items={withGrid(assemblyMenu(store.getState(), component.id), store.getState().options.showGrid)} onClose={onClose} />
+    <ContextMenu x={x} y={y} className={feature ? 'assembly-feature-menu' : undefined} onPointerDown={(e) => e.stopPropagation()} data-component-menu={component.id}>
+      <MenuEntries items={withGrid(assemblyMenu(store.getState(), component.id, feature), store.getState().options.showGrid)} onClose={onClose} />
     </ContextMenu>
   );
 }
@@ -65,12 +65,18 @@ export function ComponentMenu({ x, y, component, onClose }: { x: number; y: numb
 export function AssemblyTree() {
   const asm = useStore((s) => s.asm)!;
   const name = useDocumentName();
-  const [featureMenu, setFeatureMenu] = useState<{ x:number; y:number; component:Id; feature:Id; sketch:boolean } | null>(null);
+  const [featureMenu, setFeatureMenu] = useState<{ x: number; y: number; component: Id; feature: Id } | null>(null);
+  const featureRow = useRef<HTMLLIElement>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [matesOpen, setMatesOpen] = useState(true);
   const [filter, setFilter] = useState('');
   const returnTo = useStore((s) => s.returnTo);
   const opened = asm.opened;
+  useEffect(() => {
+    if (!asm.featurePick) return;
+    const frame = requestAnimationFrame(() => featureRow.current?.scrollIntoView({ block: 'nearest' }));
+    return () => cancelAnimationFrame(frame);
+  }, [asm.featurePick]);
 
   useEffect(() => {
     if (!menu) return;
@@ -132,32 +138,42 @@ export function AssemblyTree() {
     return (
       <>
         {DATUM_ITEMS.map((d) => datumRow(c.id, d.id, d.label, d.icon, 30))}
-        {build.features.map((f) =>
+        {build.features.map((f) => {
+          const owner = asm.featurePick?.component === c.id && asm.featurePick.feature === f.id;
+          return (
           f.type === 'refPlane' && build.planes.some((p) => p.id === f.id) ? (
             datumRow(c.id, f.id, f.name, 'plane', 30)
           ) : (
             <li
               key={`${c.id}:${f.id}`}
+              ref={owner ? featureRow : undefined}
               data-component-feature={`${c.id}:${f.id}`}
-              className={`tree-row component-feature ${f.status === 'error' ? 'error' : ''} ${f.status === 'suppressed' ? 'suppressed' : ''}`}
+              className={`tree-row component-feature ${owner ? 'owner' : ''} ${f.status === 'error' ? 'error' : ''} ${f.status === 'suppressed' ? 'suppressed' : ''}`}
               style={{ paddingLeft: 30 }}
               title={f.status === 'error' ? t('tree.componentFeatureFailed') : t('tree.componentFeatureTip')}
               onDoubleClick={() => store.openComponentPart(c.id, f.id)}
-              onContextMenu={e => {e.preventDefault();setFeatureMenu({x:e.clientX,y:e.clientY,component:c.id,feature:f.id,sketch:f.type==='sketch'});}}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                if (!componentFeatureMenu(c.id, f.id).length) return;
+                a?.selectComponentFeature(c.id, f.id);
+                setFeatureMenu({ x: e.clientX, y: e.clientY, component: c.id, feature: f.id });
+              }}
             >
               <Icon name={f.type} />
               <span className="name">{f.name}</span>
               {f.status === 'error' && <Icon name="error" className="status-error" />}
             </li>
-          ),
-        )}
+          ));
+        })}
       </>
     );
   };
 
   return (
     <div className="feature-tree">
-      {featureMenu && <ContextMenu x={featureMenu.x} y={featureMenu.y}><li data-action="edit-component-feature" onClick={() => {store.openComponentPart(featureMenu.component, featureMenu.feature);setFeatureMenu(null);}}>{t(featureMenu.sketch?'tree.editComponentSketch':'tree.editComponentFeature')}</li></ContextMenu>}
+      {featureMenu && <ContextMenu x={featureMenu.x} y={featureMenu.y} className="assembly-feature-menu">
+        <MenuEntries items={componentFeatureMenu(featureMenu.component, featureMenu.feature)} onClose={() => setFeatureMenu(null)} />
+      </ContextMenu>}
       {returnTo && (
         <button className="return-bar" data-action="returnBack" onClick={() => store.returnToAssembly()} title={t(returnTo.kind === 'drawing' ? 'tree.returnDrawingTip' : 'tree.returnTip')}>
           <Icon name="assembly" />

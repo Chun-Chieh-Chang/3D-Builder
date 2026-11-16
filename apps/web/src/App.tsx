@@ -31,6 +31,7 @@ import { ShutdownOverlay } from './components/ShutdownOverlay';
 import { StatusBar } from './components/StatusBar';
 import { Viewport } from './components/Viewport';
 import { ViewOrientationDialog } from './components/ViewOrientationDialog';
+import { WorkspaceLayout } from './components/WorkspaceLayout';
 
 export function App() {
   // The whole tree is drawn again when the language changes: texts are read when drawn (see strings.ts).
@@ -65,6 +66,7 @@ export function App() {
   const selected = useStore((s) => s.selected);
   const asm = useStore((s) => s.asm);
   const asmViewPick = useStore((s) => s.asm?.viewPick ?? null);
+  const asmFeaturePick = useStore((s) => s.asm?.featurePick ?? null);
   const asmSelected = useStore((s) => s.asm?.selected ?? null);
   const asmPick = assembly ? assemblySelection(asmViewPick, asmSelected, asm!.doc) : { kind: 'none' as const };
   const pick = pickKey(selectedFace, selectedElements);
@@ -74,9 +76,10 @@ export function App() {
   const asmReachable = assembly && asmPick.kind !== 'none'; // from the tree: the tab comes alive, the page stays
   useEffect(() => {
     if (editing) return;
-    if (picked || asmPicked) setPanel('properties');
+    if (asmFeaturePick) setPanel('tree');
+    else if (picked || asmPicked) setPanel('properties');
     else if (!selected && !asmReachable) setPanel('tree');
-  }, [picked, selected, editing, asmPicked, asmReachable]);
+  }, [picked, selected, editing, asmFeaturePick, asmPicked, asmReachable]);
   useEffect(() => installShortcuts(), []);
   useEffect(() => installHelp({ currentTopic: currentTopicId, hasTopic: (id) => topicOf(id) !== null }), []);
   useEffect(() => {
@@ -85,8 +88,7 @@ export function App() {
   return (
     <div className="app">
       <CommandBar />
-      <div className={`workspace${drawing ? ' with-task-pane' : ''}`}>
-        <aside className="left-panel" data-help={editing ? 'concept.property-manager' : 'concept.feature-tree'}>
+      <WorkspaceLayout drawing={drawing} editing={editing && !floating} sidebar={<>
           {/* a drawing has tabs of its own, which work (D-I1b, ADR 0133) */}
           {!drawing && (
             <div className="sw-tabs" role="tablist">
@@ -140,10 +142,10 @@ export function App() {
               </div>
             </div>
           )}
-        </aside>
+      </>}>
         {drawing ? <DrawingViewport /> : assembly ? <AssemblyViewport /> : <Viewport />}
         {drawing && <DrawingTaskPane />}
-      </div>
+      </WorkspaceLayout>
       <StatusBar />
       <HelpPanel />
       <DeleteDialog />

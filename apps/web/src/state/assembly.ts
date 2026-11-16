@@ -235,6 +235,7 @@ export interface AssemblyState {
    * the tree. Always a component, or null: the tree, the dialogs and the 「清除選取」 action select without it.
    */
   viewPick: Id | null;
+  featurePick: { component: Id; feature: Id } | null;
   /**
    * Datums picked in the FeatureManager (the assembly's, or a component's own origin and planes, as SolidWorks lists them under a
    * component): shown in the graphics area, and the elements 「結合」 starts with, in the order they were picked.
@@ -383,6 +384,7 @@ export class AssemblyStore {
       selected: null,
       selectedComponents: [],
       viewPick: null,
+      featurePick: null,
       picks: [],
       opened: new Set(),
       insert: null,
@@ -427,7 +429,10 @@ export class AssemblyStore {
 
   private set(patch: Partial<AssemblyState>): void {
     if (this.closed) return;
-    if ('selected' in patch && !('selectedComponents' in patch)) patch.selectedComponents=patch.selected&&this.history.doc.components.some(c=>c.id===patch.selected)?[patch.selected]:[];
+    if ('selected' in patch) {
+      if (!('selectedComponents' in patch)) patch.selectedComponents=patch.selected&&this.history.doc.components.some(c=>c.id===patch.selected)?[patch.selected]:[];
+      if (!('featurePick' in patch)) patch.featurePick = null;
+    }
     this.state = { ...this.state, ...patch };
     this.host.changed(this.state);
   }
@@ -1361,6 +1366,13 @@ export class AssemblyStore {
 
   select(id: Id | null): void {
     this.set({ selected: id, picks: [], viewPick: null });
+  }
+
+  selectComponentFeature(component: Id, feature: Id, fromView = false): void {
+    this.set({
+      selected: component, viewPick: fromView ? component : null, picks: [], featurePick: { component, feature },
+      opened: this.state.opened.has(component) ? this.state.opened : new Set([...this.state.opened, component]),
+    });
   }
 
   /**

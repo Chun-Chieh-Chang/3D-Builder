@@ -437,15 +437,17 @@ C.assembly = async () => {
     return { pass: !!block && comp(block)?.fixed === false };
   });
 
-  await step('2 a component: open, re-link, 結合, 移動, 旋轉, 固定 (it floats), 隱藏, 透明, 抑制, 刪除; it is selected first', async () => {
+  await step('2 a component in the view highlights the owning feature and adds its edit actions to the component menu', async () => {
     store.assembly.select(null);
     const at = spot(block);
     if (!at) return { pass: false, why: 'no point of the V-block under the pointer' };
     await rightAt(H, at);
     const ids = cids();
     const selected = H.asm().selected;
+    const owner = document.querySelector('[data-component-feature].owner')?.dataset.componentFeature;
+    const componentActions = ids.filter((id) => id !== 'edit-component-feature' && id !== 'edit-component-sketch');
     await closeMenus(H);
-    return { pass: same(ids, ON_COMPONENT.map((x) => (x === 'float-component' ? 'fix-component' : x))) && selected === block, ids, selected };
+    return { pass: same(componentActions, ON_COMPONENT.map((x) => (x === 'float-component' ? 'fix-component' : x))) && selected === block && !!owner?.startsWith(`${block}:`) && ids.includes('edit-component-feature'), ids, selected, owner };
   });
 
   await step('3 the tree row offers the same lines', async () => {

@@ -3827,12 +3827,8 @@ class AppStore {
 
   private async openFile(): Promise<void> {
     try {
-      const offerProject = __LOCAL_PROJECT_ROOT__ && window.showDirectoryPicker && window.showOpenFilePicker && navigator.userActivation?.isActive;
-      const picked = await pickFileToOpen(this.project ?? this.remembered, offerProject ? async () => {
-        const folder = this.project ?? this.remembered ?? await rememberedFolder() ?? await this.askForFolder(t('folder.askOpenRoot', { path: __LOCAL_PROJECT_ROOT__ }));
-        if (folder) this.useProject(folder);
-        return folder;
-      } : undefined);
+      // Open the file picker directly. A native folder dialog can consume the gesture the file picker requires.
+      const picked = await pickFileToOpen(this.project ?? this.remembered);
       if (!picked) return;
       if (await isPackageData(picked.bytes)) return await this.unpackPackage(picked);
       await this.openPicked(picked);

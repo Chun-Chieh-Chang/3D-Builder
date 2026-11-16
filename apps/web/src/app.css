@@ -162,11 +162,27 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .tool:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent-line); }
 .tool.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .tool:disabled { color: var(--disabled); cursor: default; }
+@media (max-width: 900px) {
+  .command-bar { flex-wrap: wrap; gap: 0 6px; }
+  .command-bar .tabs { order: 1; flex: 1 0 100%; flex-wrap: wrap; min-width: 0; }
+  .command-bar .tab { min-height: 44px; padding-inline: 9px; font-size: 14px; }
+  .command-bar .menu { position: static; }
+  .command-bar .menu-panel { width: 100%; max-width: 100%; }
+  .command-bar .doc-title { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+}
 
-.workspace { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 0; }
+.workspace { position: relative; display: grid; grid-template-columns: var(--sidebar-width, 290px) minmax(0, 1fr); min-height: 0; min-width: 0; }
 
 /* Left panel */
-.left-panel { background: var(--chrome); border-right: 1px solid var(--chrome-line); display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.left-panel { background: var(--chrome); border-right: 1px solid var(--chrome-line); display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: auto; }
+.sidebar-divider { position: absolute; z-index: 25; inset-block: 0; left: calc(var(--sidebar-width) - 4px); width: 8px; cursor: col-resize; touch-action: none; }
+.sidebar-divider:hover, .sidebar-divider:focus-visible { background: var(--accent-soft); outline: 1px solid var(--accent); outline-offset: -1px; }
+.workspace.sidebar-overlay { grid-template-columns: minmax(0, 1fr); grid-template-rows: 48px minmax(0, 1fr); }
+.sidebar-overlay > .viewport { grid-row: 2; }
+.sidebar-toggle { justify-self: start; align-self: center; margin-inline: 8px; min-height: 44px; padding: 4px 12px; font: inherit; font-size: 14px; }
+.sidebar-overlay .left-panel { position: absolute; z-index: 41; inset: 48px auto 0 0; width: min(var(--sidebar-width), calc(100% - 24px)); box-shadow: 0 5px 16px #0003; }
+.sidebar-overlay .left-panel[data-collapsed] { visibility: hidden; }
+.sidebar-backdrop { position: absolute; z-index: 40; inset: 48px 0 0; border: 0; background: #0003; }
 /* FeatureManager */
 .feature-tree { padding: 6px 4px; user-select: none; }
 .tree-part { display: flex; gap: 6px; align-items: center; padding: 4px 6px; font-weight: 600; }
@@ -235,6 +251,10 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .context-menu li { padding: 6px 14px; cursor: pointer; font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 8px; }
 .context-menu li:hover { background: var(--accent-soft); color: var(--accent-strong); }
 .context-menu li.separator { height: 1px; padding: 0; margin: 4px 0; background: var(--line); cursor: default; }
+.context-menu.assembly-feature-menu { max-width: calc(100vw - 16px); overflow-wrap: anywhere; }
+@media (pointer: coarse) {
+  .assembly-feature-menu li:not(.separator) { min-height: 44px; font-size: 14px; }
+}
 /* a submenu (B2.4) opens inside the menu, since the menu scrolls and a fly-out would be clipped at the sheet's edge */
 .context-menu li.has-submenu { flex-wrap: wrap; }
 .context-menu li.has-submenu .submenu-arrow { margin-left: auto; color: var(--muted); font-size: 10px; }
@@ -741,6 +761,7 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .sw-keys-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sw-keys-key { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
 .sw-tabs button { display: flex; align-items: center; gap: 6px; padding: 6px 12px 7px; border: 1px solid transparent; border-bottom: 0; border-radius: 5px 5px 0 0; background: none; color: var(--muted); font-weight: 500; cursor: pointer; margin-bottom: -1px; }
+.left-panel .sw-tabs button { flex: 1; justify-content: center; min-width: 0; padding-inline: 4px; overflow-wrap: anywhere; }
 .sw-tabs button:hover { color: var(--text); background: color-mix(in oklab, var(--card) 60%, transparent); }
 .sw-tabs button.active { background: var(--card); color: var(--chrome-ink); border-color: var(--chrome-line); box-shadow: inset 0 2px 0 var(--accent); }
 .sw-commands { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; padding: 6px; background: var(--card); border-bottom: 1px solid var(--line-2); }
@@ -786,6 +807,33 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .sw-panel textarea { height: auto; min-height: 56px; width: 100%; resize: vertical; }
 .sw-panel select { max-width: 60%; }
 .sw-panel .pm-row input:not([type="checkbox"]) { width: 60%; }
+.sketch-dimensions { container-type: inline-size; min-width: 0; }
+.dimension-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 4px 8px;
+  padding-block: 6px;
+  min-width: 0;
+}
+.dimension-name { overflow-wrap: anywhere; }
+.dimension-entry > .link { justify-self: end; white-space: nowrap; }
+.dimension-entry .value-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  align-items: center;
+}
+.sw-panel .dimension-entry .value-input input { box-sizing: border-box; width: 100%; min-width: 0; }
+.dimension-entry .value-preview, .dimension-entry .value-error { grid-column: 1 / -1; overflow-wrap: anywhere; }
+@container (min-width: 356px) {
+  .dimension-entry { grid-template-columns: minmax(92px, 1fr) minmax(142px, 1.6fr) auto; }
+}
+@media (max-width: 768px), (pointer: coarse) {
+  .sidebar-overlay .sw-tabs button, .sw-panel .dimension-entry .value-input input, .dimension-entry > .link { min-height: 44px; font-size: 14px; }
+  .dimension-entry > .link { min-width: 44px; }
+  .dimension-name { font-size: 14px; }
+}
 .sw-panel select:focus, .sw-panel input:focus, .sw-panel textarea:focus { outline: none; border-color: var(--accent-bright); box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent-bright) 20%, transparent); }
 .sw-panel input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; }
 .sw-panel .pm-button { height: 26px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 4px; background: linear-gradient(var(--card), var(--surface)); color: var(--text); font: inherit; cursor: pointer; }

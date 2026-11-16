@@ -146,7 +146,7 @@ function preview(text: string, doc: PartDoc, angle: boolean, count = false): { v
  * expressions (D2.4): variables, other dimensions, units and functions, with the value shown beside it. Blank is red unless the field is
  * `optional` (its label says what blank means: none, the default): there blank is an entry like any other.
  */
-function ValueInput({ value, toCommand, suffix = 'mm', optional = false }: { value: string; toCommand: (v: string) => Command; suffix?: string; optional?: boolean }) {
+function ValueInput({ value, toCommand, suffix = 'mm', optional = false, inputId }: { value: string; toCommand: (v: string) => Command; suffix?: string; optional?: boolean; inputId?: string }) {
   const doc = useStore((s) => s.doc);
   const [text, setText] = useState(value);
   const [invalid, setInvalid] = useState(false);
@@ -170,12 +170,15 @@ function ValueInput({ value, toCommand, suffix = 'mm', optional = false }: { val
   return (
     <span className="value-input">
       <input
+        id={inputId}
         className={invalid || missing || (shown && 'error' in shown) ? 'invalid' : ''}
         aria-invalid={invalid || missing || !!(shown && 'error' in shown)}
         value={text}
         title={shown ? ('error' in shown ? shown.error : t('value.expression', { value: shown.value })) : undefined}
         onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
+        onBlur={(e) => {
+          if (!(e.relatedTarget instanceof Element && e.relatedTarget.closest('[data-preserve-editor]'))) commit();
+        }}
         onKeyDown={(e) => {
           if (e.nativeEvent.isComposing || e.keyCode === 229) return;
           if (e.key === 'Enter') {
@@ -1018,19 +1021,22 @@ function SketchPanel({ f }: { f: SketchFeature }) {
         </section>
       )}
 
-      <section className="pm-group">
+      <section className="pm-group sketch-dimensions">
         <h4>{t('pm.dimensions')}</h4>
         {dims.length === 0 && <p className="muted">{t('pm.dimensionsHint')}</p>}
         {dims.map((c) => (
           <Fragment key={c.id}>
-          <label className="pm-row">
-            <span>{c.label ?? `${DIMENSION_LABEL[c.type] ?? t('dimension.generic')} ${c.id}`}</span>
+          <div className="dimension-entry" data-dimension-id={c.id}>
+            <label className="dimension-name" htmlFor={c.driving === false ? undefined : `dimension-${f.id}-${c.id}`} title={c.id}>
+              {c.label ?? DIMENSION_LABEL[c.type] ?? t('dimension.generic')}
+            </label>
             {c.driving === false ? (
               <span className="muted" title={t('sketch.driven')}>
                 {dimensionText(c, solve ? measuredText(c, solve.geometry) : undefined)}
               </span>
             ) : (
               <ValueInput
+                inputId={`dimension-${f.id}-${c.id}`}
                 value={c.value}
                 suffix={c.type === 'angle' ? '°' : 'mm'}
                 toCommand={(value) => ({ type: 'setDimension', featureId: f.id, constraintId: c.id, value })}
@@ -1039,7 +1045,7 @@ function SketchPanel({ f }: { f: SketchFeature }) {
             <button type="button" className="link" onClick={() => sketcher?.setDriven(c.id, c.driving !== false)}>
               {c.driving === false ? t('sketch.makeDriving') : t('sketch.makeDriven')}
             </button>
-          </label>
+          </div>
           {c.type === 'distance' && c.b !== undefined && solve && conditionEnds(solve.geometry, c.a, c.b, 'max') !== null && (
             <label className="pm-row">
               <span>{t('sketch.condition')}</span>

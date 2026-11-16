@@ -38,6 +38,7 @@ export function FeatureTree() {
   const result = useStore((s) => s.result);
   const selected = useStore((s) => s.selected);
   const selectedFace = useStore((s) => s.selectedFace);
+  const selectedElements = useStore((s) => s.selectedElements);
   const editing = useStore((s) => s.editing);
   const name = useDocumentName();
   const returnTo = useStore((s) => s.returnTo);
@@ -108,7 +109,8 @@ export function FeatureTree() {
   const statusOf = (id: Id): FeatureResult | undefined => result?.features.find((f) => f.id === id);
   const rollback = doc.rollbackIndex ?? doc.features.length;
   const barIndex = dragIndex ?? rollback;
-  const owner = selectedFace ? ownerFeatures(selectedFace.name)[0] : undefined;
+  const selectedName = (selectedFace ?? selectedElements[0])?.name;
+  const owner = selectedName ? ownerFeatures(selectedName).find((id) => doc.features.some((f) => f.id === id)) : undefined;
 
   // Rollback bar drag (B2.4 / D1.4): the bar snaps between top-level rows. In hierarchy mode a sketch is shown under the feature that uses it, so the
   // order on screen is not the history order: the bar lands at the history index of the first top-level row below it (the end when there is none).

@@ -259,6 +259,35 @@ M.run = async () => {
     };
   });
 
+  await step('a narrow sidebar keeps a long sketch expression editable and remembers keyboard resizing', async () => {
+    const divider = document.querySelector('[role="separator"][aria-controls="workspace-sidebar"]');
+    const sidebar = document.querySelector('#workspace-sidebar');
+    if (!divider || !sidebar) throw new Error('sidebar separator missing');
+    const key = (key) => divider.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    try {
+      store.beginEdit('sb');
+      await H.waitFor(() => store.editedSketch()?.id === 'sb', 5000, 'base sketch editor');
+      const value = store.editedSketch().constraints.find((c) => c.id === 'bw').value;
+      const expression = `(${value} + 3.5 - 3.5) * (1 + 0.001 - 0.001)`;
+      if (!store.setDimensionValue('bw', expression)) throw new Error('could not set the expression');
+      key('Home');
+      await H.wait(200);
+      const input = document.querySelector('[data-dimension-id="bw"] input');
+      const tight = Number(divider.getAttribute('aria-valuenow'));
+      const fits = sidebar.scrollWidth <= sidebar.clientWidth + 1;
+      const usefulWidth = input?.getBoundingClientRect().width ?? 0;
+      const hasFormula = input?.value === expression;
+      key('ArrowRight');
+      await H.wait(100);
+      const saved = localStorage.getItem('3db-workspace-sidebar-width');
+      const resized = Number(divider.getAttribute('aria-valuenow'));
+      return { pass: tight === 260 && resized === 268 && saved === '268' && fits && usefulWidth >= 150 && hasFormula, tight, resized, saved, fits, usefulWidth, hasFormula };
+    } finally {
+      divider.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      store.cancelEdit();
+    }
+  });
+
   await step('8 a new assembly: the two tabs work there too, and 「開始組合件」 leaves the tree page when it is done', async () => {
     await H.action('檔案', '新組合件');
     if (store.getState().folderRequest) await H.modalButton('選擇資料夾…');

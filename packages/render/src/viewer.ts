@@ -625,7 +625,7 @@ export interface ViewerEvents {
   /** The right button was pressed and released while a tool owns the left one (a sketch is being edited): the sketch's own menu (快速抓取), not the picking menu. */
   onToolContextMenu?: (clientX: number, clientY: number) => void;
   /** A right click (not a right drag, which turns a component) on the graphics area of an assembly: the component under the cursor, or null. */
-  onComponentContextMenu?: (key: string | null, clientX: number, clientY: number) => void;
+  onComponentContextMenu?: (key: string | null, clientX: number, clientY: number, face?: InstanceElement) => void;
   /** Edge under the cursor changed (index into the mesh's edges, or -1). */
   onEdgeHover?: (edge: number) => void;
   /** Left click on an edge (or -1 on empty space / faces). */
@@ -658,7 +658,7 @@ export interface ViewerEvents {
   /** Component under the cursor changed (an instance key, or null). */
   onComponentHover?: (key: string | null) => void;
   /** Left click on a component (null on empty space). */
-  onComponentClick?: (key: string | null, additive: boolean) => void;
+  onComponentClick?: (key: string | null, additive: boolean, face?: InstanceElement) => void;
   /** Element of a component under the cursor changed (while elements are picked). */
   onElementHover?: (element: InstanceElement | null) => void;
   onElementClick?: (element: InstanceElement | null, additive: boolean) => void;
@@ -901,7 +901,10 @@ export class Viewer {
       const handle = this.triadPartAt(e.clientX, e.clientY);
       if (handle && this.events.onTriadContextMenu) return void this.events.onTriadContextMenu(handle, e.clientX, e.clientY);
       // components, not the faces of one, while no mate is being defined
-      if (this.pickInstances && !this.pickElements && this.events.onComponentContextMenu) return void this.events.onComponentContextMenu(this.pickInstance(e.clientX, e.clientY), e.clientX, e.clientY);
+      if (this.pickInstances && !this.pickElements && this.events.onComponentContextMenu) {
+        const hit = this.componentHit(e.clientX, e.clientY);
+        return void this.events.onComponentContextMenu(hit?.owner ?? null, e.clientX, e.clientY, hit?.face);
+      }
       this.events.onContextMenu?.(e.clientX, e.clientY);
     });
     dom.addEventListener('dblclick', this.onDoubleClick);
@@ -1350,11 +1353,19 @@ export class Viewer {
   }
 
   private pickInstance(clientX: number, clientY: number): string | null {
+    return this.componentHit(clientX, clientY)?.owner ?? null;
+  }
+
+  private componentHit(clientX: number, clientY: number): { owner: string; face?: InstanceElement } | null {
     if (this.instances.size === 0) return null;
     const r = this.rayAt(clientX, clientY);
     const hit = new THREE.Raycaster(r.origin, r.direction).intersectObjects(this.shownBodies()).find((h) => this.kept(h.point));
     if (!hit) return null;
-    for (const inst of this.instances.values()) if (inst.body === hit.object) return inst.owner;
+    for (const [key, inst] of this.instances) {
+      if (inst.body !== hit.object) continue;
+      const index = hit.faceIndex == null ? undefined : this.partGeometry.get(inst.part)?.triangleFace[hit.faceIndex];
+      return index === undefined ? { owner: inst.owner } : { owner: inst.owner, face: { key, kind: 'face', index } };
+    }
     return null;
   }
 
@@ -2859,7 +2870,10 @@ export class Viewer {
     }
     const additive = e.ctrlKey || e.shiftKey;
     if (this.pickElements) return void this.events.onElementClick?.(this.pickElement(e.clientX, e.clientY), additive);
-    if (this.pickInstances) return void this.events.onComponentClick?.(this.pickInstance(e.clientX, e.clientY), additive);
+    if (this.pickInstances) {
+      const hit = this.componentHit(e.clientX, e.clientY);
+      return void this.events.onComponentClick?.(hit?.owner ?? null, additive, hit?.face);
+    }
     const p = this.pickOrder(e.clientX, e.clientY);
     if (p.vertex >= 0) return void this.events.onVertexClick?.(p.vertex, additive);
     if (p.edge >= 0 || (this.edgesOn && !this.facesOn)) return void this.events.onEdgeClick?.(p.edge, additive);

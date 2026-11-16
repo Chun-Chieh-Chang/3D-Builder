@@ -70,7 +70,7 @@ P.run = async () => {
 
   await step('3 聯動: the boss widened to 8 lengthens the converted line to 8', async () => {
     await window.__man.treeEdit(ids.bossSketch);
-    const row = [...document.querySelectorAll('.pm-row')].find((r) => r.querySelector('span')?.textContent?.includes('距離'));
+    const row = [...document.querySelectorAll('.dimension-entry')].find((r) => r.querySelector('.dimension-name')?.textContent?.includes('距離'));
     if (!row) throw new Error('no width dimension row in the boss sketch');
     await window.__man.type(row.querySelector('input'), '8');
     await H.selectTool();

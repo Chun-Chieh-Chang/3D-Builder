@@ -2,6 +2,7 @@ import { t } from '@3db/i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DATUM_PLANES, IDENTITY_ROTATION, isDatumPlaneName, poseMatrix, transformPoint, type MateRef, type PlaneFrame, type Pose, type Vec3 } from '@3db/model';
 import { partNameOf } from '@3db/io';
+import { ownerFeatures } from '@3db/naming';
 import { Viewer, type DatumDisplay, type InstanceElement, type PlaneDisplay, type ViewInstance, type ViewPart } from '@3db/render';
 import { ACTIONS, shortcutOf } from '../actions';
 import { store, useStore } from '../state/store';
@@ -84,7 +85,7 @@ export function AssemblyViewport() {
   const [hover, setHover] = useState<string | null>(null);
   const [hoverElement, setHoverElement] = useState<InstanceElement | null>(null);
   /** The component's context menu (right click on it in the graphics area); with no component under the pointer, the assembly's own (ADR 0176). */
-  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string; feature?: string } | null>(null);
   const [spaceMenu, setSpaceMenu] = useState<{ x: number; y: number; items: MenuEntry[]; what?: string } | null>(null);
   const closeSpaceMenu = useCallback(() => setSpaceMenu(null), []);
   useEffect(() => {
@@ -95,6 +96,12 @@ export function AssemblyViewport() {
   }, [menu]);
 
   useEffect(() => {
+    const featureOf = (component: string | null, face?: InstanceElement): string | undefined => {
+      if (!component || face?.key !== component) return undefined;
+      const build = store.assembly?.buildOf(component);
+      const name = build?.faceNames[face.index];
+      return name ? ownerFeatures(name).find((id) => build?.features.some((f) => f.id === id && f.status !== 'suppressed')) : undefined;
+    };
     /** The element as a mate refers to it: the component (with the path inside it, for a part of a sub-assembly), and the persistent name in its part. */
     const refOf = (el: InstanceElement): MateRef | null => {
       const leaf = store.assembly?.leaves().find((l) => l.id === el.key);
@@ -111,9 +118,13 @@ export function AssemblyViewport() {
     };
     const viewer = new Viewer(host.current!, {
       onComponentHover: setHover,
-      onComponentClick: (key, additive) => store.assembly?.selectComponentFromView(key, additive),
+      onComponentClick: (key, additive, face) => {
+        const feature = !additive && featureOf(key, face);
+        if (key && feature) store.assembly?.selectComponentFeature(key, feature, true);
+        else store.assembly?.selectComponentFromView(key, additive);
+      },
       onBoxSelect: (box, additive) => store.assembly?.selectComponents(box.components,additive),
-      onComponentContextMenu: (key, x, y) => {
+      onComponentContextMenu: (key, x, y, face) => {
         setSpaceMenu(null);
         if (!key) {
           setMenu(null);
@@ -122,8 +133,10 @@ export function AssemblyViewport() {
           return;
         }
         // the menu is the answer to a right click: the pick is the tree's kind, so the PropertyManager is not brought forward for it
-        if(!store.getState().asm?.selectedComponents.includes(key)) store.assembly?.select(key);
-        setMenu({ x, y, id: key });
+        const feature = featureOf(key, face);
+        if (feature) store.assembly?.selectComponentFeature(key, feature);
+        else if (!store.getState().asm?.selectedComponents.includes(key)) store.assembly?.select(key);
+        setMenu({ x, y, id: key, feature });
       },
       onElementHover: setHoverElement,
       onElementClick: (el) => {
@@ -338,7 +351,7 @@ export function AssemblyViewport() {
       <ViewCube />
       <ViewOptions assembly />
       {spaceMenu && <GraphicsMenu x={spaceMenu.x} y={spaceMenu.y} items={spaceMenu.items} what={spaceMenu.what ?? 'assembly-empty'} onClose={closeSpaceMenu} />}
-      {menu && asm.doc.components.some((c) => c.id === menu.id) && <ComponentMenu x={menu.x} y={menu.y} component={asm.doc.components.find((c) => c.id === menu.id)!} onClose={() => setMenu(null)} />}
+      {menu && asm.doc.components.some((c) => c.id === menu.id) && <ComponentMenu x={menu.x} y={menu.y} component={asm.doc.components.find((c) => c.id === menu.id)!} feature={menu.feature} onClose={() => setMenu(null)} />}
       <div className="heads-up">
         {ACTIONS.filter((a) => a.group === 'view').map((a) => (
           <button key={a.id} onClick={a.run} disabled={!a.enabled(store.getState())} title={shortcutOf(a) ? `${a.label} (${shortcutOf(a)})` : a.label}>

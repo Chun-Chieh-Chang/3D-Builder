@@ -39,7 +39,6 @@ export const storemsg: Translation = {
   'folder.useFailed': 'This folder cannot be used: {why}',
   'folder.chooseFailed': 'The folder could not be chosen: {why}',
   'folder.askChange': 'Choose the project folder of this assembly: its parts are read from there, and the assembly has to be saved inside it.',
-  'folder.askOpenRoot': 'Choose the project root ({path}) or your project folder. Chrome or Edge needs you to select it once so Open can start there when no recent location is available.',
   'folder.change': 'Change Folder…',
   'folder.changeHint': 'Once the first component is placed, the project folder cannot be changed any more.',
 };

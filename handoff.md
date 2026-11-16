@@ -2,6 +2,7 @@
 
 ## 2026-11-16 — PropertyManager 窄欄與版面調整
 
+- 遠端 `0ec2e32c` 已保存核准的實作順位和驗收條件。P0/P1/P2 已在本機完成，實作位於 `WorkspaceLayout.tsx`、`PropertyManager.tsx` 和 `app.css`，回歸納入 `manual-sidebar-tabs.js`。目前實作留在工作區。實測見 [開發日誌](DEV_LOG.md#2026-11-16--propertymanager-窄欄改善決策)。
 - 使用者已確認先推送此開發決策，再依 P0 → P1 → P2 實作。首輪以 `Front-Frame.3dbx` 鼻橋草圖的尺寸列作驗收。
 - **P0** 在 `PropertyManager.tsx` 和 `app.css` 讓尺寸列依容器寬度換行。公式、單位與結果維持可讀，「設為從動／驅動」有完整的操作目標，內部拘束 ID 可於詳細資訊查看。原 290 px 不應有水平捲動。
 - **P1** 在 `App.tsx` 工作區加入可拖曳和鍵盤操作的分隔線。預設以 360 px 試驗，雙擊還原，記住使用者寬度，以必要的模型區寬度限制拖曳範圍。版面寫入使用者偏好，不改變文件歷程。

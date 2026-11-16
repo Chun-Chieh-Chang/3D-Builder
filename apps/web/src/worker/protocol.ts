@@ -196,7 +196,7 @@ export interface PartBuildPayload {
   /** Built coordinate systems exposed to measurement in the assembly. */
   systems: { id: Id; name: string; system: CoordSystem }[];
   /** The part's features in history order, listed under its component in the assembly's FeatureManager; editing opens the source part (see `partFeatures`). */
-  features: { id: Id; name: string; type: Feature['type']; status: 'ok' | 'error' | 'suppressed' }[];
+  features: { id: Id; name: string; type: Feature['type']; status: 'ok' | 'error' | 'suppressed'; sketches?: Id[] }[];
   /** Every body it has is a reference body (C7.1): a design aid, not a part to count (C15.16). */
   referenceOnly: boolean;
   /** The part file's properties (B8.3): the parts list reads the vendor and the part number from them (C15.16). */

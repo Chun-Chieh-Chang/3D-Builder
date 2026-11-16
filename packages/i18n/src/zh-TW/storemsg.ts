@@ -37,7 +37,6 @@ export const storemsg = {
   'folder.useFailed': '無法使用這個資料夾：{why}',
   'folder.chooseFailed': '無法選擇資料夾：{why}',
   'folder.askChange': '選擇這個組合件的專案資料夾：零件檔從這裡讀取，組合件也要存在這個資料夾之內。',
-  'folder.askOpenRoot': '請選擇專案根目錄（{path}）或你的專案資料夾。Chrome 或 Edge 需要你選擇一次，才能在沒有上次位置時從這裡開啟檔案。',
   'folder.change': '更換資料夾…',
   'folder.changeHint': '組合件放進第一個零組件之後，專案資料夾就不能再換了。',
 } as const;

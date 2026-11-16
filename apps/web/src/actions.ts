@@ -81,8 +81,9 @@ export const contextFeature = (s: UiState): Feature | undefined => {
   const tree = selectedFeature(s);
   if (tree) return tree;
   const name = s.selectedFace?.name ?? s.selectedElements[0]?.name;
-  const id = name ? ownerFeatures(name)[0] : undefined;
-  return id ? s.doc.features.find((f) => f.id === id) : undefined;
+  if (!name) return undefined;
+  const id = ownerFeatures(name).find((owner) => s.doc.features.some((f) => f.id === owner));
+  return s.doc.features.find((f) => f.id === id);
 };
 /** Above the rollback bar: what can be edited. */
 const beforeRollback = (s: UiState, f: Feature) => s.doc.features.indexOf(f) < (s.doc.rollbackIndex ?? s.doc.features.length);

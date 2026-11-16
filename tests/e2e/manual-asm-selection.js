@@ -1,4 +1,4 @@
-// E1 側邊欄比照工程圖（docs/sidebar-parity-plan.md、ADR 0155）§2.2 的組合件一半：圖面點到的零組件自動切到屬性頁（標題列＋識別群組框：
+// 組合件視窗點到的特徵會在 FeatureManager 標示，PropertyManager 仍可查看零組件識別資訊（標題列＋識別群組框：
 // 名稱、零組件／子組合件、固定／浮動、零件檔）、✓ 清除回樹頁、樹上點選留在樹頁只讓屬性頁可達、結合的識別與「編輯結合」。右鍵選單與左鍵拖曳
 // 維持原行為（拖曳仍可移動零組件）。Replayed in the app's page (http://127.0.0.1:5391, 1280×720; `npm run verify:ui` does it). Not a Vitest test.
 //
@@ -84,11 +84,14 @@ M.run = async () => {
     };
   });
 
-  await step('2 the plate clicked in the graphics area brings the properties page forward (§2.2): its name, kind, state and file', async () => {
+  await step('2 clicking the plate reveals its feature; Properties shows its name, kind, state and file', async () => {
     const at = spot(plate.id);
     if (!at) return { pass: false, why: 'no point of the plate under the cursor' };
     await clickAtPoint(at);
     const st = asm();
+    const owner = document.querySelector('.sw-pane:not([hidden]) [data-component-feature].owner')?.dataset.componentFeature;
+    tabEls()[1].click();
+    await H.wait(150);
     const t = tabs();
     const p = panes();
     const panel = selPanel();
@@ -98,7 +101,7 @@ M.run = async () => {
     return {
       pass:
         t[1].selected === 'true' && t[1].disabled === false && p[1].hidden === false && p[1].display !== 'none' &&
-        st.viewPick === plate.id && st.selected === plate.id &&
+        st.viewPick === plate.id && st.selected === plate.id && !!owner?.startsWith(`${plate.id}:`) &&
         panel.querySelector('.sw-pm-title strong')?.textContent === '零組件' &&
         panel.querySelector('.sw-pm-title span')?.textContent === info &&
         panel.querySelector('[data-field="name"]')?.textContent === info &&
@@ -111,16 +114,19 @@ M.run = async () => {
     };
   });
 
-  await step('3 the V-block clicked in the view: the same page, now about it (a floating component)', async () => {
+  await step('3 clicking the V-block from Properties brings the new owning feature into view', async () => {
     const at = spot(block.id);
     if (!at) return { pass: false, why: 'no point of the V-block under the cursor' };
     await clickAtPoint(at);
     const st = asm();
+    const owner = document.querySelector('.sw-pane:not([hidden]) [data-component-feature].owner')?.dataset.componentFeature;
+    tabEls()[1].click();
+    await H.wait(150);
     const panel = selPanel();
     if (!panel) return { pass: false, why: 'the selection panel is not the page shown' };
     const info = nameOf(block);
     return {
-      pass: st.viewPick === block.id && panel.querySelector('.sw-pm-title span')?.textContent === info && panel.querySelector('[data-field="state"]')?.textContent === '浮動',
+      pass: st.viewPick === block.id && !!owner?.startsWith(`${block.id}:`) && panel.querySelector('.sw-pm-title span')?.textContent === info && panel.querySelector('[data-field="state"]')?.textContent === '浮動',
       viewPick: st.viewPick,
     };
   });

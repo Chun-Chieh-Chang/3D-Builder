@@ -145,11 +145,29 @@ export function triadMenu(part: TriadPart): MenuEntry[] {
  * The assembly (ADR 0176): on a component (chosen first), what the tree's row offers — open its part, mate, move, turn, fix or float, hide, see-through,
  * suppress, delete; on nothing, inserting and mating and the view.
  */
-export function assemblyMenu(s: UiState, component: Id | null): MenuEntry[] {
+export function componentFeatureMenu(component: Id, featureId: Id): MenuEntry[] {
+  const assembly = store.assembly;
+  const state = assembly?.getState();
+  if (!state || state.insert || state.mate || state.move || state.pattern || state.explode || state.formSub) return [];
+  if (!/\.3dbx$/i.test(assembly?.componentPath(component) ?? '')) return [];
+  const features = assembly?.buildOf(component)?.features ?? [];
+  const feature = features.find((f) => f.id === featureId && f.status !== 'suppressed');
+  if (!feature) return [];
+  const edit = (id: Id, label: string, action: string) => entry(action, label, () => store.openComponentPart(component, id));
+  if (feature.type === 'sketch') return [edit(feature.id, t('tree.editComponentSketch'), 'edit-component-feature')];
+  const sketches = (feature.sketches ?? []).flatMap((id) => features.filter((f) => f.id === id && f.type === 'sketch' && f.status !== 'suppressed'));
+  return [
+    edit(feature.id, t('tree.editComponentFeature'), 'edit-component-feature'),
+    ...sketches.map((sketch) => edit(sketch.id, sketches.length === 1 ? t('tree.editComponentSketch') : `${t('tree.editComponentSketch')} (${sketch.name})`, 'edit-component-sketch')),
+  ];
+}
+
+export function assemblyMenu(s: UiState, component: Id | null, feature?: Id): MenuEntry[] {
   if (component === null) return tidy([command(s, 'insert-component'), command(s, 'mate'), ...(s.asm?.doc.components.some(c => c.hidden) ? [entry('show-hidden-components', t('tree.showHiddenComponents'), () => store.assembly?.showHiddenComponents())] : []), SEPARATOR, ...viewItems(s)]);
   const c = s.asm?.doc.components.find((x) => x.id === component);
   if (!c) return [];
   return tidy([
+    ...(feature ? [...componentFeatureMenu(component, feature), SEPARATOR] : []),
     command(s, 'open-component'),
     command(s, 'relink-component'),
     SEPARATOR,
