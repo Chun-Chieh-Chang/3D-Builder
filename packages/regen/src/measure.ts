@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { KernelError, type Kernel, type ShapeId } from '@3db/kernel';
+import { KernelError, type Kernel, type ShapeId, type Topology } from '@3db/kernel';
 import { edgeElement, faceElement, measureReport, placePoint, placementRows, vertexElement, type MeasureElement, type MeasureReport, type MeasureTarget } from '@3db/model';
 
 /**
@@ -7,9 +7,10 @@ import { edgeElement, faceElement, measureReport, placePoint, placementRows, ver
  * assembly's frame), the element's facts are read from its topology, and for two the kernel finds the exact shortest distance between them.
  * `shapeOf` gives the part's own shape (null: it is not built); nothing is kept, what is made here is released.
  */
-export function measureTargets(kernel: Kernel, shapeOf: (target: MeasureTarget) => ShapeId | null, targets: readonly MeasureTarget[]): MeasureReport {
-  if (targets.length < 1 || targets.length > 2) throw new KernelError(t('measure.count'));
+export function measureTargets(kernel: Kernel, shapeOf: (target: MeasureTarget) => ShapeId | null, targets: readonly MeasureTarget[], elementsOnly = false): MeasureReport {
+  if (targets.length < 1 || (!elementsOnly && targets.length > 2)) throw new KernelError(t('measure.count'));
   const made: ShapeId[] = [];
+  const topologyByShape = new Map<ShapeId, Topology>();
   try {
     const subs = targets.map((target) => {
       // a place, not an element: a point is as good as a vertex, wherever the part is
@@ -26,14 +27,15 @@ export function measureTargets(kernel: Kernel, shapeOf: (target: MeasureTarget) 
         placed = kernel.transformed(base, placementRows(target.pose ?? { position: [0, 0, 0], rotation: [0, 0, 0, 1] }, target.mirrored));
         made.push(placed);
       }
-      const topology = kernel.topology(placed);
+      const topology = topologyByShape.get(placed) ?? kernel.topology(placed);
+      topologyByShape.set(placed, topology);
       const element: MeasureElement | null =
         target.kind === 'face' ? (topology.faces[target.index] ? faceElement(topology.faces[target.index]!) : null) : target.kind === 'edge' ? (topology.edges[target.index] ? edgeElement(topology.edges[target.index]!) : null) : topology.vertices[target.index] ? vertexElement(topology.vertices[target.index]!) : null;
       if (!element) throw new KernelError(t('measure.noElement'));
       return { element, placed, sub: null as ShapeId | null };
     });
     let distance = null;
-    if (subs.length === 2) {
+    if (!elementsOnly && subs.length === 2) {
       const [a, b] = subs.map((s, i) => {
         if (s.sub !== null) return s.sub; // a point is its own shape
         const sub = kernel.subShape(s.placed, targets[i]!.kind, targets[i]!.index);

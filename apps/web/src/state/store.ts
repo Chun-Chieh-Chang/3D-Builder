@@ -819,6 +819,10 @@ class AppStore {
     return this.api.cavityVolume(endFaces);
   }
 
+  cavityGraphics(seq: number) {
+    return this.api.cavityGraphics(seq);
+  }
+
   private async runDraft(): Promise<void> {
     const d = this.state.draft;
     if (!d) return;
@@ -1360,18 +1364,25 @@ class AppStore {
     const { selectedFace, selectedElements, result } = this.state;
     const refs = selectedFace ? [selectedFace] : selectedElements;
     const key = pickKey(selectedFace, selectedElements);
-    if (this.assembly || !result || refs.length === 0) return void this.set({ selectionFacts: null });
     const seq = ++this.selectionFactsSeq;
+    if (this.assembly || !result || refs.length === 0) return void this.set({ selectionFacts: null });
     const { targets, unresolved, keys } = measureTargetsOf(refs, result);
     if (targets.length === 0) {
       this.set({ selectionFacts: { key, keys, elements: [], unresolved, error: null } });
       return;
     }
+    this.set({ selectionFacts: { key, keys, elements: [], unresolved, error: null } });
     try {
-      const report = await this.api.measure(targets);
+      const report = await this.api.measure(targets, true);
       if (seq === this.selectionFactsSeq) this.set({ selectionFacts: { key, keys, elements: report.elements, unresolved, error: null } });
     } catch (e) {
       if (seq === this.selectionFactsSeq) this.set({ selectionFacts: { key, keys, elements: [], unresolved, error: e instanceof Error ? e.message : String(e) } });
+    }
+    const faces = keys.filter((_, i) => targets[i]?.kind === 'face');
+    if (seq !== this.selectionFactsSeq || !faces.length) return;
+    const volumes = await this.api.selectionVolumes(result.seq, faces).catch(() => []);
+    if (seq === this.selectionFactsSeq && volumes.length && this.state.selectionFacts) {
+      this.set({ selectionFacts: { ...this.state.selectionFacts, volumes } });
     }
   }
 

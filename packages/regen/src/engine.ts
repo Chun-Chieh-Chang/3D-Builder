@@ -389,6 +389,8 @@ type ImportedShape = { shape: ShapeId; faceOrigins: FaceOrigin[][]; warnings: st
 export interface RebuildOptions {
   /** Evaluate only features [0, until) — edit sessions look at the model before the edited feature. */
   until?: number;
+  /** Observe single-tool subtraction while both operands and the resulting faces are still alive. */
+  inspectSubtract?: (feature: CombineFeature, before: BodyState, tool: BodyState, after: BodyState, walls: readonly number[]) => void;
 }
 
 class FeatureError extends Error {
@@ -906,7 +908,7 @@ export class Regenerator {
                         : feature.type === 'moveFace'
                           ? this.moveFace(feature, set)
                           : feature.type === 'combine'
-                            ? this.combineBodies(feature, set)
+                            ? this.combineBodies(feature, set, options.inspectSubtract)
                             : feature.type === 'pattern'
                               ? this.pattern(feature, sketches, set)
                               : feature.type === 'mirror'
@@ -2771,7 +2773,7 @@ export class Regenerator {
    * are added to `made` so that a failure can let them go. The tool may be made per body (`toolFor`), for 「保留輪廓內」,
    * where what each body loses depends on where that body is.
    */
-  private boolBodies(featureId: Id, op: 'cut' | 'common', list: readonly BodyState[], toolFor: (b: BodyState) => { shape: ShapeId; names: ElementNames }, made: ShapeId[], next = { piece: 2 }): { out: BodyState[]; changed: boolean; removed: Id[] } {
+  private boolBodies(featureId: Id, op: 'cut' | 'common', list: readonly BodyState[], toolFor: (b: BodyState) => { shape: ShapeId; names: ElementNames }, made: ShapeId[], next = { piece: 2 }, inspect?: (before: BodyState, after: BodyState, walls: readonly number[]) => void): { out: BodyState[]; changed: boolean; removed: Id[] } {
     const k = this.kernel;
     const out: BodyState[] = [];
     const removed: Id[] = [];
@@ -2801,7 +2803,15 @@ export class Regenerator {
       if (k.solidCount(r.shape) <= 1) {
         made.push(r.shape);
         const topology = k.topology(r.shape);
-        out.push({ id: b.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, context), by: featureId });
+        const body = { id: b.id, shape: r.shape, topology, names: nameElements(r.faceOrigins, topology, context), by: featureId };
+        out.push(body);
+        if (inspect) {
+          const walls = r.faceOrigins.flatMap((origins, i) => {
+            const faces = origins.flatMap((o) => 'kind' in o && o.kind === 'face' ? [o.index] : []);
+            return faces.length && faces.every((j) => j >= b.names.faces.length) ? [i] : [];
+          });
+          inspect(b, body, walls);
+        }
         continue;
       }
       // Named as the one result it came from, so the faces of the pieces keep the `#k` that told them apart there, then shared out.
@@ -2818,7 +2828,7 @@ export class Regenerator {
   }
 
   /** 「組合」 (C7.2): bodies added to the first, subtracted from it, or reduced to what they share with it. */
-  private combineBodies(f: CombineFeature, set: Bodies): BodyState[] {
+  private combineBodies(f: CombineFeature, set: Bodies, inspect?: RebuildOptions['inspectSubtract']): BodyState[] {
     const k = this.kernel;
     const find = (ref: Ref, what: string): BodyState => {
       if (!ref.name) throw new FeatureError(t('body.pick', { what }));
@@ -2855,7 +2865,10 @@ export class Regenerator {
           drop(pieces, [joined]);
           pieces = [joined];
         } else {
-          const r = this.boolBodies(f.id, f.op === 'subtract' ? 'cut' : 'common', pieces, () => ({ shape: tool.shape, names: tool.names }), made, next);
+          const observer = inspect && f.op === 'subtract' && tools.length === 1
+            ? (before: BodyState, after: BodyState, walls: readonly number[]) => inspect(f, before, tool, after, walls)
+            : undefined;
+          const r = this.boolBodies(f.id, f.op === 'subtract' ? 'cut' : 'common', pieces, () => ({ shape: tool.shape, names: tool.names }), made, next, observer);
           if (!r.changed && f.op === 'subtract') throw new FeatureError(t('body.subtractNothing', { name: tool.id }));
           if (r.out.length === 0) throw new FeatureError(t(f.op === 'subtract' ? 'body.subtractAll' : 'body.noCommon', { name: tool.id }));
           drop(pieces, r.out);

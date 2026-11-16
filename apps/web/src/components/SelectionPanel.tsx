@@ -108,6 +108,7 @@ function PartSelection() {
     return owner ? (doc.features.find((f) => f.id === owner)?.name ?? owner) : '';
   };
   const measuredFacts = facts?.elements ?? [];
+  const volumes = facts?.volumes ?? [];
   return (
     <div className="property-manager" data-selection-panel data-help={currentTopicId()}>
       <div className="sw-pm-header">
@@ -177,6 +178,18 @@ function PartSelection() {
               <p className="error-text" data-field="factsError">
                 {t('measure.failed', { why: facts.error })}
               </p>
+            )}
+            {volumes.map(({ id, volume }) => (
+              <label className="pm-row" key={id}>
+                <span>{volumes.length === 1 ? t('cavity.volume') : doc.features.find((f) => f.id === id)?.name ?? id}</span>
+                <span data-field="cavity-volume">{w.volume(volume)}</span>
+              </label>
+            ))}
+            {volumes.length > 1 && (
+              <label className="pm-row">
+                <span>{t('cavity.total')}</span>
+                <span data-field="cavity-total">{w.volume(volumes.reduce((sum, row) => sum + row.volume, 0))}</span>
+              </label>
             )}
             {measuredFacts.map((e, i) => (
               <div key={`${facts!.keys[i] ?? i}`}>

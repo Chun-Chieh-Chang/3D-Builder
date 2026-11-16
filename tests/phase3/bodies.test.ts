@@ -8,7 +8,7 @@ import { applyCommand, bodyKey, createEmptyPart, isShown, parsePart, SCHEMA_VERS
 import { readPartFile, sha256Hex, writePartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
-import { dependencies, Regenerator, type RebuildResult } from '@3db/regen';
+import { dependencies, Regenerator, subtractionVolumes, type RebuildResult } from '@3db/regen';
 import { build, circle, edge, extrude, face, fillet, front, rectangle, sketch, statuses } from '../phase1/builders';
 import { stepSamples } from '../support/stepSamples';
 
@@ -44,6 +44,40 @@ const slot = (n: number, x0: number, x1: number): Feature[] => [
   sketch(`t${n}`, front, rectangle(`q${n}`, x0, -5, x1 - x0, 20)),
   extrude(`c${n}`, `t${n}`, 'cut', { type: 'throughAll', reverse: true }),
 ];
+
+it('reports selected cavity volumes independently and suppresses a reading after its wall is opened by another cut', () => {
+  const drill = (n: number, x: number, r: number): Feature[] => [
+    sketch(`s${n}`, front, circle(`c${n}`, x, 5, r)),
+    { ...extrude(`e${n}`, `s${n}`, 'boss', { type: 'blind', depth: '12' }), merge: false } as Feature,
+    combine(`bore${n}`, 'subtract', 'e1', `e${n}`),
+  ];
+  const doc = build(...block(1, 0, 20), ...drill(2, 4, 1.5), ...drill(3, 13, 2.5));
+  const read = (part: PartDoc, prefix: string[]) => {
+    const master = new Regenerator(kernel, solver);
+    try {
+      const r = master.rebuild(part);
+      expect(ok(r)).toEqual([]);
+      const faces = r.body!.names.faces.filter((name) => prefix.some((p) => name.startsWith(p)));
+      expect(faces).toHaveLength(prefix.length);
+      return subtractionVolumes(kernel, new Regenerator(kernel, solver), part, faces);
+    } finally {
+      master.dispose();
+    }
+  };
+  const independent = read(doc, ['e2:side:', 'e3:side:']);
+  expect(independent.map((c) => c.id)).toEqual(['bore2', 'bore3']);
+  expect(independent[0]!.volume).toBeCloseTo(Math.PI * 1.5 ** 2 * 10, 9);
+  expect(independent[1]!.volume).toBeCloseTo(Math.PI * 2.5 ** 2 * 10, 9);
+  const visuals = subtractionVolumes(kernel, new Regenerator(kernel, solver), doc, null);
+  expect(visuals.map(({ id, volume }) => ({ id, volume }))).toEqual(independent.map(({ id, volume }) => ({ id, volume })));
+  visuals.forEach(({ graphics }, i) => {
+    expect(graphics!.mesh.indices.length).toBeGreaterThan(0);
+    expect(Math.hypot(graphics!.anchor[0] - [4, 13][i]!, graphics!.anchor[1] - 5)).toBeLessThan([1.5, 2.5][i]!);
+    expect(graphics!.anchor[2]).toBeGreaterThan(0);
+    expect(graphics!.anchor[2]).toBeLessThan(10);
+  });
+  expect(read(add(doc, ...drill(4, 6, 1.5)), ['e2:side:', 'e4:side:'])).toEqual([]);
+});
 
 describe('a boss with several bodies (C7.1)', () => {
   it('is a body of its own where it touches nothing, and the first one keeps its id', () => {

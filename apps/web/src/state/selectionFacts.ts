@@ -132,4 +132,5 @@ export interface SelectionFacts {
   elements: MeasureElement[];
   unresolved: string[];
   error: string | null;
+  volumes?: { id: string; volume: number }[];
 }

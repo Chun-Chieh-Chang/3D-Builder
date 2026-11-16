@@ -8,6 +8,13 @@ import type { StepAssemblyPlan, StepInstance, StepSub } from '@3db/io';
 import type { ShadeImage } from '@3db/drawing';
 import type { EntityFreedom, EntityStatus, SketchStatus, SolvedGeometry, SolveOptions } from '@3db/sketch';
 
+export interface CavityGraphic {
+  id: string;
+  volume: number;
+  anchor: Vec3;
+  mesh: MeshData;
+}
+
 /**
  * Where a part file is on its way in (2F): read from the project folder (the app), then rebuilt (a STEP
  * file is imported and named here, the longest stage), then meshed. Reported only while the worker
@@ -334,7 +341,7 @@ export interface KernelApi {
   /** The structure of an assembly STEP (F2.8): its products, and each part's shape written as a STEP file of its own. Refuses, saying why, what cannot be used. */
   readStepAssembly(bytes: Uint8Array): Promise<StepAssemblyPlan>;
   /** Measures one or two elements (E1.1): of the part that is open (part null in the targets) or of parts as the assembly places them; see measureTargets. */
-  measure(targets: MeasureTarget[]): Promise<MeasureReport>;
+  measure(targets: MeasureTarget[], elementsOnly?: boolean): Promise<MeasureReport>;
   /** The interference of components (E2.1): the volume their parts share, each overlap as a mesh. Parts are the ones rebuilt for the assembly (buildPart). */
   interference(components: InterferenceComponent[]): Promise<InterferenceResult>;
   /** The lines of the views of a drawing (C16.2, A4.4): exact hidden-line removal on parts built for the app (`buildPart`); one result for each request. */
@@ -359,6 +366,8 @@ export interface KernelApi {
   /** The mass properties with the centre and inertia integrated, of a part of the assembly by its key, or of the open part with null (E1.2, ADR 0241). Seconds on spline faces. */
   exactMass(key: string | null): Promise<MassProps | null>;
   cavityVolume(endFaces: readonly string[]): Promise<number>;
+  selectionVolumes(seq: number, faces: readonly string[]): Promise<{ id: string; volume: number }[]>;
+  cavityGraphics(seq: number): Promise<CavityGraphic[]>;
   /** The draft of every face of the part as it is shown to a mold that opens along `pull` (E3.2); `required` is the angle in radians. */
   analyzeDraft(pull: [number, number, number], required: number): Promise<DraftReport>;
   /** What of every face of the part as it is shown a mold that opens along `pull` can see from either end (E3.3). */

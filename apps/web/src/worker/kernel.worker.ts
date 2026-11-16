@@ -11,6 +11,7 @@ import { findEntrance, silhouetteProjector, silhouetteItems, drawingAnchors, hol
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { exportAssemblyStep, placedParts, placeMesh, writeStl, type StlSource, exportPartIges, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SnapItem, SourcePart, SourceProvider } from '@3db/regen';
+import { subtractionVolumes, type SubtractionVolume } from '@3db/regen';
 import { mergeMeshes } from './mergeMesh';
 import { reportingCrashes } from './crash';
 import { heapOf } from './heap';
@@ -63,6 +64,7 @@ let solverReady: Promise<PlaneGcsSolver> | null = null;
 /** What the last rebuild of the open part gave: the shape that measuring reads (E1.1). */
 let lastResult: RebuildResult | null = null;
 let lastPartSeq = -1;
+let partForVolumes: { faceNames: readonly string[]; doc: PartDoc; until?: number; sources?: SourceProvider; cache: Map<string, SubtractionVolume | null> } | null = null;
 /** The kernel's Emscripten heap when it was loaded, before any geometry was built: what `HEAP_GROWTH_LIMIT` is measured from. */
 let heapBase: number | null = null;
 
@@ -265,12 +267,16 @@ const api: KernelApi = {
 
   async rebuild({ seq, doc, until, sources }: RebuildRequest): Promise<RebuildPayload> {
     await api.init();
-    regen.useSources(await sourcesOf(sources));
+    const provider = await sourcesOf(sources);
+    regen.useSources(provider);
     await solver.fresh(); // the same numbers for the same document every time: see PlaneGcsSolver.fresh
     const r = regen.rebuild(doc, until === undefined ? {} : { until });
     const body = r.body;
     lastResult = r;
     lastPartSeq = seq;
+    partForVolumes = doc.features.some((f) => f.type === 'combine' && f.op === 'subtract' && f.tools.length === 1)
+      ? { faceNames: body?.names.faces ?? [], doc, until, sources: provider, cache: new Map() }
+      : null;
     // what the model before the edited sketch is made from, when the document alone says (no master files, which change behind it): the same, the same model
     const upstream = until !== undefined && !sources ? JSON.stringify({ ...doc, features: doc.features.slice(0, until), idCounters: undefined, visibility: undefined, appearances: undefined, properties: undefined }) : undefined;
     lastModel = { names: body?.names ?? NO_NAMES, topology: body?.topology ?? NO_TOPOLOGY, frames: r.frames, axes: r.axes, points: r.points, sketches: r.sketches, hasBody: !!body, ...(body ? { shape: body.shape } : {}), ...(upstream ? { upstream } : {}) };
@@ -589,11 +595,11 @@ const api: KernelApi = {
     return stepAssemblyPlan(kernel, bytes);
   },
 
-  async measure(targets): Promise<MeasureReport> {
+  async measure(targets, elementsOnly): Promise<MeasureReport> {
     await api.init();
     const shapes = new Map<string, ShapeId | null>();
     for (const key of new Set(targets.flatMap((x) => (x.part === null ? [] : [x.part])))) shapes.set(key, (await parts.get(key)?.catch(() => null))?.result.body?.shape ?? null);
-    return measureTargets(kernel, (x) => (x.part === null ? (lastResult?.body?.shape ?? null) : (shapes.get(x.part) ?? null)), targets);
+    return measureTargets(kernel, (x) => (x.part === null ? (lastResult?.body?.shape ?? null) : (shapes.get(x.part) ?? null)), targets, elementsOnly);
   },
 
   async drawingViews(requests): Promise<DrawingViewResult[]> {
@@ -824,6 +830,47 @@ const api: KernelApi = {
     const target = result?.bodies.find((b) => b.id === part?.id);
     if (!part || !target || target.surface || target.curve || target.reference) throw new Error(t('cavity.pick'));
     return kernel.cavityVolume(target.shape, indices.map((i) => i - part.face0));
+  },
+
+  async selectionVolumes(seq, faces) {
+    const part = partForVolumes;
+    if (!part || seq !== lastPartSeq) return [];
+    const names = part.faceNames;
+    // An ambiguous name must never associate a value with a different selected face.
+    faces = faces.filter((name) => names.includes(name) && names.indexOf(name) === names.lastIndexOf(name));
+    if (faces.some((name) => !part.cache.has(name))) {
+      await solver.fresh();
+      if (part !== partForVolumes) return [];
+      const missing = faces.filter((name) => !part.cache.has(name));
+      if (missing.length > 0) {
+        const replay = new Regenerator(kernel, solver, blobs, part.sources);
+        const readings = subtractionVolumes(kernel, replay, part.doc, missing, part.until);
+        for (const face of missing) part.cache.set(face, null);
+        for (const reading of readings) for (const face of reading.faces) part.cache.set(face, reading);
+      }
+    }
+    const found = new Map<string, number>();
+    for (const face of faces) {
+      const value = part.cache.get(face);
+      if (value) found.set(value.id, value.volume);
+    }
+    return [...found].map(([id, volume]) => ({ id, volume }));
+  },
+
+  async cavityGraphics(seq) {
+    const part = partForVolumes;
+    if (!part || seq !== lastPartSeq) return [];
+    await solver.fresh();
+    if (part !== partForVolumes) return [];
+    const replay = new Regenerator(kernel, solver, blobs, part.sources);
+    const readings = subtractionVolumes(kernel, replay, part.doc, null, part.until);
+    for (const { id, volume, faces } of readings) {
+      const summary = { id, volume, faces };
+      for (const face of faces) part.cache.set(face, summary);
+    }
+    const graphics = readings.flatMap(({ id, volume, graphics }) => graphics ? [{ id, volume, ...graphics }] : []);
+    return Comlink.transfer(graphics, graphics.flatMap(({ mesh }) =>
+      [mesh.positions, mesh.normals, mesh.indices, mesh.faceRanges, mesh.edgePoints, mesh.edgeRanges].map((data) => data.buffer as ArrayBuffer)));
   },
 
   async analyzeDraft(pull, required): Promise<DraftReport> {

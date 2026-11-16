@@ -190,6 +190,7 @@ export interface ViewMarker {
   label: string;
   title?: string;
   lit?: boolean;
+  leader?: { color: string; offset: [number, number] };
 }
 
 interface Instance {
@@ -1371,25 +1372,31 @@ export class Viewer {
    * of them, a section's cut included (it leaves out the model, not what is pointed out in it), never hovered or picked. The list replaces the one before; an
    * empty list takes them away.
    */
-  setHighlights(list: readonly { mesh: ViewMesh }[]): void {
+  setHighlights(list: readonly { mesh: ViewMesh; color?: string }[]): void {
     for (const m of [...this.highlights, ...this.highlightEdges]) {
       this.scene.remove(m);
       m.geometry.dispose();
       (m.material as THREE.Material).dispose();
     }
-    this.highlights = list.map(({ mesh }) => {
+    this.highlights = list.map(({ mesh, color }) => {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
       g.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
       g.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
-      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: COLORS.highlight, transparent: true, opacity: 0.8, depthTest: false, side: THREE.DoubleSide }));
+      const material = color === undefined
+        ? new THREE.MeshBasicMaterial({ color: COLORS.highlight, transparent: true, opacity: 0.8, depthTest: false, side: THREE.DoubleSide })
+        : new THREE.MeshStandardMaterial({ color, roughness: 0.52, emissive: color, emissiveIntensity: 0.22 });
+      const m = new THREE.Mesh(g, material);
       m.renderOrder = 10;
       this.scene.add(m);
       return m;
     });
-    this.highlightEdges = list.map(({ mesh }) => {
+    this.highlightEdges = list.map(({ mesh, color }) => {
       const g = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(edgeSegments(mesh).segs, 3));
-      const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: COLORS.highlightEdge, depthTest: false }));
+      const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({
+        color: color === undefined ? COLORS.highlightEdge : new THREE.Color(color).multiplyScalar(0.65),
+        depthTest: color !== undefined,
+      }));
       line.renderOrder = 11;
       line.raycast = () => {};
       this.scene.add(line);
@@ -1424,7 +1431,16 @@ export class Viewer {
         this.markers.set(m.key, entry);
       }
       entry.world.set(...m.at);
-      entry.el.className = `view-marker${m.lit ? ' lit' : ''}`;
+      entry.el.className = `view-marker${m.lit ? ' lit' : ''}${m.leader ? ' view-marker-leader' : ''}`;
+      entry.el.setAttribute('role', m.leader ? 'img' : 'button');
+      if (m.leader) {
+        const [x, y] = m.leader.offset;
+        entry.el.style.setProperty('--marker-color', m.leader.color);
+        entry.el.style.setProperty('--leader-x', `${x}px`);
+        entry.el.style.setProperty('--leader-y', `${y}px`);
+        entry.el.style.setProperty('--leader-length', `${Math.hypot(x, y)}px`);
+        entry.el.style.setProperty('--leader-angle', `${Math.atan2(y, x)}rad`);
+      }
       entry.el.dataset.marker = m.key;
       entry.el.title = m.title ?? '';
       entry.el.setAttribute('aria-label', m.title ?? m.label);

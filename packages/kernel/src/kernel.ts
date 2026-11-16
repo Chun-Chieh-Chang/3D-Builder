@@ -4688,6 +4688,18 @@ export class Kernel {
     }
   }
 
+  /** Look up elements retained from an earlier stage of the same rebuild, by native topology identity. */
+  subShapeIndices(id: ShapeId, kind: 'face' | 'edge', elements: readonly ShapeId[]): number[] {
+    const arena = new Arena();
+    const index = ShapeIndex.of(this.oc, this.get(id), kind === 'face' ? T.FACE : T.EDGE, arena);
+    try {
+      return elements.map((element) => index.indexOf(this.get(element)));
+    } finally {
+      index.dispose();
+      arena.dispose();
+    }
+  }
+
   /** Checks a shape (E3.1): whether it is valid, which faces are not, whether its skin is closed, how many solids and how much volume it has. */
   check(id: ShapeId): GeometryReport {
     const oc = this.oc;

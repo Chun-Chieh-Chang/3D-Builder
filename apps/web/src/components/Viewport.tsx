@@ -16,7 +16,7 @@ import type { EntryView } from '../sketcher/controller';
 import type { P2 } from '@3db/sketch';
 import { store, useSketcherView, useStore } from '../state/store';
 import { FEATURE_LABEL, PICK_FILTER_LABEL } from '../strings';
-import type { RebuildPayload } from '../worker/protocol';
+import type { CavityGraphic, RebuildPayload } from '../worker/protocol';
 import { topologyOf } from '../state/selectionSets';
 import { entry, partMenu, sketchMenu, withGrid, type MenuEntry, type PartTarget } from '../contextMenus';
 import { GraphicsMenu } from './GraphicsMenu';
@@ -941,17 +941,49 @@ function MatingBar() {
 const ASSEMBLY_DISPLAY_MODES = DISPLAY_MODES.filter((m) => m !== 'hiddenVisible');
 
 /** 顯示類型 (A4.3) and 剖面視圖 (D4.4): how the model is drawn, and a cut through it; in an assembly the cut goes through every component. */
+const CAVITY_COLORS = ['#f48bd0', '#57d9f0', '#b39af8', '#ffc76b', '#6bdfb0', '#ff9288'];
+const CAVITY_LEADERS: [number, number][] = [[-88, -37], [-92, 52], [87, -62], [92, 55], [0, 79], [0, -81]];
+
 export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
   const filter = useStore((s) => s.pickFilter);
   const filterBar = useStore((s) => s.pickFilterBarVisible);
   const [mode, setMode] = useState<DisplayMode>('shadedEdges');
   const [opacity,setOpacity]=useState(35);
   const [cut, setCut] = useState<{ axis: 0 | 1 | 2; at: number; flip: boolean } | null>(null);
+  const [showCavities, setShowCavities] = useState(false);
+  const [cavityResult, setCavityResult] = useState<{ seq: number; graphics: CavityGraphic[]; error: boolean } | null>(null);
+  const cavitySeq = useStore((s) => assembly || s.editing || s.flat || s.rebuilding ? null : s.result?.seq ?? null);
+  const doc = useStore((s) => s.doc);
+  const canShowCavities = cavitySeq !== null && doc.features.some((f) => f.type === 'combine' && f.op === 'subtract' && !f.suppressed && f.tools.length === 1);
+  const current = showCavities && canShowCavities && cavityResult?.seq === cavitySeq ? cavityResult : null;
+  const cavities = current?.graphics;
+  const cavityDisplay = !!cavities?.length;
+  useEffect(() => {
+    if (!showCavities || !canShowCavities || cavitySeq === null || current) return;
+    let live = true;
+    void store.cavityGraphics(cavitySeq).then(
+      (graphics) => { if (live) setCavityResult({ seq: cavitySeq, graphics, error: false }); },
+      () => { if (live) setCavityResult({ seq: cavitySeq, graphics: [], error: true }); },
+    );
+    return () => { live = false; };
+  }, [showCavities, canShowCavities, cavitySeq, current]);
+  useEffect(() => {
+    if (assembly || !cavities?.length) return;
+    const viewer = store.viewer;
+    if (!viewer) return;
+    viewer.setHighlights(cavities.map(({ mesh }, i) => ({ mesh, color: CAVITY_COLORS[i % CAVITY_COLORS.length]! })));
+    viewer.setMarkers(cavities.map(({ id, anchor, volume }, i) => {
+      const label = `${Math.round(volume * 100) / 100} mm³`;
+      const name = doc.features.find((f) => f.id === id)?.name ?? id;
+      return { key: id, at: anchor, label, title: `${name} · ${label}`, leader: { color: CAVITY_COLORS[i % CAVITY_COLORS.length]!, offset: CAVITY_LEADERS[i % CAVITY_LEADERS.length]! } };
+    }));
+    return () => { viewer.setHighlights([]); viewer.setMarkers([]); };
+  }, [assembly, cavities, doc.features]);
   // what the model is made of changes: the part's result, or the assembly's parts and placements
   const result = useStore((s) => (assembly ? s.asm?.builds : s.result));
   const placed = useStore((s) => (assembly ? s.asm?.solution : null));
-  useEffect(() => store.viewer?.setDisplayMode(mode), [mode, result]);
-  useEffect(() => store.viewer?.setTransparencyOpacity(opacity/100), [opacity,result]);
+  useEffect(() => store.viewer?.setDisplayMode(cavityDisplay ? 'transparent' : mode), [mode, result, cavityDisplay]);
+  useEffect(() => store.viewer?.setTransparencyOpacity(cavityDisplay ? 0.12 : opacity/100), [opacity,result,cavityDisplay]);
   const bounds = store.viewer?.contentBounds() ?? null;
   const range = bounds && cut ? ([bounds.min[cut.axis], bounds.max[cut.axis]] as const) : null;
   useEffect(() => {
@@ -1004,6 +1036,13 @@ export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
         <Icon name="sectionView" />
         {t('view.section')}
       </button>
+      {!assembly && (canShowCavities || showCavities) && (
+        <button className={`view-chip${showCavities ? ' active' : ''}`} data-action="cavity-distribution" aria-pressed={showCavities}
+          onClick={() => { if (cavityResult?.error) setCavityResult(null); setShowCavities(!showCavities); }}>{t('cavity.distribution')}</button>
+      )}
+      {showCavities && canShowCavities && !cavityDisplay && (
+        <span className="view-chip" role="status">{current ? t(current.error ? 'cavity.invalid' : 'cavity.none') : t('physical.computing')}</span>
+      )}
       {cut && range && (
         <div className="section-panel">
           <select

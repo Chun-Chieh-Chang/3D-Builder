@@ -12,9 +12,10 @@ const num = (v: number) => String(Math.round(v * 1e4) / 1e4 + 0);
 export function writer(o: MeasureOptions) {
   const length = (mm: number) => (o.unit === 'mm' ? num(mm) : lengthText(mm, o));
   const area = (mm2: number) => (o.unit === 'mm' ? num(mm2) : `${num(mm2 / (MM_PER_INCH * MM_PER_INCH))}in²`);
+  const volume = (mm3: number) => (o.unit === 'mm' ? `${num(mm3)} mm³` : `${num(mm3 / MM_PER_INCH ** 3)} in³`);
   const angle = (deg: number) => (o.angle === 'deg' ? num(deg) : formatAngle(deg, 'rad'));
   const point = (p: Vec3) => p.map(length).join('  ');
-  return { length, area, angle, point };
+  return { length, area, volume, angle, point };
 }
 
 /** What kind of face, edge or vertex it is, in words. Shared with the selection panel (E1 §2.2). */

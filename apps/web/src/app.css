@@ -345,6 +345,9 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .view-marker::after { content: attr(data-label); position: absolute; left: 20px; top: -12px; min-width: 18px; padding: 1px 4px; box-sizing: border-box; border-radius: 9px; background: var(--error); color: var(--on-accent); font-size: 13px; line-height: 1.3; font-weight: 600; text-align: center; white-space: nowrap; }
 .view-marker.lit { width: 32px; height: 32px; border-width: 3px; }
 .view-marker.lit::after { left: 26px; top: -14px; }
+.view-marker.view-marker-leader { width: 8px; height: 8px; background: var(--marker-color); border-color: var(--card); pointer-events: none; }
+.view-marker-leader::before { content: ''; position: absolute; left: 50%; top: 50%; width: var(--leader-length); height: 2px; background: var(--marker-color); transform-origin: left center; transform: rotate(var(--leader-angle)); }
+.view-marker.view-marker-leader::after { left: calc(50% + var(--leader-x)); top: calc(50% + var(--leader-y)); transform: translate(-50%, -50%); padding: 3px 7px; border: 1px solid var(--marker-color); border-radius: 5px; background: var(--card); color: var(--text); font-variant-numeric: tabular-nums; }
 .overlay-label.interactive { pointer-events: auto; cursor: pointer; }
 .measure-options { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 4px 0; font-size: 12px; }
 .measure-options label { display: inline-flex; gap: 4px; align-items: center; }
@@ -754,6 +757,10 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .sw-pm-title { flex: 1; min-width: 0; display: grid; }
 .sw-pm-title strong { font-size: 14px; color: var(--text); }
 .sw-pm-title span { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-selection-panel] { overflow-wrap: anywhere; min-width: 0; }
+[data-selection-panel] .sw-pm-title span { white-space: normal; }
+[data-selection-panel] .pm-row { align-items: start; }
+[data-selection-panel] .pm-row > [data-field] { min-width: 0; text-align: end; }
 .sw-ok { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--ok-line); border-radius: 6px; background: var(--ok-soft); color: var(--ok); cursor: pointer; }
 .sw-ok:hover:not(:disabled) { background: var(--ok-hover); }
 .sw-ok:disabled { color: var(--disabled); border-color: var(--line); background: var(--surface); cursor: default; }

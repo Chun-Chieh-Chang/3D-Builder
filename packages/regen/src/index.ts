@@ -20,3 +20,4 @@ export * from './entrance';
 export * from './recognize';
 export * from './section';
 export * from './budget';
+export { subtractionVolumes, type SubtractionVolume } from './subtractionVolume';
