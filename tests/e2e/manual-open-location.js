@@ -1,5 +1,5 @@
 // await __openLocation.run();
-// Use real browser file handles and IndexedDB. Only the system dialog is substituted.
+// Use real browser file handles and IndexedDB; substitute the native dialogs and the input gesture.
 const filesUrl = performance.getEntriesByType('resource').map((e) => e.name).find((url) => new URL(url).pathname.endsWith('/src/files.ts'));
 const files = await import(filesUrl);
 
@@ -11,6 +11,7 @@ window.__openLocation = { run: async () => {
   const projectFile = await project.getFileHandle('example.3dbx', { create: true });
   const originalOpen = window.showOpenFilePicker;
   const originalSave = window.showSaveFilePicker;
+  const originalDirectory = window.showDirectoryPicker;
   let startIn;
   let openId;
   let saveId;
@@ -49,9 +50,30 @@ window.__openLocation = { run: async () => {
     await storage.removeEntry(other.name, { recursive: true });
     await reloaded.pickFileToOpen(project);
     await checkLocation(project, 'a removed location must fall back to the project root');
+
+    // A local launch with neither a recent file nor a configured project asks once for the root.
+    const { __store: store } = window;
+    Object.defineProperty(navigator.userActivation, 'isActive', { configurable: true, value: true });
+    startIn = undefined;
+    openId = undefined;
+    store.open();
+    for (let tries = 0; tries < 100 && !store.getState().folderRequest && !openId; tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const request = store.getState().folderRequest;
+    if (!request?.match(/[（(](?:[A-Za-z]:[\\/]|\/)/) || openId) throw new Error('first local open must ask for the project root');
+    window.showDirectoryPicker = async () => project;
+    await store.chooseFolder();
+    for (let tries = 0; tries < 100 && !startIn; tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    await checkLocation(project, 'the folder chosen in the app must be passed to the file dialog');
+    if (!await (await files.rememberedFolder())?.isSameEntry(project)) throw new Error('the chosen folder must be remembered');
     return { ok: true };
   } finally {
+    delete navigator.userActivation.isActive;
     window.showOpenFilePicker = originalOpen;
     window.showSaveFilePicker = originalSave;
+    window.showDirectoryPicker = originalDirectory;
   }
 } };

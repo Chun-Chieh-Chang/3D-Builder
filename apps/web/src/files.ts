@@ -96,8 +96,8 @@ export interface OpenedFile {
 const cancelled = (e: unknown) => e instanceof DOMException && e.name === 'AbortError';
 
 /** 「開啟舊檔」: a part, an assembly, or a STEP or IGES file to start a part from; null when the user cancels. */
-export function pickFileToOpen(startIn: FileSystemDirectoryHandle | null = null): Promise<OpenedFile | null> {
-  return pick([ANY_TYPE, PART_TYPE, ASSEMBLY_TYPE, DRAWING_TYPE, PACKAGE_TYPE, STEP_TYPE, IGES_TYPE, STL_TYPE, OLD_PART_TYPE], startIn, 'open', OPEN_PICKER_ID);
+export function pickFileToOpen(project: FileSystemDirectoryHandle | null = null, chooseProject?: () => Promise<FileSystemDirectoryHandle | null>): Promise<OpenedFile | null> {
+  return pick([ANY_TYPE, PART_TYPE, ASSEMBLY_TYPE, DRAWING_TYPE, PACKAGE_TYPE, STEP_TYPE, IGES_TYPE, STL_TYPE, OLD_PART_TYPE], project, 'open', OPEN_PICKER_ID, chooseProject);
 }
 
 /** 「輸入 STEP 組合件」: a STEP file. */
@@ -135,7 +135,12 @@ export function pickPartFile(startIn: FileSystemDirectoryHandle): Promise<Opened
   return pick([either, PART_TYPE, STEP_TYPE], startIn, 'copy');
 }
 
-async function pick(types: PickerType[], startIn: FileSystemDirectoryHandle | null = null, outside: 'open' | 'copy' = 'open', id = PICKER_ID): Promise<OpenedFile | null> {
+async function pick(types: PickerType[], startIn: FileSystemDirectoryHandle | null = null, outside: 'open' | 'copy' = 'open', id = PICKER_ID, chooseProject?: () => Promise<FileSystemDirectoryHandle | null>): Promise<OpenedFile | null> {
+  const recent = id === OPEN_PICKER_ID && window.showOpenFilePicker ? await lastOpenedFile() : null;
+  if (!recent && !startIn && chooseProject) {
+    startIn = await chooseProject();
+    if (!startIn) return null;
+  }
   const projectName = await browserProjectName(startIn);
   if (startIn && projectName !== null) {
     const extensions = [...new Set(types.flatMap((x) => Object.values(x.accept).flat()))].map((e) => e.toLowerCase());
@@ -146,7 +151,7 @@ async function pick(types: PickerType[], startIn: FileSystemDirectoryHandle | nu
   }
   if (window.showOpenFilePicker) {
     try {
-      const location = (id === OPEN_PICKER_ID ? await lastOpenedFile() : null) ?? startIn;
+      const location = recent ?? startIn;
       const [handle] = await window.showOpenFilePicker({ id, types, ...(location ? { startIn: location } : {}) });
       if (!handle) return null;
       const file = await handle.getFile();
