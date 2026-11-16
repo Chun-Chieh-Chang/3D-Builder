@@ -63,10 +63,13 @@ export function PhysicalDialog() {
 function OpenDialog() {
   const active = useStore((s) => s.active);
   const result = useStore((s) => s.result);
+  const selectedFace = useStore((s) => s.selectedFace);
+  const selectedElements = useStore((s) => s.selectedElements);
   const material = useStore((s) => s.doc.material);
   const asm = useStore((s) => s.asm);
   const assembly = active === 'assembly' && asm ? store.assembly : null;
   const part = active === 'part' && result?.mass ? result : null;
+  const endFaces = [selectedFace, ...selectedElements].flatMap((ref) => ref?.kind === 'face' ? [ref.name] : []);
   const keys: (string | null)[] = assembly ? assembly.physicalKeys() : part ? [null] : [];
   const exact = useExactMass(keys, assembly ? assembly : part);
   const pending = keys.some((key) => !exact.has(key));
@@ -89,11 +92,41 @@ function OpenDialog() {
         {!report ? <p className="muted">{t('physical.noBody')}</p> : <Body report={report} pending={pending} />}
         {report && failed && <p className="hint" data-field="exactFailed">{t('physical.exactFailed')}</p>}
         <p className="hint">{t('physical.unitNote')}</p>
+        {part && <Cavity endFaces={endFaces} generation={part} />}
         <div className="modal-actions">
           <button onClick={close}>{t('export.cancel')}</button>
         </div>
       </div>
     </div>
+  );
+}
+
+function Cavity({ endFaces, generation }: { endFaces: readonly string[]; generation: object }) {
+  const selection = JSON.stringify(endFaces);
+  const [reading, setReading] = useState<{ generation: object; selection: string; result: number | string | null } | null>(null);
+  const current = reading?.generation === generation && reading.selection === selection ? reading : null;
+  const pending = current !== null && current.result === null;
+  async function calculate() {
+    const request = { generation, selection, result: null };
+    setReading(request);
+    let result: number | string;
+    try {
+      result = await store.cavityVolume(endFaces);
+    } catch (error) {
+      result = error instanceof Error ? error.message : t('cavity.invalid');
+    }
+    setReading((last) => last === request ? { ...request, result } : last);
+  }
+  return (
+    <>
+      <p className="hint">{t('cavity.hint')}</p>
+      <button disabled={pending || endFaces.length === 0} onClick={() => void calculate()}>{t('cavity.act')}</button>
+      {pending && <p role="status">{t('physical.computing')}</p>}
+      {typeof current?.result === 'number' && (
+        <p role="status">{t('cavity.volume')} <output data-field="cavity-volume">{num(current.result)}</output> mm³</p>
+      )}
+      {typeof current?.result === 'string' && <p role="alert" data-field="cavity-error">{current.result}</p>}
+    </>
   );
 }
 

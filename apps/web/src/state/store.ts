@@ -815,6 +815,10 @@ class AppStore {
     return this.api.exactMass(key);
   }
 
+  cavityVolume(endFaces: readonly string[]): Promise<number> {
+    return this.api.cavityVolume(endFaces);
+  }
+
   private async runDraft(): Promise<void> {
     const d = this.state.draft;
     if (!d) return;

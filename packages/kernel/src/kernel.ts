@@ -12,6 +12,7 @@ import { approximateSection } from './section-approximation';
 import { chainCurve, deviation, exactify, setRoundDeadline, supportOf } from './exactRound';
 import { distancesToEdge, rollingBall, sharpCurve } from './roundRecognition';
 import { surfaceDeviation, type Deviation } from './surfaceDeviation';
+import { cavityShell } from './cavity';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
   KernelError,
@@ -4663,6 +4664,26 @@ export class Kernel {
       });
     } finally {
       solids.dispose();
+      arena.dispose();
+    }
+  }
+
+  /** Integrate the sealed void directly, using the selected planar end faces to locate the caps. */
+  cavityVolume(id: ShapeId, openings: readonly number[]): number {
+    const arena = new Arena();
+    try {
+      const source = this.get(id);
+      if (!this.valid(source)) throw new KernelError(t('cavity.invalid'));
+      const shell = cavityShell(this.oc, source, openings, arena);
+      const cavity = this.put(shell.Oriented(shell.Orientation()));
+      try {
+        const { volume } = this.massPropsExact(cavity);
+        if (!Number.isFinite(volume) || volume <= 0) throw new KernelError(t('cavity.invalid'));
+        return volume;
+      } finally {
+        this.release(cavity);
+      }
+    } finally {
       arena.dispose();
     }
   }

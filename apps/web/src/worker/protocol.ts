@@ -358,6 +358,7 @@ export interface KernelApi {
   checkGeometry(parts: (string | null)[]): Promise<(GeometryReport | null)[]>;
   /** The mass properties with the centre and inertia integrated, of a part of the assembly by its key, or of the open part with null (E1.2, ADR 0241). Seconds on spline faces. */
   exactMass(key: string | null): Promise<MassProps | null>;
+  cavityVolume(endFaces: readonly string[]): Promise<number>;
   /** The draft of every face of the part as it is shown to a mold that opens along `pull` (E3.2); `required` is the angle in radians. */
   analyzeDraft(pull: [number, number, number], required: number): Promise<DraftReport>;
   /** What of every face of the part as it is shown a mold that opens along `pull` can see from either end (E3.3). */

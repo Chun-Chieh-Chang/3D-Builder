@@ -815,6 +815,17 @@ const api: KernelApi = {
     return r ? massOf(r, true) : null;
   },
 
+  async cavityVolume(endFaces): Promise<number> {
+    await api.init();
+    const result = lastResult;
+    const body = result?.body;
+    const indices = endFaces.map((name) => body?.names.faces.indexOf(name) ?? -1);
+    const part = body?.parts.find((p) => indices.length > 0 && indices.every((i) => i >= p.face0 && i < p.face0 + p.faces));
+    const target = result?.bodies.find((b) => b.id === part?.id);
+    if (!part || !target || target.surface || target.curve || target.reference) throw new Error(t('cavity.pick'));
+    return kernel.cavityVolume(target.shape, indices.map((i) => i - part.face0));
+  },
+
   async analyzeDraft(pull, required): Promise<DraftReport> {
     await api.init();
     const shape = lastResult?.body?.shape;
