@@ -1,5 +1,13 @@
 # 交接與接續工作
 
+## 2026-11-16 — PropertyManager 窄欄與版面調整
+
+- 使用者已確認先推送此開發決策，再依 P0 → P1 → P2 實作。首輪以 `Front-Frame.3dbx` 鼻橋草圖的尺寸列作驗收。
+- **P0** 在 `PropertyManager.tsx` 和 `app.css` 讓尺寸列依容器寬度換行。公式、單位與結果維持可讀，「設為從動／驅動」有完整的操作目標，內部拘束 ID 可於詳細資訊查看。原 290 px 不應有水平捲動。
+- **P1** 在 `App.tsx` 工作區加入可拖曳和鍵盤操作的分隔線。預設以 360 px 試驗，雙擊還原，記住使用者寬度，以必要的模型區寬度限制拖曳範圍。版面寫入使用者偏好，不改變文件歷程。
+- **P2** 並排空間不足時使用可收合覆蓋面板。保持同一份面板內容，驗證收合與重開後的未提交公式、捲動位置、草圖選取和相機。驗收含 375、390、768 px。
+- 基準參考 [SolidWorks 側欄分隔線與浮窗](https://help.solidworks.com/2023/english/solidworks/sldworks/r_pm_overview.htm)、[FreeCAD 停靠面板覆蓋與收合](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Std_View_Menu.md)、[SolidCraft 欄寬記憶](https://github.com/tangency-labs/solidcraft/blob/main/docs/agent-chat.md#the-panel)。
+
 ## 2026-11-15 — 特徵樹改善（ADR 0254，Claude 對話）
 
 - 依使用者對照 SW／FreeCAD／SolidCraft 的要求完成 [ADR 0254](docs/adr/0254-feature-tree-names-estimates.md)：特徵名稱唯一（新增與改名遇重名即拒絕並建議可用名稱）、估計值標記（特徵與變數 `estimate`，schema v96）、曲線與實體分開、「參數(n)」節點、估計值徽章與快速過濾、螺旋不再出現兩次、↳ 標籤不重複、隱藏眼睛平時不顯示、方程式對話框的估計值欄。Agent 指引（MCP `INSTRUCTIONS`、`docs/photo-to-cad.md`）要求變數化、估計值用標記、相同特徵用陣列／鏡射、依區域分資料夾。
