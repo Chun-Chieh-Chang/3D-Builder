@@ -216,10 +216,10 @@ export function hatchStyleOf(view: DrawingView, views: readonly DrawingView[] = 
 }
 
 export interface FlatBendStyle { notes: boolean; table: boolean; at?: [number, number] }
-export interface ViewCaption { text?: string; /** Paper millimetres from the automatic label location. */ offset?: [number, number] }
+export interface ViewCaption { text?: string; /** Paper millimetres from the automatic label location. */ offset?: [number, number]; /** Height of its capitals (mm on the sheet, ISO 3098: 1.8 to 20). Absent: 5. */ height?: number }
 export function checkViewCaption(value: unknown): asserts value is ViewCaption {
   const c = value as ViewCaption | null;
-  if (!c || typeof c !== 'object' || Array.isArray(c) || (c.text !== undefined && (typeof c.text !== 'string' || !c.text.trim())) || (c.offset !== undefined && (!Array.isArray(c.offset) || c.offset.length !== 2 || !c.offset.every(Number.isFinite)))) throw new CommandError(t('drawing.badCaption'));
+  if (!c || typeof c !== 'object' || Array.isArray(c) || (c.text !== undefined && (typeof c.text !== 'string' || !c.text.trim())) || (c.offset !== undefined && (!Array.isArray(c.offset) || c.offset.length !== 2 || !c.offset.every(Number.isFinite))) || (c.height !== undefined && !(typeof c.height === 'number' && Number.isFinite(c.height) && c.height >= 1.8 && c.height <= 20))) throw new CommandError(t('drawing.badCaption'));
 }
 interface ViewCommon {
   caption?: ViewCaption;

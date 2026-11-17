@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 96／7／38 |
-| ADR 文件 | 255 |
+| ADR 文件 | 256 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 233／228／280 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -601,6 +601,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0253：AI／MCP 即時操作視窗中的組合件](<adr/0253-ai-live-assembly.md>)
 - [ADR 0254：特徵名稱唯一、估計值標記與特徵樹的整理](<adr/0254-feature-tree-names-estimates.md>)
 - [ADR 0255: Recognition reads drafted spline walls, and rounds whose support is one](<adr/0255-recognition-reads-drafted-spline-walls.md>)
+- [ADR 0256：與 AI agent 協作出工程圖：完全定義、自主建視圖與剖面、公差與註記可任意追加](<adr/0256-ai-drawing-collaboration.md>)
 - [ADR 0257：除料特徵的陣列](<adr/0257-pattern-of-cuts.md>)
 
 ### 歷史驗證

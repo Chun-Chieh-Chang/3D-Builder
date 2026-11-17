@@ -1,7 +1,7 @@
 import { projectionReferenceLines } from './projectionRefs';
 import { bendTableItems } from './bendTable';
 import { getLocale, t, withLocale } from '@3db/i18n';
-import { axesOf, hatchStyleOf, displayOf, isShaded, page, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type HatchStyle, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
+import { axesOf, DIM_STYLE_DEFAULT, hatchStyleOf, displayOf, isShaded, page, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type HatchStyle, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
 import type { ShadeImage } from './shade';
 import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
 import { annotationItems } from './gdt';
@@ -31,6 +31,8 @@ export const LINE_STYLES: Record<LineStyle, { width: number; dash: number[] | nu
 
 export interface ScenePolyline {
   kind: 'polyline';
+  /** What on the sheet drew it, when it is not a dimension (`group`): 「view:<id>」 for a view's own lines, an annotation's or a finish's id (ADR 0256). Only checks read it. */
+  owner?: string;
   /** The dimension (by id) this line is drawn for: a DXF writes it into the dimension's block, the other outputs draw it as it is. */
   group?: string;
   /** x, y, x, y … */
@@ -59,6 +61,8 @@ export interface SceneImage {
 export interface SceneText {
   viewCaption?: Id;
   kind: 'text';
+  /** As a polyline's `owner`. */
+  owner?: string;
   /** The dimension (by id) this text is drawn for. */
   group?: string;
   /** The left end of the text's baseline (or its middle or right end, by `anchor`). */
@@ -265,7 +269,7 @@ export function viewCaptionItem(v: DrawingView, own: PlacedView, scale: Scale): 
   const tokens: Record<string, string> = { NAME: v.name, LABEL: 'label' in v ? v.label : v.name, SCALE: scaleText(scale) };
   const text = (v.caption?.text ?? viewCaptionTemplate(v)).replace(/<(NAME|LABEL|SCALE)>/g, (_, token: string) => tokens[token]!);
   const offset = v.caption?.offset ?? [0, 0];
-  return { kind: 'text', viewCaption: v.id, at: [own.at[0] + offset[0], own.at[1] - own.h / 2 - 8 + offset[1]], text, height: 5, anchor: 'center' };
+  return { kind: 'text', viewCaption: v.id, at: [own.at[0] + offset[0], own.at[1] - own.h / 2 - 8 + offset[1]], text, height: v.caption?.height ?? 5, anchor: 'center' };
 }
 
 /** The cutting outline of a local section on its parent view with its letter beside it. */
@@ -343,15 +347,24 @@ function buildSceneIn(
     const own = placed.get(v.id)!;
     const image = viewImage(v, resolved.get(v.id), own);
     if (image) images.push(image);
-    items.push(...viewItems(v, resolved.get(v.id), own, hatchStyleOf(v, pg.views)));
+    const ofView = `view:${v.id}`;
+    items.push(...viewItems(v, resolved.get(v.id), own, hatchStyleOf(v, pg.views)).map((i) => ({ ...i, owner: ofView })));
     if (!resolved.get(v.id)) continue;
     // Exactly one caption per view; section/detail markers remain attached to their parent geometry.
-    items.push(viewCaptionItem(v, own, scaleOf(doc, v)));
+    items.push({ ...viewCaptionItem(v, own, scaleOf(doc, v)), owner: `caption:${v.id}` });
     items.push(...bendTableItems(v, resolved.get(v.id), own));
-    items.push(...centreItems(v, features.get(v.id) ?? [], own));
-    items.push(...surfaceFinishItems(pg.surfaceFinishes.filter((f) => f.view === v.id), own));
-    items.push(...threadItems(v, features.get(v.id) ?? [], own));
-    items.push(...annotationItems((pg.annotations ?? []).filter((a) => a.view === v.id), own, lookup, pg.sheet.unit ?? 'mm'));
+    items.push(...centreItems(v, features.get(v.id) ?? [], own).map((i) => ({ ...i, owner: ofView })));
+    // the symbols and notes follow the drawing's text height (ADR 0256): drawn at ISO's 3.5 mm and scaled about the point they mark, so that one setting
+    // sizes the dimensions, the finishes, the frames, the datums and the notes together; a note with a height of its own keeps it
+    const k = resolveDimStyle(pg.sheet.dimStyle).text / DIM_STYLE_DEFAULT.text;
+    for (const f of pg.surfaceFinishes.filter((x) => x.view === v.id)) items.push(...scaleAbout(surfaceFinishItems([f], own), toSheet(own, f.at[0], f.at[1]), k).map((i) => ({ ...i, owner: f.id })));
+    items.push(...threadItems(v, features.get(v.id) ?? [], own).map((i) => ({ ...i, owner: ofView })));
+    for (const a of (pg.annotations ?? []).filter((x) => x.view === v.id)) {
+      const anchor = a.kind === 'fcf' || a.kind === 'note' ? (a.leader ?? a.at) : a.kind === 'datum' ? a.at : null;
+      const own_k = a.kind === 'note' && a.height !== undefined ? 1 : k;
+      const drawn = annotationItems([a], own, lookup, pg.sheet.unit ?? 'mm');
+      items.push(...(anchor ? scaleAbout(drawn, toSheet(own, anchor[0], anchor[1]), own_k) : drawn).map((i) => ({ ...i, owner: a.id })));
+    }
     const parent = v.kind === 'section' || v.kind === 'sectionLocal' || v.kind === 'detail' || v.kind === 'crop' || v.kind === 'auxiliary' ? placed.get(v.parent) : undefined;
     if ((v.kind === 'section' || v.kind === 'auxiliary') && parent) items.push(...sectionItems(v, parent));
     if (v.kind === 'sectionLocal' && parent) items.push(...localSectionItems(v, parent));
@@ -398,6 +411,16 @@ function buildSceneIn(
   }
   const scene: Scene = { width: m.width, height: m.height, items, ...(sceneDimensions.length > 0 ? { dimensions: sceneDimensions } : {}), ...(images.length > 0 ? { images } : {}), ...(pg.sheet.dimStyle ? { dimStyle: resolveDimStyle(pg.sheet.dimStyle) } : {}) };
   return { scene, placed, dimensions, tables, tableBoxes, balloons };
+}
+
+/** Items scaled by `k` about the point `o` (sheet mm): their lines, their texts' places and heights. */
+function scaleAbout(items: SceneItem[], o: readonly [number, number], k: number): SceneItem[] {
+  if (Math.abs(k - 1) < 1e-9) return items;
+  return items.map((i) =>
+    i.kind === 'polyline'
+      ? { ...i, points: i.points.map((c, n) => (n % 2 === 0 ? o[0] + (c - o[0]) * k : o[1] + (c - o[1]) * k)) }
+      : { ...i, at: [o[0] + (i.at[0] - o[0]) * k, o[1] + (i.at[1] - o[1]) * k] as [number, number], height: i.height * k },
+  );
 }
 
 export type { TitleField };

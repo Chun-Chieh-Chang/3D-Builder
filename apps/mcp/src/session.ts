@@ -158,7 +158,7 @@ export class CadSession {
   path: string | null = null;
   private result!: RebuildResult;
   private readonly undoStack: PartDoc[] = [];
-  private readonly root: string;
+  readonly root: string;
   private readonly heapLimit: number;
   /** The last rebuilds, newest last. */
   readonly events: RebuildEvent[] = [];
@@ -624,6 +624,15 @@ export class CadSession {
 
   get kernelForView(): Kernel {
     return this.kernel;
+  }
+
+  /**
+   * What a drawing of the part is made from (ADR 0256): the kernel, the body as built (its shape, topology and persistent names) and the part's document and
+   * file. `built` changes with every rebuild, so a drawing knows when the lines it projected are stale. Null while the part has no body.
+   */
+  drawingSource(): { kernel: Kernel; body: NonNullable<RebuildResult['body']>; doc: PartDoc; path: string | null; built: RebuildResult } | null {
+    const body = this.result.body;
+    return body ? { kernel: this.kernel, body, doc: this.doc, path: this.path, built: this.result } : null;
   }
 }
 

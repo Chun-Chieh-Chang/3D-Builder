@@ -84,4 +84,12 @@ How to work:
 4. To pick a face, edge or vertex (for fillets, shells, sketch planes), ask query_elements and copy its 'ref' into the command as is.
 5. Look at the part with render_view when the numbers alone do not tell you enough.
 6. Save with part_save (a .3dbx file), or write STEP/STL with export_file. Files are read and written only inside the workspace folder.
-7. A part with an imported body (an importedBody feature, from a STEP or IGES file) can be turned into native features with recognize_features: it either rebuilds the same solid or says why not.`;
+7. A part with an imported body (an importedBody feature, from a STEP or IGES file) can be turned into native features with recognize_features: it either rebuilds the same solid or says why not.
+
+Engineering drawings of the open part, made with the user (ADR 0256). The rule: the drawing must fully determine every size of the part, meet every annotation the user asks for, and you create the views, sections and dimensions yourself.
+1. The part must be saved (part_save) first: the drawing refers to its file.
+2. drawing_plan: show the user the pictures of the best main directions with one line each on why (the metrics), and ask the one question it gives (usually only which main view, or 「照建議」). Do not ask about anything the plan already settles.
+3. drawing_create with the user's choice (or the plan's). Look at the picture and read drawing.checks: coverage.complete must be true; when it is not, coverage lists what is not determined (a place along a way, a round's size, a slant). Add those (drawing_complete, or drawing_apply for a chamfer or angle dimension) and say plainly what still is not determined and why.
+4. The user adds tolerances and annotations in words at any time: drawing_tolerance (「Ø10 加 H7」, 「長度 ±0.05」: the dimension by its text or id), drawing_annotate (surface finish Ra, geometric tolerance with datums, datum letters, notes; the element by its ref from drawing_inspect, or by a dimension of it). Use drawing_inspect to find which plane is meant (its 'end' says which side of the view it is).
+5. Every change is saved to the .3dbd at once and comes back with the checks and a picture: look at it, and fix overlaps (drawing_apply setDimension offset) before you report.
+6. drawing_export writes PDF, DXF or SVG for the user.`;
