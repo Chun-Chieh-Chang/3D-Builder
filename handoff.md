@@ -1,5 +1,14 @@
 # 交接與接續工作
 
+## 2026-11-17 — 除料陣列與鑽頭樣本重建（ADR 0257，Claude 對話）
+
+- 完成 [ADR 0257](docs/adr/0257-pattern-of-cuts.md)：除料特徵可以陣列（以工具計算與除料），算不出種子做了什麼時錯誤歸陣列。鑽頭樣本依 ADR 0254 指引重建：參考軸、溝與柄槽各一再環狀陣列、估計值標記、四個資料夾，形狀不變。
+- 驗證：typecheck、四項 lint、golden 3 檔 13 項、突變 5/5、含陣列／鏡射的既有測試 15 檔、真瀏覽器樹驗收 8 步；CI 清單與 MCP、packages、apps/web、tests/phase3 的結果見 DEV_LOG。全套 `tests/` 由夜間 CI 跑。
+- **狀態（2026-11-17 晚）**：遠端 main 已有 PR #11 等新提交（含另一份 ADR 0255「拔模樣條牆辨識」），本次改動已 rebase 到 `c57e935e` 之上，ADR 改號為 0257（0255 為拔模樣條牆，0256 為另一個對話的 AI 工程圖）；已提交在本機 main，**尚未推送**（Cowork 只能 fetch、不能 push）：在 Windows 終端機執行 `git push`。
+- rebase 後已通過：typecheck、四項 lint（`docs:sync` 已重算清單）。golden 3 檔、含陣列／鏡射的既有測試、MCP 測試在 rebase 後的重跑沒有等到結果（額度用完）；遠端的新提交沒有改 `engine.ts`，但改了 kernel 的圓角關卡與辨識。接手先跑：`npx vitest run tests/golden tests/phase3/pattern.test.ts tests/phase3/mirror.test.ts tests/phase3/curve-pattern.test.ts` 與 `npm test -- apps/mcp/test --maxWorkers 1`，推送後看 CI。
+- MCP 已在雲端副本建置後換進 `apps/mcp/dist`（rebase 前的內容，MCP 說明文字與 rebase 後相同）。
+- 已知限制：圓角／導角等可能同時加減材料的種子，在共面很多的本體上陣列仍失敗。若要處理，需要另一種取得種子結果的方法（例如保存圓角前後的局部面），另開工作。
+
 ## 2026-11-17 — part-3 不經刪面的探針與圓角關卡放寬（PR #11，含 ADR 0255）
 
 - **ADR 0255**（拔模樣條牆辨識，`aaf17800`）與本次 `1cd6c71c` 同在 PR #11；設計文件 §6n、§6o、§6o-A、§6o-B，DEV_LOG 2026-11-16／11-17。

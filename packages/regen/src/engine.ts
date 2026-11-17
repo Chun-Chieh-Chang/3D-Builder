@@ -353,6 +353,11 @@ interface Delta {
   added: { shape: ShapeId; names: ElementNames } | null;
   removed: { shape: ShapeId; names: ElementNames } | null;
   newBody: boolean;
+  /**
+   * When the seeds are cuts only: their tools (owned by `seedTools`). Each instance cuts with them, moved, as SolidWorks repeats a cut by default, rather than
+   * with a copy of the material taken away, whose faces lie on the body's own and make the boolean fail (ADR 0257).
+   */
+  tools?: { shape: ShapeId; names: ElementNames }[];
 }
 
 /** Where imported data comes from, by SHA-256 (the part file's blobs; a Map will do). */
@@ -451,6 +456,13 @@ function axisOf(face: Topology['faces'][number]): { point: Vec3; dir: Vec3 } | n
  *    or round at the hole's mouth. Those rims are added, never grown from, so the faces round them stay out.
  * Nothing the rest of the body also uses is taken.
  */
+/** Whether a feature, as a pattern's seed, only adds material, only takes it away, or may do both (a fillet, a move face, ...) (ADR 0257). */
+export function seedEffect(f: Feature): 'adds' | 'removes' | 'both' {
+  if (f.type === 'hole') return 'removes';
+  if (f.type === 'extrude' || f.type === 'revolve' || f.type === 'sweep' || f.type === 'loft' || f.type === 'thread') return f.op === 'cut' ? 'removes' : 'adds';
+  return 'both';
+}
+
 export function holeFaces(topology: Topology, seeds: number[]): number[] {
   const touching = topology.faces.map(() => new Set<number>());
   for (const e of topology.edges) for (const a of e.faces) for (const b of e.faces) if (a !== b) touching[a]!.add(b);
@@ -570,7 +582,20 @@ export class Regenerator {
   /** Patterns (C6), for the rebuild in progress: the first seed's bodies before it, the delta of each pattern, why a pattern has none, and how each feature ended. */
   private snapshots = new Map<Id, Snapshot>();
   private deltas = new Map<Id, Delta>();
-  private patternPlans = new Map<Id, { first: Id; last: Id; seeds: Id[] } | string>();
+  /**
+   * The tools of the cuts that are seeds of a pattern repeating only cuts (ADR 0257): what such a run took away is the bodies before it, in common with its
+   * tools, which is the same boolean the cuts themselves did. Kept for the rebuild, by seed.
+   */
+  private seedTools = new Map<Id, { shape: ShapeId; names: ElementNames }[]>();
+  /** The seeds whose tools are kept: those of the patterns whose seeds add nothing. */
+  private get cutSeeds(): Set<Id> {
+    return new Set([...this.patternPlans.values()].flatMap((p) => (typeof p === 'string' || p.adds ? [] : p.seeds)));
+  }
+  /**
+   * `adds` / `removes`: whether the seeds can add material, or take it away. A run of cuts and holes adds none and a run of bosses removes none, so that half
+   * of what the seeds did is known to be empty and is not worked out by a boolean (ADR 0257).
+   */
+  private patternPlans = new Map<Id, { first: Id; last: Id; seeds: Id[]; adds: boolean; removes: boolean } | string>();
   private statuses = new Map<Id, FeatureStatus>();
   private featureNames = new Map<Id, string>();
   /** The imported files read so far in this rebuild: a second read of one gets a copy of its own. */
@@ -942,7 +967,15 @@ export class Regenerator {
                 throw error;
               }
             }
-            for (const pattern of lastSeeds.get(feature.id) ?? []) this.captureDelta(pattern, set);
+            for (const pattern of lastSeeds.get(feature.id) ?? []) {
+              // the seed is built: when what it did cannot be worked out, it is the pattern that fails, with the reason, not the seed (ADR 0257)
+              try {
+                this.captureDelta(pattern, set);
+              } catch (e) {
+                if (isTrap(e)) throw e;
+                this.patternPlans.set(pattern, t('pattern.deltaFailed', { why: e instanceof Error ? e.message : String(e) }));
+              }
+            }
             return done({ status: 'ok' });
           }
         }
@@ -2413,6 +2446,8 @@ export class Regenerator {
   /** Lets go of what the patterns of a rebuild kept: the bodies before their first seeds, and what the seeds did. */
   private releasePatterns(): void {
     for (const s of this.snapshots.values()) if (s.shape !== null) this.kernel.release(s.shape);
+    for (const tools of this.seedTools.values()) for (const x of tools) this.kernel.release(x.shape);
+    this.seedTools.clear();
     for (const d of this.deltas.values()) {
       if (d.added) this.kernel.release(d.added.shape);
       if (d.removed) this.kernel.release(d.removed.shape);
@@ -2438,7 +2473,14 @@ export class Regenerator {
       if (between) return void this.patternPlans.set(f.id, t('pattern.seedsApart', { name: between.name }));
       const suppressed = at.map((i) => doc.features[i]!).find((g) => g.suppressed);
       if (suppressed) return void this.patternPlans.set(f.id, t('pattern.seedSuppressed', { name: suppressed.name }));
-      this.patternPlans.set(f.id, { first: doc.features[at[0]!]!.id, last: doc.features[at[at.length - 1]!]!.id, seeds: at.map((i) => doc.features[i]!.id) });
+      const seeds = at.map((i) => doc.features[i]!).filter((g) => f.seeds.includes(g.id));
+      this.patternPlans.set(f.id, {
+        first: doc.features[at[0]!]!.id,
+        last: doc.features[at[at.length - 1]!]!.id,
+        seeds: at.map((i) => doc.features[i]!.id),
+        adds: !seeds.every((g) => seedEffect(g) === 'removes'),
+        removes: !seeds.every((g) => seedEffect(g) === 'adds'),
+      });
     });
   }
 
@@ -2466,9 +2508,41 @@ export class Regenerator {
       return { shape: r.shape, names: nameElements(r.faceOrigins, topology, { featureId: pattern, input: concatNames(targetNames, toolNames) }) };
     };
     const total = Math.max(k.massProps(after.shape).volume, before.shape === null ? 0 : k.massProps(before.shape).volume);
-    const added = part('cut', after.shape, before.shape, after.names, before.names, total);
-    const removed = before.shape === null ? null : part('cut', before.shape, after.shape, before.names, after.names, total);
-    this.deltas.set(pattern, { added, removed, newBody: added !== null && set.list.length > before.bodies });
+    // what a cut added, or a boss took away, is empty: not worked out, since the boolean of two bodies that share nearly every face is where it fails (ADR 0257)
+    const added = plan.adds ? part('cut', after.shape, before.shape, after.names, before.names, total) : null;
+    const tools = plan.seeds.map((id) => this.seedTools.get(id));
+    const removed =
+      before.shape === null || !plan.removes
+        ? null
+        : !plan.adds && tools.every((x) => x && x.length > 0)
+          ? this.commonWithTools(pattern, before.shape, before.names, tools.flatMap((x) => x!), total)
+          : part('cut', before.shape, after.shape, before.names, after.names, total);
+    const cutTools = !plan.adds && tools.every((x) => x && x.length > 0) ? tools.flatMap((x) => x!) : undefined;
+    this.deltas.set(pattern, { added, removed, newBody: added !== null && set.list.length > before.bodies, ...(cutTools ? { tools: cutTools } : {}) });
+  }
+
+  /** What a run of cuts took away: the bodies before it in common with each of its tools, joined (ADR 0257). Null when that is nothing. */
+  private commonWithTools(pattern: Id, before: ShapeId, beforeNames: ElementNames, tools: { shape: ShapeId; names: ElementNames }[], total: number): Delta['removed'] {
+    const k = this.kernel;
+    const pieces: { shape: ShapeId; names: ElementNames }[] = [];
+    try {
+      for (const tool of tools) {
+        const r = k.boolean('common', before, tool.shape);
+        if (k.massProps(r.shape).volume <= 1e-9 * Math.max(total, 1e-12)) {
+          k.release(r.shape);
+          continue;
+        }
+        pieces.push({ shape: r.shape, names: nameElements(r.faceOrigins, k.topology(r.shape), { featureId: pattern, input: concatNames(beforeNames, tool.names) }) });
+      }
+    } catch (e) {
+      for (const p of pieces) k.release(p.shape);
+      throw e;
+    }
+    if (pieces.length === 0) return null;
+    if (pieces.length === 1) return pieces[0]!;
+    const shape = k.join(pieces.map((p) => p.shape));
+    for (const p of pieces) k.release(p.shape);
+    return { shape, names: pieces.slice(1).reduce((acc, p) => concatNames(acc, p.names), pieces[0]!.names) };
   }
 
   /** The unit direction of a direction of a linear pattern: a straight edge, a reference axis, or the normal of a plane. */
@@ -2644,10 +2718,15 @@ export class Regenerator {
     };
     try {
       const adds = delta.added ? make(delta.added) : [];
-      const cuts = delta.removed ? make(delta.removed) : [];
+      // a run of cuts is repeated by its tools, moved (ADR 0257); whether the instances run into one another is still told by what the cuts took away
+      const removedCopies = delta.removed ? make(delta.removed) : [];
+      let joinedTools: ShapeId | null = null;
+      const cutTool = delta.removed && delta.tools ? (delta.tools.length === 1 ? delta.tools[0]! : { shape: (joinedTools = k.join(delta.tools.map((x) => x.shape))), names: delta.tools.slice(1).reduce((acc, x) => concatNames(acc, x.names), delta.tools[0]!.names) }) : null;
+      const cuts = cutTool ? make(cutTool) : removedCopies;
+      if (joinedTools !== null) k.release(joinedTools);
       if (check.overlap) {
         this.noOverlap(delta.added?.shape ?? null, adds);
-        this.noOverlap(delta.removed?.shape ?? null, cuts);
+        this.noOverlap(delta.removed?.shape ?? null, removedCopies);
       }
       for (let i = 0; i < instances.length; i++) {
         const label = instances[i]!.label;
@@ -2724,6 +2803,11 @@ export class Regenerator {
       if (op === 'cut') {
         // a cut takes the tool away from the bodies
         const r = this.boolBodies(featureId, 'cut', list, () => ({ shape: tool.shape, names: toolNames }), made);
+        if (this.cutSeeds.has(featureId)) {
+          const kept = this.seedTools.get(featureId) ?? [];
+          kept.push({ shape: k.copy(tool.shape), names: toolNames });
+          this.seedTools.set(featureId, kept);
+        }
         k.release(tool.shape);
         if (!r.changed) throw new FeatureError(t('feature.cutRemovedNothing'));
         if (r.out.length === 0) throw new FeatureError(t('regen.cutRemovedAll'));

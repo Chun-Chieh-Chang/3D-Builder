@@ -6,8 +6,11 @@
  * - the revolved body is cones and cylinders;
  * - each shank groove removes ∫∫ (√(R(y)² − z²) − floor) over the slot outline: a one-dimensional integral over z (the length along y is
  *   closed form, and the shank-end chamfer R = 4 + y is integrated analytically), evaluated with Simpson's rule after z = r·sin θ;
- * - the two flutes are the same cut turned 180°, so they remove the same volume. A flute's volume itself has no closed form, so only
- *   the equality is checked.
+ * - the second flute is the first one's cut repeated 180° about the bit's axis by a circular pattern, so they remove the same volume. A flute's volume
+ *   itself has no closed form, so only the equality is checked.
+ *
+ * Rebuilt 2026-11-17 to the modelling guide of ADR 0254 (estimates marked, not named; repeated features patterned; folders by region), on the pattern of
+ * cuts of ADR 0257: same shape as the first version (101 faces, the same volume).
  */
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -98,6 +101,21 @@ const closedGroove = (W: number, L: number, depth: number) => {
 };
 
 describe('SDS-plus 3/4" bit: revolved body, two helical flutes, carbide tip, four shank grooves, engraved size', () => {
+  it('is modelled as the guide asks: estimates marked rather than named, each repeated cut built once and patterned, regions in folders', async () => {
+    const doc = await open();
+    expect(doc.features.filter((f) => /估|est/i.test(f.name)).map((f) => f.name)).toEqual([]);
+    expect(doc.variables.filter((v) => /^est_/.test(v.name)).map((v) => v.name)).toEqual([]);
+    expect(doc.variables.filter((v) => v.estimate).map((v) => v.name)).toEqual(['D_core', 'R_flute', 'C_end', 'T_plate', 'point_angle', 'land', 'relief', 'open_W', 'open_L', 'open_depth', 'closed_W', 'closed_L', 'closed_y0', 'closed_depth', 'engrave_depth']);
+    expect(doc.features.filter((f) => f.estimate).map((f) => f.id)).toEqual(['skFlute', 'chRelief', 'skOpen', 'skClosed']);
+    const patterns = doc.features.filter((f) => f.type === 'pattern');
+    expect(patterns.map((f) => [f.id, f.type === 'pattern' && f.seeds])).toEqual([
+      ['paFlute', ['swFlute']],
+      ['paGrooves', ['cuOpen', 'cuClosed']],
+    ]);
+    expect(doc.features.filter((f) => f.type === 'sweep' || f.type === 'helix').length).toBe(2);
+    expect([...new Set(doc.features.map((f) => f.folder).filter(Boolean))]).toEqual(['排屑溝', '刀頭', '柄部（SDS-plus）', '標示']);
+  });
+
   it('rebuilds fully defined and valid, names made from how faces were made, and keeps its volume through STEP', async () => {
     const m = measure(await open(), true);
     expect(m.problems).toEqual([]);
@@ -110,29 +128,29 @@ describe('SDS-plus 3/4" bit: revolved body, two helical flutes, carbide tip, fou
 
   it('the body is the revolved profile, the flutes are equal, and each groove takes what its outline says', async () => {
     const doc = await open();
-    const v = Object.fromEntries(['rvBody', 'swFlute', 'swFlute2', 'chRelief', 'cuOpen', 'cuClosed', 'cuOpen2', 'cuClosed2', 'cuText'].map((id) => [id, measure(upTo(doc, id)).volume]));
+    const v = Object.fromEntries(['rvBody', 'swFlute', 'paFlute', 'chRelief', 'cuOpen', 'cuClosed', 'paGrooves', 'cuText'].map((id) => [id, measure(upTo(doc, id)).volume]));
     expect(v.rvBody).toBeCloseTo(revolved(210), 6);
     const flute1 = v.rvBody! - v.swFlute!;
-    const flute2 = v.swFlute! - v.swFlute2!;
+    const flute2 = v.swFlute! - v.paFlute!;
     expect(flute1).toBeGreaterThan(3000); // a real cut, not an empty one: 2 × 3677 of 29560
     expect(flute2).toBeCloseTo(flute1, 5);
     expect(v.chRelief! - v.cuOpen!).toBeCloseTo(openGroove(3, 26, 2), 5);
     expect(v.cuOpen! - v.cuClosed!).toBeCloseTo(closedGroove(4, 20, 2), 5);
-    expect(v.cuClosed! - v.cuOpen2!).toBeCloseTo(openGroove(3, 26, 2), 5);
-    expect(v.cuOpen2! - v.cuClosed2!).toBeCloseTo(closedGroove(4, 20, 2), 5);
+    // the pattern repeats both grooves on the other side
+    expect(v.cuClosed! - v.paGrooves!).toBeCloseTo(openGroove(3, 26, 2) + closedGroove(4, 20, 2), 5);
     // the engraving is font outlines: no closed form, only that it cuts a little
-    expect(v.cuClosed2! - v.cuText!).toBeGreaterThan(1);
-    expect(v.cuClosed2! - v.cuText!).toBeLessThan(10);
+    expect(v.paGrooves! - v.cuText!).toBeGreaterThan(1);
+    expect(v.paGrooves! - v.cuText!).toBeLessThan(10);
   });
 
   it('the grooves follow their estimated sizes, and the bit follows its length', async () => {
-    const doc = setVariables(await open(), { est_open_W: '4', est_open_L: '30', est_closed_W: '5', est_closed_L: '24', L: '200' });
+    const doc = setVariables(await open(), { open_W: '4', open_L: '30', closed_W: '5', closed_L: '24', L: '200' });
     const full = measure(doc);
     expect(full.problems).toEqual([]);
     expect(full.valid).toBe(true);
-    const v = Object.fromEntries(['rvBody', 'chRelief', 'cuOpen', 'cuClosed2'].map((id) => [id, measure(upTo(doc, id)).volume]));
+    const v = Object.fromEntries(['rvBody', 'chRelief', 'cuOpen', 'paGrooves'].map((id) => [id, measure(upTo(doc, id)).volume]));
     expect(v.rvBody).toBeCloseTo(revolved(200), 6);
     expect(v.chRelief! - v.cuOpen!).toBeCloseTo(openGroove(4, 30, 2), 5);
-    expect(v.chRelief! - v.cuClosed2!).toBeCloseTo(2 * openGroove(4, 30, 2) + 2 * closedGroove(5, 24, 2), 5);
+    expect(v.chRelief! - v.paGrooves!).toBeCloseTo(2 * openGroove(4, 30, 2) + 2 * closedGroove(5, 24, 2), 5);
   });
 });

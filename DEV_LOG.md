@@ -1,5 +1,18 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-17 — 除料陣列（ADR 0257）與鑽頭樣本依新指引重建（Claude 對話）
+
+- 使用者要求依 ADR 0254 指引重建鑽頭樣本。發現陣列的種子只要是除料，在鑽頭上必定失敗（刻字也一樣），且錯誤標在種子上。使用者裁定先修引擎。原因與做法見 [ADR 0257](docs/adr/0257-pattern-of-cuts.md)。
+- 引擎（`packages/regen/src/engine.ts`）：`seedEffect` 判斷種子只加、只減或兩者；只減的種子不算「後 − 前」；除料種子保存工具，拿走的材料 = 前 ∩ 工具；實例以移動後的工具除料（SolidWorks 預設），重疊檢查仍用拿走的材料；算不出時錯誤歸陣列（`pattern.deltaFailed`），種子維持成功。
+- 樣本：加「鑽頭軸線」參考軸（環狀陣列的軸不能用原點軸）；刪除第二條溝與第二組柄槽，改為「排屑溝陣列」「柄槽陣列」；15 個 `est_` 變數改名並設估計值標記；4 個「（估）」特徵改名並設標記；分「排屑溝」「刀頭」「柄部（SDS-plus）」「標示」資料夾。掃出改名「排屑溝除料」，避免與資料夾同名。101 面，體積與第一版相差 9×10⁻⁷ mm³。
+- 紅隊一：輸入破壞。種子缺工具時回到相減；未知類型視為「兩者皆可」，不會誤略。
+- 紅隊二：幾何。工具延伸到本體外，交集與除料避開共面；相減只在必要時使用，失敗時歸屬陣列。
+- 紅隊三：依賴鏈。`planPatterns` → `apply` 保存工具 → `captureDelta` → `repeat` → `releasePatterns`；鏡射共用。面名稱：簡單除料陣列改動前後 10 面名稱逐一相同。
+- 紅隊四：真值。溝、柄槽、刻字的體積相等與積分式，不經 kernel。
+- 測試：`sds-plus-bit.test.ts` 4 項（新增建法檢查）、新 `sds-plus-bit-patterns.test.ts` 3 項；突變 5/5 紅；舊引擎跑新樣本 3/4 失敗。含陣列／鏡射的既有測試 15 檔通過；`manual-feature-tree-0254.js` 改為從樣本既有的估計值計數、資料夾與特徵同名時點特徵列，8 步通過。
+- 仍有的限制：圓角、導角等「兩者皆可」的種子在鑽頭這類本體上陣列仍失敗（錯誤現在標在陣列、附原因）。指引與 MCP 說明已註明。
+- 推送被拒（遠端有 PR #11 等新提交）：rebase 到 `c57e935e`，衝突只在 DEV_LOG、handoff（兩邊條目並存）與自動產生的 `docs/repository-inventory.md`（`docs:sync` 重算）。遠端已用 ADR 0255，本 ADR 改號 0257（0256 已由 AI 工程圖工作使用）。rebase 後 typecheck、四項 lint 通過；測試重跑未等到結果，見 handoff。
+
 ## 2026-11-17 — part-3 without Delete Face: probes, and the round gate widened (ARC_SPREAD 1e-3 → 1e-2)
 
 Feasibility probes for part-3's windows (design doc freeform-generalization §6o, §6o-A, §6o-B; probes `scratch/ff/c9a`–`c9i`) and one product change: `ARC_SPREAD` in `roundRecognition.ts`.

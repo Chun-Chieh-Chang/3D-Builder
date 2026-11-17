@@ -198,6 +198,7 @@ export const features = {
   'pattern.seedsApart': '要排列或鏡射的特徵要一個接著一個，中間不能夾別的特徵（「{name}」夾在中間）',
   'pattern.seedSuppressed': '要排列或鏡射的特徵「{name}」被抑制了',
   'pattern.seedFailed': '要排列或鏡射的特徵「{name}」失敗，所以無法排列',
+  'pattern.deltaFailed': '算不出要排列的特徵做了什麼：{why}',
   'pattern.seedChangedNothing': '要排列或鏡射的特徵沒有加上或移除任何材料，沒有東西可以排列',
   'pattern.noInstances': '跳過了所有的實例，沒有東西要排列',
   'pattern.countTooSmall': '{what}的實例數要至少 2（現在是 {value}）',
