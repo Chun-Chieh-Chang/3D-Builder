@@ -48,8 +48,12 @@ function insideOf(oc: any, face: any) {
  * A radius through three points magnifies a small error of the surface: measured on part-4's rounds 1e-11 to 2.4e-6 (r = 0.4572 at 2.0e-6 and 2.4e-6,
  * ball deviation within C2.4's 1.45e-6), and on the fuzz's arcs of other directions 3e-2 and more. A first gate of 1e-6, set without that measurement,
  * refused real rounds.
+ *
+ * 1e-3 refused real rounds again (part-3, R1-10226: the r 0.127 edge breaks f152 and f154 measured 1.62e-3 and 5.39e-3, both on the ball to 2.8e-4 and
+ * 7.4e-4 of their supports, within 2τ; design doc freeform-generalization §6o-B). Raised to 1e-2, still well under the 3e-2 of the other directions' arcs; what an
+ * elliptical corner in the new band is then refused by is the deviation gate (and the comparison after the rebuild), fuzzed in rolling-ball-spread-fuzz.test.ts.
  */
-const ARC_SPREAD = 1e-3;
+const ARC_SPREAD = 1e-2;
 
 /**
  * When a face's lines of one parameter are arcs of one circle size (each read through four points at nine places along the other parameter, the radii
