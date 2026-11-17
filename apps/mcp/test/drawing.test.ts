@@ -96,7 +96,7 @@ it('plans, makes a fully determined drawing of a plate with holes, and takes tol
   expect(after.surfaceFinishes).toBe(1);
   expect(after.checks.coverage.complete).toBe(true);
   expect(after.checks.clutter.count, JSON.stringify(after.checks.clutter)).toBe(0);
-  if (after.checks.glyphs.font) expect(after.checks.glyphs.missing).toEqual([]);
+  if (after.checks.glyphs.cjk) expect(after.checks.glyphs.missing, after.checks.glyphs.font ?? '').toEqual([]);
 
   // what is on disk is what the agent made, and opens as a drawing
   const file = await readAnyDocumentFile(new Uint8Array(readFileSync(join(root, 'plate.3dbd'))));
