@@ -1,6 +1,6 @@
 # 3D-Builder
 
-類SolidWorks的參數式3D CAD：Web先行，另有共用前端的Windows Tauri桌面殼。設計意圖存在文件模型，B-Rep、網格與STEP由原生核心重建；參考以持久名稱連結。
+參數式3D CAD：Web先行，另有共用前端的Windows Tauri桌面殼。設計意圖存在文件模型，B-Rep、網格與STEP由原生核心重建；參考以持久名稱連結。
 
 目前交付、能力邊界與待辦見[產品現況](docs/project-state.md)。已有公開真實STEP與外部FreeCAD／DXF／PDF探針，仍不能據此宣稱SolidWorks特徵樹相容或製造認證。歷史階段通過數不代表目前版本全部驗證通過。
 
