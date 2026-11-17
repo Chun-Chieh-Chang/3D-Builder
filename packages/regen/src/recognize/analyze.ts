@@ -5,7 +5,7 @@
  * that build it. Nothing here touches a document: `reconstruct.ts` turns this into features and checks the result against the original.
  */
 import { t } from '@3db/i18n';
-import { KernelError, rethrowTrap, type FaceInfo, type NurbsSectionEdge, type Frame, type Kernel, type SectionEdge, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
+import { KernelError, nurbsAt, rethrowTrap, type FaceInfo, type NurbsSectionEdge, type Frame, type Kernel, type SectionEdge, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
 import type { Budget } from '../budget';
 import { biarcEnvelope } from '../section/envelope';
 import { chainLoops, LoopError, type Loop, type P2 } from '../section/loops';
@@ -412,10 +412,9 @@ function freeRounds(kernel: Kernel, shape: ShapeId, topo: Topology, odd: number[
   const maybe = new Set(odd.filter((i) => tangent(i).length >= 2));
   if (maybe.size === 0) return [];
   const gap = kernel.fileTolerance(shape).faces;
-  return [...maybe].flatMap((i): BlendCandidate[] => {
-    const all = tangent(i);
-    const supports = all.filter((n) => !maybe.has(n));
-    let best: { pair: [number, number]; ball: NonNullable<ReturnType<Kernel['rollingBall']>> } | null = null;
+  type Best = { pair: [number, number]; ball: NonNullable<ReturnType<Kernel['rollingBall']>> };
+  const bestOf = (i: number, supports: number[]): Best | null => {
+    let best: Best | null = null;
     for (let a = 0; a < supports.length; a++) {
       for (let b = a + 1; b < supports.length; b++) {
         const pair: [number, number] = [supports[a]!, supports[b]!];
@@ -425,7 +424,19 @@ function freeRounds(kernel: Kernel, shape: ShapeId, topo: Topology, odd: number[
         if (!best || ball.deviation < best.ball.deviation) best = { pair, ball };
       }
     }
-    return best ? [{ face: i, type: 'fillet', supports: best.pair, radius: best.ball.radius, convex: best.ball.convex, tangent: all, free: true }] : [];
+    return best;
+  };
+  // Every tangent neighbour may be a support, freeform ones too (ADR 0255): a spline wall rounded along two of its edges is tangent to both rounds, so it
+  // is among `maybe` itself, and taking `maybe` out of the supports left both rounds with none. A face found a round is no support, though: a round
+  // that took one is asked again without them.
+  const first = new Map<number, Best>();
+  for (const i of maybe) {
+    const b = bestOf(i, tangent(i));
+    if (b) first.set(i, b);
+  }
+  return [...first].flatMap(([i, b]): BlendCandidate[] => {
+    const best = b.pair.some((n) => first.has(n)) ? bestOf(i, tangent(i).filter((n) => !first.has(n))) : b;
+    return best ? [{ face: i, type: 'fillet', supports: best.pair, radius: best.ball.radius, convex: best.ball.convex, tangent: tangent(i), free: true }] : [];
   });
 }
 
@@ -912,24 +923,32 @@ function wallLean(f: FaceInfo, d: Vec3): number | null {
 }
 
 /**
- * A face with no simple surface that is a straight wall along a direction. Its section square to that direction is read exactly (`Kernel.sectionCurves`) when
- * the wall is a B-spline curve carried straight (C1); otherwise the section has a curve chaining refuses, unless splines are to be approximated (ADR 0243).
+ * A face with no simple surface that is a wall along a direction: its lean (radians, signed as `wallLean` signs a plane's), else null.
+ * - Straight (lean 0): its section square to that direction is read exactly (`Kernel.sectionCurves`) when the wall is a B-spline curve carried straight
+ *   (C1); otherwise the section has a curve chaining refuses, unless splines are to be approximated (ADR 0243).
+ * - Drafted (ADR 0255): a ruled B-spline every point of which is where the exact draft of its rail puts it, to within `TOL` (`Kernel.faceDraftedAlong`),
+ *   leaning no more than `MAX_DRAFT`. Its section at any height is read exactly too, and carried to the layer's bottom by `extrapolate`.
  */
-type FreeWall = (face: number, d: Vec3) => boolean;
+type FreeWall = (face: number, d: Vec3) => number | null;
 
 function freeWalls(kernel: Kernel, shape: ShapeId, approx?: SplineApproximation): FreeWall | undefined {
   // without the approximation, only a wall whose section is read exactly (C1); with it, any wall straight to within what is asked of its normal
   const wall = approx ? kernel.faceRuledAlong.bind(kernel) : kernel.faceExtrudedAlong.bind(kernel);
-  const cache = new Map<string, boolean>();
+  const cache = new Map<string, number | null>();
   return (face, d) => {
     const u = canonical(d);
     const key = `${face}:${u[0].toFixed(6)},${u[1].toFixed(6)},${u[2].toFixed(6)}`;
     let v = cache.get(key);
     if (v === undefined) {
-      v = wall(shape, face, u);
+      if (wall(shape, face, u)) v = 0;
+      else {
+        const drafted = kernel.faceDraftedAlong(shape, face, u, TOL);
+        v = drafted && Math.abs(drafted.lean) <= MAX_DRAFT + 1e-12 ? drafted.lean : null;
+      }
       cache.set(key, v);
     }
-    return v;
+    // the lean is signed against the direction asked (canonical may have turned it round)
+    return v === null || v === 0 ? v : v * Math.sign(dot(d, u));
   };
 }
 
@@ -981,7 +1000,7 @@ function blockers(topo: Topology, d: Vec3, free?: FreeWall): number[] {
     const g = f.geometry;
     if (g?.type === 'plane' && parallel(g.normal, d)) return [];
     if (wallLean(f, d) !== null) return [];
-    return !g && free?.(i, d) ? [] : [i];
+    return !g && (free?.(i, d) ?? null) !== null ? [] : [i];
   });
 }
 
@@ -999,7 +1018,13 @@ function extentAlong(topo: Topology, d: Vec3): [number, number][] {
 }
 
 /** Each piece of `b` moved on along the change from `a` to it by `k` times that change (a drafted layer's profile, linear in the height). */
-function extrapolate(a: Loop[], b: Loop[], k: number): Loop[] | null {
+/**
+ * The loops of a drafted layer's bottom, carried on from two sections of it: `b` (nearer the bottom) and `a`, each corner moved on by `k` times
+ * what separates the two. Lines, arcs and circles move so exactly. A drafted spline wall's curve (ADR 0255) is read off the wall at the bottom (`wall`:
+ * `Kernel.wallCurveBetween`, near where its middle is carried on to), but where it meets another wall the corner does not move on a straight line (measured: 5e-4 mm off for a 3° draft 10 mm high), so its ends, and its
+ * neighbours' with them, are put on the nearest of `corners` (the body's vertices on the bottom plane, in the frame) no farther than the step itself.
+ */
+function extrapolate(a: Loop[], b: Loop[], k: number, wall?: (a: P2, b: P2, mid: P2, midTol: number) => NurbsSectionEdge | null, corners: P2[] = []): Loop[] | null {
   if (a.length !== b.length) return null;
   const lerp = (p: P2, q: P2): P2 => [q[0] + (q[0] - p[0]) * k, q[1] + (q[1] - p[1]) * k];
   const mid = (g: Loop['segs'][number]): P2 => (g.kind === 'circle' ? g.c : g.kind === 'arc' ? g.c : [(g.a[0] + g.b[0]) / 2, (g.a[1] + g.b[1]) / 2]);
@@ -1023,8 +1048,38 @@ function extrapolate(a: Loop[], b: Loop[], k: number): Loop[] | null {
         segs.push({ kind: 'arc', c: lerp(f.c, g.c), r: g.r + (g.r - f.r) * k, a: lerp(fa, g.a), b: lerp(fb, g.b), ccw: g.ccw });
       } else if (g.kind === 'circle' && f.kind === 'circle') {
         segs.push({ kind: 'circle', c: lerp(f.c, g.c), r: g.r + (g.r - f.r) * k });
+      } else if (g.kind === 'nurbs' && f.kind === 'nurbs' && wall) {
+        // a drafted wall's exact curve (ADR 0255): offset on by k times what separates the two sections, between the ends carried on as above
+        const [fa, fb] = Math.hypot(...sub2(f.a, g.a)) <= Math.hypot(...sub2(f.b, g.a)) ? [f.a, f.b] : [f.b, f.a];
+        const snap = (end: P2, from: P2): P2 => {
+          const step = Math.hypot(...sub2(end, from));
+          const near = corners.map((c) => ({ c, d: Math.hypot(...sub2(c, end)) })).filter((x) => x.d <= step).sort((x, y) => x.d - y.d)[0];
+          return near ? near.c : end;
+        };
+        // which stretch of the wall's curve: the one passing near this section's own middle, as near as the wall moves on from it, which is no more than its
+        // corners move (a lerp of the two sections' middles is not on the wall: they are at different places along it, 0.33 mm apart on a wavy spline)
+        const A = snap(lerp(fa, g.a), g.a);
+        const B = snap(lerp(fb, g.b), g.b);
+        const step = Math.max(Math.hypot(...sub2(A, g.a)), Math.hypot(...sub2(B, g.b)));
+        const on = wall(A, B, nurbsAt(g, 0.5), 1.5 * step + 1e-6);
+        if (!on) return null;
+        segs.push(on);
       } else return null;
     }
+    // a spline piece's ends are where its neighbours end too
+    segs.forEach((g, i) => {
+      if (g.kind !== 'nurbs') return;
+      const fix = (h: Loop['segs'][number], to: P2) => {
+        if (h.kind !== 'line' && h.kind !== 'arc' && h.kind !== 'nurbs') return;
+        if (h.kind === 'nurbs') return;
+        if (Math.hypot(...sub2(h.a, to)) <= Math.hypot(...sub2(h.b, to))) h.a = to;
+        else h.b = to;
+      };
+      if (segs.length > 1) {
+        fix(segs[(i - 1 + segs.length) % segs.length]!, g.a);
+        fix(segs[(i + 1) % segs.length]!, g.b);
+      }
+    });
     out.push({ ...lb, segs });
   }
   return out;
@@ -1116,6 +1171,7 @@ function layerProfile(
   topo?: Topology,
   zLo = 0,
   zHi = 0,
+  band: [number, number] = [0, 1],
 ): PlanarProfile | null {
   const box = kernel.bounds(shape);
   const cut = (f: number) => section(kernel, shape, { ...frame, origin: addv(frame.origin, d, height * f) }, box, false, budget, approx);
@@ -1127,9 +1183,14 @@ function layerProfile(
     return loops.length ? { frame, loops } : null;
   }
   // Drafted walls change linearly with the height. Extrapolate the two interior sections to the bottom cap.
-  const [q1, q3] = [cut(0.25), cut(0.75)];
+  // two sections inside the band no kept face reaches into (ADR 0255: at a quarter of the height, a round at the foot was cut and could not be read),
+  // carried down to the bottom by as much more as the first is above it
+  const [f1, f3] = [band[0] + 0.25 * (band[1] - band[0]), band[0] + 0.75 * (band[1] - band[0])];
+  const [q1, q3] = [cut(f1), cut(f3)];
   if (!q1.length) return null;
-  const loops = extrapolate(q3, q1, 0.5);
+  // the body's vertices on the bottom plane, where a drafted spline wall's corners are (`extrapolate`)
+  const corners: P2[] = (topo?.vertices ?? []).flatMap((v) => (Math.abs(dot(sub(v.point, frame.origin), frame.normal)) <= 1e-7 ? [[dot(sub(v.point, frame.origin), frame.xDir), dot(sub(v.point, frame.origin), frame.yDir)] as P2] : []));
+  const loops = extrapolate(q3, q1, f1 / (f3 - f1), (pa, pb, pm, mt) => kernel.wallCurveBetween(shape, frame, pa, pb, pm, mt), corners);
   if (!loops) throw new RecognizeError(t('recognize.draftSection'));
   return { frame, loops, draft: { angle: Math.abs(lean), inward: regionArea(q3) < regionArea(q1) } };
 }
@@ -1218,7 +1279,7 @@ function decomposeNestedDraftPiece(
     const matchedLean = pieceLeans.find((pl) => Math.abs(Math.abs(pl) - rawAngle) <= 1e-4);
     if (matchedLean === undefined) throw refusal;
     const angle = Math.abs(matchedLean);
-    const bottom = angle <= 1e-9 ? [l1] : extrapolate([l3], [l1], 0.5);
+    const bottom = angle <= 1e-9 ? [l1] : extrapolate([l3], [l1], 0.5, (pa, pb, pm, mt) => kernel.wallCurveBetween(pieceShape, frame, pa, pb, pm, mt));
     if (!bottom?.length) throw refusal;
     const op: 'boss' | 'cut' = l1.depth % 2 === 0 ? 'boss' : 'cut';
     items.push({
@@ -1260,7 +1321,9 @@ function mixedLayer(kernel: Kernel, shape: ShapeId, frame: Frame, d: Vec3, heigh
       if (blockers(topo, d, free).length) throw refusal;
       const pieceLeans = topo.faces.flatMap((f, i) => {
         const lean = wallLean(f, d);
-        return lean !== null ? [lean] : !f.geometry && free?.(i, d) ? [0] : [];
+        if (lean !== null) return [lean];
+        const fl = f.geometry ? null : (free?.(i, d) ?? null);
+        return fl === null ? [] : [fl];
       });
       const lean = uniformLean(pieceLeans);
       if (lean === undefined) {
@@ -1269,7 +1332,8 @@ function mixedLayer(kernel: Kernel, shape: ShapeId, frame: Frame, d: Vec3, heigh
       const loops = bottomLoops(topo, frame, d);
       if (loops?.length) return [{ frame, loops, ...(lean !== 0 ? { draft: { angle: Math.abs(lean), inward: lean > 0 } } : {}) }];
       if (free) {
-        const profile = layerProfile(kernel, p.shape, frame, d, height, lean, budget, approx);
+        // with the piece's topology, for the corners a drafted spline wall's curve ends at on the bottom (`extrapolate`)
+        const profile = layerProfile(kernel, p.shape, frame, d, height, lean, budget, approx, undefined, topo);
         if (profile) return [profile];
       }
       throw refusal;
@@ -1436,7 +1500,9 @@ function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: F
     });
   const preOptions = candidates.map((d) => {
     const caps = topo.faces.filter((f, i) => !skip?.has(i) && f.geometry?.type === 'plane' && parallel(f.geometry.normal, d));
-    const levels = [...new Set(caps.map((f) => dot(f.center, d).toFixed(7)))].map(Number).sort((a, b) => a - b);
+    // grouped by height to 1e-7: rounded first and +0, as (-1.5e-33).toFixed(7) is "-0.0000000", another key than "0.0000000" (measured, ADR 0255: two caps
+    // at one height, one a hair below 0, made a layer of no height whose section was cut through the plate's top)
+    const levels = [...new Set(caps.map((f) => (Math.round(dot(f.center, d) * 1e7) / 1e7 + 0).toFixed(7)))].map(Number).sort((a, b) => a - b);
     const rank = CANONICAL.findIndex((c) => parallel(c, d));
     return { d, levels, cap: caps.reduce((a, f) => a + f.area, 0), analyticBlocking: analyticBlockers(d), rank: rank < 0 ? 9 : rank };
   });
@@ -1471,12 +1537,17 @@ function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: F
       const [lo, hi] = extent[k]!;
       if (!(lo < top - 1e-7 && hi > h + 1e-7)) return [];
       const lean = wallLean(f, d);
-      if (lean === null) return !f.geometry && free?.(k, d) ? [0] : [];
+      if (lean === null) {
+        const fl = f.geometry ? null : (free?.(k, d) ?? null);
+        return fl === null ? [] : [fl];
+      }
       return [lean];
     });
     const angle = uniformLean(leans);
     if (angle === undefined) return mixedLayer(kernel, shape, frame, d, top - h, leans, budget, approx);
     let fOverride: number | undefined;
+    // the part of the layer no kept face reaches into (a round left in the body at its foot or top), as fractions of its height
+    let band: [number, number] | undefined;
     if (skip?.size) {
       let loValid = h;
       let hiValid = top;
@@ -1490,9 +1561,10 @@ function extrudeBase(kernel: Kernel, shape: ShapeId, topo: Topology, frameFor: F
       }
       if (hiValid > loValid + TOL && (loValid > h + TOL || hiValid < top - TOL)) {
         fOverride = ((loValid + hiValid) / 2 - h) / (top - h);
+        band = [(loValid - h) / (top - h), (hiValid - h) / (top - h)];
       }
     }
-    const profile = layerProfile(kernel, shape, frame, d, top - h, angle, budget, approx, fOverride, topo, h, top);
+    const profile = layerProfile(kernel, shape, frame, d, top - h, angle, budget, approx, fOverride, topo, h, top, band);
     return profile ? [profile] : [];
   });
   return { type: 'extrude', dir: d, levels: exact, layers };
@@ -1636,7 +1708,7 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
       }
       // asked to, faces like these may be the walls of an extrusion; they must all be walls along one direction, the direction some plane of the body faces
       const free = freeWalls(kernel, shape, approx);
-      const along = (d: Vec3) => odd.every((i) => !!free?.(i, d));
+      const along = (d: Vec3) => odd.every((i) => (free?.(i, d) ?? null) !== null);
       const planeDirs: Vec3[] = [];
       for (const c of CANONICAL) {
         if (topo0.faces.some((f) => f.geometry?.type === 'plane' && parallel(f.geometry.normal, c))) planeDirs.push(c);
@@ -1707,8 +1779,10 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
       if (analyticUnremoved.size) {
         for (const h of holes) for (const fi of h.faces) analyticUnremoved.add(fi);
         holeFaces = holes.reduce((a, h) => a + h.faces.length, 0);
-        // Straight holes parallel to Z are kept directly as circular loops in the extruded layer sketch!
-        holes = holes.filter((h) => !(h.record.kind === 'straight' && parallel(h.record.down, [0, 0, 1])));
+        // Straight holes parallel to Z are kept directly as circular loops in the extruded layer sketch! So is a hole drafted with the layer (ADR 0255): its
+        // wall a cone along Z within the draft a layer takes (`wallLean`), its circle carried to the layer's bottom like any other (measured: such a hole,
+        // once recorded as a hole beside free rounds, left the drafted wall and a round blocking every extrusion direction)
+        holes = holes.filter((h) => !(parallel(h.record.down, [0, 0, 1]) && (h.record.kind === 'straight' || h.faces.every((f) => wallLean(topo1.faces[f]!, [0, 0, 1]) !== null))));
       } else {
         let r: ReturnType<Kernel['deleteFaces']> | null = null;
         try {

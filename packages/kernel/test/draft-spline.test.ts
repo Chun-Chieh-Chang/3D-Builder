@@ -117,8 +117,16 @@ describe('a drafted extrusion of an outline with a spline', () => {
     const first = kernel.extrude(XY as never, [{ outer: OUTLINE, holes: [] }] as never, [0, 0, H], 0, undefined, a);
     try {
       expect(kernel.solidCount(two.shape)).toBe(2);
-      // each region's spline wall is made again in each, within WALL of the draft; the rest is the volume integral's own noise
-      expect(Math.abs(vol(two.shape) - (vol(one.shape) + vol(first.shape)))).toBeLessThan(WALL * splineArea(two.shape) + 1e-9 * vol(two.shape));
+      // each region's spline wall is made again in each, within WALL of the draft; the rest is the volume integral's own noise. Compared solid by solid:
+      // the integral over the compound as a whole is not to be trusted (measured, ADR 0255: its two solids sum, each, to 1e-10 of the separate ones, the
+      // compound's own integral 1.07e-4 below that, at eps 1e-10 as at the default)
+      const pieces = kernel.splitSolids(two).map((x) => {
+        const v = vol(x.shape);
+        kernel.release(x.shape);
+        return v;
+      }).sort((a, b) => a - b);
+      const alone = [vol(one.shape), vol(first.shape)].sort((a, b) => a - b);
+      pieces.forEach((v, i) => expect(Math.abs(v - alone[i]!)).toBeLessThan(WALL * splineArea(two.shape) + 1e-9 * vol(two.shape)));
       expect(two.faceOrigins.every((o) => o.length > 0)).toBe(true);
     } finally {
       release(two.shape, one.shape, first.shape);
