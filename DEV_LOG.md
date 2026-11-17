@@ -26,6 +26,7 @@ Regression:
 
 Not done: sharp-edge restoration, loft cuts in the composite path, part-3 as a whole. Needs an approved acceptance list (suggested in §6o-B).
 
+
 ## 2026-11-16 — Recognition reads drafted spline walls, and rounds whose support is one (ADR 0255)
 
 A drafted extrusion of a spline outline (ADR 0251), read back from STEP, is rebuilt as one drafted extrusion with the draft it was made with. Rounds whose support is the spline wall are rebuilt too. Along the way the drafted wall itself was changed: its far curve is approximated lighter, and OCCT's foot round now builds on 37 of 39 random parts, against 17.

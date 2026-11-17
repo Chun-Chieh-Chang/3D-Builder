@@ -399,6 +399,7 @@
 2. 之後的設計工作＝「窗口以銳邊還原並以工具除料，圓角於最終本體重建」。動工前需要一份經使用者核准的驗收清單。我建議它至少包含：part-3 重建且體積誤差在 τ 內；35 件中 30 件不退步（`audit-compare.mjs`）；放樣與拔模牆的偏差 ≤ τ／6；fuzz 100～200 組；`liveShapes` 連續重建嚴格相等；堆以 `wasmMemory` 量測並附 `> 0` 防呆。
 3. 以上都做完，part-3 才有機會通過；目前沒有任何已量到的證據顯示它一定會過（本探針沒有整體重建過 part-3）。
 
+
 ## 7. 待確認的系統能力
 
 - 草圖 `spline` 圖元目前是 `points: Id[]`（插值或 `bezier`），沒有節點與權重，無法精確表示有理 B-spline。C1 需要新增圖元並完成 `schema.ts → commands.ts → refs.ts → dag.ts → engine.ts → PropertyManager.tsx` 全鏈路（AGENTS.md §2.1 第 3 問）。
