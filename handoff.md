@@ -685,19 +685,9 @@ Claude Code 在使用者選定下列規格後中斷，最後一步是唯讀盤�
 
 ---
 
-## 3. 本批次已完成並確效：圓錐/柱面接縫線消除 (Cone/Cylinder Seam Suppression)
+## 移動面至目標平面（ADR 0218，已完成）
 
-### 需求背景與使用者反饋
-使用者回報在多實體/放樣軸模型上（如使用者附圖 `TM0002138.3dbx`），出現了非外形輪廓的「接縫線」（Seam Edges）。
-- **目標**：參考 SolidWorks / FreeCAD / SolidCraft 的做法，在 3D 視圖與工程圖投影邊線萃取中，消除同一封閉曲面（如圓錐面、圓柱面）自身 UV 閉合形成的退化接縫線，或相鄰連續同曲面之間的過渡線條。
-
-### 核心實作架構與變更
-- `packages/kernel/src/kernel.ts`：
-  1. 圓錐端面移動面延伸時，將原圓錐面薄層對齊原圓錐之 `XDirection()`，使延伸後維持單一連續圓錐面，避免分裂為 `#1`、`#2` 兩片曲面產生圓弧切分線。
-  2. `Kernel.mesh()` 中過濾封閉週期曲面（圓錐、圓柱、球面、圓環）的自身 UV seam 邊（`adj.length === 1 && oc.BRep_Tool.IsClosed(edge, face)`），同時保留開放自由邊界。
-- `packages/kernel/src/sameSurface.ts`：補齊同圓錐面判別（同頂點、同軸向、同頂角與凹凸性）。
-- `packages/regen/src/drawingEdges.ts`：工程圖視圖投影中，同步過濾同圓錐面間的共軸圓形過渡線。
-- `tests/phase3/direct-edit.test.ts` & `packages/kernel/test/same-surface.test.ts`：加入 `TM0002138` 階梯軸真實幾何測試，斷言僅輸出 6 條輪廓邊，0 條縱向接縫與 0 條切分線（135 項測試全部 PASS）。
+`2ab57189` 已併入 `main`。`TM0002138.3dbx` 的延伸驗收涵蓋錐度、端面位置和多餘接縫線。過度推入材料時的錯誤訊息已在 A1（`f71f0cc3`）修正。實作與原始驗收記錄見 [ADR 0218](docs/adr/0218-move-face-target-plane.md) 與 [DEV_LOG](DEV_LOG.md) 的 2026-10-29 條目。
 
 ---
 
@@ -961,7 +951,7 @@ B2 修環境與腳本、B3 記「未驗」不阻塞、C1 兩段式 CI、C2 減�
 - **確效**:新增單元 26 項(nearest-point 8 含 200k 點真值與 200+100 組 fuzz、snap-hold 9、dimension-preview 5、interact G14 段 4);全倉庫單元 **4104 過 / 1 既有失敗 / 26 跳過**;e2e `manual-sketch-snap-hold`、`manual-dimension-preview` 2/2;完整 `verify:ui` **257/257**;**E02 效能重測**:1000 圖元 select p95 0.3 ms、line snap p95 0.4 ms(門檻 8 ms,故未加空間索引);tsc + 四項 lint PASS;inventory 271 文件 / 257 瀏覽器呼叫。
 - **教訓**:換手門檻只在平手區有意義——兩條相距 0.15 mm 的線在 18 px/mm 下都在 7 px 容差內,±0.01 mm 抖動才會讓「最近」跳動;e2e 第一版把「走回平手區」當換手而紅燈(情境本身要能以實測數字證明會壞)。G14 的 e2e 曾以 17.32 冒充 10·√3(標籤 59.9993°),改精確值並以數值解析比對,不放寬門檻。
 - **詳情**:DEV_LOG 2026-11-01 P4-4 條目、acceptance §P4-4、report.md(P0~P5 追蹤表:切片 11/17、P4 4/4)。
-- **下一刀**:P4 已完成(4/4);P5 維持**候選待立項**(每項先 2–4 日技術探針,先證實可行再核定範圍)。另案待辦:kernel moveFace 拒絕訊息與測試期望不一致;單點「固定」關係在面板被 refusedRelations 過濾(本刀未動,見 report.md 另案表);CI 只跑精選測試清單;E03 macOS 驗證;PlaneGCS ~900 拘束 OOM;`manual-asm-*` 逾時。
+- **下一刀**:P4 已完成(4/4);P5 維持**候選待立項**(每項先 2–4 日技術探針,先證實可行再核定範圍)。另案待辦:單點「固定」關係在面板被 refusedRelations 過濾(本刀未動,見 report.md 另案表);CI 只跑精選測試清單;E03 macOS 驗證;PlaneGCS ~900 拘束 OOM;`manual-asm-*` 逾時。
 
 ## 3j. 2026-11-01 P4-3 已完成:參照來源、聯動/失效與重指定(G15)
 
@@ -981,7 +971,7 @@ B2 修環境與腳本、B3 記「未驗」不阻塞、C1 兩段式 CI、C2 減�
 - **實作**:`overlay.ts` 的 `arrowPoints`/`arrowTip` 純函式與 `dofMotion`/`fixPreview` 繪製;`controller.fixPreview`(與 diagnose 同一修復變換、trial 真解、逐圖元取樣比較、staleness 守護);store 的 `dofMotion`/`fixPreview` 上板狀態;PM 分析按鈕結果上板、診斷列 hover 預覽(版本號防競態);Viewport 接線;`.overlay-label.motion` 樣式;i18n 三鍵 ×2 語。
 - **e2e 情境的教訓(重要)**:此 app 對「製造衝突」的 UI 防護完整——過多定義尺寸**建立時自動降為從動**(C1.29)、從動翻回驅動**取量測值**、矛盾關係**拒絕**、間接矛盾求解回 **failed** 而非 over。矛盾實務上由**文件帶入**,e2e 以 `editSketch` 注入(與既有診斷測試同一做法)。另發現單一點的「固定」關係在面板被 refusedRelations 過濾,留 P4-3 檢視。
 - **確效**:單元 4072 過 / 26 跳過 / 1 既有失敗(kernel,非本刀);e2e 6/6;完整 `verify:ui` **254/254**;tsc 與四項 lint PASS;inventory 254 呼叫。
-- **下一刀**:P4-3(G15 參照來源/聯動/失效與重指定)、P4-4(依 P0 量測修 G04/14/18)。另案:kernel moveFace 訊息不一致;「固定」關係的面板過濾。
+- **下一刀**:P4-3(G15 參照來源/聯動/失效與重指定)、P4-4(依 P0 量測修 G04/14/18)。另案:「固定」關係的面板過濾。
 
 ## 3h. 2026-11-01 P4-1 已完成:關係標記避讓與雙向高亮(G12)
 
@@ -1001,7 +991,7 @@ B2 修環境與腳本、B3 記「未驗」不阻塞、C1 兩段式 CI、C2 減�
   - **測試**:單元 `apps/web/test/relation-labels.test.ts` 8 項;e2e `tests/e2e/manual-relation-labels.js` 6 步(真實 DOM 量測 + WebGL 像素抽樣,基準與修正同法量測)。
   - **確效**:全倉庫單元 4068 過 / 26 跳過 / **1 既有失敗**(kernel direct-edit moveFace 訊息不符,stash 後乾淨 HEAD 重現相同 → 非本刀,另案);完整 `verify:ui` **253/253**;`tsc` 0 錯誤;四項 lint PASS;inventory 270 文件 / 253 呼叫。
   - **詳情**:DEV_LOG 2026-11-01 條目、acceptance §P4-1。
-- **下一刀**:P4-2(G13 DOF 方向與修復前後畫布呈現)、P4-3(G15 參照來源/聯動/失效)、P4-4(依 P0 量測修 G04/14/18)。另案待辦:kernel moveFace 拒絕訊息與測試期望不一致(本次於乾淨 HEAD 重現)。
+- **下一刀**:P4-2(G13 DOF 方向與修復前後畫布呈現)、P4-3(G15 參照來源/聯動/失效)、P4-4(依 P0 量測修 G04/14/18)。
 
 ## 4. 下一階段核心計畫：草圖互動改善方案 (P1 即時尺寸輸入)
 

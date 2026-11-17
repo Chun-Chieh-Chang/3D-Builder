@@ -152,7 +152,7 @@ P0 核心功能與驗收項目已全數跑通（Windows 瀏覽器 `manual-sketch
 | G12 保留完整清單 | 通過 | 「現有限制條件」列數與畫布亮起集合一致(擴及端點後同語意),含「相等」列;清單列可點選(additive 切換、刪除鈕不受影響);面板顯示所有尺寸與分析框照舊。 |
 | 選取模式不干擾既有互動 | 通過 | 尺寸標記、點選、Esc 分層照舊(完整 verify:ui 253 項含全部既有案例通過);label 點擊/雙擊/拖曳路徑未改(`onLabelClick` 同一入口)。 |
 | 已知缺口 | 記錄待辦 | 避讓佈局以平面座標近似螢幕距離,斜視角下為近似(與既有 `*px` 位移同一假設);收合為自動淡出,無手動「只顯示相關」開關(如需可另案);G13/G15/P4-4 未開工。 |
-| 既有失敗(非本刀) | 記錄 | `packages/kernel/test/direct-edit.test.ts` move face(C10.1):期望「超過了這個面後面的厚度」實得「移動的結果不是有效實體」;stash 本刀變更後於乾淨 HEAD 重現相同,另案處理。 |
+| `moveFace` 拒絕訊息 | 已修(A1) | 當時 `packages/kernel/test/direct-edit.test.ts` move face(C10.1) 在乾淨 HEAD 重現，後由 `f71f0cc3` 修正。 |
 
 回歸:新增單元 8 項 + 受影響 6 檔 104 項全過;全倉庫單元 4068 過 / 1 既有失敗 / 26 跳過;`tsc` 0 錯誤;lint 四項 PASS;完整 `verify:ui` **253/253**。
 
@@ -169,7 +169,7 @@ P0 核心功能與驗收項目已全數跑通（Windows 瀏覽器 `manual-sketch
 | D05 套用 = 預覽 | 通過 | 套用預覽過的修復(降 30 留 40)→ 衝突清除(狀態 under)、端點實測 x=40 **與預覽完全一致**;一次 Undo → 回到過多定義、端點回 30。 |
 | D05 不能無聲刪除尺寸 | 通過 | 尺寸修復列文案為「改為從動」(e2e 斷言列中存在「從動」);刪除只屬於關係類修復(關係可刪,尺寸只能轉從動)。 |
 | 已知缺口 | 記錄待辦 | 旋轉 DOF 以兩枚軸向箭頭呈現(逐軸探測語意,面板已聲明);「固定」關係對單一點在面板被拒絕過濾(candidateRelations 有提供、refusedRelations 試解後移除)——是否為預期行為留 P4-3 檢視;P4-3/P4-4 未開工。 |
-| 既有失敗(非本刀) | 記錄 | 同 P4-1:kernel `direct-edit` moveFace(C10.1) 訊息不符,乾淨 HEAD 重現,另案處理。 |
+| `moveFace` 拒絕訊息 | 已修(A1) | 當時在乾淨 HEAD 重現，後由 `f71f0cc3` 修正。 |
 
 回歸:新增單元 4 項 + relation-labels 8 項;全倉庫單元 4072 過 / 1 既有失敗 / 26 跳過;`tsc` 0 錯誤;四項 lint PASS;完整 `verify:ui` **254/254**。
 
@@ -186,7 +186,6 @@ P0 核心功能與驗收項目已全數跑通（Windows 瀏覽器 `manual-sketch
 | D07 重指定生效 | 通過 | 「確認改用」→ 單命令 replaceRef → 重建成功、清單列「聯動中」+新來源名;底部通知「已改用 …」。 |
 | D07 存讀保留 | 通過 | 存檔重開後:參照仍為新來源、清單列同名「聯動中」、草圖重建 ok。 |
 | 已知缺口 | 記錄待辦 | 進入草圖編輯器時重建至該草圖為止(其結果項目 rolledBack、無 unresolved)——參照問題由 store 按特徵保留(成功才清)補足;「固定」關係對單點在面板被 refusedRelations 過濾,待 P4-4 查;P4-4 其餘未開工。 |
-| 既有失敗(非本刀) | 記錄 | 同前:kernel `direct-edit` moveFace(C10.1),乾淨 HEAD 重現,另案。 |
 
 回歸:新增單元 6 項;全倉庫單元 4078 過 / 1 既有失敗 / 26 跳過;`tsc` 0 錯誤;四項 lint PASS;完整 `verify:ui` **255/255**。
 
@@ -208,7 +207,7 @@ P0 核心功能與驗收項目已全數跑通（Windows 瀏覽器 `manual-sketch
 | 已知缺口 | 記錄待辦 | 最近點的細化容差為參數上 1e-6(`goldenMin` 的 tol 為粗掃步長的一百萬分之一),未對「螢幕像素」再最佳化;樣條最近點沿 Catmull-Rom 參數而非弧長,極不等距控制點下參數與弧長不成比例(顯示與命中同一個表示,無內部不一致)。`hitTest` 未建空間索引。 |
 | 既有失敗(非本刀) | 已修(A1) | kernel `direct-edit` moveFace(C10.1) 訊息已改為 `edit.moveTooFar`，19/19 綠；原為乾淨 HEAD 重現的既有失敗。 |
 
-回歸:新增單元 26 項(nearest-point 8、snap-hold 9、dimension-preview 5、interact G14 段 4);全倉庫單元 **4104 過 / 1 既有失敗(kernel `direct-edit` moveFace 拒絕訊息,乾淨 HEAD 重現,非本刀)/ 26 跳過**;`tsc` 0 錯誤;四項 lint PASS;完整 `verify:ui` **257 / 257**(0 失敗、0 known)。`tsc` 0 錯誤;四項 lint PASS;完整 `verify:ui` **257 / 257**(0 失敗、0 known)。
+回歸:新增單元 26 項(nearest-point 8、snap-hold 9、dimension-preview 5、interact G14 段 4);當時全倉庫單元 **4104 過 / 1 失敗（後由 A1 修正） / 26 跳過**;`tsc` 0 錯誤;四項 lint PASS;完整 `verify:ui` **257 / 257**(0 失敗、0 known)。
 
 ## 測試與失敗紀錄
 
