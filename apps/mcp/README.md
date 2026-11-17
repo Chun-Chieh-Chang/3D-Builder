@@ -45,6 +45,27 @@
 
 第一版最多 32 個元件、64 個配合，來源為直接引用的實體零件。若干涉結果是 `incomplete`，檢查其中的 `unknown` 或 `failed`。配合成立後仍可能有干涉。各 Agent 的連線說明見[共用建模指引](../../docs/photo-to-cad.md)。
 
+## 與 Agent 協作出工程圖（ADR 0256）
+
+原則：工程圖要**完全定義**零件的每個尺寸，**滿足使用者的標註需求**，視圖、剖面與必要的標註由 agent 自主建立。
+
+1. 先存零件（`part_save`）。`drawing_plan` 回傳六個方向的主視圖排名與理由，附三張縮圖和一句要問使用者的話，通常只問主視圖，或請使用者回「照建議」。
+2. `drawing_create` 一次建好：主視圖、投影視圖、剖面（主視圖隱藏線占 20% 以上時，切線沿被隱藏的孔軸）、等角視圖、完全定義所需的所有尺寸，以及圖紙與比例。檔案存成 `.3dbd`，App 可以開啟。
+3. 使用者用口語追加，可以隨時加：
+   - `drawing_tolerance`：例如「Ø10 加 H7」「60 ±0.1」「+0.02/0」「max」。
+   - `drawing_annotate`：表面粗糙度 Ra、幾何公差（附基準）、基準字母、註記。
+   - `drawing_text_size`：全圖字高（2.5–5 mm，視圖標題取 10/7 倍）或個別項目。
+4. 每次變更後立即存檔，並回傳自檢結果與整張圖紙的 PNG。自檢必須全部為零或空：
+   - `coverage.complete`：完全定義。
+   - `clutter.count`：文字壓字、文字被線穿過、尺寸線或引線互穿、尺寸線穿入其他視圖、視圖標題落在其他視圖內。
+   - `glyphs.missing`：PDF 寫不出的字。
+   - `text.outOfRange`：字高超出範圍。
+   - `failed`：無法繪製的尺寸。
+   - `outside`：超出圖框。
+5. `drawing_export` 匯出 PDF、DXF 或 SVG。
+
+字型依序尋找：`DRAWING_FONT`、Windows 的微軟正黑體、macOS 的蘋方、Linux 的文泉驛／文鼎、DejaVu。PDF 與圖片使用同一套字型和缺字替代規則，所以圖片上看到的就是 PDF 會寫出的內容。
+
 ## 新 CLI
 
 先 `npm install` 及 `npm run mcp:build`，再使用：

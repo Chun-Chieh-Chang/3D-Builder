@@ -8,6 +8,7 @@ export * from './svg';
 export * from './geometry';
 export * from './dimension';
 export * from './autoDimension';
+export * from './autoDrawing';
 export * from './annotation';
 export * from './surfaceFinish';
 export * from './overlap';
@@ -28,3 +29,4 @@ export * from './shade';
 export * from './fonts';
 
 export * from './projectionRefs';
+export * from './sheetRaster';

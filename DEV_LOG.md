@@ -1,5 +1,32 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-17 — AI 協作出工程圖：完全定義、自主視圖與剖面、零重疊、字高可調（ADR 0256，未提交）
+
+做了什麼：見 handoff 同日條目與 [ADR 0256](docs/adr/0256-ai-drawing-collaboration.md)。以 GitHub main `c57e935` 為基底，變更在 `scratch/claude-takeover/ai-drawing-0256.patch`。
+
+看圖抓到並修正的版面問題（每個都先由 PNG 目視發現，再把規則補進 `clutterOf` 讓自檢抓得到）：
+1. 孔標註文字穿過右側垂直尺寸列 → 引線角度／長度搜尋（`steerLeaders`，多輪）。
+2. 一般註記壓在 60 尺寸上 → 改放圖面左下角。
+3. Ra 與平面度框互疊（註記圖元無所屬）→ 圖元加 `owner`。
+4. 孔位延伸線橫越整個視圖 → 位置尺寸放在特徵較近的一側（ISO 129-1）。
+5. 視圖標題被尺寸延伸線穿過、移入他視圖內 → 標題放在該視圖全部尺寸之下，標題留 2 mm 淨空，且不得落入他視圖框。
+6. 字高 5 mm 時尺寸列擠入相鄰視圖 → 行距隨字高（2×字高），投影視圖自動外移（`spreadViews`），數字滑移為最後手段。
+7. 等角視圖空位只看外框四周 → 2 mm 網格最大空矩形，同尺寸取右上。
+8. 盲孔深度標在前視隱藏線上 → 規劃器知道哪些特徵在該視圖只有隱藏線，改標在剖面 A-A。
+
+紅隊四問：
+- **輸入破壞**：公差字串只收 ±、上下限、配合等級、max／min，`±0`、兩限相等、無法解析一律拒絕；字高超出 2.5–5 mm（標題 3.5–7 mm）拒絕並回報範圍，不自動夾值；Ra 超出 0.008–400 拒絕；未存檔零件拒絕出圖；主視圖不可為等角。
+- **幾何干涉**：自檢 `clutter` 必須為 0；出界以 100 分懲罰；A4 排不乾淨時自動試 A3／A2。
+- **依賴鏈**：工程圖只用既有 `DrawingCommand`；新增的模型欄位只有 `ViewCaption.height`（`checkViewCaption` 驗證）；`.3dbd` 由 App 開啟（測試以 `readAnyDocumentFile` 讀回）。
+- **真值**：完整性以模型拓樸（`viewFeatures`）建的圖判定，不以尺寸數量判定；fuzz 200 個隨機零件斷言規劃後完整、不重複、可冪等、刪一個位置尺寸必被抓出並補回（fuzz 曾抓到 `n×Ø` 重複標註的實際錯誤，已修）；缺字以 PDF 編碼器本身的 `warnings` 判定。
+
+驗證：typecheck、四項 lint 通過；`drawing.test` 4/4、`auto-drawing-plan` 7/7、`e2e` 8/8。
+接續驗證（2026-11-17 晚，獨立 worktree `scratch/worktree-0256`、分支 `adr-0256-ai-drawing`，基底 `c44f977a`）：
+- `docs:sync`、`typecheck`、四項 lint（`lint:rules`、`lint:deps`、`lint:i18n`、`lint:repo`）、`npm run mcp:build` 全部通過。
+- `packages/drawing`、`packages/model`、`apps/mcp`、`tests/phase5` 共 96/96 檔通過（其中 4 檔因 Windows 沙盒阻擋 `127.0.0.1`／junction，於非沙盒重跑 45/45 通過）。
+- 金樣零件實測 `tests/kit/auto-drawing-golden.kit.ts` 1/1 通過（153.08s）：4 個零件皆成功出圖（`placesMissing=0`、`roundsMissing=0`、`glyphsMissing=0`、`failed=0`、`outside=0`；`diamond-pin` clutter 3、`locating-plate` 0、`sds-plus-bit` 37、`v-block` 0）。
+- 全量 `npm test -- --maxWorkers 2`：446/452 檔通過（5452 項通過）；5 檔沙盒限制（`assembly`、`live-assembly`、`live-bridge`、`session`、`textual`）於非沙盒單獨重跑 50/50 通過；`tests/phase8/iges-fuzz.test.ts`（平行負載下 900s 逾時）單獨重跑通過（781.90s，1 passed | 1 skipped）。
+
 ## 2026-11-17 — 除料陣列（ADR 0257）與鑽頭樣本依新指引重建（Claude 對話）
 
 - 使用者要求依 ADR 0254 指引重建鑽頭樣本。發現陣列的種子只要是除料，在鑽頭上必定失敗（刻字也一樣），且錯誤標在種子上。使用者裁定先修引擎。原因與做法見 [ADR 0257](docs/adr/0257-pattern-of-cuts.md)。

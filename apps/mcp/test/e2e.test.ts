@@ -38,7 +38,7 @@ const json = (r: CallToolResult) => JSON.parse((r.content[0] as { text: string }
 it('tells the client how to work, and lists its tools', async () => {
   expect(client.getInstructions()).toMatch(/apply_commands/);
   const { tools } = await client.listTools();
-  expect(tools.map((t) => t.name).sort()).toEqual(['apply_commands', 'assembly_apply_commands', 'assembly_export', 'assembly_inspect', 'assembly_new', 'assembly_open', 'assembly_query_elements', 'assembly_save', 'cad_execute_feature', 'cad_export_manufacturing', 'cad_get_viewport_screenshot', 'cad_inspect_geometry', 'command_reference', 'export_file', 'live_status', 'part_new', 'part_open', 'part_save', 'part_summary', 'query_elements', 'rebuild_events', 'recognize_features', 'render_view', 'session_status', 'undo']);
+  expect(tools.map((t) => t.name).sort()).toEqual(['apply_commands', 'assembly_apply_commands', 'assembly_export', 'assembly_inspect', 'assembly_new', 'assembly_open', 'assembly_query_elements', 'assembly_save', 'cad_execute_feature', 'cad_export_manufacturing', 'cad_get_viewport_screenshot', 'cad_inspect_geometry', 'command_reference', 'drawing_annotate', 'drawing_apply', 'drawing_complete', 'drawing_create', 'drawing_export', 'drawing_inspect', 'drawing_open', 'drawing_picture', 'drawing_plan', 'drawing_save', 'drawing_text_size', 'drawing_tolerance', 'drawing_undo', 'export_file', 'live_status', 'part_new', 'part_open', 'part_save', 'part_summary', 'query_elements', 'rebuild_events', 'recognize_features', 'render_view', 'session_status', 'undo']);
 });
 
 it('serves the four standard CAD tools over the real stdio transport', async () => {

@@ -1,5 +1,25 @@
 # 交接與接續工作
 
+## 2026-11-17 — AI 協作出工程圖（ADR 0256，Claude 對話，**未提交，額度用完中止**）
+
+- 需求（使用者原話整理）：借鑒 CADCraft 優化工程圖；與 AI agent 協作，指定 3D 模型後以簡單互動自動完成工程圖；公差與標註可任意追加；原則是 **fully determine 所有特徵尺寸**、滿足用戶標註、自主建立剖面與視圖；標註須符合機械設計規範、**不可重疊干涉、不可亂碼**；**字體大小適中，可統一也可個別調整**。決策與範圍見 [ADR 0256](docs/adr/0256-ai-drawing-collaboration.md)。
+- CADCraft 是純 2D 製圖軟體，沒有 3D→工程圖；借用的是 QDIM（基線／座標尺寸）、MCP 自檢（selfCheck）、`render` 算圖讓 agent 看圖。
+- **程式碼在雲端工作副本，以 GitHub main `c57e935` 為基底**（本機 `2372331` 落後 5 個提交，ADR 0255 已被使用，所以本案是 0256）。全部變更寫成 `scratch/claude-takeover/ai-drawing-0256.patch`。接續步驟：
+  1. 本機 `git checkout -- handoff.md DEV_LOG.md`（本段與 DEV_LOG 條目也在 patch 內），`git pull`。
+  2. `git apply --index scratch/claude-takeover/ai-drawing-0256.patch`，`npm ci`（若 package-lock 有變），`npm run typecheck`。
+  3. 跑 `npx vitest run apps/mcp/test/drawing.test.ts tests/phase5/auto-drawing-plan.test.ts apps/mcp/test/e2e.test.ts`，再跑**全量** `npm test`（雲端全量在額度用完前未跑完，結果未知）。
+  4. `npm run mcp:build` 後在 Claude Code 實際走一次：part_save → drawing_plan → drawing_create → drawing_tolerance／drawing_annotate／drawing_text_size → drawing_export，開 `.3dbd` 於 App 目視。
+- 新增／修改的檔案：
+  - `packages/drawing/src/autoDrawing.ts`：主視圖評分 `rankMainViews`、投影視圖 `chooseProjections`、剖面建議 `adviseSection`（切線沿被隱藏孔軸）、**完全定義圖** `planDrawingDimensions`／`dimensionCoverage`（每個軸向的位置以尺寸串到基準、每個孔／弧／圓角大小各一次、`n×Ø` 涵蓋同尺寸、隱藏線上不標）。
+  - `packages/drawing/src/sheetRaster.ts`：無瀏覽器整張圖紙 PNG，TrueType `glyf` 字形輪廓（含複合字形），缺字規則與 PDF 相同。
+  - `packages/drawing/src/overlap.ts`：`clutterOf`（文字壓字、文字被他線穿過、尺寸數字被自身延伸線穿過、尺寸線／引線互穿、尺寸線穿入他視圖、視圖標題落入他視圖；延伸線互穿依 ISO 129-1 不計）。
+  - `packages/drawing/src/scene.ts`：圖元加 `owner`（只供檢查）；表面粗糙度、幾何公差框、基準、未指定字高的註記依全圖字高縮放。`arrange.ts`：行距可依字高調整。
+  - `packages/model/src/drawing.ts`：`ViewCaption.height`（1.8–20 mm，選填）。
+  - `apps/mcp/src/drawingSession.ts`、`drawingTools.ts`：13 個工具 `drawing_plan／create／inspect／tolerance／annotate／text_size／complete／apply／undo／picture／save／export／open`；`session.ts` 加 `drawingSource()`、`root` 改 public；`server.ts` 註冊；`reference.ts` 的 INSTRUCTIONS 加協作流程；`apps/mcp/README.md` 加說明。
+  - 測試：`apps/mcp/test/drawing.test.ts`（平板 3 孔、階梯塊＋盲孔自動剖 A-A；公差、Ra、平面度、註記、字高統一／個別／越界拒絕、刪尺寸後自檢與補回、PDF 無缺字）、`tests/phase5/auto-drawing-plan.test.ts`（200 個隨機零件 fuzz＋檢查規則）、`apps/mcp/test/e2e.test.ts` 工具清單；`tests/kit/auto-drawing-golden.kit.ts`（金樣零件實測，**尚未跑**）。
+- 已驗證（接續至 2026-11-17 晚，基底 `c44f977a`）：`docs:sync`、`typecheck`、四項 lint（`rules`/`deps`/`i18n`/`repo`）、`npm run mcp:build` 通過；`drawing.test` 4/4、`auto-drawing-plan` 7/7、`e2e` 8/8；`packages/drawing`、`packages/model`、`apps/mcp`、`tests/phase5` 共 96/96 檔通過；金樣零件 `auto-drawing-golden` 4/4 出圖通過（153s）；全量 `npm test` 446/452 過 + 5 檔沙盒限制於非沙盒 50/50 過 + `iges-fuzz` 單獨重跑過（781.9s）。兩張測試圖目視確認無重疊、中文正常（Linux 需 CJK TrueType 字型，雲端裝了文泉驛；Windows 用微軟正黑體）。
+- **未完成**：35 個 STEP 目標實測、App 端一鍵按鈕、斜面／倒角自動標註（目前自檢列為缺漏）、局部放大圖、符號（Ra／框／基準）的個別字高、進度頁本階段最後幾項。
+
 ## 2026-11-17 — 除料陣列與鑽頭樣本重建（ADR 0257，Claude 對話）
 
 - 完成 [ADR 0257](docs/adr/0257-pattern-of-cuts.md)：除料特徵可以陣列（以工具計算與除料），算不出種子做了什麼時錯誤歸陣列。鑽頭樣本依 ADR 0254 指引重建：參考軸、溝與柄槽各一再環狀陣列、估計值標記、四個資料夾，形狀不變。
