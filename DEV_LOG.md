@@ -1,5 +1,31 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-17 — part-3 without Delete Face: probes, and the round gate widened (ARC_SPREAD 1e-3 → 1e-2)
+
+Feasibility probes for part-3's windows (design doc freeform-generalization §6o, §6o-A, §6o-B; probes `scratch/ff/c9a`–`c9i`) and one product change: `ARC_SPREAD` in `roundRecognition.ts`.
+
+Measured:
+- part-3 is a 2° conical shell (f66 outer, f70 inner, 1.398 mm). B-type walls: drafted tool from the wall's own rail, within 4.0e-7 / 2.77e-7 mm; filling the window (tool ∩ shell fused in) takes 4.5–8.5 s per wall where `deleteFaces` does not return in 240 s. A-type wall f97: ruled loft of two plane curves 27.98° apart, `Kernel.loft` within 3.91e-5 mm (τ 2.3e-4; accepted by the user, tied to τ), cut in 0.9 s.
+- Recognition of the filled body is still refused (20 free faces with one wall filled, 29 with four, from 16): the edge rounds become grooves (11.8 mm² of exposed wall) once the wall is put back. Rounds must be added after the cut; the sharp edge has to be restored first (`sharpCurve`). Not built.
+- f186 (r 0.508), f152 and f154 (r 0.127), f98 (r 3.048) are rolling balls within 2τ of their supports. f152 and f154 were refused only by the first gate: section radii spread 1.62e-3 and 5.39e-3 against 1e-3.
+
+Change: `ARC_SPREAD` 1e-2. After it, `rollingBall` on part-3: f152 (f66, f80) r 0.1270 dev 7.9e-4 (τ 8.0e-4); f154 (f66, f81) r 0.1272 dev 3.6e-4 (τ 3.8e-4).
+
+Red-team four questions:
+- **Input corruption.** The deviation gate and the comparison after the rebuild are unchanged. Corners of semi-axes a and a + e, e over 1e-5…0.3 of a, a in 1…5 (150, seeded), through a STEP file: none refused, none wrong (raw difference < 1e-9).
+- **Self-intersection.** Not affected: the gate only decides which faces are looked at as balls.
+- **Dependency chain.** One constant in the kernel; the product reads it only through `arcSections`. No schema or command change.
+- **Ground truth.** The fuzz computes the section spread itself, from the surface, and asserts the band the old gate refused ((1e-3, 1e-2]) now gets a ball (answered with its deviation), above 2e-2 still gets none, and that a nominated corner's deviation is within 1.5·e. The branches are counted (≥ 10 each).
+
+Mutations (`tests/phase8/rolling-ball-spread-fuzz.test.ts`): `ARC_SPREAD` 1e-3 fails (a 3.63 e 0.0233 spread 8.68e-3, expected a ball); `ARC_SPREAD` 1 fails (a 2.61 e 0.108 spread 0.0552, expected null). Restored after each.
+
+Regression:
+- Real parts (35): 30 rebuilt, 0 regressions against `audit-0255.jsonl`; part-3 refused with 12 freeform faces left (16 before); MT17203 refused with 84 (90 before: the changed counts are `audit-compare.mjs`'s CHANGED lines).
+- Unit: `recognize-rolling-ball*`, `feature-recognition*`, `recognize-drafted-rounds*`, `recognize-analytic-faces*`, `recognize-corner-chamfer*` — 22 files, 416 tests passed (maxWorkers 2). TypeScript: no errors. Full `verify:ui` and the full unit suite not run for this change (no UI or drawing code touched).
+- Heap: the probes' numbers (128 → 382 MiB for one wall plus recognition, 793 MiB for four) are not separated by step; not claimed as leak-free (§3.5).
+
+Not done: sharp-edge restoration, loft cuts in the composite path, part-3 as a whole. Needs an approved acceptance list (suggested in §6o-B).
+
 ## 2026-11-16 — Recognition reads drafted spline walls, and rounds whose support is one (ADR 0255)
 
 A drafted extrusion of a spline outline (ADR 0251), read back from STEP, is rebuilt as one drafted extrusion with the draft it was made with. Rounds whose support is the spline wall are rebuilt too. Along the way the drafted wall itself was changed: its far curve is approximated lighter, and OCCT's foot round now builds on 37 of 39 random parts, against 17.
