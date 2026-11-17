@@ -1,5 +1,11 @@
 # 交接與接續工作
 
+## 2026-11-17 — 拔模樣條牆辨識（ADR 0255）
+
+- 從 STEP 讀回 ADR 0251 的拔模樣條伸長，重建為同一拔模角的一次伸長；沿樣條牆的圓角一併重建。詳見 [ADR 0255](docs/adr/0255-recognition-reads-drafted-spline-walls.md) 與 [開發日誌](DEV_LOG.md)。
+- 驗證：fuzz 牆 115/115、圓角 92/92 重建；突變 12/14 轉紅（2 項存活防禦已移除）；實件稽核 30/35、0 退步；完整 `verify:ui` 280/280；typecheck 與 lint 0 錯。
+- 未完成：part-3 仍被拒絕（拔模牆不在主伸長方向，需要不經刪面的路徑，設計文件 §6l、§6m）。PR #11 把圓角截面散度閘門由 1e-3 放寬到 1e-2，尚未核定，未合併。
+
 ## 2026-11-16 — PropertyManager 窄欄與版面調整
 
 - 遠端 `0ec2e32c` 已保存核准的實作順位和驗收條件。P0/P1/P2 已提交並推送至 `main`（`23723317`），實作位於 `WorkspaceLayout.tsx`、`PropertyManager.tsx` 和 `app.css`，回歸納入 `manual-sidebar-tabs.js`。實測見 [開發日誌](DEV_LOG.md#2026-11-16--propertymanager-窄欄改善決策)。

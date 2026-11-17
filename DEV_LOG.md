@@ -1,5 +1,37 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-16 — Recognition reads drafted spline walls, and rounds whose support is one (ADR 0255)
+
+A drafted extrusion of a spline outline (ADR 0251), read back from STEP, is rebuilt as one drafted extrusion with the draft it was made with. Rounds whose support is the spline wall are rebuilt too. Along the way the drafted wall itself was changed: its far curve is approximated lighter, and OCCT's foot round now builds on 37 of 39 random parts, against 17.
+
+Red-team four questions:
+- **Input corruption.** `faceDraftedAlong` refuses a tolerance that is no positive finite length (`kernel.draftedTolerance`). `wallCurveBetween` gives null for one.
+  - A face whose lean changes along it (a ruled loft) is not read as drafted, nor is a straight spline wall or a drafted wall asked along another direction.
+  - A tolerance tighter than the wall's own deviation refuses it.
+- **Self-intersection.** Each read curve is measured against the wall's exact curve (≥200 points). A stretch that cannot be approximated within its bound is not read, and the part is refused. Nothing unmeasured reaches a sketch. The drafted wall still refuses a draft that closes before any Boolean (ADR 0251).
+- **Dependency chain.** The rebuilt features are the existing sketch, extrude (`draft1`) and fillet, through the regenerator and the comparison (ADR 0248). No new feature or schema. The help text names the new capability.
+- **Ground truth.** The bodies made here are the truth.
+  - The walls are measured against themselves (points of a read curve to the wall's face, 1e-7).
+  - The draft angle is checked to 1e-9° of what was made.
+  - Radii are checked to 1e-3·r: OCCT's round is kept on these walls, a ball only to 2e-5 to 1e-3 (C2).
+  - Volumes are checked by the comparison.
+
+Measurements:
+- Walls fuzz, 120 seeds: 115 made, 115 rebuilt.
+- Rounds fuzz, 100 seeds: 92 made, 92 rebuilt.
+- Fixed cases and heap: 12/12. Heap +422.7 MiB over 6 recognitions, `liveShapes` unchanged, straight control +56.4 MiB (the section's OCCT Boolean on B-spline walls; `sectionEdges` grows the same).
+- OCCT's round at the foot of a drafted spline wall builds or fails when a spline point moves 1e-9 or 1e-7, or the angle 0.1°.
+- Real parts (35): 30 rebuilt, 0 regressions; part-3 refused with 16 freeform faces left (30 before). Refused part-3 and part-4 are slower (3.4 s → 17.1 s and 14.8 s): more rolling-ball calls, as freeform faces are now offered as round supports.
+- Full `verify:ui`: 280/280 passed, no source edits during the run.
+- Full unit suite by directory: all pass (phase8 84 files, 1674 tests). typecheck and lint:rules/deps/i18n/repo: 0 errors. ADR 0251 mutations 10/10 red after its walls changed.
+
+RCA:
+- **The far rail.** OCCT's fillet failing on half the ADR 0251 walls, and stretches across a corner failing to approximate, had one cause. The far rail, asked for 1e-9 at degree 14, chased the curvature jump at the corner join and crowded ~20 knots there. CAPA: degree 5 to 1e-8, knots left in (removing them skews the rulings: corners 1e-5 off, measured).
+- **Signed zero.** A layer of no height came from `toFixed(7)` turning −1.5e-33 into "-0.0000000", another key than "0.0000000". This was latent; a drafted hole beside free rounds exposed it. CAPA: round, add 0, then key.
+- **Misleading refusal.** A drafted hole beside free rounds showed up as "faces in the way", but the first error was an unread section: the composite path replaced the message. Logged the first error to find it.
+- **Too many approximations.** Several failures had one pattern: an approximation asked for more than its target allowed. 1e-9 at a curvature jump, or C1 or C2 at knots of full multiplicity, stalls near 1e-7, crowds knots, or comes out 6e-2 off while reporting 1e-6. CAPA: approximate only the stretch needed; rebuild the drawn curve exactly where it is a rail; measure every result.
+- **My own bugs.** A knot snap whose comparison could never succeed; a fallback whose final bound was tighter than the step it fell back from. Each was caught by a probe on a failing seed, not by reading.
+
 ## 2026-11-16 — PropertyManager 窄欄改善決策
 
 - 本機完成 P0/P1/P2。零件與組合件桌面側欄預設 360 px，支援拖曳、方向鍵與雙擊還原，偏好存在瀏覽器。768 px 以下使用同一份側欄作覆蓋面板，保留未提交公式和草圖選取。

@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import type { BRepBuilderAPI_MakeShape, Geom_BSplineCurve, GProp_GProps, NCollection_Array1_gp_Pnt2d, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
+import type { BRepBuilderAPI_MakeShape, Geom_BSplineCurve, Geom_OffsetCurve, GProp_GProps, NCollection_Array1_gp_Pnt2d, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
 import { anyHit, buildBvh, nearestHitAt, triangleNormal } from './rays';
 import { forEachSample } from './sampling';
 import { escapeStepText } from './stepText';
@@ -245,6 +245,8 @@ const T = {
  * within, so recognition of such a file is held to `RECOGNIZE_TOLERANCE` as before.
  */
 const FILE_TOLERANCE_FLOOR = 1e-7;
+/** How far from the exact draft a wall may be for a section to read its curve exactly at any height (ADR 0255); a wall this program makes is within 1e-9. */
+const DRAFTED_WALL_READ = 1e-6;
 
 /**
  * How many pieces one stretch of a variable-radius law (C5.2, ADR 0167) is cut into. OCCT fills its laws smoothly, so the straight line between two
@@ -966,13 +968,25 @@ export class Kernel {
           throw new KernelError(t('kernel.opFailed', { label: t('feature.draft') }));
         }
         const longer = before > 0 || after > 0 ? arena.own(joined.BSplineCurve()) : own;
-        // Geom_OffsetCurve moves a curve by d along (curve′ × up) = −left
-        const offset = arena.own(new oc.Geom_OffsetCurve(longer, -toward, dir, false));
+        // Geom_OffsetCurve moves a curve by d along (curve′ × up) = −left. The C0 check is off: a spline read back exactly from a drafted wall (ADR 0255)
+        // carries knots of full multiplicity where it is smooth, which the check refuses; a real kink makes the approximation below miss its bound
+        const offset = arena.own(new oc.Geom_OffsetCurve(longer, -toward, dir, true));
         offset.Translate(arena.own(new oc.gp_Vec(up[0] * reachUp, up[1] * reachUp, up[2] * reachUp)));
         let far: Geom_BSplineCurve;
         try {
-          const ap = arena.own(new oc.GeomConvert_ApproxCurve(offset, 1e-9, oc.GeomAbs_Shape.GeomAbs_C1, 200, 14));
-          if (!ap.IsDone() || !(ap.MaxError() <= 1e-7)) throw new KernelError(t('feature.draftCloses', { inset: inset.toFixed(3) }));
+          // C1, degree at most 5, to 1e-8, taken when within 1e-7 (ADR 0255). Asked for 1e-9 at degree 14, as ADR 0251 had it, the approximation chased the
+          // curvature jump where the profile curve turns into its extension at a corner and crowded ~20 knots there, halving down to 0 (multiplicity 13
+          // each): OCCT's fillet along the wall's foot then built on 17 of 39 random parts, and no stretch of a section across that join could be
+          // approximated again; this way, 37 of 39, the wall within ~1e-8 of the exact draft, its corners where they were (within 1e-9). The knots it does
+          // not need are left in: taking them out moves its parameter, which skews the rulings, and put the corners 1e-5 off.
+          // Failing that, degree 14 to 1e-9 taken when within 1e-6 (a curve whose curvature jumps at its knots stops near 1.1e-7), and then C0 to 1e-7
+          let ap = arena.own(new oc.GeomConvert_ApproxCurve(offset, 1e-8, oc.GeomAbs_Shape.GeomAbs_C1, 200, 5));
+          if (!ap.IsDone() || !(ap.MaxError() <= 1e-7)) ap = arena.own(new oc.GeomConvert_ApproxCurve(offset, 1e-9, oc.GeomAbs_Shape.GeomAbs_C1, 200, 14));
+          if (!ap.IsDone() || !(ap.MaxError() <= 1e-6)) {
+            // to 1e-8 in up to 400 segments: asked for 1e-9 in 200 it chased a curvature jump and came out ~0.06 off (measured on three rebuilt bosses)
+            ap = arena.own(new oc.GeomConvert_ApproxCurve(offset, 1e-8, oc.GeomAbs_Shape.GeomAbs_C0, 400, 14));
+            if (!ap.IsDone() || !(ap.MaxError() <= 1e-7)) throw new KernelError(t('feature.draftCloses', { inset: inset.toFixed(3) }));
+          }
           far = arena.own(ap.Curve());
         } catch (err) {
           rethrowTrap(err);
@@ -4293,6 +4307,326 @@ export class Kernel {
   }
 
   /**
+   * When `face` is a drafted wall along `n` (ADR 0255): a B-spline surface ruled one way (degree 1, two rows of poles), both rails flat on planes square to
+   * `n` at different heights, and every point of the surface where the exact draft of its first rail puts it — at height h above that rail, `k·h` to one
+   * side of it in the plane, square to it — to within `tol`. Measured at 9 × 9 points over the surface's parameter range. Then: the first rail, its height,
+   * `k` (tan of the draft angle), the side (+1: toward curve′ × n), and the largest deviation measured. A wall with no lean (k ≤ 1e-9) is not one: it is
+   * straight (`extrudedCurveOf`). Else null.
+   */
+  private draftedWallOf(face: TopoDS_Shape, n: Vec3, tol: number, arena: Arena): { rail: Geom_BSplineCurve; level: number; other: Geom_BSplineCurve; otherLevel: number; k: number; side: number; deviation: number } | null {
+    const oc = this.oc;
+    const ad = arena.own(new oc.BRepAdaptor_Surface(arena.own(oc.TopoDS.Face(face)), true));
+    if (String(ad.GetType()).replace('GeomAbs_', '') !== 'BSplineSurface') return null;
+    const s = arena.own(ad.BSpline());
+    const ruledU = s.UDegree() === 1 && s.NbUPoles() === 2;
+    const ruledV = s.VDegree() === 1 && s.NbVPoles() === 2;
+    if (ruledU === ruledV) return null;
+    const [u0, u1, v0, v1] = [ad.FirstUParameter(), ad.LastUParameter(), ad.FirstVParameter(), ad.LastVParameter()];
+    if (![u0, u1, v0, v1].every(Number.isFinite)) return null;
+    // the rails at the surface's own bounds, not the face's: on a wall trimmed by what it meets (a plate, a round along its foot) the isos at the face's
+    // bounds are blends of the two rails some way up the wall (measured: 1.14 mm up, 4.2e-4 off any cubic); the surface's first rail is the drawn curve
+    const full = arena.own(new oc.BRepAdaptor_Surface(arena.own(oc.TopoDS.Face(face)), false));
+    const rails = (ruledU ? [s.UIso(full.FirstUParameter()), s.UIso(full.LastUParameter())] : [s.VIso(full.FirstVParameter()), s.VIso(full.LastVParameter())]).map((c) => arena.own(oc.GeomConvert.CurveToBSplineCurve(arena.own(c))));
+    const [ra, rb] = rails as [Geom_BSplineCurve, Geom_BSplineCurve];
+    // each rail on one plane square to n
+    const levelOf = (c: Geom_BSplineCurve): number | null => {
+      const hs: number[] = [];
+      for (let i = 1; i <= c.NbPoles(); i++) hs.push(dot3(this.xyz(arena.own(c.Pole(i))), n));
+      const size = Math.max(1, ...hs.map(Math.abs));
+      return Math.max(...hs) - Math.min(...hs) <= 1e-9 * size ? hs[0]! : null;
+    };
+    const ha = levelOf(ra);
+    const hb = levelOf(rb);
+    if (ha === null || hb === null || Math.abs(hb - ha) <= 1e-9) return null;
+    const t0 = ra.FirstParameter();
+    const t1 = ra.LastParameter();
+    const pr = arena.own(new oc.GeomAPI_ProjectPointOnCurve());
+    pr.Init(ra, t0, t1);
+    const g = arena.own(new oc.gp_Pnt());
+    const P = arena.own(new oc.gp_Pnt());
+    const T = arena.own(new oc.gp_Vec());
+    // the signed distance of a point, carried down to the rail's plane, from the rail: + toward curve′ × n; null when its foot is not inside the rail
+    const offsetOf = (p: Vec3): { off: number; h: number } | null => {
+      const h = dot3(p, n) - ha;
+      const q: Vec3 = [p[0] - h * n[0], p[1] - h * n[1], p[2] - h * n[2]];
+      g.SetX(q[0]);
+      g.SetY(q[1]);
+      g.SetZ(q[2]);
+      pr.Perform(g);
+      if (pr.NbPoints() === 0) return null;
+      const t = pr.LowerDistanceParameter();
+      if (t <= t0 + 1e-9 * (t1 - t0) || t >= t1 - 1e-9 * (t1 - t0)) return null;
+      ra.D1(t, P, T);
+      const left = cross3([T.X(), T.Y(), T.Z()], n);
+      const l = Math.hypot(...left);
+      if (l <= 1e-12) return null;
+      return { off: dot3(sub3(q, [P.X(), P.Y(), P.Z()]), left) / l, h };
+    };
+    const Q = arena.own(new oc.gp_Pnt());
+    const samples: { off: number; h: number }[] = [];
+    for (let i = 0; i < 9; i++) {
+      for (let j = 0; j < 9; j++) {
+        ad.D0(u0 + ((u1 - u0) * (i + 0.5)) / 9, v0 + ((v1 - v0) * (j + 0.5)) / 9, Q);
+        const o = offsetOf([Q.X(), Q.Y(), Q.Z()]);
+        if (o) samples.push(o);
+      }
+    }
+    if (samples.length < 40) return null;
+    // the lean: least squares of off = kk·h through the origin (kk signed)
+    const kk = samples.reduce((a, x) => a + x.off * x.h, 0) / samples.reduce((a, x) => a + x.h * x.h, 0);
+    // a lean whose whole offset over the wall's height is within the tolerance cannot be told from none: that wall is straight, read as one (measured:
+    // a loft nudged 1e-8 off straight was read as drafted by 1e-9 rad and so taken off the straight walls' approximation, ADR 0243)
+    if (!(Math.abs(kk) * Math.abs(hb - ha) > tol)) return null;
+    const deviation = Math.max(...samples.map((x) => Math.abs(x.off - kk * x.h)));
+    if (!(deviation <= tol)) return null;
+    return { rail: ra, level: ha, other: rb, otherLevel: hb, k: Math.abs(kk), side: Math.sign(kk), deviation };
+  }
+
+  /**
+   * The curve a drafted wall (`draftedWallOf`) makes on the plane through `origin` square to `n`, exactly: its first rail moved onto that plane and
+   * offset in it by k·h (`Geom_OffsetCurve`, the C0 check off: a rail read off a ruled B-spline carries knots of full multiplicity where it is smooth).
+   * Not approximated here: only the stretch a section needs is (`draftedSectionCurve`), as the whole rail runs on past the wall's corners where it
+   * was extended, its curvature jumping there for real. Null when the face is no drafted wall.
+   */
+  private draftedCurveAt(face: TopoDS_Shape, origin: Vec3, n: Vec3, tol: number, arena: Arena): Geom_OffsetCurve | null {
+    const oc = this.oc;
+    const wall = this.draftedWallOf(face, n, tol, arena);
+    if (!wall) return null;
+    // from the nearer rail (each is the other's offset: the formula is the same from either), so on a rail's own plane it is that rail, moved by nothing
+    const at = dot3(origin, n);
+    const [from, level] = Math.abs(at - wall.otherLevel) < Math.abs(at - wall.level) ? [wall.other, wall.otherLevel] : [wall.rail, wall.level];
+    const h = at - level;
+    const rail = arena.own(oc.GeomConvert.CurveToBSplineCurve(from));
+    rail.Translate(arena.own(new oc.gp_Vec(n[0] * h, n[1] * h, n[2] * h)));
+    // Geom_OffsetCurve moves by d along curve′ × V; with V = n that is the + side here
+    return arena.own(new oc.Geom_OffsetCurve(rail, wall.side * wall.k * h, arena.own(new oc.gp_Dir(n[0], n[1], n[2])), true));
+  }
+
+  /** The exact curves of every drafted wall of `source` on the plane through `origin` square to `n` (`draftedCurveAt`). */
+  private draftedCurves(source: TopoDS_Shape, origin: Vec3, n: Vec3, arena: Arena): Geom_OffsetCurve[] {
+    const oc = this.oc;
+    const out: Geom_OffsetCurve[] = [];
+    for (const ex = arena.own(new oc.TopExp_Explorer(source, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) {
+      const c = this.draftedCurveAt(arena.own(ex.Current()), origin, n, DRAFTED_WALL_READ, arena);
+      if (c) out.push(c);
+    }
+    return out;
+  }
+
+  /**
+   * ADR 0255: the stretch of one of `curves` (drafted walls' exact curves on a plane) from `a` to `b` (both on it within `endTol`) through `mid` (within
+   * `midTol`, its foot between theirs), as a section's NURBS piece. Only that stretch is approximated, so the wall's extensions past its corners, where
+   * the curvature jumps, are not in it: C2, degree at most 8, to 1e-7, the knots it does not need taken out to 1e-7, used when within `DRAFTED_WALL_READ`
+   * measured at 200 points (a curve read so makes a wall OCCT's fillet runs along: one with knots of full multiplicity, or needlessly fine, does not);
+   * else C0 to 1e-9 when within 1e-7 measured. The approximations' own reported errors are not used: measured, they are off both ways (3.8e-6
+   * reported, 5.3e-10 measured; 1.1e-6 reported, 7.3e-3 measured). Else null.
+   */
+  private draftedSectionCurve(curves: Geom_OffsetCurve[], a: Vec3, b: Vec3, mid: Vec3, local: (p: Vec3) => [number, number], arena: Arena, endTol: number, midTol: number): NurbsSectionEdge | null {
+    const oc = this.oc;
+    const P = arena.own(new oc.gp_Pnt());
+    for (const c of curves) {
+      const foot = (p: Vec3, tol: number): number | null => {
+        const pr = arena.own(new oc.GeomAPI_ProjectPointOnCurve(this.pnt(arena, p), c));
+        return pr.NbPoints() > 0 && pr.LowerDistance() <= tol ? pr.LowerDistanceParameter() : null;
+      };
+      const ua = foot(a, endTol);
+      const ub = foot(b, endTol);
+      if (ua === null || ub === null || Math.abs(ua - ub) <= 1e-12) continue;
+      const um = foot(mid, midTol);
+      let [lo, hi] = [Math.min(ua, ub), Math.max(ua, ub)];
+      if (um === null || um < lo || um > hi) continue;
+      // A corner is where the rail turns from the profile's curve into its extension past the corner (a line: the curvature jumps there). The foot of
+      // the corner lands within ~1e-9 of that knot, a sliver past it bringing the jump into the stretch, and the approximation then crowds its knots at
+      // the end (measured: spans down to ~1e-9, poles bunched there, and a kink of radius 4e-4 mm once the sketch solver moved them by ~1e-10). Each end
+      // within 1e-7 of the range of a knot of the rail (the offset's parameter is the rail's) is put on it.
+      const basis = arena.own(oc.GeomConvert.CurveToBSplineCurve(arena.own(c.BasisCurve())));
+      const snap = (u: number): number => {
+        let best = u;
+        let gap = 1e-7 * (hi - lo);
+        for (let i = 1; i <= basis.NbKnots(); i++) {
+          const d = Math.abs(basis.Knot(i) - u);
+          if (d <= gap) {
+            best = basis.Knot(i);
+            gap = d;
+          }
+        }
+        return best;
+      };
+      [lo, hi] = [snap(lo), snap(hi)];
+      const stretch = arena.own(new oc.Geom_TrimmedCurve(c, lo, hi, true, true));
+      const within = (bs: Geom_BSplineCurve, tol: number): boolean => {
+        const pr = arena.own(new oc.GeomAPI_ProjectPointOnCurve());
+        pr.Init(bs, bs.FirstParameter(), bs.LastParameter());
+        for (let i = 0; i <= 200; i++) {
+          stretch.D0(lo + ((hi - lo) * i) / 200, P);
+          pr.Perform(P);
+          if (!(pr.NbPoints() > 0 && pr.LowerDistance() <= tol)) return false;
+        }
+        return true;
+      };
+      let piece: Geom_BSplineCurve | null = null;
+      // On a rail's own plane (where the profile's sketch goes, at the bottom of the layer) the curve is that rail. A wall this program drafted carries the
+      // drawn curve there (a Catmull-Rom cubic, C1), raised to degree 13 or 14 with the far rail's knots merged in: brought back to a C1 cubic to 1e-9, it
+      // is the drawn curve again, which a wall drafted from it takes as the original did (the rail as it is, or a C2 or a finely interpolated curve, made a
+      // wall the rebuild's own approximation or OCCT's fillet failed on)
+      if (Math.abs(c.Offset()) <= 1e-12) {
+        // each span of the rail between its knots, from its ends' points and derivatives (a cubic Hermite span), a C1 cubic with double knots; then every
+        // knot the curve does not need taken out to 1e-9, which leaves the drawn curve's own. Exact when the rail is a cubic in each span (as a raised
+        // cubic is); else it is not within 1e-9 and is not used
+        const us = [lo];
+        for (let i = 1; i <= basis.NbKnots(); i++) if (basis.Knot(i) > lo + 1e-9 * (hi - lo) && basis.Knot(i) < hi - 1e-9 * (hi - lo)) us.push(basis.Knot(i));
+        us.push(hi);
+        const D = arena.own(new oc.gp_Vec());
+        const at = (u: number): { p: Vec3; d: Vec3 } => {
+          basis.D1(u, P, D);
+          return { p: [P.X(), P.Y(), P.Z()], d: [D.X(), D.Y(), D.Z()] };
+        };
+        const ends = us.map(at);
+        const nSpans = us.length - 1;
+        const poles = arena.own(new oc.NCollection_Array1_gp_Pnt(1, 2 * nSpans + 2));
+        poles.SetValue(1, this.pnt(arena, ends[0]!.p));
+        for (let i = 0; i < nSpans; i++) {
+          const dl = (us[i + 1]! - us[i]!) / 3;
+          poles.SetValue(2 * i + 2, this.pnt(arena, add(ends[i]!.p, ends[i]!.d, dl)));
+          poles.SetValue(2 * i + 3, this.pnt(arena, add(ends[i + 1]!.p, ends[i + 1]!.d, -dl)));
+        }
+        poles.SetValue(2 * nSpans + 2, this.pnt(arena, ends[nSpans]!.p));
+        const knots = arena.own(new oc.NCollection_Array1_double(1, us.length));
+        const mults = arena.own(new oc.NCollection_Array1_int(1, us.length));
+        us.forEach((u, i) => {
+          knots.SetValue(i + 1, u);
+          mults.SetValue(i + 1, i === 0 || i === us.length - 1 ? 4 : 2);
+        });
+        try {
+          const t = arena.own(new oc.Geom_BSplineCurve(poles, knots, mults, 3, false));
+          for (let i = t.NbKnots() - 1; i >= 2; i--) t.RemoveKnot(i, 0, 1e-9);
+          if (within(t, 1e-9)) piece = t;
+        } catch (err) {
+          rethrowTrap(err);
+        }
+      }
+      if (!piece) try {
+        // C2 by interpolation: a cubic through evenly spaced points of the stretch, its end tangents taken just inside it, with as many points as make it
+        // hold (25 doubled up to 400). An approximation (GeomConvert_ApproxCurve) crowded its knots at the ends instead (spans down to ~1e-9, poles bunched
+        // there, a kink of radius 4e-4 mm once a sketch solver moved them by ~1e-10).
+        const V = arena.own(new oc.gp_Vec());
+        const tangent = (u: number) => {
+          stretch.D1(u, P, V);
+          return arena.own(new oc.gp_Vec(V.X(), V.Y(), V.Z()));
+        };
+        for (let m = 25; m <= 400 && !piece; m *= 2) {
+          const pts = arena.own(new oc.NCollection_Array1_gp_Pnt(1, m));
+          for (let i = 0; i < m; i++) {
+            stretch.D0(lo + ((hi - lo) * i) / (m - 1), P);
+            pts.SetValue(i + 1, P);
+          }
+          const ip = arena.own(new oc.GeomAPI_Interpolate(arena.own(new oc.NCollection_HArray1_gp_Pnt(pts)), false, 1e-12));
+          const eps = 1e-6 * (hi - lo);
+          ip.Load(tangent(lo + eps), tangent(hi - eps), true);
+          ip.Perform();
+          if (!ip.IsDone()) continue;
+          const t = arena.own(ip.Curve());
+          if (within(t, DRAFTED_WALL_READ)) piece = t;
+        }
+        if (!piece) {
+          // C0, measured within 1e-7. Asked for 1e-9 at degree 14 in 200 segments it chased a curvature jump inside the stretch (where the profile curve
+          // turns into its extension past a corner) and came out 6.9e-2 off; at 1e-8 in 400, 3.25e-3 off on another stretch, where degree 8 came within
+          // 8e-9 (measured): so a few in turn
+          for (const [tol, deg] of [[1e-8, 8], [1e-7, 14], [1e-8, 14]] as const) {
+            if (piece) break;
+            const c0 = arena.own(new oc.GeomConvert_ApproxCurve(stretch, tol, oc.GeomAbs_Shape.GeomAbs_C0, 400, deg));
+            if (!c0.IsDone()) continue;
+            const t = arena.own(c0.Curve());
+            if (within(t, 1e-7)) piece = t;
+          }
+        }
+      } catch (err) {
+        rethrowTrap(err);
+      }
+      if (!piece) continue;
+      const rev = ua > ub;
+      const np = piece.NbPoles();
+      const idx = (i: number) => (rev ? np + 1 - i : i);
+      const poles: [number, number][] = [];
+      const weights: number[] = [];
+      for (let i = 1; i <= np; i++) {
+        poles.push(local(this.xyz(arena.own(piece.Pole(idx(i))))));
+        weights.push(piece.Weight(idx(i)));
+      }
+      const nk = piece.NbKnots();
+      const k0 = piece.Knot(1);
+      const k1 = piece.Knot(nk);
+      const knots: number[] = [];
+      const mults: number[] = [];
+      for (let i = 1; i <= nk; i++) {
+        const j = rev ? nk + 1 - i : i;
+        knots.push(rev ? k0 + k1 - piece.Knot(j) : piece.Knot(j));
+        mults.push(piece.Multiplicity(j));
+      }
+      return { kind: 'nurbs', degree: piece.Degree(), poles, ...(piece.IsRational() ? { weights } : {}), knots, mults, a: poles[0]!, b: poles[np - 1]! };
+    }
+    return null;
+  }
+
+
+  /**
+   * ADR 0255: the exact curve a wall of `id` makes on the plane of `frame` (a B-spline wall carried straight, or a drafted one, read across its whole
+   * surface: `extrudedCurves`), from `a` to `b` (both on it within 1e-7) passing within `midTol` of `mid`, in the frame's coordinates, as a
+   * section's NURBS piece. A drafted layer's bottom is made this way: its spline walls' curves there, between the corners the body has there. Else null.
+   */
+  wallCurveBetween(id: ShapeId, frame: Frame, a: P2, b: P2, mid: P2, midTol: number): NurbsSectionEdge | null {
+    if (!(Number.isFinite(midTol) && midTol > 0)) return null;
+    const arena = new Arena();
+    try {
+      const l = Math.hypot(...frame.normal);
+      const n: Vec3 = [frame.normal[0] / l, frame.normal[1] / l, frame.normal[2] / l];
+      const world = (p: P2): Vec3 => [0, 1, 2].map((i) => frame.origin[i]! + p[0] * frame.xDir[i]! + p[1] * frame.yDir[i]!) as Vec3;
+      const local = (p: Vec3): P2 => {
+        const d = sub3(p, frame.origin);
+        return [dot3(d, frame.xDir), dot3(d, frame.yDir)];
+      };
+      const straight = this.extrudedCurves(this.get(id), frame.origin, n, arena);
+      const exact = straight.length ? this.exactSectionCurve(straight, world(a), world(b), world(mid), local, arena, new Map(), 1e-7, midTol) : null;
+      if (exact) return exact;
+      const drafted = this.draftedCurves(this.get(id), frame.origin, n, arena);
+      return drafted.length ? this.draftedSectionCurve(drafted, world(a), world(b), world(mid), local, arena, 1e-7, midTol) : null;
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * Whether face `faceIndex` is a wall drafted along `d` (ADR 0255, `draftedWallOf`) to within `tol` mm: its lean in radians, signed as a plane's in
+   * recognition (+ when its outward normal has a component along `d`), and the largest deviation from the exact draft measured. Else null.
+   */
+  faceDraftedAlong(target: ShapeId, faceIndex: number, d: Vec3, tol: number): { lean: number; deviation: number } | null {
+    if (!(Number.isFinite(tol) && tol > 0)) throw new KernelError(t('kernel.draftedTolerance'));
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const face = ShapeIndex.of(oc, this.get(target), T.FACE, arena).keys[faceIndex];
+      if (!face) throw new KernelError(t('edit.faceOutOfRange', { index: faceIndex }));
+      const l = Math.hypot(...d);
+      const n: Vec3 = [d[0] / l, d[1] / l, d[2] / l];
+      const wall = this.draftedWallOf(face, n, tol, arena);
+      if (!wall) return null;
+      // the outward normal at the middle of the face, for the sign
+      const f = arena.own(oc.TopoDS.Face(face));
+      const ad = arena.own(new oc.BRepAdaptor_Surface(f, true));
+      const P = arena.own(new oc.gp_Pnt());
+      const U = arena.own(new oc.gp_Vec());
+      const V = arena.own(new oc.gp_Vec());
+      ad.D1((ad.FirstUParameter() + ad.LastUParameter()) / 2, (ad.FirstVParameter() + ad.LastVParameter()) / 2, P, U, V);
+      const c = cross3([U.X(), U.Y(), U.Z()], [V.X(), V.Y(), V.Z()]);
+      const out = f.Orientation() === oc.TopAbs_Orientation.TopAbs_REVERSED ? -1 : 1;
+      const axial = (out * dot3(c, n)) / Math.hypot(...c);
+      return { lean: Math.sign(axial) * Math.atan(wall.k), deviation: wall.deviation };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
    * C2: whether face `faceIndex` is a rolling-ball round of one radius between faces `supports` (sections arcs of one radius, the ball's centre that far
    * from both supports' surfaces to within `tol` mm): its radius, whether it is on an outside edge (`convex`), and how far off it is. Else null.
    */
@@ -4371,8 +4705,11 @@ export class Kernel {
     }
   }
 
-  /** The piece of one of `curves` from `a` to `b` (both on it within 1e-7, and the curve between them near `mid`), as a section's exact curve; else null. */
-  private exactSectionCurve(curves: Geom_BSplineCurve[], a: Vec3, b: Vec3, mid: Vec3, local: (p: Vec3) => [number, number], arena: Arena, boxes: Map<Geom_BSplineCurve, { lo: Vec3; hi: Vec3 }> = new Map()): NurbsSectionEdge | null {
+  /**
+   * The piece of one of `curves` from `a` to `b` (both on it within `endTol`, 1e-7 unless the caller knows its ends less precisely, and the curve between
+   * them within `midTol` of `mid`: which stretch of a closed curve it is), as a section's exact curve; else null.
+   */
+  private exactSectionCurve(curves: Geom_BSplineCurve[], a: Vec3, b: Vec3, mid: Vec3, local: (p: Vec3) => [number, number], arena: Arena, boxes: Map<Geom_BSplineCurve, { lo: Vec3; hi: Vec3 }> = new Map(), endTol = 1e-7, midTol = 1e-3): NurbsSectionEdge | null {
     const oc = this.oc;
     // a B-spline lies in the box of its poles: only a curve whose box holds both ends can be the one
     const inBox = (c: Geom_BSplineCurve, p: Vec3) => {
@@ -4395,7 +4732,7 @@ export class Kernel {
       if (!inBox(c, a) || !inBox(c, b)) continue;
       const param = (p: Vec3): number | null => {
         const pr = arena.own(new oc.GeomAPI_ProjectPointOnCurve(this.pnt(arena, p), c));
-        return pr.NbPoints() > 0 && pr.LowerDistance() <= 1e-7 ? pr.LowerDistanceParameter() : null;
+        return pr.NbPoints() > 0 && pr.LowerDistance() <= endTol ? pr.LowerDistanceParameter() : null;
       };
       const ua = param(a);
       const ub = param(b);
@@ -4404,7 +4741,7 @@ export class Kernel {
       piece.Segment(Math.min(ua, ub), Math.max(ua, ub));
       // the section's own (approximate) curve passes near the middle of this piece: it is the same stretch of the wall, not the rest of a closed one
       const pm = arena.own(new oc.GeomAPI_ProjectPointOnCurve(this.pnt(arena, mid), piece));
-      if (!(pm.NbPoints() > 0 && pm.LowerDistance() <= 1e-3)) continue;
+      if (!(pm.NbPoints() > 0 && pm.LowerDistance() <= midTol)) continue;
       const rev = ua > ub;
       const n = piece.NbPoles();
       const idx = (i: number) => (rev ? n + 1 - i : i);
@@ -4434,6 +4771,7 @@ export class Kernel {
   private readSectionEdges(shape: TopoDS_Shape, frame: Frame, arena: Arena, source?: TopoDS_Shape): (SectionEdge | NurbsSectionEdge)[] {
     const oc = this.oc;
     let extruded: Geom_BSplineCurve[] | undefined;
+    let drafted: Geom_OffsetCurve[] | undefined;
     const boxes = new Map<Geom_BSplineCurve, { lo: Vec3; hi: Vec3 }>();
     const local = (p: Vec3): P2 => {
       const d: Vec3 = [p[0] - frame.origin[0], p[1] - frame.origin[1], p[2] - frame.origin[2]];
@@ -4467,8 +4805,15 @@ export class Kernel {
         const b = at(t1);
         if (Math.abs(t1 - t0 - 2 * Math.PI) < 1e-9 || (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9 && t1 - t0 > Math.PI)) out.push({ kind: 'circle', c: center, r });
         else out.push({ kind: 'arc', c: center, r, a, b, mid: at((t0 + t1) / 2) });
-      } else if ((type === 'bsplinecurve' || type === 'beziercurve') && source && (extruded ??= this.extrudedCurves(source, frame.origin, frame.normal, arena)).length > 0 && (() => {
-        const exact = this.exactSectionCurve(extruded!, this.xyz(arena.own(ad.EvalD0(t0))), this.xyz(arena.own(ad.EvalD0(t1))), this.xyz(arena.own(ad.EvalD0((t0 + t1) / 2))), local, arena, boxes);
+      } else if ((type === 'bsplinecurve' || type === 'beziercurve') && source && (() => {
+        const [pa, pb, pm] = [t0, t1, (t0 + t1) / 2].map((u) => this.xyz(arena.own(ad.EvalD0(u))));
+        extruded ??= this.extrudedCurves(source, frame.origin, frame.normal, arena);
+        let exact = extruded.length > 0 ? this.exactSectionCurve(extruded, pa!, pb!, pm!, local, arena, boxes) : null;
+        if (!exact) {
+          // a drafted wall (ADR 0255)
+          drafted ??= this.draftedCurves(source, frame.origin, frame.normal, arena);
+          if (drafted.length > 0) exact = this.draftedSectionCurve(drafted, pa!, pb!, pm!, local, arena, 1e-7, 1e-3);
+        }
         if (exact) out.push(exact);
         return !!exact;
       })()) {
