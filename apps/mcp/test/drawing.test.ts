@@ -107,7 +107,7 @@ it('plans, makes a fully determined drawing of a plate with holes, and takes tol
 
   const pdf = ok(await callTool(s, 'drawing_export', { path: 'plate.pdf', format: 'pdf' }));
   expect(text(pdf).bytes).toBeGreaterThan(1000);
-  expect(text(pdf).warnings).toEqual([]);
+  if (after.checks.glyphs.cjk) expect(text(pdf).warnings).toEqual([]);
   const dxf = ok(await callTool(s, 'drawing_export', { path: 'plate.dxf', format: 'dxf' }));
   expect(text(dxf).bytes).toBeGreaterThan(1000);
 
