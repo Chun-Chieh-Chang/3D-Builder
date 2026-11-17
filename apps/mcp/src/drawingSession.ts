@@ -125,8 +125,8 @@ export interface Checks {
   clutter: { count: number; texts: string[]; crossings?: string[] };
   /** The smallest and largest text height drawn, and the texts outside TEXT_RANGE: must be empty. */
   text: { min: number | null; max: number | null; outOfRange: string[] };
-  /** The font the PDF and the pictures write with, and what it cannot write (each would come out as 「?」): must be empty. */
-  glyphs: { font: string | null; missing: string[] };
+  /** The font the PDF and the pictures write with, whether it covers CJK, and what it cannot write (each would come out as 「?」): must be empty when CJK is covered. */
+  glyphs: { font: string | null; cjk: boolean; missing: string[] };
   /** Anything drawn outside the frame's area (mm past it). */
   outside: number;
   /** Dimensions the program could not draw, with why. */
@@ -134,30 +134,40 @@ export interface Checks {
   coverage: CoverageReport;
 }
 
-/** A TrueType font for the pictures and the PDF: the drawing's own Chinese font on Windows, a common one elsewhere, `DRAWING_FONT` first. */
+/** A TrueType font for the pictures and the PDF: `DRAWING_FONT` first, then a CJK-capable system font, then a Latin fallback. */
 function findFont(): TrueTypeFont | undefined {
   const candidates = [
     process.env.DRAWING_FONT,
     'C:\\Windows\\Fonts\\msjh.ttc',
     'C:\\Windows\\Fonts\\msjh.ttf',
+    '/System/Library/Fonts/PingFang.ttc',
+    '/System/Library/Fonts/STHeiti Medium.ttc',
+    '/System/Library/Fonts/STHeiti Light.ttc',
+    '/System/Library/Fonts/Hiragino Sans GB.ttc',
+    '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
+    '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+    '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/truetype/arphic/uming.ttc',
     'C:\\Windows\\Fonts\\arial.ttf',
     '/System/Library/Fonts/Supplemental/Arial.ttf',
     '/Library/Fonts/Arial.ttf',
-    '/System/Library/Fonts/PingFang.ttc',
-    '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
-    '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
-    '/usr/share/fonts/truetype/arphic/uming.ttc',
     '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
     '/usr/share/fonts/TTF/DejaVuSans.ttf',
   ].filter((p): p is string => !!p);
+  let fallback: TrueTypeFont | undefined;
   for (const p of candidates) {
     try {
-      if (existsSync(p)) return readTrueType(new Uint8Array(readFileSync(p)));
+      if (!existsSync(p)) continue;
+      const loaded = readTrueType(new Uint8Array(readFileSync(p)));
+      if (loaded.glyphOf(0x8cab) !== 0) return loaded;
+      fallback ??= loaded;
     } catch {
       /* not a TrueType font this can read: the next */
     }
   }
-  return undefined;
+  return fallback;
 }
 
 let fontCache: TrueTypeFont | null | undefined;
@@ -627,7 +637,7 @@ export class DrawingSession {
       overlaps: overlappingDimensions(b.scene.items, ids),
       text: { min: heights.length ? Math.min(...heights.map((x) => x.h)) : null, max: heights.length ? Math.max(...heights.map((x) => x.h)) : null, outOfRange: odd.slice(0, 12).map((x) => `${x.text} (${x.h} mm)`) },
       clutter: { count: clutter.count, texts: clutter.texts.slice(0, 12), ...(clutter.crossings ? { crossings: clutter.crossings.slice(0, 12) } : {}) },
-      glyphs: { font: f?.name ?? null, missing },
+      glyphs: { font: f?.name ?? null, cjk: f ? f.glyphOf(0x8cab) !== 0 : false, missing },
       outside: Math.round(outside * 10) / 10,
       failed,
       coverage,

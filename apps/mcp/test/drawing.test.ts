@@ -63,7 +63,7 @@ it('plans, makes a fully determined drawing of a plate with holes, and takes tol
   expect(r.drawing.checks.failed).toEqual([]);
   expect(r.drawing.checks.overlaps).toBe(0);
   const createClutter = r.drawing.checks.clutter;
-  if (r.drawing.checks.glyphs.font) expect(r.drawing.checks.glyphs.missing, r.drawing.checks.glyphs.font).toEqual([]);
+  if (r.drawing.checks.glyphs.cjk) expect(r.drawing.checks.glyphs.missing, r.drawing.checks.glyphs.font ?? '').toEqual([]);
   expect(r.drawing.checks.outside).toBe(0);
   expect(existsSync(join(root, 'plate.3dbd'))).toBe(true);
 
@@ -176,7 +176,7 @@ it('a stepped block with a blind bore gets a section along the bore, and every s
   expect(rep.checks.overlaps).toBe(0);
   expect(rep.checks.clutter.count, JSON.stringify(rep.checks.clutter)).toBe(0);
   expect(rep.checks.outside).toBe(0);
-  if (rep.checks.glyphs.font) expect(rep.checks.glyphs.missing, rep.checks.glyphs.font).toEqual([]);
+  if (rep.checks.glyphs.cjk) expect(rep.checks.glyphs.missing, rep.checks.glyphs.font ?? '').toEqual([]);
 }, 240_000);
 
 it('reads tolerances as people write them and refuses what it cannot read', () => {
