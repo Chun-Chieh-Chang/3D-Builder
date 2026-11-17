@@ -1,5 +1,14 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-17 (later) — part-3 Stage 0′ and part-4: probes only, both stopped at their gates
+
+Design doc freeform-generalization §6p (part-3) and §6q (part-4); probes `scratch/ff/c10a`–`c10e`, `c11a`–`c11i`, `c12a`–`c12e` (not tracked). No product code changed.
+
+- **part-3 Stage 0′ (§6p).** The B window's seven r 0.127 edge breaks are balls within τ, but `Kernel.deleteFaces` cannot make the sharp body (f152 alone threw after 70.8 s; all seven in 0.9 s). The local box test could not answer the question: its own control (a plane instead of the spline wall) also failed in the exact round ("end edge: no cut"), and my first comparison measured against a trimmed face. Stopped.
+- **part-4 (§6q).** The three refused faces are straight extrusions, read as walls by the product's own `faceExtrudedAlong` along their own directions; recognition refuses because those directions are no plane's normal. f171–f174 are one circle (r 10.731434, exact to 3.6e-13) carried with its plane fixed along two legs (d, then −y), mirrored: verified to ≤ 7.6e-13. But neither A1 construction holds: f173 has no closed section or caps along d, and the bore tool built from the circle overlaps the part by 322 mm³ (225 mm³ cut to |z| ≤ 4.79). The region the walls bound is set by other features. Stopped under the agreed gate.
+- **Red-team, what went wrong in my own process:** (1) I twice wrote a guess into the design doc that the next probe overturned (f220/f221 as the rail planes; f171/f173 as blends) — both are corrected in place, marked as overturned. (2) A probe's direction rounded to six digits made `faceExtrudedAlong` say "no" for f173 (c12a) where the exact ruling vector says "yes" (c11i): readers that test a direction need the exact vector, not a printed one. (3) A face's untrimmed isoparametric curve is not its boundary: c11h measured "rails" that leave the face; boundary questions must use the face's edges.
+- **Heap**: printed by each probe via `wasmMemory` with `> 0` asserted; not separated by step and not claimed leak-free.
+
 ## 2026-11-17 — part-3 without Delete Face: probes, and the round gate widened (ARC_SPREAD 1e-3 → 1e-2)
 
 Feasibility probes for part-3's windows (design doc freeform-generalization §6o, §6o-A, §6o-B; probes `scratch/ff/c9a`–`c9i`) and one product change: `ARC_SPREAD` in `roundRecognition.ts`.
