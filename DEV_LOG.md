@@ -17,6 +17,12 @@ What changed: see [ADR 0258](docs/adr/0258-analytic-face-reads-coaxial-arc-strip
 - **What went wrong in my own process:** (1) My first coaxial gate compared the two fitted centres; on a 5° arc a centre is poorly fixed along the arc's middle radius, and E13's 9-digit poles moved them 3.6e-7 apart — the gate now measures what the surface shows. (2) My first E13 oracle took the B-rep vertices as the ends of straight rulings; they sit up to 6.6e-4 off the surface (within their own tolerance) and the long edges are 1.9e-5 off straight (`c13o`), so it read 5.51e-5 for a sag of 3.78e-5. The oracle is now the surface's own end rulings against the design cone, and agrees with the product within 2%. (3) Two `node -e` patches lost text to the shell (an unescaped `'` and backticks, AGENTS.md §4 2026-11-14): one aborted unwritten, one dropped two `expect` messages that I restored with the edit tool after reading the file.
 - **Heap:** 40 000 calls (20 000 read by the rails, 20 000 refused by them so that OCCT runs too) +0.0 MiB against +1648.1 MiB for the `EvalD1` control, in a file of its own, `wasmMemory` with `> 0` asserted; `liveShapes` equal.
 
+## 2026-11-18 — 轉移準備：進行中變更 commit 至獨立分支、handoff §0 加入待辦總結、推雲端
+
+- 把三個進行中檔 commit 到獨立分支 `wip/drawing-multipage-20261118`（`7c7990a9`）並推遠端：`apps/mcp/src/drawingSession.ts`、`apps/mcp/src/drawingTools.ts`、`packages/drawing/src/overlap.ts`（ADR 0256 AI 工程圖協作：drawing_picture 多頁輸出 pageIndex、overlap clutterOf 重疊自檢、drawingSession 大改）。main 保持乾淨，等於 origin/main `489acd5b`；新電腦若要繼續工程圖協作，checkout `wip/drawing-multipage-20261118` 即可。
+- `handoff.md` §0 加入「待辦任務總結」區塊，列出 6 項待辦與建議優先順序（S3 使用者端實測、推進 part-3、核定 PR #11 閘門、維持擱置 part-4／MT17203／E13／C5、處理 wip 分支、組合件 MCP 後續③④）。
+- `docs:sync` 與 `lint:repo` 通過；已推送到雲端 main，準備轉移到別處繼續開發。
+
 ## 2026-11-17 (later) — part-3 Stage 0′ and part-4: probes only, both stopped at their gates
 
 Design doc freeform-generalization §6p (part-3) and §6q (part-4); probes `scratch/ff/c10a`–`c10e`, `c11a`–`c11i`, `c12a`–`c12e` (not tracked). No product code changed.

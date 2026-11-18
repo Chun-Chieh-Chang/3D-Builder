@@ -66,7 +66,7 @@ const schemas = {
   }),
   drawing_apply: z.strictObject({ commands: z.array(z.record(z.string(), z.unknown())).min(1).describe('DrawingCommand objects (command_reference topic types, names ["DrawingCommand"]).'), picture }),
   drawing_undo: z.strictObject({ picture }),
-  drawing_picture: z.strictObject({ view: z.string().optional().describe('Only this view, enlarged.'), px: z.number().min(1).max(16).optional().describe('Pixels per mm of the sheet.') }),
+  drawing_picture: z.strictObject({ view: z.string().optional().describe('Only this view, enlarged.'), px: z.number().min(1).max(16).optional().describe('Pixels per mm of the sheet.'), pageIndex: z.number().int().min(0).optional().describe('0-based page index.') }),
   drawing_save: z.strictObject({ path: z.string().min(1).optional() }),
   drawing_export: z.strictObject({ path: z.string().min(1), format: z.enum(['pdf', 'dxf', 'svg']) }),
   drawing_open: z.strictObject({ path: z.string().min(1) }),
@@ -101,10 +101,14 @@ export const drawingOf = (s: CadSession): DrawingSession => {
 const png = (bytes: Uint8Array) => ({ type: 'image' as const, data: Buffer.from(bytes).toString('base64'), mimeType: 'image/png' });
 
 async function answer(d: DrawingSession, detail: object, withPicture = true): Promise<CallToolResult> {
-  const content: CallToolResult['content'] = [{ type: 'text', text: JSON.stringify({ ...detail, drawing: d.report() }, null, 1) }];
+  const report = d.report();
+  const content: CallToolResult['content'] = [{ type: 'text', text: JSON.stringify({ ...detail, drawing: report }, null, 1) }];
   if (withPicture) {
-    const p = await d.picture();
-    content.push(png(p.png));
+    const pages = report.pages ?? 1;
+    for (let i = 0; i < pages; i++) {
+      const p = await d.picture({ pageIndex: i });
+      content.push(png(p.png));
+    }
   }
   return { content };
 }
@@ -184,7 +188,7 @@ export async function callDrawingTool(session: CadSession, name: string, raw: un
     }
     case 'drawing_picture': {
       const a = parse('drawing_picture');
-      const p = await d.picture({ ...(a.view ? { view: a.view } : {}), ...(a.px ? { px: a.px } : {}) });
+      const p = await d.picture({ ...(a.view ? { view: a.view } : {}), ...(a.px ? { px: a.px } : {}), ...(a.pageIndex !== undefined ? { pageIndex: a.pageIndex } : {}) });
       return { content: [png(p.png), { type: 'text', text: JSON.stringify({ width: p.width, height: p.height, ...(p.font ? {} : { note: 'no TrueType font was found: texts are drawn as their boxes (set DRAWING_FONT to a .ttf)' }) }) }] };
     }
     case 'drawing_save': {
