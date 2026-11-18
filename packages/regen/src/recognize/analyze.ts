@@ -884,9 +884,10 @@ function section(kernel: Kernel, shape: ShapeId, frame: Frame, box: { min: Vec3;
 }
 
 /** Every face is a surface of revolution about one axis (planes square to it): the axis, else null. */
-function revolveAxis(topo: Topology): { origin: Vec3; dir: Vec3 } | null {
+function revolveAxis(topo: Topology, skip?: ReadonlySet<number>): { origin: Vec3; dir: Vec3 } | null {
   let axis: { origin: Vec3; dir: Vec3 } | null = null;
-  for (const f of topo.faces) {
+  for (const [i, f] of topo.faces.entries()) {
+    if (skip?.has(i)) continue;
     const a = axisOf(f.geometry);
     if (a) {
       if (!axis) axis = a;
@@ -894,7 +895,8 @@ function revolveAxis(topo: Topology): { origin: Vec3; dir: Vec3 } | null {
     }
   }
   if (!axis) return null;
-  for (const f of topo.faces) {
+  for (const [i, f] of topo.faces.entries()) {
+    if (skip?.has(i)) continue;
     const g = f.geometry;
     if (!g) return null;
     if (g.type === 'plane' && !parallel(g.normal, axis.dir)) return null;
@@ -1590,6 +1592,115 @@ function revolveBase(kernel: Kernel, shape: ShapeId, axis: { origin: Vec3; dir: 
   return { type: 'revolve', axis, profile: { frame, loops: moved } };
 }
 
+/**
+ * ADR 0259, slice 1: a body of revolution with one window whose wall has no simple surface (a spline, straight or drafted) and runs along a direction square
+ * to the axis, closed by planes leaning with it. The base is the revolve of the half-plane section farthest from the window. The window is a cut: an
+ * extrusion of the curve the wall is drawn from (`Kernel.wallRail`, the file's own curve) closed by the chord between its ends, drafted as the wall is,
+ * up and down from the curve's plane as far as the wall reaches. Null when the body is not that (the caller then refuses as before); the rebuilt solid is
+ * checked against the original by the caller as for any recognition.
+ */
+function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: number[], frameFor: FrameFor, budget?: Budget, approx?: SplineApproximation): Recognition | null {
+  if (odd.length !== 1) return null;
+  const wallFace = odd[0]!;
+  // the faces of the window: the wall with no simple surface, and the planes that are not square to the axis (a window's straight sides, leaning with the draft)
+  const planes = topo.faces.flatMap((f, i) => (f.geometry?.type === 'plane' ? [i] : []));
+  const axis = revolveAxis(topo, new Set([...odd, ...planes]));
+  if (!axis) return null;
+  const windowFaces = new Set([...odd, ...planes.filter((i) => !parallel((topo.faces[i]!.geometry as Extract<SurfaceGeometry, { type: 'plane' }>).normal, axis.dir))]);
+  if (windowFaces.size > 3 || !revolveAxis(topo, windowFaces)) return null;
+  const free = freeWalls(kernel, shape, approx);
+  if (!free) return null;
+  const d = CANONICAL.find((c) => square(c, axis.dir) && free(wallFace, c) !== null);
+  if (!d) return null;
+  const lean = free(wallFace, d)!;
+  const [lo, hi] = extentAlong(topo, d)[wallFace]!;
+  if (!(hi > lo)) return null;
+  // the base: the half-plane section farthest round the axis from where the window is
+  const around = (p: Vec3): Vec3 | null => {
+    const v = sub(p, axis.origin);
+    const k = dot(v, axis.dir);
+    const r: Vec3 = [v[0] - axis.dir[0] * k, v[1] - axis.dir[1] * k, v[2] - axis.dir[2] * k];
+    const l = Math.hypot(...r);
+    return l < 1e-9 ? null : unit(r);
+  };
+  const samples = [topo.faces[wallFace]!.center, ...topo.edges.filter((e) => e.faces.includes(wallFace)).map((e) => e.mid)].map((p) => around(p)).filter((u): u is Vec3 => u !== null);
+  if (samples.length === 0) return null;
+  let planeNormal: Vec3 | null = null;
+  let farthest = -Infinity;
+  for (const c of CANONICAL.filter((x) => square(x, axis.dir))) {
+    for (const sign of [1, -1]) {
+      const n: Vec3 = [c[0] * sign, c[1] * sign, c[2] * sign];
+      const across = unit(cross(frameFor(n, axis.origin).normal, axis.dir));
+      const nearest = Math.min(...samples.map((u) => Math.acos(Math.max(-1, Math.min(1, dot(u, across))))));
+      if (nearest > farthest + 1e-9) {
+        farthest = nearest;
+        planeNormal = n;
+      }
+    }
+  }
+  if (!planeNormal || farthest < Math.PI / 6) return null;
+  const margin = 1;
+  // the curve the wall is drawn from, on its own plane (a straight wall's anywhere: put below the wall)
+  // the planes that close the wall's ends: those it meets along an edge (a straight wall's may be square to the axis, so not among the window's faces above)
+  const beside = new Set(topo.edges.filter((e) => e.faces.includes(wallFace)).flatMap((e) => e.faces.filter((f) => f !== wallFace)));
+  const ends = [...beside].filter((i) => topo.faces[i]!.geometry?.type === 'plane').map((i) => {
+    const g = topo.faces[i]!.geometry as Extract<SurfaceGeometry, { type: 'plane' }>;
+    return { point: g.origin, normal: unit(g.normal) };
+  });
+  if (ends.length === 0) return null;
+  const drawn = kernel.wallRail(shape, wallFace, d, TOL, lo - margin, ends);
+  if (!drawn || drawn.poles.length < 2) return null;
+  const level = drawn.level;
+  budget?.check();
+  const base = revolveBase(kernel, shape, axis, planeNormal, frameFor, budget);
+  // the tool narrows along d where the material beside it widens: `lean` is + where the material narrows (ADR 0259, measured on the fuzz seeds)
+  const narrowsUp = lean < 0;
+  const angle = Math.abs(lean);
+  const piece = (dir: Vec3, from: number, to: number, inward: boolean) => {
+    const frame = frameFor(dir, [dir[0] * from, dir[1] * from, dir[2] * from]);
+    const at = (p: Vec3): P2 => {
+      const v = sub(p, frame.origin);
+      return [dot(v, frame.xDir), dot(v, frame.yDir)];
+    };
+    const poles = drawn.poles.map(at);
+    let area2 = 0;
+    for (let i = 0; i < poles.length; i++) {
+      const p = poles[i]!;
+      const q = poles[(i + 1) % poles.length]!;
+      area2 += p[0] * q[1] - q[0] * p[1];
+    }
+    // counter-clockwise: the pole polygon closed by the chord says which way the curve runs
+    const rev = area2 < 0;
+    const knots = rev ? drawn.knots.map((x) => drawn.knots[0]! + drawn.knots[drawn.knots.length - 1]! - x).reverse() : drawn.knots;
+    const ordered = rev ? [...poles].reverse() : poles;
+    const nurbs = {
+      kind: 'nurbs' as const,
+      degree: drawn.degree,
+      poles: ordered,
+      ...(drawn.weights ? { weights: rev ? [...drawn.weights].reverse() : drawn.weights } : {}),
+      knots,
+      mults: rev ? [...drawn.mults].reverse() : drawn.mults,
+      a: ordered[0]!,
+      b: ordered[ordered.length - 1]!,
+    };
+    const loop: Loop = { segs: [nurbs, { kind: 'line', a: nurbs.b, b: nurbs.a }], area: Math.abs(area2) / 2, depth: 0 };
+    const profile: PlanarProfile = { frame, loops: [loop], ...(angle > 1e-9 ? { draft: { angle, inward } } : {}) };
+    return { op: 'cut' as const, rec: { type: 'extrude' as const, dir, levels: [from, to], layers: [[profile]] } };
+  };
+  const neg: Vec3 = [-d[0], -d[1], -d[2]];
+  const extras: Extract<BaseRecord, { type: 'composite' }>['extras'] = [];
+  // up from the curve's plane to past the wall's top, and down from it to past the wall's foot (the tool leans the other way going down)
+  if (hi + margin > level) extras.push(piece(d, level, hi + margin, narrowsUp));
+  if (lo - margin < level) extras.push(piece(neg, -level, -(lo - margin), !narrowsUp));
+  if (extras.length === 0) return null;
+  return {
+    base: { type: 'composite', base, extras },
+    holes: [],
+    blends: [],
+    counts: { faces: topo.faces.length, blendFaces: 0, holeFaces: 0, baseFaces: topo.faces.length },
+  };
+}
+
 /** A plane through the axis: square to one of the default planes' normals when it can be, else to any direction across it. */
 export function planeThroughAxis(dir: Vec3): Vec3 {
   for (const n of [[0, 0, 1], [0, 1, 0], [1, 0, 0]] as Vec3[]) if (square(n, dir, 1e-12)) return n;
@@ -1725,6 +1836,10 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
       );
       const checkDirs = zeroAnalyticDirs.length > 0 ? [...zeroAnalyticDirs, ...planeDirs.filter((d) => !zeroAnalyticDirs.includes(d))] : planeDirs;
       const walls = free && checkDirs.some((d) => along(d));
+      if (!walls) {
+        const windowed = revolvedWindow(kernel, shape, topo0, odd, frameFor, budget, approx);
+        if (windowed) return windowed;
+      }
       if (!walls) throw new RecognizeError(`${t('recognize.freeform', { n: odd.length, faces: describe(topo0, odd) })}${approx ? '' : ` ${t('recognize.freeformHint')}`}`, true);
     }
     let current = shape;

@@ -9,7 +9,7 @@ import { stepAssemblyPlan } from '../../packages/io/src/stepAssembly';
 
 const log = (m: string) => appendFileSync('scratch/ff/c5a.log', m + String.fromCharCode(10));
 const trace = (m: string) => appendFileSync('scratch/ff/c5a.trace', `${new Date().toISOString().slice(11, 19)} ${m}\n`);
-const FILE = 'D:/3DB實機確認/組合圖(R1-10226+R1-10134).STEP';
+const FILE = 'D:/3DB實機確認/tmp/組合圖(R1-10226+R1-10134).STEP';
 
 export function part3(kernel: Kernel) {
   const parts = stepAssemblyPlan(kernel, new Uint8Array(readFileSync(FILE))).prototypes.filter((p: any) => p.part);

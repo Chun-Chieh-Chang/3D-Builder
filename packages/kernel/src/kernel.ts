@@ -4639,6 +4639,92 @@ export class Kernel {
   }
 
   /**
+   * The curve a wall along `d` is drawn from (ADR 0259): for a wall drafted along `d` (ADR 0255, `draftedWallOf`, to within `tol` mm), the surface's own
+   * first rail and the height (along unit `d`) of the plane it lies in; for a straight wall (`extrudedCurveOf`), its curve moved onto the plane at
+   * height `at`. The poles are in space. These are the curves the file holds, with their own poles: a section of the wall at another height is an
+   * approximation with many more (measured, ADR 0259: 105 to 402 poles of degree 3 or 8 against the drawn curve's 5 to 7). A drafted wall's rail runs on
+   * past where the wall was drawn to (ADR 0251 carries a spline on beyond its ends): given `between`, the planes that close the wall's ends, the curve is
+   * cut to the stretch between the first and the last place it crosses them. Null when the face is neither, or does not cross them twice.
+   */
+  wallRail(target: ShapeId, faceIndex: number, d: Vec3, tol: number, at: number, between: { point: Vec3; normal: Vec3 }[] = []): { level: number; degree: number; poles: Vec3[]; weights?: number[]; knots: number[]; mults: number[] } | null {
+    if (!(Number.isFinite(tol) && tol > 0) || !Number.isFinite(at)) return null;
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const face = ShapeIndex.of(oc, this.get(target), T.FACE, arena).keys[faceIndex];
+      if (!face) throw new KernelError(t('edit.faceOutOfRange', { index: faceIndex }));
+      const l = Math.hypot(...d);
+      const n: Vec3 = [d[0] / l, d[1] / l, d[2] / l];
+      let curve: Geom_BSplineCurve | null = null;
+      let level = at;
+      const wall = this.draftedWallOf(face, n, tol, arena);
+      if (wall) {
+        curve = wall.rail;
+        level = wall.level;
+      } else {
+        curve = this.extrudedCurveOf(face, [n[0] * at, n[1] * at, n[2] * at], n, arena);
+      }
+      if (!curve) return null;
+      if (between.length) {
+        // where the curve crosses the planes: sign changes of the distance on a fine sampling, each found by bisection
+        const t0 = curve.FirstParameter();
+        const t1 = curve.LastParameter();
+        const P = arena.own(new oc.gp_Pnt());
+        const off = (u: number, pl: { point: Vec3; normal: Vec3 }) => {
+          curve!.D0(u, P);
+          return dot3(sub3([P.X(), P.Y(), P.Z()], pl.point), pl.normal);
+        };
+        const hits: number[] = [];
+        const N = 2000;
+        for (const pl of between) {
+          let ua = t0;
+          let fa = off(ua, pl);
+          for (let i = 1; i <= N; i++) {
+            const ub = t0 + ((t1 - t0) * i) / N;
+            const fb = off(ub, pl);
+            // on the plane to within the kernel's own precision (a straight wall's curve ends exactly where the planes close it)
+            if (Math.abs(fa) <= 1e-7) hits.push(ua);
+            else if (fa * fb < 0) {
+              let [x0, x1, f0] = [ua, ub, fa];
+              for (let k = 0; k < 80; k++) {
+                const xm = (x0 + x1) / 2;
+                const fm = off(xm, pl);
+                if (f0 * fm <= 0) x1 = xm;
+                else [x0, f0] = [xm, fm];
+              }
+              hits.push((x0 + x1) / 2);
+            }
+            [ua, fa] = [ub, fb];
+          }
+          if (Math.abs(fa) <= 1e-7) hits.push(ua);
+        }
+        if (hits.length < 2) return null;
+        const [a, b] = [Math.min(...hits), Math.max(...hits)];
+        if (!(b - a > 1e-9 * (t1 - t0))) return null;
+        curve.Segment(a, b);
+      }
+      // the knots the curve does not need, taken out to 1e-9 mm: the rail is the drawn curve joined to its extensions and approximated again (ADR 0251),
+      // hundreds of poles where it was drawn with a handful; offsetting all of them again when the cut is rebuilt fails to approximate (measured, ADR 0259)
+      for (let i = curve.NbKnots() - 1; i >= 2; i--) curve.RemoveKnot(i, 0, 1e-9);
+      const poles: Vec3[] = [];
+      const weights: number[] = [];
+      for (let i = 1; i <= curve.NbPoles(); i++) {
+        poles.push(this.xyz(arena.own(curve.Pole(i))));
+        weights.push(curve.Weight(i));
+      }
+      const knots: number[] = [];
+      const mults: number[] = [];
+      for (let i = 1; i <= curve.NbKnots(); i++) {
+        knots.push(curve.Knot(i));
+        mults.push(curve.Multiplicity(i));
+      }
+      return { level, degree: curve.Degree(), poles, ...(curve.IsRational() ? { weights } : {}), knots, mults };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
    * Whether face `faceIndex` is a wall drafted along `d` (ADR 0255, `draftedWallOf`) to within `tol` mm: its lean in radians, signed as a plane's in
    * recognition (+ when its outward normal has a component along `d`), and the largest deviation from the exact draft measured. Else null.
    */
