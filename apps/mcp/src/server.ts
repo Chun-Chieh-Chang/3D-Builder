@@ -12,6 +12,7 @@ import { commandReference, exampleReference, INSTRUCTIONS, typeReference } from 
 import { isTrap } from '@3db/kernel';
 import type { LiveBridge } from './bridge';
 import { CAD_TOOLS, callCadTool } from './cadTools';
+import { DRAWING_TOOLS, callDrawingTool, isDrawingTool } from './drawingTools';
 
 const vec3 = { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 } as const;
 const path = { type: 'string', description: 'A file path relative to the workspace folder.' } as const;
@@ -20,6 +21,7 @@ const viewProps = { view: { type: 'string', enum: [...RENDER_VIEWS] }, dir: vec3
 export const TOOLS: Tool[] = [
   ...ASSEMBLY_TOOLS,
   ...CAD_TOOLS,
+  ...DRAWING_TOOLS,
   { name: 'part_new', description: 'Starts a new, empty part (the open part is closed without saving).', inputSchema: { type: 'object', properties: {} } },
   { name: 'part_open', description: 'Opens a .3dbx part file from the workspace folder and rebuilds it.', inputSchema: { type: 'object', properties: { path }, required: ['path'] } },
   { name: 'part_save', description: 'Saves the part as a .3dbx file (to its own file when no path is given).', inputSchema: { type: 'object', properties: { path } } },
@@ -129,6 +131,8 @@ export async function callTool(session: CadSession, name: string, raw: unknown, 
     const shows = linked ? live!.open : null;
     assemblyOf(session).follow(linked ? liveAssembly(live!) : null, shows?.kind === 'assembly' ? { doc: shows.doc, sources: shows.sources, fresh: pending !== null && pending !== undefined } : null);
     if (isAssemblyTool(name)) return await callAssemblyTool(session, name, raw, shows?.kind ?? null);
+    // the drawing tools work on the drawing of the session's part and its file, whatever the app shows (ADR 0256)
+    if (isDrawingTool(name)) return await callDrawingTool(session, name, raw);
     if (shows && shows.kind !== 'part' && !ANY_DOCUMENT.has(name)) {
       throw new AgentError(`the app is connected and shows ${shows.kind === 'assembly' ? 'an assembly: use the assembly_* tools' : 'a drawing'}; the part tools work on a part open in the app`);
     }

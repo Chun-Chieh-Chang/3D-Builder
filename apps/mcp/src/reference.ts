@@ -74,7 +74,7 @@ Rules of the model:
 - Make every sketch fully defined (dof 0): fix each point with relations and dimensions; '@origin' is the sketch origin.
 - Every id in the part must be unique, and so must every feature name: an insertFeature or renameFeature with a name another feature has is refused, and the error offers a free one. Insert a new feature with { type: 'insertFeature', index: <number of features>, feature }.
 - Estimates: a value you guessed (from a photo, a common size, a standard you could not read) is an estimate. Put such sizes in variables (addVariable) and mark them { estimate: true } on the variable, or setFeatureNote { featureId, estimate: true } on a feature whose geometry is guessed; the tree shows the mark and the user can list them. Never write 估, est or (估) into a name: clear the mark (estimate: false) when the user gives a measured value.
-- Design intent: drive the main sizes from variables; build a repeated feature once and repeat it with a pattern (circular: def { mode: 'circular', axis, count, angle, equal: true }; seeds can be extrude, revolve, sweep, loft, hole, fillet, chamfer ...) or a mirror rather than building each copy; group the features of one region (a shank, a head) in a folder with arrange { order, folders: { <featureId>: '<folder name>' } }.
+- Design intent: drive the main sizes from variables; build a repeated feature once and repeat it with a pattern (circular: def { mode: 'circular', axis, count, angle, equal: true }, where axis is a refAxis feature or a straight edge, not the origin's axes: e.g. a refAxis { mode: 'planes', plane: plane:front, plane2: plane:right } is the Y axis; seeds can be extrude, revolve, sweep, loft, hole, fillet, chamfer ...; cuts repeat reliably, a fillet or chamfer seed may fail on a complex body, then build each copy) or a mirror rather than building each copy; group the features of one region (a shank, a head) in a folder with arrange { order, folders: { <featureId>: '<folder name>' } }.
 - A cut (extrude op 'cut') on a datum plane goes into the material only with reverse: true; on a model face it goes into the material by default.
 
 How to work:
@@ -84,4 +84,12 @@ How to work:
 4. To pick a face, edge or vertex (for fillets, shells, sketch planes), ask query_elements and copy its 'ref' into the command as is.
 5. Look at the part with render_view when the numbers alone do not tell you enough.
 6. Save with part_save (a .3dbx file), or write STEP/STL with export_file. Files are read and written only inside the workspace folder.
-7. A part with an imported body (an importedBody feature, from a STEP or IGES file) can be turned into native features with recognize_features: it either rebuilds the same solid or says why not.`;
+7. A part with an imported body (an importedBody feature, from a STEP or IGES file) can be turned into native features with recognize_features: it either rebuilds the same solid or says why not.
+
+Engineering drawings of the open part, made with the user (ADR 0256). The rule: the drawing must fully determine every size of the part, meet every annotation the user asks for, and you create the views, sections and dimensions yourself.
+1. The part must be saved (part_save) first: the drawing refers to its file.
+2. drawing_plan: show the user the pictures of the best main directions with one line each on why (the metrics), and ask the one question it gives (usually only which main view, or 「照建議」). Do not ask about anything the plan already settles.
+3. drawing_create with the user's choice (or the plan's). Look at the picture and read drawing.checks: coverage.complete must be true; when it is not, coverage lists what is not determined (a place along a way, a round's size, a slant). Add those (drawing_complete, or drawing_apply for a chamfer or angle dimension) and say plainly what still is not determined and why.
+4. The user adds tolerances and annotations in words at any time: drawing_tolerance (「Ø10 加 H7」, 「長度 ±0.05」: the dimension by its text or id), drawing_annotate (surface finish Ra, geometric tolerance with datums, datum letters, notes; the element by its ref from drawing_inspect, or by a dimension of it). Use drawing_inspect to find which plane is meant (its 'end' says which side of the view it is).
+5. Every change is saved to the .3dbd at once and comes back with the checks and a picture: look at it, and fix overlaps (drawing_apply setDimension offset) before you report.
+6. drawing_export writes PDF, DXF or SVG for the user.`;

@@ -38,7 +38,13 @@ function span(d: Stacked, outcome: DimensionOutcome | undefined): number | null 
  * side (B2.5), so that a coordinate dimension and a line do not land on each other; an ordinate has no text to slide along its row. A dimension that cannot be
  * drawn (its elements gone) is left where it is.
  */
-export function arrangeDimensions(dimensions: readonly Dimension[], outcomes: ReadonlyMap<Id, DimensionOutcome>, ids: ReadonlySet<Id>): { id: Id; patch: DimensionPatch }[] {
+export function arrangeDimensions(
+  dimensions: readonly Dimension[],
+  outcomes: ReadonlyMap<Id, DimensionOutcome>,
+  ids: ReadonlySet<Id>,
+  /** The distance to the first row and between rows (sheet mm); absent: FIRST_OFFSET and OFFSET_STEP, which suit 3.5 mm text (ADR 0256 scales them with it). */
+  spacing: { first: number; step: number } = { first: FIRST_OFFSET, step: OFFSET_STEP },
+): { id: Id; patch: DimensionPatch }[] {
   const groups = new Map<string, { d: Stacked; span: number }[]>();
   for (const d of dimensions) {
     if ((d.kind !== 'linear' && d.kind !== 'ordinate') || !ids.has(d.id)) continue;
@@ -56,7 +62,7 @@ export function arrangeDimensions(dimensions: readonly Dimension[], outcomes: Re
     // the shortest nearest; of equal ones the one that was nearer stays nearer, so that a second arranging changes nothing
     list.sort((x, y) => x.span - y.span || Math.abs(x.d.offset) - Math.abs(y.d.offset) || (x.d.id < y.d.id ? -1 : 1));
     list.forEach(({ d }, i) => {
-      const offset = Math.sign(d.offset) * (FIRST_OFFSET + i * OFFSET_STEP);
+      const offset = Math.sign(d.offset) * (spacing.first + i * spacing.step);
       // an ordinate's row has no text to slide along it, and the model would refuse a slide on one
       if (d.kind === 'ordinate') {
         if (offset !== d.offset) out.push({ id: d.id, patch: { offset } });

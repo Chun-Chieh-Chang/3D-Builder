@@ -200,6 +200,7 @@ export const features: Translation = {
   'pattern.seedsApart': 'The features to pattern or mirror must follow one another, with no other feature between ("{name}" is in between)',
   'pattern.seedSuppressed': 'The feature to pattern or mirror, "{name}", is suppressed',
   'pattern.seedFailed': 'The feature to pattern or mirror, "{name}", failed, so it cannot be patterned',
+  'pattern.deltaFailed': 'Could not work out what the features to repeat did: {why}',
   'pattern.seedChangedNothing': 'The feature to pattern or mirror neither added nor removed any material; there is nothing to pattern',
   'pattern.noInstances': 'All the instances are skipped; there is nothing to pattern',
   'pattern.countTooSmall': 'The number of instances of {what} must be at least 2 (it is {value})',

@@ -22,7 +22,8 @@ const step = async (name, fn) => {
 };
 const rows = () => [...document.querySelectorAll('.feature-tree .tree-row')];
 const nameOf = (r) => (r.querySelector('.name')?.textContent ?? '').replace(/^\([-+f?]\) /, '');
-const rowsNamed = (n) => rows().filter((r) => nameOf(r) === n);
+// a folder may have a feature's name: the rows of features come first
+const rowsNamed = (n) => rows().filter((r) => nameOf(r) === n).sort((a, b) => Number(b.matches('[data-feature-row]')) - Number(a.matches('[data-feature-row]')));
 const menu = async (row, item) => {
   const b = row.getBoundingClientRect();
   row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: b.left + 20, clientY: b.top + 8, button: 2 }));
@@ -95,8 +96,10 @@ M.run = async () => {
   });
 
   await step('5 標為估計值: the mark is saved on the feature, the badge shows, the quick filter keeps only it', async () => {
-    const sweep = doc().features.find((f) => f.type === 'sweep');
+    // the sample marks its guessed sketches itself (2026-11-17): the count starts from what is already marked
+    const sweep = doc().features.find((f) => f.type === 'sweep' && !f.estimate);
     const unmarked = doc().features.find((f) => f.type === 'helix');
+    const already = doc().features.filter((f) => f.estimate).length + doc().variables.filter((v) => v.estimate).length;
     store.execute({ type: 'setFeatureNote', featureId: unmarked.id, comment: '估計值' });
     await H.settle();
     await menu(rowsNamed(sweep.name)[0], '標為估計值');
@@ -107,12 +110,13 @@ M.run = async () => {
     filter?.click();
     await H.wait(100);
     const left = rows().filter((r) => r.matches('[data-feature-row]')).map(nameOf);
+    const markedNames = doc().features.filter((f) => f.estimate).map((f) => f.name);
     await window.__shot?.('tree-0254-estimate-filter');
     document.querySelector('[data-action="filter-estimates"]')?.click();
     await H.wait(100);
     await menu(rowsNamed(sweep.name)[0], '取消估計值標記');
     const cleared = doc().features.find((f) => f.id === sweep.id)?.estimate === undefined;
-    return { marked, badge, label, left, cleared, pass: marked && badge && label === '估計值 1' && left.length === 1 && left[0] === sweep.name && cleared };
+    return { marked, badge, label, left, cleared, pass: marked && badge && label === `估計值 ${already + 1}` && left.length === markedNames.length && left.includes(sweep.name) && !left.includes(unmarked.name) && left.every((n) => markedNames.includes(n)) && cleared };
   });
 
   await step('6 a name another feature has is refused, with a free one offered, and nothing changes', async () => {
@@ -136,7 +140,8 @@ M.run = async () => {
   });
 
   await step('8 方程式: the estimate box marks a variable; the tree badges it and the quick filter lists it among the parameters', async () => {
-    const v = doc().variables[0];
+    const v = doc().variables.find((x) => !x.estimate);
+    const was = doc().variables.filter((x) => x.estimate).map((x) => x.name);
     store.openDialog('equations');
     await H.wait(150);
     const box = document.querySelector(`[data-estimate-var="${v.name}"]`);
@@ -153,7 +158,7 @@ M.run = async () => {
     await window.__shot?.('tree-0254-estimate-variable');
     document.querySelector('[data-action="filter-estimates"]')?.click();
     await H.wait(100);
-    return { marked, listed, badged, pass: marked && badged && listed.length === 1 && listed[0] === v.name };
+    return { marked, listed, badged, pass: marked && badged && listed.length === was.length + 1 && listed.includes(v.name) && was.every((n) => listed.includes(n)) };
   });
 
   await window.__shot?.('tree-0254');

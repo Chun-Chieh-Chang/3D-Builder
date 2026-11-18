@@ -949,6 +949,8 @@ export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
   const [mode, setMode] = useState<DisplayMode>('shadedEdges');
   const [opacity,setOpacity]=useState(35);
   const [cut, setCut] = useState<{ axis: 0 | 1 | 2; at: number; flip: boolean } | null>(null);
+  const [playDir, setPlayDir] = useState<1 | -1 | 0>(0);
+  const [playSpeed, setPlaySpeed] = useState(1);
   const cavity = useStore((s) => s.cavityDistribution);
   const doc = useStore((s) => s.doc);
   const cavities = cavity?.graphics;
@@ -991,9 +993,41 @@ export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
   useEffect(() => {
     const v = store.viewer;
     if (!v) return;
-    v.setSectionDrag(cutting ? (at) => setCut((c) => (c ? { ...c, at } : c)) : null);
+    v.setSectionDrag(cutting ? (at) => { setPlayDir(0); setCut((c) => (c ? { ...c, at } : c)); } : null);
     return () => v.setSectionDrag(null);
   }, [cutting]);
+  useEffect(() => {
+    if (!cut || !range || playDir === 0) return;
+    const [lo, hi] = range;
+    const width = hi - lo;
+    if (!(width > 1e-6)) return;
+    let raf = 0;
+    let last = performance.now();
+    const speed = (width / 4.0) * playSpeed;
+    const tick = (now: number) => {
+      const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+      last = now;
+      setCut((c) => {
+        if (!c) return null;
+        let next = c.at + playDir * speed * dt;
+        if (playDir > 0 && next > hi) next = lo + ((next - lo) % width);
+        else if (playDir < 0 && next < lo) next = hi - ((hi - next) % width);
+        return { ...c, at: next };
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playDir, playSpeed, cutting, cut?.axis, range?.[0], range?.[1]]);
+  const togglePlay = (dir: 1 | -1) => {
+    if (!cut || !range) return;
+    const [lo, hi] = range;
+    const width = Math.max(hi - lo, 1e-6);
+    if (playDir === dir) return setPlayDir(0);
+    if (dir > 0 && cut.at >= hi - width * 1e-4) setCut({ ...cut, at: lo });
+    else if (dir < 0 && cut.at <= lo + width * 1e-4) setCut({ ...cut, at: hi });
+    setPlayDir(dir);
+  };
   const span = range ? Math.max(range[1] - range[0], 1e-6) : 1;
   return (
     <div className="view-options">
@@ -1018,7 +1052,7 @@ export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
         ))}
       </span>
       )}
-      <button className={`view-chip ${cut ? 'active' : ''}`} aria-pressed={cut !== null} title={t('view.sectionDragTip')} onClick={() => setCut(cut ? null : { axis: 0, at: ((bounds?.min[0] ?? 0) + (bounds?.max[0] ?? 0)) / 2, flip: false })}>
+      <button className={`view-chip ${cut ? 'active' : ''}`} aria-pressed={cut !== null} title={t('view.sectionDragTip')} onClick={() => { setPlayDir(0); setCut(cut ? null : { axis: 0, at: ((bounds?.min[0] ?? 0) + (bounds?.max[0] ?? 0)) / 2, flip: false }); }}>
         <Icon name="sectionView" />
         {t('view.section')}
       </button>
@@ -1037,11 +1071,44 @@ export function ViewOptions({ assembly = false }: { assembly?: boolean }) {
             <option value={1}>{t('view.sectionY')}</option>
             <option value={2}>{t('view.sectionZ')}</option>
           </select>
-          <input type="range" aria-label={t('view.sectionAt')} min={range[0]} max={range[1]} step={span / 200} value={cut.at} onChange={(e) => setCut({ ...cut, at: Number(e.target.value) })} />
-          <SectionValue value={cut.at} onCommit={(at) => setCut({ ...cut, at })} />
+          <input type="range" aria-label={t('view.sectionAt')} min={range[0]} max={range[1]} step={span / 200} value={cut.at} onChange={(e) => { setPlayDir(0); setCut({ ...cut, at: Number(e.target.value) }); }} />
+          <SectionValue value={cut.at} onCommit={(at) => { setPlayDir(0); setCut({ ...cut, at }); }} />
           <label>
             <input type="checkbox" checked={cut.flip} onChange={(e) => setCut({ ...cut, flip: e.target.checked })} /> {t('view.sectionFlip')}
           </label>
+          <button
+            type="button"
+            className={`section-play-btn ${playDir === -1 ? 'active' : ''}`}
+            data-section-play="reverse"
+            aria-pressed={playDir === -1}
+            title={playDir === -1 ? t('view.sectionPause') : t('view.sectionPlayReverse')}
+            onClick={() => togglePlay(-1)}
+          >
+            {playDir === -1 ? '⏸' : '◀'}
+          </button>
+          <button
+            type="button"
+            className={`section-play-btn ${playDir === 1 ? 'active' : ''}`}
+            data-section-play="forward"
+            aria-pressed={playDir === 1}
+            title={playDir === 1 ? t('view.sectionPause') : t('view.sectionPlayForward')}
+            onClick={() => togglePlay(1)}
+          >
+            {playDir === 1 ? '⏸' : '▶'}
+          </button>
+          <select
+            value={playSpeed}
+            aria-label={t('view.sectionPlaySpeed')}
+            title={t('view.sectionPlaySpeed')}
+            data-section-speed
+            onChange={(e) => setPlaySpeed(Number(e.target.value))}
+          >
+            {[0.25, 0.5, 1, 2, 4].map((s) => (
+              <option key={s} value={s}>
+                {s}x
+              </option>
+            ))}
+          </select>
         </div>
       )}
     </div>
