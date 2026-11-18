@@ -1,6 +1,6 @@
 # ADR 0259: part-3 windows are recognized as sharp-edge cuts; the r 0.127 edge chamfers are reported, not rebuilt
 
-Status: Accepted (2026-11-18). Slice 1 is in `3694c3fe`; slice 2 is below (not committed when written).
+Status: Accepted (2026-11-18). Slice 1 is in `3694c3fe`, slice 2 in `a2452205`; slice 3 is below (not committed when written).
 
 ## Context
 
@@ -47,6 +47,16 @@ Acceptance, changed from §6s: the face count differs from the original by the n
 - Each section is made counter-clockwise on its own plane. Turning both rails together, as first written, did nothing: a second rail run backwards rebuilt the same solid (the loft lines the sections up itself). Removed.
 - Tests: `recognize-loft-window.test.ts` (planes 28° and −15° apart, parallel planes, and the bent rail: refused at 1e-5 and 1e-3 mm, the unbent control rebuilt); mutations: the loft path off turns the three cases red, the limit off turns the bent case red. Fuzz 100 (two files): 100 rebuilt, 0 refused, 0 traps, both ways of turning (+47, −53); heap 128 → 661 MiB over 50 cases in each file (about 10.7 MiB each, AGENTS §3.5, not claimed flat).
 - Not shown yet: whether part-3's A wall passes the limit. §6o-A measured a loft 3.91e-5 mm off f97 with τ about 2.3e-4 mm, so τ/6 is about 3.8e-5: the margin is small or negative, and the deviation here is measured another way (point for point at the same parameters). Slice 4 measures it on the file.
+
+## Slice 3 as built (2026-11-18)
+
+- Measured first (`c17a`–`c17c`): part-3's lid (y 17.526 to 19.05) is a cross. Its arms along ±z are about |x| < 9 wide (ending in the cone's arc over the B windows), its arms along ±x |z| < 5.715 (ending at the A walls), and its four inner corners are concave cylinders r 3.81 (f133–f136) whose axes are along y but off the revolve axis. The "notch" is the revolve's disc less this cross. The B window's side plane f79 is one wall of the notch, the A region's plane f92 the other.
+- The user chose the section difference (option 1), then, after the measurement that follows, a correction: the difference of whole sections runs along the windows' free walls where a notch meets a window, and those change with the height, so it would be no prism. The outline is the chain, in the body's section, of the edges on walls that hold the axis direction (lines and arcs, exactly); its two end lines are carried on past twice the body's reach and joined round the outside the shorter way.
+- `revolvedWindow`: the axis is the one the surfaces of revolution with the most area turn about. The walls of cuts along it are planes that hold its direction and cylinders along it but off it (not the window's own faces). The window's faces are now the wall, flat B-spline faces, and the planes meeting the wall that lean. It is tried whenever a body has free faces, not only when no extrude direction was found: a cut along the axis gives the body planes facing across it.
+- `axialCuts`: walls joined by edges are one cut. It is sectioned at the middle of the height all its walls share (below that some may stand alone: a notch run on down a wall shows only the planes' stubs, its corner falling in the hollow), and the section's edges count only when they lie on a wall of the group and inside the box of that wall's vertices (two notches may share one plane). It is extruded over the group's span, 1 mm on past an end unless a floor of the cut is there (a plane square to the axis meeting the group, its centre inside the outline).
+- The base half-plane must keep 2° clear of the angles each cut face covers round the axis (its vertices, edge middles and centre; the circle less its widest gap). It used to keep 30° from face centres and edge middles; a notch plane runs on near a default direction, so its centre said nothing about where it reaches.
+- Tests: `recognize-lid-notch.test.ts` (3 cases; all refused before: the off-axis cylinders gave no revolve axis and the notch planes sent the body down the extrude path); mutations: no axial cuts and no floors (always 1 mm past) each turn all three red. Slices 1–2 still pass. Fuzz 100 (two files): 87 parts made, all 87 rebuilt, 0 refused, 0 traps; 13 the generator could not make (its draft closed the outline); heap 128 → 2288 MiB over 50 cases in each file (about 43 MiB each, AGENTS §3.5, not claimed flat).
+- Not covered by the synthetic part: a notch sharing a plane with a window (f79 in part-3). f79 holds the y direction (normal (0.996, 0, 0.087)) and does not meet the B wall f80 itself (the r 19.05 round f81 lies between), so these rules count it as a notch wall: its group (with f135 and f92) then spans the window's height as well as the lid's, and the cut made from it reaches down beside the window. Whether that cut is right on part-3 is for slice 4 to measure on the file.
 
 ## Not decided
 

@@ -8,7 +8,7 @@ import { t } from '@3db/i18n';
 import { KernelError, nurbsAt, rethrowTrap, type FaceInfo, type NurbsSectionEdge, type Frame, type Kernel, type SectionEdge, type ShapeId, type SurfaceGeometry, type Topology, type Vec3 } from '@3db/kernel';
 import type { Budget } from '../budget';
 import { biarcEnvelope } from '../section/envelope';
-import { chainLoops, LoopError, type Loop, type P2 } from '../section/loops';
+import { chainLoops, LoopError, type Loop, type P2, type Seg } from '../section/loops';
 
 /**
  * The user's choice to have a spline outline made of biarcs (ADR 0243): off unless asked for, since the result is then close to the original rather than the same. Filled in as it is used.
@@ -1621,12 +1621,33 @@ function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: num
     if (g?.type === 'plane') return { point: g.origin, normal: unit(g.normal) };
     return flat.get(i) ?? null;
   };
-  // the faces of the window: the wall, the flat faces with no simple surface, and the planes that are not square to the axis (a window's straight sides)
-  const planes = topo.faces.flatMap((f, i) => (f.geometry?.type === 'plane' ? [i] : []));
-  const axis = revolveAxis(topo, new Set([...odd, ...planes]));
-  if (!axis) return null;
-  const windowFaces = new Set([...odd, ...planes.filter((i) => !parallel((topo.faces[i]!.geometry as Extract<SurfaceGeometry, { type: 'plane' }>).normal, axis.dir))]);
-  if (windowFaces.size > 3 || !revolveAxis(topo, windowFaces)) return null;
+  // the axis the body turns about: of the surfaces of revolution, those about one axis with the most area (a cut along the axis has cylinders parallel
+  // to it but off it, ADR 0259 slice 3)
+  const turns: { axis: { origin: Vec3; dir: Vec3 }; area: number }[] = [];
+  for (const [i, f] of topo.faces.entries()) {
+    const a = odd.includes(i) ? null : axisOf(f.geometry);
+    if (!a) continue;
+    const g = turns.find((x) => coaxial(x.axis.origin, x.axis.dir, a.origin, a.dir));
+    if (g) g.area += f.area;
+    else turns.push({ axis: a, area: f.area });
+  }
+  if (turns.length === 0) return null;
+  const major = turns.reduce((m, g) => (g.area > m.area ? g : m)).axis;
+  // the faces of the window: the wall, the flat faces with no simple surface, and the planes meeting the wall that lean (a drafted window's chord side)
+  const besideWall = new Set(topo.edges.filter((e) => e.faces.includes(wallFace)).flatMap((e) => e.faces));
+  const leaning = topo.faces.flatMap((f, i) => (besideWall.has(i) && f.geometry?.type === 'plane' && !parallel(f.geometry.normal, major.dir) && !square(f.geometry.normal, major.dir) ? [i] : []));
+  const windowFaces = new Set([...odd, ...leaning]);
+  if (windowFaces.size > 3) return null;
+  // the walls of cuts along the axis: planes holding its direction, cylinders along it but off it
+  const axial = topo.faces.flatMap((f, i) => {
+    if (windowFaces.has(i)) return [];
+    const g = f.geometry;
+    if (g?.type === 'plane' && square(g.normal, major.dir)) return [i];
+    if (g?.type === 'cylinder' && parallel(g.axis, major.dir) && !coaxial(major.origin, major.dir, g.origin, g.axis)) return [i];
+    return [];
+  });
+  const axis = revolveAxis(topo, new Set([...windowFaces, ...axial]));
+  if (!axis || !coaxial(axis.origin, axis.dir, major.origin, major.dir)) return null;
   // the base: the half-plane section farthest round the axis from where the window is
   const around = (p: Vec3): Vec3 | null => {
     const v = sub(p, axis.origin);
@@ -1635,26 +1656,55 @@ function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: num
     const l = Math.hypot(...r);
     return l < 1e-9 ? null : unit(r);
   };
-  const samples = [topo.faces[wallFace]!.center, ...topo.edges.filter((e) => e.faces.includes(wallFace)).map((e) => e.mid)].map((p) => around(p)).filter((u): u is Vec3 => u !== null);
-  if (samples.length === 0) return null;
+  // the section must cross neither the window's wall nor a cut along the axis: each such face covers a range of angles round the axis (its vertices,
+  // edge middles and centre; the range is the circle less its widest gap), and the half-plane must keep 2° clear of every range (ADR 0259 slice 3:
+  // a notch's plane runs on near a default direction, so its centre alone, as first measured, said nothing of where it reaches)
+  const e1 = unit(cross(axis.dir, Math.abs(axis.dir[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]));
+  const e2 = cross(axis.dir, e1);
+  const angleOf = (u: Vec3) => Math.atan2(dot(u, e2), dot(u, e1));
+  const TAU = 2 * Math.PI;
+  const ranges: [number, number][] = [];
+  for (const i of [wallFace, ...axial]) {
+    const pts = [topo.faces[i]!.center, ...topo.edges.filter((e) => e.faces.includes(i)).map((e) => e.mid), ...topo.vertices.filter((v) => v.faces.includes(i)).map((v) => v.point)];
+    const as = pts.map(around).filter((u): u is Vec3 => u !== null).map(angleOf).sort((a, b) => a - b);
+    if (as.length === 0) return null;
+    let gap = TAU - (as[as.length - 1]! - as[0]!);
+    let start = as[0]!;
+    for (let k = 1; k < as.length; k++) {
+      if (as[k]! - as[k - 1]! > gap) [gap, start] = [as[k]! - as[k - 1]!, as[k]!];
+    }
+    ranges.push([start, TAU - gap]);
+  }
+  const clearance = (phi: number) =>
+    Math.min(
+      ...ranges.map(([s0, len]) => {
+        const off = (((phi - s0) % TAU) + TAU) % TAU;
+        return off <= len ? -1 : Math.min(off - len, TAU - off);
+      }),
+    );
   let planeNormal: Vec3 | null = null;
   let farthest = -Infinity;
   for (const c of CANONICAL.filter((x) => square(x, axis.dir))) {
     for (const sign of [1, -1]) {
       const n: Vec3 = [c[0] * sign, c[1] * sign, c[2] * sign];
       const across = unit(cross(frameFor(n, axis.origin).normal, axis.dir));
-      const nearest = Math.min(...samples.map((u) => Math.acos(Math.max(-1, Math.min(1, dot(u, across))))));
-      if (nearest > farthest + 1e-9) {
-        farthest = nearest;
+      const clear = clearance(angleOf(across));
+      if (clear > farthest + 1e-9) {
+        farthest = clear;
         planeNormal = n;
       }
     }
   }
-  if (!planeNormal || farthest < Math.PI / 6) return null;
+  if (!planeNormal || farthest < (2 * Math.PI) / 180) return null;
   const free = freeWalls(kernel, shape, approx);
   const d = free ? CANONICAL.find((c) => square(c, axis.dir) && free(wallFace, c) !== null) : undefined;
   const extras = d ? draftedWindow(kernel, shape, topo, wallFace, d, free!(wallFace, d)!, planeOf, frameFor) : ruledWindow(kernel, shape, wallFace, frameFor);
   if (!extras || extras.length === 0) return null;
+  if (axial.length) {
+    const cuts = axialCuts(kernel, shape, topo, axis, axial, frameFor);
+    if (!cuts) return null;
+    extras.push(...cuts);
+  }
   budget?.check();
   const base = revolveBase(kernel, shape, axis, planeNormal, frameFor, budget);
   return {
@@ -1727,6 +1777,183 @@ function draftedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, wallFace:
   // up from the curve's plane to past the wall's top, and down from it to past the wall's foot (the tool leans the other way going down)
   if (hi + margin > level) extras.push(piece(d, level, hi + margin, narrowsUp));
   if (lo - margin < level) extras.push(piece(neg, -level, -(lo - margin), !narrowsUp));
+  return extras;
+}
+
+/**
+ * ADR 0259 slice 3: the cuts along the revolve axis (part-3's lid notches): each group of walls that hold the axis direction (planes square to the
+ * axis's cross directions, cylinders along it but off it), joined by edges, is one cut. Its outline is the chain of the body's section, at the middle
+ * of the height all of them share, that lies on those walls (lines and arcs, exactly), its two end lines carried on outward past twice the body's reach from the axis and
+ * joined round the outside the shorter way. The section of the whole is not used as the outline: where it meets a window it runs along the window's
+ * free walls, which a draft or a loft makes change with the height (measured on part-3, c17c), so it would be no prism. Extruded over the group's span
+ * along the axis, 1 mm on past an end unless a floor of the cut is there. Null when any group is not that (one open chain, ending in lines).
+ */
+function axialCuts(kernel: Kernel, shape: ShapeId, topo: Topology, axis: { origin: Vec3; dir: Vec3 }, axial: number[], frameFor: FrameFor): Extras | null {
+  const dir = unit(axis.dir);
+  const inGroup = new Set(axial);
+  const span = extentAlong(topo, dir);
+  const box = kernel.bounds(shape);
+  const corners: Vec3[] = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => [k & 1 ? box.max[0] : box.min[0], k & 2 ? box.max[1] : box.min[1], k & 4 ? box.max[2] : box.min[2]]);
+  const reach = Math.max(...corners.map((p) => lineDistance(p, axis.origin, dir)));
+  const far = 2 * reach + 2;
+  const margin = 1;
+  // the groups: walls joined by an edge
+  const seen = new Set<number>();
+  const groups: number[][] = [];
+  for (const i of axial) {
+    if (seen.has(i)) continue;
+    const g: number[] = [];
+    const stack = [i];
+    seen.add(i);
+    while (stack.length) {
+      const f = stack.pop()!;
+      g.push(f);
+      for (const e of topo.edges) {
+        if (!e.faces.includes(f)) continue;
+        for (const n of e.faces) if (inGroup.has(n) && !seen.has(n)) (seen.add(n), stack.push(n));
+      }
+    }
+    groups.push(g);
+  }
+  const extras: Extras = [];
+  for (const group of groups) {
+    const lo = Math.min(...group.map((i) => span[i]![0]));
+    const hi = Math.max(...group.map((i) => span[i]![1]));
+    if (!(hi - lo > TOL)) return null;
+    // sectioned where every wall of the group is: below that some may stand alone (a notch through a lid and on down a wall shows only the two
+    // planes' stubs across the wall, its corner falling in the hollow)
+    const shared = [Math.max(...group.map((i) => span[i]![0])), Math.min(...group.map((i) => span[i]![1]))];
+    if (!(shared[1]! - shared[0]! > TOL)) return null;
+    const mid = (shared[0]! + shared[1]!) / 2;
+    const frame = frameFor(dir, [dir[0] * mid, dir[1] * mid, dir[2] * mid]);
+    const to3 = (p: P2): Vec3 => [frame.origin[0] + frame.xDir[0] * p[0] + frame.yDir[0] * p[1], frame.origin[1] + frame.xDir[1] * p[0] + frame.yDir[1] * p[1], frame.origin[2] + frame.xDir[2] * p[0] + frame.yDir[2] * p[1]];
+    // on a wall of the group: on its surface and inside the box of its vertices and edge middles (two notches may share one plane)
+    const boxes = new Map(
+      group.map((i) => {
+        const pts = [...topo.vertices.filter((v) => v.faces.includes(i)).map((v) => v.point), ...topo.edges.filter((e) => e.faces.includes(i)).map((e) => e.mid)];
+        return [i, [0, 1, 2].map((k) => [Math.min(...pts.map((q) => q[k]!)) - TOL, Math.max(...pts.map((q) => q[k]!)) + TOL])] as const;
+      }),
+    );
+    const on = (p: Vec3) =>
+      group.some((i) => {
+        if (!boxes.get(i)!.every(([a, b], k) => p[k]! >= a! && p[k]! <= b!)) return false;
+        const g = topo.faces[i]!.geometry;
+        if (g?.type === 'plane') return Math.abs(dot(sub(p, g.origin), unit(g.normal))) <= TOL;
+        if (g?.type === 'cylinder') return Math.abs(lineDistance(p, g.origin, unit(g.axis)) - g.radius) <= TOL;
+        return false;
+      });
+    const ax = ((): P2 => {
+      const v = sub(axis.origin, frame.origin);
+      return [dot(v, frame.xDir), dot(v, frame.yDir)];
+    })();
+    const rect2 = { u0: ax[0] - far, u1: ax[0] + far, v0: ax[1] - far, v1: ax[1] + far };
+    const pieces: Seg[] = [];
+    for (const e of kernel.sectionEdges(shape, frame, rect2)) {
+      if (e.kind === 'line' && on(to3(e.a)) && on(to3(e.b)) && on(to3([(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2]))) pieces.push({ kind: 'line', a: e.a, b: e.b });
+      else if (e.kind === 'arc' && on(to3(e.a)) && on(to3(e.b)) && on(to3(e.mid))) {
+        const turn = (e.mid[0] - e.a[0]) * (e.b[1] - e.mid[1]) - (e.mid[1] - e.a[1]) * (e.b[0] - e.mid[0]);
+        pieces.push({ kind: 'arc', c: e.c, r: e.r, a: e.a, b: e.b, ccw: turn > 0 });
+      }
+    }
+    // one open chain: each piece's end the next one's start (a piece turned round when it runs the other way)
+    const close = (p: P2, q: P2) => Math.hypot(p[0] - q[0], p[1] - q[1]) <= 1e-6;
+    const flip = (s: Seg): Seg => (s.kind === 'line' ? { kind: 'line', a: s.b, b: s.a } : s.kind === 'arc' ? { ...s, a: s.b, b: s.a, ccw: !s.ccw } : s);
+    if (pieces.length === 0) return null;
+    const chain: Seg[] = [pieces.shift()!];
+    const endOf = (s: Seg) => (s as { b: P2 }).b;
+    const startOf = (s: Seg) => (s as { a: P2 }).a;
+    for (let grown = true; grown && pieces.length; ) {
+      grown = false;
+      for (let k = 0; k < pieces.length; k++) {
+        const s = pieces[k]!;
+        const [h, t] = [startOf(chain[0]!), endOf(chain[chain.length - 1]!)];
+        const add = close(startOf(s), t) ? (chain.push(s), true) : close(endOf(s), t) ? (chain.push(flip(s)), true) : close(endOf(s), h) ? (chain.unshift(s), true) : close(startOf(s), h) ? (chain.unshift(flip(s)), true) : false;
+        if (add) {
+          pieces.splice(k, 1);
+          grown = true;
+          break;
+        }
+      }
+    }
+    if (pieces.length) return null;
+    const first = chain[0]!;
+    const last = chain[chain.length - 1]!;
+    if (first.kind !== 'line' || last.kind !== 'line' || close(first.a, last.b)) return null;
+    // the end lines carried on outward to `far` from the axis
+    const out = (p: P2, from: P2): P2 | null => {
+      const u: P2 = [p[0] - from[0], p[1] - from[1]];
+      const l = Math.hypot(...u);
+      if (l <= 1e-12) return null;
+      const d2: P2 = [u[0] / l, u[1] / l];
+      const w: P2 = [p[0] - ax[0], p[1] - ax[1]];
+      const b = w[0] * d2[0] + w[1] * d2[1];
+      const c = w[0] * w[0] + w[1] * w[1] - far * far;
+      const t = -b + Math.sqrt(b * b - c);
+      return t > 0 ? [p[0] + d2[0] * t, p[1] + d2[1] * t] : null;
+    };
+    const s0 = out(first.a, first.b);
+    const e0 = out(last.b, last.a);
+    if (!s0 || !e0) return null;
+    chain[0] = { kind: 'line', a: s0, b: first.b };
+    chain[chain.length - 1] = { kind: 'line', a: last.a, b: e0 };
+    // round the outside from the end back to the start, the shorter way, in steps of at most 30°
+    const ang = (p: P2) => Math.atan2(p[1] - ax[1], p[0] - ax[0]);
+    let sweep = ang(s0) - ang(e0);
+    while (sweep > Math.PI) sweep -= 2 * Math.PI;
+    while (sweep < -Math.PI) sweep += 2 * Math.PI;
+    const steps = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 6)));
+    let prev = e0;
+    for (let k = 1; k <= steps; k++) {
+      const a = ang(e0) + (sweep * k) / steps;
+      const p: P2 = k === steps ? s0 : [ax[0] + far * Math.cos(a), ax[1] + far * Math.sin(a)];
+      chain.push({ kind: 'line', a: prev, b: p });
+      prev = p;
+    }
+    // counter-clockwise: the signed area, arcs counted exactly
+    const areaOf = (segs: Seg[]) =>
+      segs.reduce((s, g) => {
+        if (g.kind === 'line') return s + (g.a[0] * g.b[1] - g.b[0] * g.a[1]) / 2;
+        if (g.kind !== 'arc') return s;
+        const chord = (g.a[0] * g.b[1] - g.b[0] * g.a[1]) / 2;
+        let th = Math.atan2(g.b[1] - g.c[1], g.b[0] - g.c[0]) - Math.atan2(g.a[1] - g.c[1], g.a[0] - g.c[0]);
+        if (g.ccw) while (th <= 0) th += 2 * Math.PI;
+        else while (th >= 0) th -= 2 * Math.PI;
+        return s + chord + (g.r * g.r * (th - Math.sin(th))) / 2;
+      }, 0);
+    let segs = chain;
+    if (areaOf(segs) < 0) segs = [...segs].reverse().map(flip);
+    const area = areaOf(segs);
+    // a floor of the cut at an end: a plane square to the axis there, meeting the group, its centre inside the outline (else the cut goes on through)
+    const polygon = segs.flatMap((g) => [(g as { a: P2 }).a]);
+    const inside = (p: P2) => {
+      let c = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const [a, b] = [polygon[i]!, polygon[j]!];
+        if (a[1] > p[1] !== b[1] > p[1] && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]) c = !c;
+      }
+      return c;
+    };
+    const floorAt = (h: number) =>
+      topo.edges.some((e) =>
+        e.faces.some((f) => {
+          if (!group.some((g) => e.faces.includes(g)) || group.includes(f)) return false;
+          const g = topo.faces[f]!.geometry;
+          if (g?.type !== 'plane' || !parallel(g.normal, dir) || Math.abs(dot(g.origin, dir) - h) > TOL) return false;
+          const v = sub(topo.faces[f]!.center, frame.origin);
+          return inside([dot(v, frame.xDir), dot(v, frame.yDir)]);
+        }),
+      );
+    const from = floorAt(lo) ? lo : lo - margin;
+    const to = floorAt(hi) ? hi : hi + margin;
+    const at = frameFor(dir, [dir[0] * from, dir[1] * from, dir[2] * from]);
+    const move = (p: P2): P2 => {
+      const v = sub(to3(p), at.origin);
+      return [dot(v, at.xDir), dot(v, at.yDir)];
+    };
+    const moved = segs.map((g): Seg => (g.kind === 'line' ? { kind: 'line', a: move(g.a), b: move(g.b) } : g.kind === 'arc' ? { ...g, c: move(g.c), a: move(g.a), b: move(g.b) } : g));
+    const loop: Loop = { segs: moved, area: Math.abs(area), depth: 0 };
+    extras.push({ op: 'cut', rec: { type: 'extrude', dir, levels: [from, to], layers: [[{ frame: at, loops: [loop] }]] } });
+  }
   return extras;
 }
 
@@ -1885,10 +2112,10 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
       );
       const checkDirs = zeroAnalyticDirs.length > 0 ? [...zeroAnalyticDirs, ...planeDirs.filter((d) => !zeroAnalyticDirs.includes(d))] : planeDirs;
       const walls = free && checkDirs.some((d) => along(d));
-      if (!walls) {
-        const windowed = revolvedWindow(kernel, shape, topo0, odd, frameFor, budget, approx);
-        if (windowed) return windowed;
-      }
+      // a body of revolution with windows (ADR 0259): tried even when the faces are walls along some direction, since a cut along the axis gives the
+      // body planes facing across it (slice 3); it takes only a body of revolution with one window and returns null for any other
+      const windowed = revolvedWindow(kernel, shape, topo0, odd, frameFor, budget, approx);
+      if (windowed) return windowed;
       if (!walls) throw new RecognizeError(`${t('recognize.freeform', { n: odd.length, faces: describe(topo0, odd) })}${approx ? '' : ` ${t('recognize.freeformHint')}`}`, true);
     }
     let current = shape;
