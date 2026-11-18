@@ -12,6 +12,7 @@ import { approximateSection } from './section-approximation';
 import { chainCurve, deviation, exactify, setRoundDeadline, supportOf } from './exactRound';
 import { distancesToEdge, rollingBall, sharpCurve } from './roundRecognition';
 import { surfaceDeviation, type Deviation } from './surfaceDeviation';
+import { coaxialRails, stripSurfaces } from './coaxialStrip';
 import { cavityShell } from './cavity';
 import { Arena, loadOcct, ShapeIndex, type LoadOptions, type OC } from './occt';
 import {
@@ -3437,6 +3438,8 @@ export class Kernel {
    * sphere or torus it is, when it is one to within `tol` mm. OCCT proposes the surface (`GeomConvert_SurfToAnaSurf`); how far the face is from it is
    * measured here, at 13 × 13 places over the face's own parameter range against the proposed surface's equation, and that figure decides, not OCCT's
    * estimate. Null for a face that already has such a surface, and for one that is none of them to within `tol`. The shape is not changed.
+   * ADR 0258: a ruled B-spline strip between coaxial circle arcs is read as its cone or cylinder from its rails (`coaxialArcStrip`) before OCCT is
+   * asked: OCCT misses such strips when their rulings fan, and on a narrow strip proposes surfaces that fit the face but not its edges.
    */
   analyticFace(target: ShapeId, faceIndex: number, tol: number): { geometry: SurfaceGeometry; deviation: number } | null {
     if (!Number.isFinite(tol) || tol <= 0) throw new KernelError(t('kernel.analyticTolerance'));
@@ -3449,12 +3452,6 @@ export class Kernel {
       const ad = arena.own(new oc.BRepAdaptor_Surface(face, true));
       const own = String(ad.GetType()).replace('GeomAbs_', '').toLowerCase();
       if (['plane', 'cylinder', 'cone', 'sphere', 'torus'].includes(own)) return null;
-      const conv = arena.own(new oc.GeomConvert_SurfToAnaSurf(arena.own(oc.BRep_Tool.Surface(face))));
-      const found = conv.ConvertToAnalytical(tol);
-      if (!found || found.isNull()) return null;
-      arena.own(found);
-      const ga = arena.own(new oc.GeomAdaptor_Surface(found));
-      const kind = String(ga.GetType()).replace('GeomAbs_', '').toLowerCase();
       const [u0, u1, v0, v1] = [ad.FirstUParameter(), ad.LastUParameter(), ad.FirstVParameter(), ad.LastVParameter()];
       if (![u0, u1, v0, v1].every(Number.isFinite)) return null;
       const reversed = face.Orientation() === oc.TopAbs_Orientation.TopAbs_REVERSED;
@@ -3465,35 +3462,81 @@ export class Kernel {
       const at: Vec3 = [P.X(), P.Y(), P.Z()];
       const n = cross3([U.X(), U.Y(), U.Z()], [V.X(), V.Y(), V.Z()]);
       const out: Vec3 = reversed ? [-n[0], -n[1], -n[2]] : n;
+      // how far the face's own surface is from a proposed one, by the proposed one's equation, at 13 × 13 places over the face
+      const deviationOf = (g: SurfaceGeometry): number => {
+        let deviation = 0;
+        const N = 13;
+        for (let i = 0; i < N; i++) {
+          for (let j = 0; j < N; j++) {
+            ad.D0(u0 + ((u1 - u0) * i) / (N - 1), v0 + ((v1 - v0) * j) / (N - 1), P);
+            deviation = Math.max(deviation, surfaceOff(g, [P.X(), P.Y(), P.Z()]));
+          }
+        }
+        return deviation;
+      };
+      // ADR 0258: a ruled strip between coaxial arcs is read from its rails first. OCCT misses such strips when their rulings fan (null), or proposes
+      // a surface that fits the face but not its edges: a cylinder on a tilted axis for a cone strip (E13 f71 at 1e-3), a cylinder 0.053 mm off in
+      // radius and axis for a 2.7° strip of radius 70.7 (fuzz). The rails are the face's own boundary, so their axis and radii are the ones to keep.
+      const strip = this.coaxialArcStrip(face, tol, at, out, deviationOf, arena);
+      if (strip) return strip;
+      const conv = arena.own(new oc.GeomConvert_SurfToAnaSurf(arena.own(oc.BRep_Tool.Surface(face))));
+      const found = conv.ConvertToAnalytical(tol);
+      if (!found || found.isNull()) return null;
+      arena.own(found);
+      const ga = arena.own(new oc.GeomAdaptor_Surface(found));
+      const kind = String(ga.GetType()).replace('GeomAbs_', '').toLowerCase();
       const props = arena.own(new oc.GProp_GProps());
       oc.BRepGProp.SurfaceProperties(face, props, false, false);
       const geometry = this.analyticGeometry(ga, kind, this.xyz(arena.own(props.CentreOfMass())), at, out, arena);
       if (!geometry) return null;
-      // how far the face's own surface is from the proposed one, by the proposed one's equation
-      const off = (p: Vec3): number => {
-        const g = geometry;
-        if (g.type === 'plane') return Math.abs(dot3(sub3(p, g.origin), g.normal));
-        if (g.type === 'sphere') return Math.abs(Math.hypot(...sub3(p, g.center)) - g.radius);
-        const from = g.type === 'cylinder' ? g.origin : g.type === 'cone' ? g.apex : g.center;
-        const w = sub3(p, from);
-        const z = dot3(w, g.axis);
-        const rho = Math.hypot(...sub3(w, scale3(g.axis, z)));
-        if (g.type === 'cylinder') return Math.abs(rho - g.radius);
-        if (g.type === 'cone') return Math.abs(rho * Math.cos(g.halfAngle) - Math.abs(z) * Math.sin(Math.abs(g.halfAngle)));
-        return Math.abs(Math.hypot(rho - g.major, z) - g.minor);
-      };
-      let deviation = 0;
-      const N = 13;
-      for (let i = 0; i < N; i++) {
-        for (let j = 0; j < N; j++) {
-          ad.D0(u0 + ((u1 - u0) * i) / (N - 1), v0 + ((v1 - v0) * j) / (N - 1), P);
-          deviation = Math.max(deviation, off([P.X(), P.Y(), P.Z()]));
-        }
-      }
+      const deviation = deviationOf(geometry);
       return deviation <= tol ? { geometry, deviation } : null;
     } finally {
       arena.dispose();
     }
+  }
+
+  /**
+   * ADR 0258: `face` read as the strip of a cylinder or cone it is, when its surface is a B-spline ruled one way (degree 1, two rows of poles) between
+   * two circle arcs on one axis (`coaxialRails`, every gate `tol`). The rails are taken at the surface's own bounds and sampled at 25 points each. The
+   * cylinder of the mean radius is read when it is within `tol` of the face — a cone whose radii differ by less than about 2·tol is that cylinder at
+   * this tolerance; otherwise the cone through both rails, when it is. The deviation is measured over the face (`deviationOf`), as for OCCT's proposal.
+   */
+  private coaxialArcStrip(
+    face: TopoDS_Shape,
+    tol: number,
+    at: Vec3,
+    out: Vec3,
+    deviationOf: (g: SurfaceGeometry) => number,
+    arena: Arena,
+  ): { geometry: SurfaceGeometry; deviation: number } | null {
+    const oc = this.oc;
+    const full = arena.own(new oc.BRepAdaptor_Surface(arena.own(oc.TopoDS.Face(face)), false));
+    if (String(full.GetType()).replace('GeomAbs_', '') !== 'BSplineSurface') return null;
+    const s = arena.own(full.BSpline());
+    const ruledU = s.UDegree() === 1 && s.NbUPoles() === 2;
+    const ruledV = s.VDegree() === 1 && s.NbVPoles() === 2;
+    // ruled both ways: a bilinear patch, no arcs; neither: not ruled
+    if (ruledU === ruledV) return null;
+    const [u0, u1, v0, v1] = [full.FirstUParameter(), full.LastUParameter(), full.FirstVParameter(), full.LastVParameter()];
+    if (![u0, u1, v0, v1].every(Number.isFinite)) return null;
+    const P = arena.own(new oc.gp_Pnt());
+    const SAMPLES = 25;
+    const rail = (end: number): Vec3[] =>
+      Array.from({ length: SAMPLES }, (_, i) => {
+        const along = i / (SAMPLES - 1);
+        if (ruledU) full.D0(end, v0 + (v1 - v0) * along, P);
+        else full.D0(u0 + (u1 - u0) * along, end, P);
+        return [P.X(), P.Y(), P.Z()] as Vec3;
+      });
+    const rails = ruledU ? coaxialRails(rail(u0), rail(u1), tol) : coaxialRails(rail(v0), rail(v1), tol);
+    if (!rails.ok) return null;
+    const { cylinder, cone } = stripSurfaces(rails, at, out);
+    const dCylinder = deviationOf(cylinder);
+    if (dCylinder <= tol) return { geometry: cylinder, deviation: dCylinder };
+    if (!cone) return null;
+    const dCone = deviationOf(cone);
+    return dCone <= tol ? { geometry: cone, deviation: dCone } : null;
   }
 
   private edgeInfo(e: TopoDS_Shape, arena: Arena): Omit<EdgeInfo, 'faces' | 'vertices'> {
@@ -7724,3 +7767,16 @@ const dot3 = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const sub3 = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const scale3 = (a: Vec3, k: number): Vec3 => [a[0] * k, a[1] * k, a[2] * k];
 const cross3 = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+
+/** How far `p` is from the surface `g`, by its equation (`Kernel.analyticFace`, C4). */
+function surfaceOff(g: SurfaceGeometry, p: Vec3): number {
+  if (g.type === 'plane') return Math.abs(dot3(sub3(p, g.origin), g.normal));
+  if (g.type === 'sphere') return Math.abs(Math.hypot(...sub3(p, g.center)) - g.radius);
+  const from = g.type === 'cylinder' ? g.origin : g.type === 'cone' ? g.apex : g.center;
+  const w = sub3(p, from);
+  const z = dot3(w, g.axis);
+  const rho = Math.hypot(...sub3(w, scale3(g.axis, z)));
+  if (g.type === 'cylinder') return Math.abs(rho - g.radius);
+  if (g.type === 'cone') return Math.abs(rho * Math.cos(g.halfAngle) - Math.abs(z) * Math.sin(Math.abs(g.halfAngle)));
+  return Math.abs(Math.hypot(rho - g.major, z) - g.minor);
+}
