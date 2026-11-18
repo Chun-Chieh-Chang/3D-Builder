@@ -62,6 +62,8 @@ export interface Clutter {
   texts: string[];
   /** Pairs of dimensions (by id) whose lines cross. */
   crossings?: string[];
+  /** Dimension/annotation group ids involved in any clutter (for fast targeted steering). */
+  groups?: string[];
 }
 
 /**
@@ -170,11 +172,24 @@ export function clutterOf(items: readonly SceneItem[], slack = 0.3, viewOfGroup:
   // a dimension line or leader through the lines of a view: a row pushed into a neighbouring view. A leader runs into its own view to the hole it points
   // at, so only the views other than the dimension's own are counted, and a line counts once.
   const viewLines = lines.filter((l) => l.owner?.startsWith('view:'));
+  const badGroups = new Set<string>();
+  for (const i of bad) {
+    const g = texts[i]!.t.group;
+    if (g !== undefined) badGroups.add(g);
+  }
+  for (const pair of pairs) {
+    const [g1, g2] = pair.split('|');
+    if (g1) badGroups.add(g1);
+    if (g2) badGroups.add(g2);
+  }
   for (const d of dimLines) {
     if (!d.arrow) continue;
-    if (viewLines.some((v) => v.owner !== `view:${viewOfGroup.get(d.group!) ?? ''}` && segs(d).some((sg) => segs(v).some((t) => properCross(sg, t))))) count++;
+    if (viewLines.some((v) => v.owner !== `view:${viewOfGroup.get(d.group!) ?? ''}` && segs(d).some((sg) => segs(v).some((t) => properCross(sg, t))))) {
+      count++;
+      if (d.group !== undefined) badGroups.add(d.group);
+    }
   }
-  return { count, texts: [...bad].map((i) => texts[i]!.t.text), ...(pairs.size ? { crossings: [...pairs] } : {}) };
+  return { count, texts: [...bad].map((i) => texts[i]!.t.text), ...(pairs.size ? { crossings: [...pairs] } : {}), ...(badGroups.size ? { groups: [...badGroups] } : {}) };
 }
 
 /** Whether two segments cross each other at a point inside both (not at an end, not along each other). */

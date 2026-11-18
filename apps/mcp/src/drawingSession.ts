@@ -84,6 +84,13 @@ const ORTHO: ViewName[] = ['front', 'back', 'top', 'bottom', 'left', 'right'];
 const SIDES: ViewSide[] = ['up', 'down', 'left', 'right'];
 const IDENTITY = { position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number] };
 
+function onPage(doc: DrawingDoc, pageIndex: number, fn: (single: DrawingDoc) => DrawingDoc): DrawingDoc {
+  if (pageIndex === 0 && doc.pages.length === 1) return fn(doc);
+  const single: DrawingDoc = { ...doc, pages: [page(doc, pageIndex)] };
+  const next = fn(single);
+  return { ...next, pages: doc.pages.map((p, i) => (i === pageIndex ? next.pages[0]! : p)) };
+}
+
 export interface DrawingPlan {
   main: MainViewCandidate[];
   /** For the best main view: the views to project off it, the section advised, and why. */
@@ -110,6 +117,7 @@ export interface CreateOptions {
 
 export interface DrawingReport {
   path: string | null;
+  pages?: number;
   sheet: { size: SheetSize; orientation: string; scale: string; projection: string };
   views: { id: Id; name: string; kind: string; direction?: ViewName; parent?: Id; side?: string }[];
   dimensions: number;
@@ -189,6 +197,7 @@ export class DrawingSession {
   /** Lines and features of the part from a direction (and a cut), kept while the part is the same build. */
   private lineCache = new Map<string, ViewLines>();
   private featureCache = new Map<string, ViewFeature[]>();
+  private elementCache = new Map<string, Exclude<ReturnType<typeof elementFacts>, { error: string }> | null>();
   private cacheFor: unknown = null;
 
   constructor(private readonly part: CadSession) {}
@@ -199,6 +208,7 @@ export class DrawingSession {
     if (this.cacheFor !== s.built) {
       this.lineCache.clear();
       this.featureCache.clear();
+      this.elementCache.clear();
       this.cacheFor = s.built;
     }
     return s;
@@ -304,50 +314,70 @@ export class DrawingSession {
 
     // the section: where the plan advises it (or where asked), in place of the projected view that would show the same side
     const wantSection = o.section === true || ((o.section ?? 'auto') === 'auto' && rec.section !== null);
+    const sectionIds: Id[] = [];
     if (wantSection) {
       const mainStats = this.stats(main);
       const advice = rec.section ?? adviseSection({ ...mainStats, hidden: Math.max(mainStats.hidden, mainStats.visible) }, mainStats.width >= mainStats.height ? 'horizontal' : 'vertical')!;
       const box = this.project(viewVectors(main)).box!;
       const pad = 2;
-      const line: [[number, number], [number, number]] =
-        advice.orientation === 'horizontal' ? [[box.min[0] - pad, advice.at], [box.max[0] + pad, advice.at]] : [[advice.at, box.min[1] - pad], [advice.at, box.max[1] + pad]];
-      const replaced = rec.section?.replaces && sideIds.get(rec.section.replaces);
-      const id = ids().take('view');
-      const section: DrawingView = { id, name: t('drawing.view.section', { label: 'A' }), kind: 'section', parent: mainId, line, label: 'A' };
-      // look the way the replaced view looked (its side of the main view), turning the arrows if the line's own way looks the other
-      let chosen = section;
-      if (replaced) {
-        const all = page(doc).views;
-        const want = axesOf(all, projection, all.find((v) => v.id === replaced)!)!.dir;
-        const got = axesOf([...all, section], projection, section)!.dir;
-        if (want.some((x, i) => Math.abs(x - got[i]!) > 1e-6)) chosen = { ...section, flip: true };
-        doc = applyDrawingCommand(doc, { type: 'deleteViews', viewIds: [replaced] });
+      const makeSection = (label: string, orientation: 'horizontal' | 'vertical', at: number, replaced?: Id) => {
+        const line: [[number, number], [number, number]] =
+          orientation === 'horizontal' ? [[box.min[0] - pad, at], [box.max[0] + pad, at]] : [[at, box.min[1] - pad], [at, box.max[1] + pad]];
+        const id = ids().take('view');
+        const section: DrawingView = { id, name: t('drawing.view.section', { label }), kind: 'section', parent: mainId, line, label };
+        let chosen = section;
+        if (replaced) {
+          const all = page(doc).views;
+          const want = axesOf(all, projection, all.find((v) => v.id === replaced)!)!.dir;
+          const got = axesOf([...all, section], projection, section)!.dir;
+          if (want.some((x, i) => Math.abs(x - got[i]!) > 1e-6)) chosen = { ...section, flip: true };
+          doc = applyDrawingCommand(doc, { type: 'deleteViews', viewIds: [replaced] });
+        }
+        doc = applyDrawingCommand(doc, { type: 'insertViews', views: [chosen] });
+        sectionIds.push(id);
+      };
+      const replacedA = rec.section?.replaces && sideIds.get(rec.section.replaces);
+      makeSection('A', advice.orientation, advice.at, replacedA || undefined);
+      // When an orthogonal projected view also hides internal detail (>= 25% hidden lines), turn it into orthogonal section B-B
+      if ((o.section ?? 'auto') === 'auto' && replacedA) {
+        const otherSide = [...sideIds.entries()].find(([side]) => side !== rec.section!.replaces);
+        if (otherSide) {
+          const [sideB, idB] = otherSide;
+          const stB = this.sidesOf(main, projection).find((x) => x.side === sideB)?.stats;
+          const hrB = stB && stB.visible + stB.hidden > 0 ? stB.hidden / (stB.visible + stB.hidden) : 0;
+          if (hrB >= 0.25) {
+            const orthOrient = advice.orientation === 'vertical' ? 'horizontal' : 'vertical';
+            const orthAdv = adviseSection(mainStats, orthOrient);
+            makeSection('B', orthOrient, orthAdv?.at ?? 0, idB);
+          }
+        }
       }
-      doc = applyDrawingCommand(doc, { type: 'insertViews', views: [chosen] });
     }
 
     // title
     const title: Partial<Record<TitleField, string>> = { drawingName: basename(s.path, extname(s.path)), date: new Date().toISOString().slice(0, 10), ...o.title };
     for (const [field, value] of Object.entries(title)) if (value) doc = applyDrawingCommand(doc, { type: 'setTitle', field: field as TitleField, value });
 
-    // the dimensions that determine the part, main view first, then the section, then the others
+    // the dimensions that determine the part, main view first, then the sections, then the others
     doc = this.dimensionAll(doc, o.ordinateAbove);
 
-    // the sheet and the scale: the smallest sheet that takes the views at full size or larger, else an A3 at the scale that fits
-    // the sheet: the smallest that takes the views at full size; when what is drawn on it cannot be laid out clean there (texts crowded, a caption with
-    // nowhere to go), the next size up — a drawing that is legible on a larger sheet is better than a crowded one on a small sheet
-    const layOut = (sheet: CreateOptions['sheet']) => {
-      let d = this.fitSheet(doc, { ...o, sheet });
-      if (o.isometric ?? true) d = this.placeIsometric(d, mainId);
-      return this.tidy(d);
+    // Move micro-fillet/micro-radius dimensions (R < 0.8 mm) into enlarged Detail Views on Page 2 when dense,
+    // keeping Page 1 clean and readable while preserving 100% dimension coverage.
+    doc = this.offloadMicroDetails(doc, mainId, o);
+
+    // the sheet and the scale: lay out each page cleanly
+    const layOutPage = (d0: DrawingDoc, pageIndex: number, sheetOpt: CreateOptions['sheet']) => {
+      let d = this.fitSheet(d0, { ...o, sheet: sheetOpt }, pageIndex);
+      if (pageIndex === 0 && (o.isometric ?? true)) d = this.placeIsometric(d, mainId);
+      return this.tidy(d, pageIndex);
     };
-    let best = layOut(o.sheet);
+    let best = layOutPage(doc, 0, o.sheet);
     if (!o.sheet || o.sheet === 'auto') {
-      let score = this.clutter(best);
+      let score = this.clutter(best, 0);
       const order: SheetSize[] = ['A4', 'A3', 'A2', 'A1'];
-      for (let i = order.indexOf(page(best).sheet.size) + 1; score > 0 && i > 0 && i < order.length; i++) {
-        const next = layOut(order[i]);
-        const c = this.clutter(next);
+      for (let i = order.indexOf(page(best, 0).sheet.size) + 1; score > 0 && i > 0 && i < order.length; i++) {
+        const next = layOutPage(doc, 0, order[i]);
+        const c = this.clutter(next, 0);
         if (c < score) {
           best = next;
           score = c;
@@ -355,6 +385,21 @@ export class DrawingSession {
       }
     }
     doc = best;
+    for (let pi = 1; pi < doc.pages.length; pi++) {
+      doc = this.fitSheet(doc, { ...o, sheet: page(doc, 0).sheet.size }, pi);
+      const pg = page(doc, pi);
+      const details = pg.views.filter((v) => v.kind === 'detail');
+      if (details.length) {
+        const area = sheetMetrics(pg.sheet).area;
+        const x = Math.round((area.x + area.w * 0.78) * 10) / 10;
+        const step = area.h / (details.length + 1);
+        for (let di = 0; di < details.length; di++) {
+          const y = Math.round((area.y + area.h - step * (di + 1)) * 10) / 10;
+          doc = onPage(doc, pi, (st) => applyDrawingCommand(st, { type: 'setView', viewId: details[di]!.id, patch: { at: [x, y] } }));
+        }
+      }
+      doc = this.tidy(doc, pi);
+    }
 
     this.undoStack.length = 0;
     this.doc = doc;
@@ -392,12 +437,13 @@ export class DrawingSession {
     return applyDrawingCommand(doc, { type: 'insertDimensions', dimensions });
   }
 
-  private fitSheet(doc: DrawingDoc, o: CreateOptions): DrawingDoc {
+  private fitSheet(doc: DrawingDoc, o: CreateOptions, pageIndex = 0): DrawingDoc {
     const orientation = o.orientation ?? 'landscape';
     const tryOn = (size: SheetSize) => {
-      const d = applyDrawingCommand(doc, { type: 'setSheet', sheet: { size, orientation } });
-      const b = this.build(d);
-      return { d, fit: fitViews(d, b.lines, b.elements, b.features) };
+      const d = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setSheet', sheet: { size, orientation } }));
+      const b = this.build(d, pageIndex);
+      const single = pageIndex === 0 && d.pages.length === 1 ? d : { ...d, pages: [page(d, pageIndex)] };
+      return { d, fit: fitViews(single, b.lines, b.elements, b.features) };
     };
     let chosen: { d: DrawingDoc; fit: ReturnType<typeof fitViews> } | null = null;
     if (o.sheet && o.sheet !== 'auto') chosen = tryOn(o.sheet);
@@ -412,7 +458,7 @@ export class DrawingSession {
       chosen ??= tryOn('A3');
     }
     const scale = o.scale ?? chosen.fit?.scale;
-    return applyDrawingCommand(chosen.d, { type: 'setSheet', sheet: { ...(scale ? { scale } : {}), shift: o.scale ? null : chosen.fit?.shift ?? null } });
+    return onPage(chosen.d, pageIndex, (s) => applyDrawingCommand(s, { type: 'setSheet', sheet: { ...(scale ? { scale } : {}), shift: o.scale ? null : chosen.fit?.shift ?? null } }));
   }
 
   /**
@@ -450,41 +496,44 @@ export class DrawingSession {
   }
 
   /** Takes out what cannot be drawn, and lays the rows out again (the shortest nearest, as SolidWorks's Auto Arrange). */
-  private tidy(doc: DrawingDoc): DrawingDoc {
-    let b = this.build(doc);
+  private tidy(doc: DrawingDoc, pageIndex = 0): DrawingDoc {
+    let b = this.build(doc, pageIndex);
     const failed = [...b.outcomes].filter(([, o]) => 'error' in o).map(([id]) => id);
     if (failed.length) {
-      doc = applyDrawingCommand(doc, { type: 'deleteDimensions', dimensionIds: failed });
-      b = this.build(doc);
+      doc = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'deleteDimensions', dimensionIds: failed }));
+      b = this.build(doc, pageIndex);
     }
-    const dims = page(doc).dimensions;
+    const dims = page(doc, pageIndex).dimensions;
     // rows twice the text height apart (7 mm for ISO's 3.5 mm text, ISO 129-1), the first a little further: larger text, wider rows
-    const h = page(doc).sheet.dimStyle?.text ?? 3.5;
+    const h = page(doc, pageIndex).sheet.dimStyle?.text ?? 3.5;
     const changes = arrangeDimensions(dims, b.outcomes, new Set(dims.map((d) => d.id)), { first: Math.max(10, Math.round(h * (10 / 3.5) * 10) / 10), step: Math.max(7, h * 2) });
-    if (changes.length) doc = applyDrawingCommand(doc, { type: 'batch', commands: changes.map((c) => ({ type: 'setDimension', dimensionId: c.id, patch: c.patch }) satisfies DrawingCommand) });
+    if (changes.length) doc = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'batch', commands: changes.map((c) => ({ type: 'setDimension', dimensionId: c.id, patch: c.patch }) satisfies DrawingCommand) }));
     // room first (views apart, leaders turned), and only then a number slid along its line — a last resort, since it belongs in the middle (ISO 129-1)
-    return this.placeCaptions(this.steerLeaders(this.spreadViews(this.steerLeaders(this.spreadViews(doc), false)), true));
+    doc = this.placeCaptions(this.steerLeaders(this.spreadViews(this.steerLeaders(this.spreadViews(doc, pageIndex), false, pageIndex), pageIndex), true, pageIndex), pageIndex);
+    const afterFailed = [...this.build(doc, pageIndex).outcomes].filter(([, o]) => 'error' in o).map(([id]) => id);
+    if (afterFailed.length) doc = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'deleteDimensions', dimensionIds: afterFailed }));
+    return doc;
   }
 
   /**
    * Moves a view's caption that something crosses (the extension lines of the dimensions under the view, as a rule) to where nothing does: further down,
    * under the rows of dimensions, or over the view. The caption is only moved, never changed.
    */
-  private placeCaptions(doc: DrawingDoc): DrawingDoc {
-    let score = this.clutter(doc);
-    const b = this.build(doc);
-    for (const v of page(doc).views) {
+  private placeCaptions(doc: DrawingDoc, pageIndex = 0): DrawingDoc {
+    let score = this.clutter(doc, pageIndex);
+    const b = this.build(doc, pageIndex);
+    for (const v of page(doc, pageIndex).views) {
       const own = b.placed.get(v.id);
       if (!own) continue;
       // as drafters do: under everything drawn for the view (its dimensions with it) — kept whenever it makes nothing worse
-      const dimIds = new Set(page(doc).dimensions.filter((d) => d.view === v.id).map((d) => d.id));
+      const dimIds = new Set(page(doc, pageIndex).dimensions.filter((d) => d.view === v.id).map((d) => d.id));
       const below = itemsBounds(b.scene.items.filter((i) => i.group !== undefined && dimIds.has(i.group) && i.kind === 'polyline'));
       const auto = own.at[1] - own.h / 2 - 8; // where the caption's baseline is by default (viewCaptionItem)
       const first: [number, number] | null = below && below.y0 < auto + 6 ? [0, Math.round((below.y0 - 8 - auto) * 10) / 10] : null;
       const attempt = (offset: [number, number], keepEqual: boolean) => {
-        const trial = applyDrawingCommand(doc, { type: 'setView', viewId: v.id, patch: { caption: { ...(v.caption ?? {}), offset } } });
-        const c = this.clutter(trial);
-        const frame = sheetMetrics(page(trial).sheet).area;
+        const trial = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setView', viewId: v.id, patch: { caption: { ...(v.caption ?? {}), offset } } }));
+        const c = this.clutter(trial, pageIndex);
+        const frame = sheetMetrics(page(trial, pageIndex).sheet).area;
         const capY = auto + offset[1];
         if (capY < frame.y - 2) return false; // never into the title block's row
         if (c < score || (keepEqual && c === score)) {
@@ -503,8 +552,8 @@ export class DrawingSession {
       let pick: { offset: [number, number]; c: number } | null = null;
       for (const offset of tries) {
         const auto2 = auto + offset[1];
-        if (auto2 < sheetMetrics(page(doc).sheet).area.y - 2) continue;
-        const c = this.clutter(applyDrawingCommand(doc, { type: 'setView', viewId: v.id, patch: { caption: { ...(v.caption ?? {}), offset } } }));
+        if (auto2 < sheetMetrics(page(doc, pageIndex).sheet).area.y - 2) continue;
+        const c = this.clutter(onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setView', viewId: v.id, patch: { caption: { ...(v.caption ?? {}), offset } } })), pageIndex);
         if (!pick || c < pick.c) pick = { offset, c };
       }
       if (pick && pick.c < score) attempt(pick.offset, true);
@@ -512,24 +561,34 @@ export class DrawingSession {
     return doc;
   }
 
-  /** How far `doc` is from a clean sheet: what `clutterOf` counts, and a hundred for anything drawn outside the frame. */
-  private clutter(doc: DrawingDoc): number {
-    const b = this.build(doc);
-    const items = b.scene.items.slice(sheetItems(doc).length);
-    const frame = sheetMetrics(page(doc).sheet).frame;
+  /** How far `doc` is from a clean sheet: what `clutterOf` counts, plus a penalty for out-of-frame items or broken dimensions. */
+  private clutterInfo(doc: DrawingDoc, pageIndex = 0): { score: number; groups: Set<string>; failed: number } {
+    const b = this.build(doc, pageIndex);
+    const failed = [...b.outcomes.values()].filter((o) => 'error' in o).length;
+    const pg = page(doc, pageIndex);
+    const single = pageIndex === 0 ? doc : { ...doc, pages: [pg] };
+    const items = b.scene.items.slice(sheetItems(single).length);
+    const frame = sheetMetrics(pg.sheet).frame;
     const drawn = itemsBounds(items);
     const outside = drawn ? Math.max(0, frame.x - drawn.x0, drawn.x1 - (frame.x + frame.w), frame.y - drawn.y0, drawn.y1 - (frame.y + frame.h)) : 0;
-    return clutterOf(items, CLEARANCE, viewsOfDimensions(doc)).count + (outside > 0.05 ? 100 : 0);
+    const c = clutterOf(items, CLEARANCE, viewsOfDimensions(single));
+    const dimIds = new Set(pg.dimensions.map((d) => d.id));
+    const overlaps = overlappingDimensions(items, dimIds);
+    return { score: c.count + overlaps * 10 + (outside > 0.05 ? 100 : 0), groups: new Set(c.groups ?? []), failed };
+  }
+
+  private clutter(doc: DrawingDoc, pageIndex = 0): number {
+    return this.clutterInfo(doc, pageIndex).score;
   }
 
   /**
    * Slides projected and section views away from their parents (along the line they are in line on) where the rows of dimensions between them do not fit,
    * as a drafter leaves more room between views: by 5 mm steps, the smallest slide that leaves the sheet least cluttered.
    */
-  private spreadViews(doc: DrawingDoc): DrawingDoc {
-    let score = this.clutter(doc);
+  private spreadViews(doc: DrawingDoc, pageIndex = 0): DrawingDoc {
+    let score = this.clutter(doc, pageIndex);
     for (let pass = 0; pass < 2 && score > 0; pass++)
-      for (const v of page(doc).views) {
+      for (const v of page(doc, pageIndex).views) {
         if (score === 0) break;
         if (v.kind !== 'projected' && v.kind !== 'section') continue;
         if (v.kind === 'projected' && (v.side === 'upLeft' || v.side === 'upRight' || v.side === 'downLeft' || v.side === 'downRight')) continue;
@@ -537,8 +596,8 @@ export class DrawingSession {
         let pick: { doc: DrawingDoc; c: number } | null = null;
         for (const step of [5, 10, 15, 20, 25, 30, 40]) for (const sign of [1, -1]) {
           try {
-            const trial = applyDrawingCommand(doc, { type: 'setView', viewId: v.id, patch: { slide: (v.slide ?? 0) + sign * step } });
-            const c = this.clutter(trial);
+            const trial = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setView', viewId: v.id, patch: { slide: (v.slide ?? 0) + sign * step } }));
+            const c = this.clutter(trial, pageIndex);
             if (c < score && (!pick || c < pick.c)) pick = { doc: trial, c };
           } catch {
             /* a view that does not slide */
@@ -556,41 +615,210 @@ export class DrawingSession {
    * Turns the leader of each diameter and radius dimension (and lengthens it) to where its text crosses nothing, as a drafter swings a callout into free
    * room: the turn that leaves the sheet least cluttered, the one it has when none is better. A linear dimension's text is slid along its line likewise.
    */
-  private steerLeaders(doc: DrawingDoc, slideNumbers = true): DrawingDoc {
-    let score = this.clutter(doc);
-    if (score === 0) return doc;
-    const try_ = (patch: Extract<DrawingCommand, { type: 'setDimension' }>['patch'], id: Id) => {
+  private steerLeaders(doc: DrawingDoc, slideNumbers = true, pageIndex = 0): DrawingDoc {
+    let info = this.clutterInfo(doc, pageIndex);
+    if (info.score === 0) return doc;
+    const baseFailed = info.failed;
+    const try_ = (patch: Extract<DrawingCommand, { type: 'setDimension' }>['patch'], id: Id): boolean => {
       try {
-        const trial = applyDrawingCommand(doc, { type: 'setDimension', dimensionId: id, patch });
-        const c = this.clutter(trial);
-        if (c < score) {
+        const trial = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setDimension', dimensionId: id, patch }));
+        const next = this.clutterInfo(trial, pageIndex);
+        if (next.failed > baseFailed) return false;
+        if (next.score < info.score) {
           doc = trial;
-          score = c;
+          info = next;
+          return true;
         }
       } catch {
         /* a patch the dimension does not take */
       }
+      return false;
     };
-    // passes until one changes nothing: turning one leader can free the way for another
-    for (let pass = 0; pass < 4 && score > 0; pass++) {
-      const before = score;
-      for (const d of page(doc).dimensions) {
-        if (score === 0) break;
+    // passes until one changes nothing: only steer dimensions actually involved in clutter
+    for (let pass = 0; pass < 3 && info.score > 0; pass++) {
+      const before = info.score;
+      const targets = new Set(info.groups);
+      for (const d of page(doc, pageIndex).dimensions) {
+        if (info.score === 0) break;
+        if (!targets.has(d.id)) continue;
         if (d.kind === 'diameter' || d.kind === 'radius') {
-          for (const leader of [8, 14, 22, 30, 40]) for (const angle of [45, 135, 225, 315, 60, 120, 240, 300, 30, 150, 210, 330, 90, 270, 0, 180]) try_({ angle, leader }, d.id);
+          outer: for (const leader of [8, 14, 22, 32]) {
+            for (const angle of [45, 135, 225, 315, 30, 150, 210, 330, 0, 90, 180, 270]) {
+              if (try_({ angle, leader }, d.id) && !info.groups.has(d.id)) break outer;
+            }
+          }
         } else if (d.kind === 'linear' && slideNumbers) {
-          for (const slide of [-12, 12, -24, 24, -36, 36]) try_({ slide }, d.id);
+          for (const slide of [-12, 12, -24, 24, -36, 36]) {
+            if (try_({ slide }, d.id) && !info.groups.has(d.id)) break;
+          }
         }
       }
-      if (score >= before) break;
+      if (info.score >= before) break;
     }
     return doc;
   }
 
-  /** Everything a picture, a check or an export of `doc` needs. */
-  build(doc: DrawingDoc = this.need()): Built {
+  /**
+   * Moves micro-fillet/micro-radius dimensions (R < 0.8 mm) and secondary section B-B onto Page 2 with enlarged Detail Views
+   * so Page 1 remains uncluttered and readable while preserving 100% dimension coverage.
+   */
+  private offloadMicroDetails(doc: DrawingDoc, mainId: Id, o: CreateOptions): DrawingDoc {
     const s = this.source();
-    const pg = page(doc);
+    const pg0 = page(doc, 0);
+    const getFacts = (r: Parameters<typeof elementFacts>[2]) => {
+      const key = JSON.stringify(r);
+      if (this.elementCache.has(key)) return this.elementCache.get(key)!;
+      const f = elementFacts(s.body.topology, s.body.names, r, holeFeatures(s.doc), s.built.cosmeticThreads);
+      const val = 'error' in f ? null : f;
+      this.elementCache.set(key, val);
+      return val;
+    };
+    const microDims = pg0.dimensions.filter((d) => {
+      if (d.kind !== 'radius' && d.kind !== 'diameter') return false;
+      const els = dimensionRefs(d).map(getFacts);
+      const e = els[0];
+      return e && 'radius' in e && typeof e.radius === 'number' && e.radius < 0.8;
+    });
+    const secB = pg0.views.find((v) => v.kind === 'section' && v.label === 'B');
+    if (microDims.length < 4 && !secB) return doc;
+
+    const mainView = pg0.views.find((v) => v.id === mainId);
+    if (!mainView || isDerived(mainView)) return doc;
+
+    // Add Page 2
+    doc = applyDrawingCommand(doc, { type: 'insertPage', page: { name: '剖面與放大詳圖' } });
+    const alloc = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+    const base2Id = alloc.take('view');
+    const base2: DrawingView = { id: base2Id, name: mainView.name, source: mainView.source, direction: mainView.direction };
+    doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertViews', views: [base2] }));
+
+    // Move B-B to Page 2 (re-parented to base2Id)
+    let secB2Id: Id | null = null;
+    if (secB && secB.kind === 'section') {
+      secB2Id = alloc.take('view');
+      const secB2: DrawingView = { ...secB, id: secB2Id, parent: base2Id };
+      const secBDims = pg0.dimensions.filter((d) => d.view === secB.id);
+      doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertViews', views: [secB2] }));
+      if (secBDims.length) {
+        doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertDimensions', dimensions: secBDims.map((d) => ({ ...d, view: secB2Id! })) }));
+        doc = onPage(doc, 0, (st) => applyDrawingCommand(st, { type: 'deleteDimensions', dimensionIds: secBDims.map((d) => d.id) }));
+      }
+      doc = onPage(doc, 0, (st) => applyDrawingCommand(st, { type: 'deleteViews', viewIds: [secB.id] }));
+    }
+
+    // Create enlarged Detail Views on Page 2 for spatial clusters of micro-radius features on secB2Id and base2Id.
+    // Keep dimensions of the same feature together in one view (feature cohesion).
+    const baseScale = page(doc, 0).sheet.scale;
+    const detailScale: Scale = [Math.min(50, Math.max(20, baseScale[0] * 2)), baseScale[1]];
+    const pg1After = page(doc, 1);
+    const parentCandidates = [
+      ...(secB2Id ? [{ id: secB2Id }] : []),
+      { id: base2Id },
+    ];
+    const labels = ['C', 'D', 'E', 'F', 'G', 'H'];
+    let labelIdx = 0;
+    const featKey = (d: Dimension) => dimensionRefs(d)[0]?.name.split('.')[0] ?? '';
+
+    for (const cand of parentCandidates) {
+      if (labelIdx >= labels.length) break;
+      const pv = pg1After.views.find((v) => v.id === cand.id);
+      if (!pv) continue;
+      const axes = axesOf(pg1After.views, pg1After.sheet.projection, pv);
+      if (!axes) continue;
+      const allParentDims = cand.id === secB2Id
+        ? page(doc, 1).dimensions.filter((d) => d.view === secB2Id)
+        : page(doc, 0).dimensions.filter((d) => d.view === mainId);
+      const microDims = allParentDims.filter((d) => {
+        if (d.kind !== 'radius' && d.kind !== 'diameter') return false;
+        const e = dimensionRefs(d).map(getFacts)[0];
+        return e && 'radius' in e && typeof e.radius === 'number' && e.radius < 0.8;
+      });
+      if (microDims.length === 0) continue;
+
+      const projectPt = (d: Dimension): [number, number] | null => {
+        const e = dimensionRefs(d).map(getFacts)[0];
+        if (!e) return null;
+        const p = e.point;
+        const rx = axes.dir[1] * axes.up[2] - axes.dir[2] * axes.up[1];
+        const ry = axes.dir[2] * axes.up[0] - axes.dir[0] * axes.up[2];
+        const rz = axes.dir[0] * axes.up[1] - axes.dir[1] * axes.up[0];
+        return [p[0] * rx + p[1] * ry + p[2] * rz, p[0] * axes.up[0] + p[1] * axes.up[1] + p[2] * axes.up[2]];
+      };
+
+      // Greedy spatial clustering within 4.5 mm radius so distant ends get separate detail views
+      const clusters: { dims: Dimension[]; pts: [number, number][]; cx: number; cy: number }[] = [];
+      for (const d of microDims) {
+        const pt = projectPt(d);
+        if (!pt) continue;
+        let hit = clusters.find((c) => Math.hypot(pt[0] - c.cx, pt[1] - c.cy) <= 4.5);
+        if (!hit) {
+          hit = { dims: [], pts: [], cx: pt[0], cy: pt[1] };
+          clusters.push(hit);
+        }
+        hit.dims.push(d);
+        hit.pts.push(pt);
+        hit.cx = hit.pts.reduce((a, p) => a + p[0], 0) / hit.pts.length;
+        hit.cy = hit.pts.reduce((a, p) => a + p[1], 0) / hit.pts.length;
+      }
+
+      // Limit to 2 detail views per parent view, picking the densest clusters first
+      clusters.sort((a, b) => b.dims.length - a.dims.length);
+      const chosenClusters = clusters.slice(0, 2);
+      const movedIds = new Set<Id>();
+
+      for (const cl of chosenClusters) {
+        if (labelIdx >= labels.length) break;
+        const label = labels[labelIdx++]!;
+        let maxDist = Math.max(0.8, ...cl.pts.map((p) => Math.hypot(p[0] - cl.cx, p[1] - cl.cy)));
+        let maxR = Math.max(2.0, Math.min(6.5, maxDist + 1.2));
+
+        // Feature cohesion: pull in other dimensions of the same feature that lie within the detail region
+        const clFeats = new Set(cl.dims.map(featKey).filter(Boolean));
+        const clusterDims = [...cl.dims];
+        for (const d of allParentDims) {
+          if (movedIds.has(d.id) || clusterDims.some((x) => x.id === d.id)) continue;
+          const fk = featKey(d);
+          if (!fk || !clFeats.has(fk)) continue;
+          const pt = projectPt(d);
+          if (pt && Math.hypot(pt[0] - cl.cx, pt[1] - cl.cy) <= maxR + 0.5) {
+            clusterDims.push(d);
+            cl.pts.push(pt);
+          }
+        }
+        for (const d of clusterDims) movedIds.add(d.id);
+        maxDist = Math.max(0.8, ...cl.pts.map((p) => Math.hypot(p[0] - cl.cx, p[1] - cl.cy)));
+        maxR = Math.max(2.0, Math.min(6.5, maxDist + 1.2));
+
+        const detailId = alloc.take('view');
+        const detailView: DrawingView = {
+          id: detailId,
+          name: `詳圖 ${label}`,
+          kind: 'detail',
+          parent: cand.id,
+          centre: [Math.round(cl.cx * 100) / 100, Math.round(cl.cy * 100) / 100],
+          radius: Math.round(maxR * 100) / 100,
+          label,
+          at: [280, 150],
+          scale: detailScale,
+        };
+        doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertViews', views: [detailView] }));
+        if (cand.id === secB2Id) {
+          doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'deleteDimensions', dimensionIds: clusterDims.map((d) => d.id) }));
+          doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertDimensions', dimensions: clusterDims.map((d) => ({ ...d, view: detailId })) }));
+        } else {
+          doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertDimensions', dimensions: clusterDims.map((d) => ({ ...d, view: detailId })) }));
+          doc = onPage(doc, 0, (st) => applyDrawingCommand(st, { type: 'deleteDimensions', dimensionIds: clusterDims.map((d) => d.id) }));
+        }
+      }
+    }
+    return doc;
+  }
+
+  /** Everything a picture, a check or an export of `doc` needs for `pageIndex`. */
+  build(doc: DrawingDoc = this.need(), pageIndex = 0): Built {
+    const s = this.source();
+    const pg = page(doc, pageIndex);
+    const single: DrawingDoc = pageIndex === 0 && doc.pages.length === 1 ? doc : { ...doc, pages: [pg] };
     const lines = new Map<Id, ViewLines | null>();
     const features = new Map<Id, ViewFeature[]>();
     for (const v of pg.views) {
@@ -607,10 +835,18 @@ export class DrawingSession {
       features.set(v.id, this.featuresFor(axes));
     }
     const holes = holeFeatures(s.doc);
+    const getFacts = (r: Parameters<typeof elementFacts>[2]): Exclude<ReturnType<typeof elementFacts>, { error: string }> | null => {
+      const key = JSON.stringify(r);
+      if (this.elementCache.has(key)) return this.elementCache.get(key)!;
+      const f = elementFacts(s.body.topology, s.body.names, r, holes, s.built.cosmeticThreads);
+      const val = 'error' in f ? null : f;
+      this.elementCache.set(key, val);
+      return val;
+    };
     const elements = new Map<Id, ElementsResult>(
-      pg.dimensions.map((d) => [d.id, { elements: dimensionRefs(d).map((r) => { const f = elementFacts(s.body.topology, s.body.names, r, holes, s.built.cosmeticThreads); return 'error' in f ? null : f; }) }]),
+      pg.dimensions.map((d) => [d.id, { elements: dimensionRefs(d).map(getFacts) }]),
     );
-    const built = buildScene(doc, lines, elements, features);
+    const built = buildScene(single, lines, elements, features);
     return { lines, features, elements, scene: built.scene, placed: built.placed, outcomes: built.dimensions };
   }
 
@@ -619,25 +855,45 @@ export class DrawingSession {
     return this.doc;
   }
 
-  checks(doc: DrawingDoc = this.need(), b: Built = this.build(doc)): Checks {
-    const pg = page(doc);
-    const ids = new Set(pg.dimensions.map((d) => d.id));
-    const failed = [...b.outcomes].flatMap(([id, o]) => ('error' in o ? [{ id, error: o.error }] : []));
-    const area = sheetMetrics(pg.sheet).frame;
-    const drawn = itemsBounds(b.scene.items.slice(sheetItems(doc).length));
-    const outside = drawn ? Math.max(0, area.x - drawn.x0, drawn.x1 - (area.x + area.w), area.y - drawn.y0, drawn.y1 - (area.y + area.h)) : 0;
-    const coverage = dimensionCoverage(this.dimensionViews(doc), pg.dimensions as DimensionLike[]);
-    const clutter = clutterOf(b.scene.items.slice(sheetItems(doc).length), CLEARANCE, viewsOfDimensions(doc));
-    // every character as the PDF will write it: one the font cannot write comes out as 「?」, which is never acceptable on a drawing
+  checks(doc: DrawingDoc = this.need(), b?: Built): Checks {
     const f = font();
-    const missing = toPdf(b.scene, { ...(f ? { font: f } : {}) }).warnings;
-    const heights = b.scene.items.slice(sheetItems(doc).length).flatMap((i) => (i.kind === 'text' && i.text.trim() ? [{ text: i.text, h: Math.round(i.height * 100) / 100, caption: i.owner?.startsWith('caption:') === true }] : []));
+    let overlaps = 0;
+    let outside = 0;
+    const failed: { id: Id; error: string }[] = [];
+    const clutterTexts: string[] = [];
+    const clutterCrossings: string[] = [];
+    let clutterCount = 0;
+    const heights: { text: string; h: number; caption: boolean }[] = [];
+    const missingSet = new Set<string>();
+    const allDims: DimensionLike[] = [];
+
+    for (let pi = 0; pi < doc.pages.length; pi++) {
+      const pg = page(doc, pi);
+      const single: DrawingDoc = pi === 0 && doc.pages.length === 1 ? doc : { ...doc, pages: [pg] };
+      const built = pi === 0 && b ? b : this.build(doc, pi);
+      const ids = new Set(pg.dimensions.map((d) => d.id));
+      allDims.push(...(pg.dimensions as DimensionLike[]));
+      for (const [id, o] of built.outcomes) if ('error' in o) failed.push({ id, error: o.error });
+      const area = sheetMetrics(pg.sheet).frame;
+      const slice = built.scene.items.slice(sheetItems(single).length);
+      const drawn = itemsBounds(slice);
+      const out = drawn ? Math.max(0, area.x - drawn.x0, drawn.x1 - (area.x + area.w), area.y - drawn.y0, drawn.y1 - (area.y + area.h)) : 0;
+      outside = Math.max(outside, out);
+      const cl = clutterOf(slice, CLEARANCE, viewsOfDimensions(single));
+      clutterCount += cl.count;
+      clutterTexts.push(...cl.texts);
+      if (cl.crossings) clutterCrossings.push(...cl.crossings);
+      overlaps += overlappingDimensions(slice, ids);
+      for (const w of toPdf(built.scene, { ...(f ? { font: f } : {}) }).warnings) missingSet.add(w);
+      for (const i of slice) if (i.kind === 'text' && i.text.trim()) heights.push({ text: i.text, h: Math.round(i.height * 100) / 100, caption: i.owner?.startsWith('caption:') === true });
+    }
+    const coverage = dimensionCoverage(this.dimensionViews(doc), allDims);
     const odd = heights.filter((x) => { const [lo, hi] = x.caption ? TEXT_RANGE.caption : TEXT_RANGE.text; return x.h < lo - 1e-9 || x.h > hi + 1e-9; });
     return {
-      overlaps: overlappingDimensions(b.scene.items, ids),
+      overlaps,
       text: { min: heights.length ? Math.min(...heights.map((x) => x.h)) : null, max: heights.length ? Math.max(...heights.map((x) => x.h)) : null, outOfRange: odd.slice(0, 12).map((x) => `${x.text} (${x.h} mm)`) },
-      clutter: { count: clutter.count, texts: clutter.texts.slice(0, 12), ...(clutter.crossings ? { crossings: clutter.crossings.slice(0, 12) } : {}) },
-      glyphs: { font: f?.name ?? null, cjk: f ? f.glyphOf(0x8cab) !== 0 : false, missing },
+      clutter: { count: clutterCount, texts: clutterTexts.slice(0, 12), ...(clutterCrossings.length ? { crossings: clutterCrossings.slice(0, 12) } : {}) },
+      glyphs: { font: f?.name ?? null, cjk: f ? f.glyphOf(0x8cab) !== 0 : false, missing: [...missingSet] },
       outside: Math.round(outside * 10) / 10,
       failed,
       coverage,
@@ -649,6 +905,7 @@ export class DrawingSession {
     const pg = page(doc);
     return {
       path: this.path,
+      ...(doc.pages.length > 1 ? { pages: doc.pages.length } : {}),
       sheet: { size: pg.sheet.size, orientation: pg.sheet.orientation, scale: `${pg.sheet.scale[0]}:${pg.sheet.scale[1]}`, projection: pg.sheet.projection },
       views: pg.views.map((v) => ({ id: v.id, name: v.name, kind: v.kind ?? 'model', ...(!isDerived(v) ? { direction: v.direction } : { parent: v.parent }), ...(v.kind === 'projected' ? { side: v.side } : {}) })),
       dimensions: pg.dimensions.length,
@@ -945,7 +1202,8 @@ export class DrawingSession {
     let warnings: string[] = [];
     let data: Uint8Array | string;
     if (format === 'pdf') {
-      const pdf = toPdf(b.scene, { ...(f ? { font: f } : {}), title: page(doc).title.drawingName ?? 'drawing' });
+      const scenes = doc.pages.map((_, i) => this.build(doc, i).scene);
+      const pdf = toPdf(scenes.length === 1 ? scenes[0]! : scenes, { ...(f ? { font: f } : {}), title: page(doc).title.drawingName ?? 'drawing' });
       data = pdf.bytes;
       warnings = pdf.warnings;
     } else data = format === 'dxf' ? toDxf(b.scene) : toSvg(b.scene);
@@ -955,9 +1213,10 @@ export class DrawingSession {
   }
 
   /** A PNG of the sheet (or of one view and what is drawn on it), for the agent to look at. */
-  async picture(o: { view?: Id; px?: number } = {}): Promise<{ png: Uint8Array; width: number; height: number; font: boolean }> {
+  async picture(o: { view?: Id; px?: number; pageIndex?: number } = {}): Promise<{ png: Uint8Array; width: number; height: number; font: boolean }> {
     const doc = this.need();
-    const b = this.build(doc);
+    const pi = o.pageIndex ?? 0;
+    const b = this.build(doc, pi);
     let window: { x0: number; y0: number; x1: number; y1: number } | undefined;
     if (o.view) {
       const p = b.placed.get(o.view);
