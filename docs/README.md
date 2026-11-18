@@ -15,6 +15,7 @@
 | 外部應用程式驗收方式 | [自動驗收](automated-acceptance.md) | 證據與未驗目標分開 |
 | 桌面版各版本內容、建置與升版SOP | [桌面版版本履歷](desktop-release-history.md) | 每次升版或重建安裝檔時補上 |
 | 換電腦接手 S3（AI 連到 GUI）時貼給 Claude Code 的指令 | [S3 接手指令](handoff-s3-prompt.md) | 狀態以 `handoff.md` §0 為準；S3 完成後移到封存 |
+| 換電腦接手 part-3 重建（STEP 特徵辨識）時貼給本機 Claude Code 的指令 | [part-3 接手指令](handoff-part3-prompt.md) | 驗收清單在設計文件 §6s；狀態以 `handoff.md` §0 為準 |
 | 授權義務 | [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md) | 歷史審閱與目前lock資料分開 |
 | 清理處置與保留理由 | [清理紀錄](cleanup-candidates.md) | 先證明引用／初始化／授權責任，再移除 |
 
