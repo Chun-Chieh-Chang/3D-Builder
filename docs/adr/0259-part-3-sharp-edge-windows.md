@@ -1,6 +1,6 @@
 # ADR 0259: part-3 windows are recognized as sharp-edge cuts; the r 0.127 edge chamfers are reported, not rebuilt
 
-Status: Accepted (2026-11-18). Slice 1 is in `3694c3fe`, slice 2 in `a2452205`; slice 3 is below (not committed when written).
+Status: Accepted (2026-11-18). Slice 1 is in `3694c3fe`, slice 2 in `a2452205`, slice 3 in `9df3b686`; slice 4a is below (not committed when written).
 
 ## Context
 
@@ -57,6 +57,23 @@ Acceptance, changed from §6s: the face count differs from the original by the n
 - The base half-plane must keep 2° clear of the angles each cut face covers round the axis (its vertices, edge middles and centre; the circle less its widest gap). It used to keep 30° from face centres and edge middles; a notch plane runs on near a default direction, so its centre said nothing about where it reaches.
 - Tests: `recognize-lid-notch.test.ts` (3 cases; all refused before: the off-axis cylinders gave no revolve axis and the notch planes sent the body down the extrude path); mutations: no axial cuts and no floors (always 1 mm past) each turn all three red. Slices 1–2 still pass. Fuzz 100 (two files): 87 parts made, all 87 rebuilt, 0 refused, 0 traps; 13 the generator could not make (its draft closed the outline); heap 128 → 2288 MiB over 50 cases in each file (about 43 MiB each, AGENTS §3.5, not claimed flat).
 - Not covered by the synthetic part: a notch sharing a plane with a window (f79 in part-3). f79 holds the y direction (normal (0.996, 0, 0.087)) and does not meet the B wall f80 itself (the r 19.05 round f81 lies between), so these rules count it as a notch wall: its group (with f135 and f92) then spans the window's height as well as the lid's, and the cut made from it reaches down beside the window. Whether that cut is right on part-3 is for slice 4 to measure on the file.
+
+## Decision 3 (user, 2026-11-18, night): the option, its bound and its scope (d3b)
+
+- Name: zh-TW 「略過小圓角（不重建，差異列於報告）」, en "Skip small rounds (not rebuilt; the difference is reported)". Off by default, chosen per run, in the way `recognize.approximate` works.
+- Bound: the largest distance between the rebuilt and the original surfaces must be at most the largest radius of the rounds skipped (part-3: 0.127 mm). Reason: taking off a round of radius r moves the surface by about r at most. The volume difference is measured and written in the report, with no bound.
+- Scope: any part. A round is skipped only when nothing else rebuilds it and its radius is within the bound; the 35-part audit measures which parts this lets through.
+- Measured before the decision (c18a/c18b, estimates marked): part-3 has about 44 small round faces, about 149 mm of spine, holding about 0.5 mm³ (0.012% of 4420.8 mm³; estimated from face areas, not measured by rebuild).
+
+## Slice 4 plan (user, 2026-11-18, night)
+
+Measured on part-3 first (c18a–c18d): the window path stops at its first check (part-3 has 12 free walls, not 1); the A window's upper face f98/f130 is an r 3.048 rolling ball between the lid top and the A wall (circle centres 3.04800 from the lid, 3.0478–3.0480 from the wall; the 7.0e-3 `rollingBall` gives comes from its two ends, which run past the wall's surface); and the rounds cannot be deleted first (of 73 round faces only the r 1.270 class deletes: the rest trap, run past 600 s, or are refused as "the faces around cannot be extended"). So the window path must work with the rounds left in the body, which it does not (it returns before the round step). The user chose sub-slices: 4a several windows (synthetic, no rounds); 4b the window path with rounds left in the body; 4c the "Skip small rounds" option; 4d part-3 end to end.
+
+## Slice 4a as built (2026-11-18)
+
+- `revolvedWindow` takes any number of free walls, each its own window (drafted or ruled, as in slices 1 and 2); the window faces are gathered per wall (at most three per wall); the base half-plane must keep 2° clear of every wall and axial cut. When no half-plane along a default direction is clear (part-3's layout: windows at ±x and ±z), the clearest of every degree round the axis is taken.
+- Known limit, not fixed: the volume check can refuse an identical window part. Fuzz seed 57 (four drafted windows) is refused on volume 6.7e-6 with area 4.5e-11 and the volume between them 1.9e-12. Integrating to 1e-10 put seed 57 at 2.6e-8, but over the whole fuzz it refused 15 parts (volume 1.7e-6 to 1.4e-4, the volume between them at most 7.5e-12), so it was taken back (AGENTS 2026-11-07: a tighter `eps` is worse on spline walls). A refusal is the safe side; a volume integral good to 1e-6 on such walls is a separate piece of work.
+- Tests: `recognize-multi-window.test.ts` (4 cases, all refused before); mutations: only the default half-planes (2 of 3 cases red), only the first wall (all red). Slices 1–3 pass. Fuzz 100 (two files): 79 parts made, 78 rebuilt, 1 refused (seed 57, above), 0 traps; 21 the generator could not make (its draft closed the outline); heap 128 → 3056 / 3313 MiB over 50 cases in each file (AGENTS §3.5, not claimed flat). phase8 recognition 15 files pass; real-part audit 69/84 as before.
 
 ## Not decided
 

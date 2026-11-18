@@ -1596,8 +1596,8 @@ function revolveBase(kernel: Kernel, shape: ShapeId, axis: { origin: Vec3; dir: 
 }
 
 /**
- * ADR 0259: a body of revolution with one window whose wall has no simple surface. The base is the revolve of the half-plane section farthest from the
- * window. The window is a cut, by one of two tools:
+ * ADR 0259: a body of revolution with windows whose walls have no simple surface (slice 4a: any number, each wall its own window). The base is the
+ * revolve of the half-plane section clearest of the windows. Each window is a cut, by one of two tools:
  * - slice 1, a wall drafted or straight along a default direction square to the axis: an extrusion of the curve the wall is drawn from
  *   (`Kernel.wallRail`, the file's own curve) closed by the chord between its ends, drafted as the wall is, up and down from the curve's plane as far as
  *   the wall reaches;
@@ -1613,9 +1613,9 @@ function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: num
     const f = kernel.flatFace(shape, i, TOL);
     if (f) flat.set(i, f);
   }
+  // the windows' walls (slice 4a: any number, each its own window)
   const walls = odd.filter((i) => !flat.has(i));
-  if (walls.length !== 1 || flat.size > 2) return null;
-  const wallFace = walls[0]!;
+  if (walls.length === 0 || flat.size > 2 * walls.length) return null;
   const planeOf = (i: number): { point: Vec3; normal: Vec3 } | null => {
     const g = topo.faces[i]!.geometry;
     if (g?.type === 'plane') return { point: g.origin, normal: unit(g.normal) };
@@ -1633,11 +1633,11 @@ function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: num
   }
   if (turns.length === 0) return null;
   const major = turns.reduce((m, g) => (g.area > m.area ? g : m)).axis;
-  // the faces of the window: the wall, the flat faces with no simple surface, and the planes meeting the wall that lean (a drafted window's chord side)
-  const besideWall = new Set(topo.edges.filter((e) => e.faces.includes(wallFace)).flatMap((e) => e.faces));
+  // the faces of the windows: the walls, the flat faces with no simple surface, and the planes meeting a wall that lean (a drafted window's chord side)
+  const besideWall = new Set(topo.edges.filter((e) => e.faces.some((f) => walls.includes(f))).flatMap((e) => e.faces));
   const leaning = topo.faces.flatMap((f, i) => (besideWall.has(i) && f.geometry?.type === 'plane' && !parallel(f.geometry.normal, major.dir) && !square(f.geometry.normal, major.dir) ? [i] : []));
   const windowFaces = new Set([...odd, ...leaning]);
-  if (windowFaces.size > 3) return null;
+  if (windowFaces.size > 3 * walls.length) return null;
   // the walls of cuts along the axis: planes holding its direction, cylinders along it but off it
   const axial = topo.faces.flatMap((f, i) => {
     if (windowFaces.has(i)) return [];
@@ -1664,7 +1664,7 @@ function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: num
   const angleOf = (u: Vec3) => Math.atan2(dot(u, e2), dot(u, e1));
   const TAU = 2 * Math.PI;
   const ranges: [number, number][] = [];
-  for (const i of [wallFace, ...axial]) {
+  for (const i of [...walls, ...axial]) {
     const pts = [topo.faces[i]!.center, ...topo.edges.filter((e) => e.faces.includes(i)).map((e) => e.mid), ...topo.vertices.filter((v) => v.faces.includes(i)).map((v) => v.point)];
     const as = pts.map(around).filter((u): u is Vec3 => u !== null).map(angleOf).sort((a, b) => a - b);
     if (as.length === 0) return null;
@@ -1682,24 +1682,35 @@ function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: num
         return off <= len ? -1 : Math.min(off - len, TAU - off);
       }),
     );
-  let planeNormal: Vec3 | null = null;
-  let farthest = -Infinity;
-  for (const c of CANONICAL.filter((x) => square(x, axis.dir))) {
-    for (const sign of [1, -1]) {
-      const n: Vec3 = [c[0] * sign, c[1] * sign, c[2] * sign];
+  // a half-plane along a default direction when one is clear; else (slice 4a: part-3 has windows at ±x and ±z) the clearest of every degree round
+  const pick = (normals: Vec3[]) => {
+    let best: { n: Vec3; clear: number } | null = null;
+    for (const n of normals) {
       const across = unit(cross(frameFor(n, axis.origin).normal, axis.dir));
       const clear = clearance(angleOf(across));
-      if (clear > farthest + 1e-9) {
-        farthest = clear;
-        planeNormal = n;
-      }
+      if (!best || clear > best.clear + 1e-9) best = { n, clear };
     }
-  }
-  if (!planeNormal || farthest < (2 * Math.PI) / 180) return null;
+    return best;
+  };
+  const CLEAR = (2 * Math.PI) / 180;
+  const defaults = pick(CANONICAL.filter((x) => square(x, axis.dir)).flatMap((c): Vec3[] => [c, [-c[0], -c[1], -c[2]]]));
+  const chosen =
+    defaults && defaults.clear >= CLEAR
+      ? defaults
+      : pick(Array.from({ length: 360 }, (_, k): Vec3 => {
+          const a = (k * Math.PI) / 180;
+          return [e1[0] * Math.cos(a) + e2[0] * Math.sin(a), e1[1] * Math.cos(a) + e2[1] * Math.sin(a), e1[2] * Math.cos(a) + e2[2] * Math.sin(a)];
+        }));
+  if (!chosen || chosen.clear < CLEAR) return null;
+  const planeNormal = chosen.n;
   const free = freeWalls(kernel, shape, approx);
-  const d = free ? CANONICAL.find((c) => square(c, axis.dir) && free(wallFace, c) !== null) : undefined;
-  const extras = d ? draftedWindow(kernel, shape, topo, wallFace, d, free!(wallFace, d)!, planeOf, frameFor) : ruledWindow(kernel, shape, wallFace, frameFor);
-  if (!extras || extras.length === 0) return null;
+  const extras: Extras = [];
+  for (const wallFace of walls) {
+    const d = free ? CANONICAL.find((c) => square(c, axis.dir) && free(wallFace, c) !== null) : undefined;
+    const one = d ? draftedWindow(kernel, shape, topo, wallFace, d, free!(wallFace, d)!, planeOf, frameFor) : ruledWindow(kernel, shape, wallFace, frameFor);
+    if (!one || one.length === 0) return null;
+    extras.push(...one);
+  }
   if (axial.length) {
     const cuts = axialCuts(kernel, shape, topo, axis, axial, frameFor);
     if (!cuts) return null;
@@ -2113,7 +2124,7 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
       const checkDirs = zeroAnalyticDirs.length > 0 ? [...zeroAnalyticDirs, ...planeDirs.filter((d) => !zeroAnalyticDirs.includes(d))] : planeDirs;
       const walls = free && checkDirs.some((d) => along(d));
       // a body of revolution with windows (ADR 0259): tried even when the faces are walls along some direction, since a cut along the axis gives the
-      // body planes facing across it (slice 3); it takes only a body of revolution with one window and returns null for any other
+      // body planes facing across it (slice 3); it takes only a body of revolution with windows and returns null for any other
       const windowed = revolvedWindow(kernel, shape, topo0, odd, frameFor, budget, approx);
       if (windowed) return windowed;
       if (!walls) throw new RecognizeError(`${t('recognize.freeform', { n: odd.length, faces: describe(topo0, odd) })}${approx ? '' : ` ${t('recognize.freeformHint')}`}`, true);
