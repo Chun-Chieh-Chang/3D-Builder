@@ -19,7 +19,9 @@ import {
   IdAllocator,
   isDerived,
   page,
+  rightOf,
   sectionPlane,
+  sheetUp,
   viewVectors,
   type Annotation,
   type Dimension,
@@ -386,19 +388,39 @@ export class DrawingSession {
     }
     doc = best;
     for (let pi = 1; pi < doc.pages.length; pi++) {
-      doc = this.fitSheet(doc, { ...o, sheet: page(doc, 0).sheet.size }, pi);
+      const hasDetails = page(doc, pi).views.some((v) => v.kind === 'detail');
+      doc = this.fitSheet(doc, { ...o, sheet: hasDetails ? 'A3' : 'auto' }, pi);
       const pg = page(doc, pi);
       const details = pg.views.filter((v) => v.kind === 'detail');
       if (details.length) {
+        const single: DrawingDoc = { ...doc, pages: [pg] };
+        const b = this.build(doc, pi);
         const area = sheetMetrics(pg.sheet).area;
-        const x = Math.round((area.x + area.w * 0.78) * 10) / 10;
-        const step = area.h / (details.length + 1);
+        const free = emptyRectangles(b.scene.items.slice(sheetItems(single).length), area, 8)
+          .sort((a, b) => (b.x1 - b.x0) * (b.y1 - b.y0) - (a.x1 - a.x0) * (a.y1 - a.y0));
+        const box = free[0] ?? { x0: area.x + area.w * 0.52, y0: area.y + 70, x1: area.x + area.w - 10, y1: area.y + area.h - 10 };
+        const padX0 = Math.min(box.x0 + 18, (box.x0 + box.x1) / 2);
+        const cols = details.length > 2 ? 2 : 1;
+        const rows = Math.ceil(details.length / cols);
+        const cw = (box.x1 - padX0) / cols;
+        const ch = (box.y1 - box.y0) / rows;
         for (let di = 0; di < details.length; di++) {
-          const y = Math.round((area.y + area.h - step * (di + 1)) * 10) / 10;
+          const col = di % cols;
+          const row = Math.floor(di / cols);
+          const x = Math.round((padX0 + cw * (col + 0.5)) * 10) / 10;
+          const y = Math.round((box.y1 - ch * (row + 0.5)) * 10) / 10;
           doc = onPage(doc, pi, (st) => applyDrawingCommand(st, { type: 'setView', viewId: details[di]!.id, patch: { at: [x, y] } }));
         }
       }
       doc = this.tidy(doc, pi);
+      // Remove any detail views whose dimensions were all pruned by tidy
+      const pgAfter = page(doc, pi);
+      const emptyDetails = pgAfter.views
+        .filter((v) => v.kind === 'detail' && !pgAfter.dimensions.some((d) => d.view === v.id))
+        .map((v) => v.id);
+      if (emptyDetails.length) {
+        doc = onPage(doc, pi, (st) => applyDrawingCommand(st, { type: 'deleteViews', viewIds: emptyDetails }));
+      }
     }
 
     this.undoStack.length = 0;
@@ -706,14 +728,28 @@ export class DrawingSession {
       doc = onPage(doc, 0, (st) => applyDrawingCommand(st, { type: 'deleteViews', viewIds: [secB.id] }));
     }
 
-    // Create enlarged Detail Views on Page 2 for spatial clusters of micro-radius features on secB2Id and base2Id.
+    // Also create a reference copy of A-A on Page 2 if A-A has >= 2 micro-radii so its Detail Views can live on Page 2
+    const secA = pg0.views.find((v) => v.kind === 'section' && v.label === 'A');
+    const secAMicroCount = secA ? pg0.dimensions.filter((d) => {
+      if (d.view !== secA.id || (d.kind !== 'radius' && d.kind !== 'diameter')) return false;
+      const e = dimensionRefs(d).map(getFacts)[0];
+      return e && 'radius' in e && typeof e.radius === 'number' && e.radius < 0.8;
+    }).length : 0;
+    let secA2Id: Id | null = null;
+    if (secA && secA.kind === 'section' && secAMicroCount >= 2) {
+      secA2Id = alloc.take('view');
+      const secA2: DrawingView = { ...secA, id: secA2Id, parent: base2Id };
+      doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertViews', views: [secA2] }));
+    }
+
+    // Create enlarged Detail Views on Page 2 for spatial clusters of micro-radius features on secA2Id, secB2Id and base2Id.
     // Keep dimensions of the same feature together in one view (feature cohesion).
     const baseScale = page(doc, 0).sheet.scale;
-    const detailScale: Scale = [Math.min(50, Math.max(20, baseScale[0] * 2)), baseScale[1]];
     const pg1After = page(doc, 1);
     const parentCandidates = [
-      ...(secB2Id ? [{ id: secB2Id }] : []),
-      { id: base2Id },
+      ...(secA2Id && secA ? [{ id: secA2Id, srcViewId: secA.id, onPage0: true }] : []),
+      ...(secB2Id ? [{ id: secB2Id, srcViewId: secB2Id, onPage0: false }] : []),
+      { id: base2Id, srcViewId: mainId, onPage0: true },
     ];
     const labels = ['C', 'D', 'E', 'F', 'G', 'H'];
     let labelIdx = 0;
@@ -725,9 +761,9 @@ export class DrawingSession {
       if (!pv) continue;
       const axes = axesOf(pg1After.views, pg1After.sheet.projection, pv);
       if (!axes) continue;
-      const allParentDims = cand.id === secB2Id
-        ? page(doc, 1).dimensions.filter((d) => d.view === secB2Id)
-        : page(doc, 0).dimensions.filter((d) => d.view === mainId);
+      const allParentDims = cand.onPage0
+        ? page(doc, 0).dimensions.filter((d) => d.view === cand.srcViewId)
+        : page(doc, 1).dimensions.filter((d) => d.view === cand.srcViewId);
       const microDims = allParentDims.filter((d) => {
         if (d.kind !== 'radius' && d.kind !== 'diameter') return false;
         const e = dimensionRefs(d).map(getFacts)[0];
@@ -735,22 +771,21 @@ export class DrawingSession {
       });
       if (microDims.length === 0) continue;
 
+      const r = rightOf(axes);
+      const u = sheetUp(axes);
       const projectPt = (d: Dimension): [number, number] | null => {
         const e = dimensionRefs(d).map(getFacts)[0];
         if (!e) return null;
         const p = e.point;
-        const rx = axes.dir[1] * axes.up[2] - axes.dir[2] * axes.up[1];
-        const ry = axes.dir[2] * axes.up[0] - axes.dir[0] * axes.up[2];
-        const rz = axes.dir[0] * axes.up[1] - axes.dir[1] * axes.up[0];
-        return [p[0] * rx + p[1] * ry + p[2] * rz, p[0] * axes.up[0] + p[1] * axes.up[1] + p[2] * axes.up[2]];
+        return [p[0] * r[0] + p[1] * r[1] + p[2] * r[2], p[0] * u[0] + p[1] * u[1] + p[2] * u[2]];
       };
 
-      // Greedy spatial clustering within 4.5 mm radius so distant ends get separate detail views
+      // Greedy spatial clustering within 2.4 mm radius so each detail view zooms tightly
       const clusters: { dims: Dimension[]; pts: [number, number][]; cx: number; cy: number }[] = [];
       for (const d of microDims) {
         const pt = projectPt(d);
         if (!pt) continue;
-        let hit = clusters.find((c) => Math.hypot(pt[0] - c.cx, pt[1] - c.cy) <= 4.5);
+        let hit = clusters.find((c) => Math.hypot(pt[0] - c.cx, pt[1] - c.cy) <= 2.4);
         if (!hit) {
           hit = { dims: [], pts: [], cx: pt[0], cy: pt[1] };
           clusters.push(hit);
@@ -761,16 +796,16 @@ export class DrawingSession {
         hit.cy = hit.pts.reduce((a, p) => a + p[1], 0) / hit.pts.length;
       }
 
-      // Limit to 2 detail views per parent view, picking the densest clusters first
+      // Allow up to 4 detail views for A-A / dense views, picking the densest clusters first
       clusters.sort((a, b) => b.dims.length - a.dims.length);
-      const chosenClusters = clusters.slice(0, 2);
+      const chosenClusters = clusters.slice(0, cand.id === secA2Id ? 4 : 2);
       const movedIds = new Set<Id>();
 
       for (const cl of chosenClusters) {
         if (labelIdx >= labels.length) break;
         const label = labels[labelIdx++]!;
-        let maxDist = Math.max(0.8, ...cl.pts.map((p) => Math.hypot(p[0] - cl.cx, p[1] - cl.cy)));
-        let maxR = Math.max(2.0, Math.min(6.5, maxDist + 1.2));
+        let maxDist = Math.max(0.6, ...cl.pts.map((p) => Math.hypot(p[0] - cl.cx, p[1] - cl.cy)));
+        let maxR = Math.max(1.4, Math.min(3.5, maxDist + 0.8));
 
         // Feature cohesion: pull in other dimensions of the same feature that lie within the detail region
         const clFeats = new Set(cl.dims.map(featKey).filter(Boolean));
@@ -780,14 +815,19 @@ export class DrawingSession {
           const fk = featKey(d);
           if (!fk || !clFeats.has(fk)) continue;
           const pt = projectPt(d);
-          if (pt && Math.hypot(pt[0] - cl.cx, pt[1] - cl.cy) <= maxR + 0.5) {
+          if (pt && Math.hypot(pt[0] - cl.cx, pt[1] - cl.cy) <= maxR + 0.4) {
             clusterDims.push(d);
             cl.pts.push(pt);
           }
         }
         for (const d of clusterDims) movedIds.add(d.id);
-        maxDist = Math.max(0.8, ...cl.pts.map((p) => Math.hypot(p[0] - cl.cx, p[1] - cl.cy)));
-        maxR = Math.max(2.0, Math.min(6.5, maxDist + 1.2));
+        maxDist = Math.max(0.6, ...cl.pts.map((p) => Math.hypot(p[0] - cl.cx, p[1] - cl.cy)));
+        maxR = Math.max(1.4, Math.min(3.5, maxDist + 0.8));
+
+        // Bound sheet diameter of the detail circle to <= 52 mm (radius <= 26 mm) while staying enlarged over baseScale
+        const candidates = [20, 15, 10, 8].filter((s) => s > baseScale[0]);
+        const chosenS = candidates.find((s) => maxR * s <= 26) ?? candidates[candidates.length - 1] ?? Math.min(20, baseScale[0] * 2);
+        const viewScale: Scale = [chosenS, baseScale[1]];
 
         const detailId = alloc.take('view');
         const detailView: DrawingView = {
@@ -799,10 +839,10 @@ export class DrawingSession {
           radius: Math.round(maxR * 100) / 100,
           label,
           at: [280, 150],
-          scale: detailScale,
+          scale: viewScale,
         };
         doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertViews', views: [detailView] }));
-        if (cand.id === secB2Id) {
+        if (!cand.onPage0) {
           doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'deleteDimensions', dimensionIds: clusterDims.map((d) => d.id) }));
           doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertDimensions', dimensions: clusterDims.map((d) => ({ ...d, view: detailId })) }));
         } else {
