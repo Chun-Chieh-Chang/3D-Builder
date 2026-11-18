@@ -1,5 +1,11 @@
 # 交接與接續工作
 
+## 2026-11-18 — 工程圖多頁輸出與多頁細節視圖（ADR 0256 後續，已合併進 main）
+
+- `71290bc0` feat(mcp-drawing)：多頁細節視圖與 A3 配置。細節視圖所在頁若有 detail 視圖則改用 A3，細節視圖以空白矩形自動排版（欄／列計算、等距分佈）；A-A 剖面若有 ≥2 個微半徑，於 Page 2 建立參考副本；細節視圖尺寸被整理掉時自動刪除該視圖。只改 `apps/mcp/src/drawingSession.ts`。
+- `56a97b3b` feat(drawing)：平衡多頁版面、隱藏線隱藏、輪廓附著的標尺。修改 `apps/mcp/src/drawingSession.ts`、`packages/drawing/src/dimension.ts`。
+- 兩個 commit 已推遠端，main 與 origin/main 同步（`56a97b3b`），新電腦 `git pull` 後即可直接使用。
+
 ## 2026-11-18（稍後）— `analyticFace` 讀同軸圓弧直紋條（ADR 0258，分支 `claude/frosty-swartz-ff451c`，PR 待使用者合併）
 
 - 已做：先由軌線讀「單向直紋、兩條軌線是同軸圓弧」的面為圓錐／圓柱（`packages/kernel/src/coaxialStrip.ts`、`Kernel.coaxialArcStrip`），成立就不再問 OCCT。實件、fuzz（160 讀＋60 近似失誤）、錯型別防呆、heap、突變都通過；詳見 ADR 0258 與 DEV_LOG。
@@ -17,7 +23,7 @@
 | 2 | **推進 part-3（拔模樣條牆＋滾球辨識）**<br>利用「拔模樣條牆辨識」與「以樣條牆為支撐的滾球辨識」推進 part-3（設計文件 §6l B 型區域）。實件稽核 30/35，0 退步。 | 進行中 | 🟢 若要繼續做特徵辨識，這是最自然的下一步。 |
 | 3 | **核定 PR #11：圓角截面散度閘門 1e-3 → 1e-2**<br>PR #11 把閘門放寬，還沒核定、未合併。part-3 仍被拒絕，部分與此閘門相關。 | 待核定 | 🟡 建議先不要匆促合併。先用真實零件驗證，或至少看 PR #11 測試數據後再核定。 |
 | 4 | **維持擱置：part-4、MT17203、E13、C5**<br>part-4（C4-2／C4-3 不刪面的多方向分解）已裁定先擱置；MT17203 接合誤差未量；E13 需 C3 螺紋；C5「控制點可編輯曲面片」未開工。 | 已擱置 / 未開工 | 🔴 建議維持擱置，把精力放在項目 1 與 2 上。恢復 part-4 前先做 C4-3 可行性閘門探針。 |
-| 5 | **處理兩個進行中檔：drawingSession.ts、drawingTools.ts、overlap.ts**<br>屬於 ADR 0256 AI 工程圖協作的進行中變更（drawing_picture 多頁輸出、overlap 重疊自檢、drawingSession 大改），已 commit 到遠端分支 `wip/drawing-multipage-20261118`（`7c7990a9`），未併進 main。 | 已 commit 至 wip 分支 | 🟡 新電腦若要繼續工程圖協作，checkout `wip/drawing-multipage-20261118` 即可；main 本身保持乾淨。 |
+| 5 | **工程圖多頁輸出與多頁細節視圖（ADR 0256 後續）**<br>已合併進 main：<br>• `71290bc0` feat(mcp-drawing)：多頁細節視圖，A3 配置、特徵凝聚（同一特徵的尺寸放在同一視圖）、細節視圖尺寸被整理掉時自動刪除該視圖。<br>• `56a97b3b` feat(drawing)：平衡多頁版面、隱藏線隱藏、輪廓附著的標尺。<br>修改檔：`apps/mcp/src/drawingSession.ts`、`packages/drawing/src/dimension.ts`。 | 已合併進 main（`56a97b3b`），與 origin/main 同步 | 🟢 已完成，新電腦直接從 main 開工即可。 |
 | 6 | **組合件 MCP 後續：③ 多張照片建組合件、④ 各客戶端驗收**<br>順序：① 交付輸出 BOM／組合件 STEP（已完成）→ ② GUI 即時連線（ADR 0253）→ ③ 多張照片建組合件 → ④ 各客戶端驗收。③ 需使用者提供實物照片與實測尺寸；④ 需在各客戶端核准工具。 | ①② 已完成，③④ 待使用者配合 | 🔴 需等 S3 實測完成後，再視需要啟動。 |
 
 **接手守則**：開始前執行 `git status --short --branch`、`git fetch origin`、`git log -8 --oneline`；工作區不乾淨時先辨識在途變更，不直接 pull 或覆寫。實件 STEP 位於 `D:\3DB實機確認` 根目錄；`scratch/` 進度頁與稽核腳本另存於 `handoff/scratch-tools` 分支。

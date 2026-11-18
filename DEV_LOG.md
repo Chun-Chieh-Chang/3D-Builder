@@ -19,9 +19,15 @@ What changed: see [ADR 0258](docs/adr/0258-analytic-face-reads-coaxial-arc-strip
 
 ## 2026-11-18 — 轉移準備：進行中變更 commit 至獨立分支、handoff §0 加入待辦總結、推雲端
 
-- 把三個進行中檔 commit 到獨立分支 `wip/drawing-multipage-20261118`（`7c7990a9`）並推遠端：`apps/mcp/src/drawingSession.ts`、`apps/mcp/src/drawingTools.ts`、`packages/drawing/src/overlap.ts`（ADR 0256 AI 工程圖協作：drawing_picture 多頁輸出 pageIndex、overlap clutterOf 重疊自檢、drawingSession 大改）。main 保持乾淨，等於 origin/main `489acd5b`；新電腦若要繼續工程圖協作，checkout `wip/drawing-multipage-20261118` 即可。
+- 把三個進行中檔 commit 到獨立分支 `wip/drawing-multipage-20261118`（`7c7990a9`）並推遠端：`apps/mcp/src/drawingSession.ts`、`apps/mcp/src/drawingTools.ts`、`packages/drawing/src/overlap.ts`（ADR 0256 AI 工程圖協作：drawing_picture 多頁輸出 pageIndex、overlap clutterOf 重疊自檢、drawingSession 大改）。後續兩個 feat commit 已直接合併進 main（見下一條），main 與 origin/main 同步（`56a97b3b`）；新電腦若要繼續工程圖協作，main 已包含最新內容，無需 checkout wip 分支（wip 分支仍保留於遠端作為備份）。
 - `handoff.md` §0 加入「待辦任務總結」區塊，列出 6 項待辦與建議優先順序（S3 使用者端實測、推進 part-3、核定 PR #11 閘門、維持擱置 part-4／MT17203／E13／C5、處理 wip 分支、組合件 MCP 後續③④）。
 - `docs:sync` 與 `lint:repo` 通過；已推送到雲端 main，準備轉移到別處繼續開發。
+
+## 2026-11-18 — 工程圖多頁輸出與多頁細節視圖（ADR 0256 後續，兩個 feat commit 已合併進 main）
+
+- `71290bc0` feat(mcp-drawing)：多頁細節視圖與 A3 配置。細節視圖所在頁若有 detail 視圖則改用 A3，細節視圖以空白矩形自動排版（欄／列計算、等距分佈）；A-A 剖面若有 ≥2 個微半徑，於 Page 2 建立參考副本；細節視圖尺寸被整理掉時自動刪除該視圖。只改 `apps/mcp/src/drawingSession.ts`。
+- `56a97b3b` feat(drawing)：平衡多頁版面、隱藏線隱藏、輪廓附著的標尺。修改 `apps/mcp/src/drawingSession.ts`、`packages/drawing/src/dimension.ts`。
+- 兩個 commit 已推遠端，main 與 origin/main 同步（`56a97b3b`），新電腦 `git pull` 後即可直接使用。
 
 ## 2026-11-17 (later) — part-3 Stage 0′ and part-4: probes only, both stopped at their gates
 
