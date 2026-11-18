@@ -4725,6 +4725,108 @@ export class Kernel {
   }
 
   /**
+   * Whether the face is flat (ADR 0259): its surface on one plane to within `tol` mm (`GeomLib_IsPlanarSurface`). A face of any kind: a loft between two
+   * straight edges on one plane, or a file's B-spline that is flat, has no plane of its own in `topology`. The plane, or null.
+   */
+  flatFace(target: ShapeId, faceIndex: number, tol: number): { point: Vec3; normal: Vec3 } | null {
+    if (!(Number.isFinite(tol) && tol > 0)) return null;
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const face = ShapeIndex.of(oc, this.get(target), T.FACE, arena).keys[faceIndex];
+      if (!face) throw new KernelError(t('edit.faceOutOfRange', { index: faceIndex }));
+      const surface = arena.own(oc.BRep_Tool.Surface(arena.own(oc.TopoDS.Face(face))));
+      const is = arena.own(new oc.GeomLib_IsPlanarSurface(surface, tol));
+      if (!is.IsPlanar()) return null;
+      const pln = arena.own(is.Plan());
+      const point = this.xyz(arena.own(pln.Location()));
+      const dir = arena.own(arena.own(pln.Axis()).Direction());
+      return { point, normal: [dir.X(), dir.Y(), dir.Z()] };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
+   * The two rails of a ruled wall (ADR 0259): a B-spline surface ruled one way (degree 1, two rows of poles), each rail flat on a plane of its own, the
+   * planes in any direction (part-3's A walls: 27.98 degrees apart, design doc 6o-A). Each rail as fitted to its plane (least squares over 64 points)
+   * and moved onto it (its poles moved: the move is affine, so the curve moves with them), with how far it was off. The rails keep their parameters,
+   * which pair the points the rulings join, so neither is cut or has knots taken out (DEV_LOG 2026-11-16: taking a knot out of one rail skews the
+   * rulings). Then the largest distance, at 9 x 9 points inside the face, from the wall to the ruled surface between the moved rails at the same
+   * parameters. Null when the face is not ruled that way.
+   */
+  ruledRails(target: ShapeId, faceIndex: number): { rails: { point: Vec3; normal: Vec3; off: number; degree: number; poles: Vec3[]; weights?: number[]; knots: number[]; mults: number[] }[]; deviation: number } | null {
+    const oc = this.oc;
+    const arena = new Arena();
+    try {
+      const face = ShapeIndex.of(oc, this.get(target), T.FACE, arena).keys[faceIndex];
+      if (!face) throw new KernelError(t('edit.faceOutOfRange', { index: faceIndex }));
+      const ad = arena.own(new oc.BRepAdaptor_Surface(arena.own(oc.TopoDS.Face(face)), true));
+      if (String(ad.GetType()).replace('GeomAbs_', '') !== 'BSplineSurface') return null;
+      const s = arena.own(ad.BSpline());
+      const ruledU = s.UDegree() === 1 && s.NbUPoles() === 2;
+      const ruledV = s.VDegree() === 1 && s.NbVPoles() === 2;
+      if (ruledU === ruledV) return null;
+      const full = arena.own(new oc.BRepAdaptor_Surface(arena.own(oc.TopoDS.Face(face)), false));
+      const [r0, r1] = ruledU ? [full.FirstUParameter(), full.LastUParameter()] : [full.FirstVParameter(), full.LastVParameter()];
+      if (![r0, r1].every(Number.isFinite) || !(r1 > r0)) return null;
+      const rails = [r0, r1].map((x) => arena.own(oc.GeomConvert.CurveToBSplineCurve(arena.own(ruledU ? s.UIso(x) : s.VIso(x)), oc.Convert_ParameterisationType.Convert_TgtThetaOver2))) as Geom_BSplineCurve[];
+      const P = arena.own(new oc.gp_Pnt());
+      const planes: { point: Vec3; normal: Vec3; worst: number }[] = [];
+      for (const c of rails) {
+        const [t0, t1] = [c.FirstParameter(), c.LastParameter()];
+        const pts: Vec3[] = [];
+        for (let i = 0; i <= 63; i++) {
+          c.D0(t0 + ((t1 - t0) * i) / 63, P);
+          pts.push([P.X(), P.Y(), P.Z()]);
+        }
+        const f = fitPlane(pts);
+        if (!f) return null;
+        planes.push(f);
+      }
+      const onto = (p: Vec3, pl: { point: Vec3; normal: Vec3 }): Vec3 => sub3(p, scale3(pl.normal, dot3(sub3(p, pl.point), pl.normal)));
+      const out = rails.map((c, k) => {
+        const pl = planes[k]!;
+        const poles: Vec3[] = [];
+        const weights: number[] = [];
+        for (let i = 1; i <= c.NbPoles(); i++) {
+          poles.push(onto(this.xyz(arena.own(c.Pole(i))), pl));
+          weights.push(c.Weight(i));
+        }
+        const knots: number[] = [];
+        const mults: number[] = [];
+        for (let i = 1; i <= c.NbKnots(); i++) {
+          knots.push(c.Knot(i));
+          mults.push(c.Multiplicity(i));
+        }
+        return { point: pl.point, normal: pl.normal, off: pl.worst, degree: c.Degree(), poles, ...(c.IsRational() ? { weights } : {}), knots, mults };
+      });
+      // the wall against the ruled surface between the moved rails, point for point
+      const [u0, u1, v0, v1] = [ad.FirstUParameter(), ad.LastUParameter(), ad.FirstVParameter(), ad.LastVParameter()];
+      if (![u0, u1, v0, v1].every(Number.isFinite)) return null;
+      let deviation = 0;
+      const Q = arena.own(new oc.gp_Pnt());
+      for (let i = 0; i < 9; i++) {
+        for (let j = 0; j < 9; j++) {
+          const [u, v] = [u0 + ((u1 - u0) * (i + 0.5)) / 9, v0 + ((v1 - v0) * (j + 0.5)) / 9];
+          ad.D0(u, v, Q);
+          const [along, across] = ruledU ? [v, u] : [u, v];
+          const f = (across - r0) / (r1 - r0);
+          rails[0]!.D0(along, P);
+          const a = onto([P.X(), P.Y(), P.Z()], planes[0]!);
+          rails[1]!.D0(along, P);
+          const b = onto([P.X(), P.Y(), P.Z()], planes[1]!);
+          const m: Vec3 = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+          deviation = Math.max(deviation, Math.hypot(...sub3([Q.X(), Q.Y(), Q.Z()], m)));
+        }
+      }
+      return { rails: out, deviation };
+    } finally {
+      arena.dispose();
+    }
+  }
+
+  /**
    * Whether face `faceIndex` is a wall drafted along `d` (ADR 0255, `draftedWallOf`) to within `tol` mm: its lean in radians, signed as a plane's in
    * recognition (+ when its outward normal has a component along `d`), and the largest deviation from the exact draft measured. Else null.
    */
@@ -7853,6 +7955,66 @@ const dot3 = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const sub3 = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const scale3 = (a: Vec3, k: number): Vec3 => [a[0] * k, a[1] * k, a[2] * k];
 const cross3 = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+
+/**
+ * The plane nearest the points in least squares (ADR 0259): through their mean, square to the direction they spread least along (the covariance's
+ * smallest eigenvector, by Jacobi rotations), with the largest distance of a point from it. Null when they lie along a line or at a point.
+ */
+function fitPlane(pts: Vec3[]): { point: Vec3; normal: Vec3; worst: number } | null {
+  if (pts.length < 3) return null;
+  const sum = pts.reduce<Vec3>((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0]);
+  const c = scale3(sum, 1 / pts.length);
+  const m = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  for (const p of pts) {
+    const d = sub3(p, c);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) m[i]![j] = m[i]![j]! + d[i]! * d[j]!;
+  }
+  const v = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
+  for (let sweep = 0; sweep < 50; sweep++) {
+    if (Math.abs(m[0]![1]!) + Math.abs(m[0]![2]!) + Math.abs(m[1]![2]!) <= 1e-300) break;
+    for (const [p, q] of [
+      [0, 1],
+      [0, 2],
+      [1, 2],
+    ] as const) {
+      if (m[p]![q] === 0) continue;
+      const th = (m[q]![q]! - m[p]![p]!) / (2 * m[p]![q]!);
+      const tt = (th >= 0 ? 1 : -1) / (Math.abs(th) + Math.sqrt(th * th + 1));
+      const cs = 1 / Math.sqrt(tt * tt + 1);
+      const sn = tt * cs;
+      for (let k = 0; k < 3; k++) {
+        const [a, b] = [m[k]![p]!, m[k]![q]!];
+        m[k]![p] = cs * a - sn * b;
+        m[k]![q] = sn * a + cs * b;
+      }
+      for (let k = 0; k < 3; k++) {
+        const [a, b] = [m[p]![k]!, m[q]![k]!];
+        m[p]![k] = cs * a - sn * b;
+        m[q]![k] = sn * a + cs * b;
+      }
+      for (let k = 0; k < 3; k++) {
+        const [a, b] = [v[k]![p]!, v[k]![q]!];
+        v[k]![p] = cs * a - sn * b;
+        v[k]![q] = sn * a + cs * b;
+      }
+    }
+  }
+  const eig = [0, 1, 2].sort((a, b) => m[a]![a]! - m[b]![b]!);
+  // a line or a point: the two smallest spreads alike near nothing, no plane is the nearest
+  if (!(m[eig[1]!]![eig[1]!]! > 1e-12 * Math.max(1, m[eig[2]!]![eig[2]!]!))) return null;
+  const k = eig[0]!;
+  const n0: Vec3 = [v[0]![k]!, v[1]![k]!, v[2]![k]!];
+  const normal = scale3(n0, 1 / Math.hypot(...n0));
+  return { point: c, normal, worst: Math.max(...pts.map((p) => Math.abs(dot3(sub3(p, c), normal)))) };
+}
 
 /** How far `p` is from the surface `g`, by its equation (`Kernel.analyticFace`, C4). */
 function surfaceOff(g: SurfaceGeometry, p: Vec3): number {

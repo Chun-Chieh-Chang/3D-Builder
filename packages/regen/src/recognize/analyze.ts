@@ -146,7 +146,10 @@ export type BaseRecord =
    * A body extruded along one direction with features along others (a boss on its side, a pocket cut into it): `base` is the body with those taken
    * off (Delete Face), each extra is what was taken off, a boss (material added back) or a cut (material taken away), extruded along its own direction.
    */
-  | { type: 'composite'; base: BaseRecord; extras: { op: 'boss' | 'cut'; rec: Extract<BaseRecord, { type: 'extrude' }> }[] };
+  | { type: 'composite'; base: BaseRecord; extras: { op: 'boss' | 'cut'; rec: Extract<BaseRecord, { type: 'extrude' }> | SectionsRecord }[] };
+
+/** A loft through sections on planes of their own (ADR 0259: a window's ruled wall), each on the plane of its frame. Only an extra of a composite. */
+export type SectionsRecord = { type: 'sections'; sections: PlanarProfile[] };
 
 export interface Recognition {
   base: BaseRecord;
@@ -1593,28 +1596,37 @@ function revolveBase(kernel: Kernel, shape: ShapeId, axis: { origin: Vec3; dir: 
 }
 
 /**
- * ADR 0259, slice 1: a body of revolution with one window whose wall has no simple surface (a spline, straight or drafted) and runs along a direction square
- * to the axis, closed by planes leaning with it. The base is the revolve of the half-plane section farthest from the window. The window is a cut: an
- * extrusion of the curve the wall is drawn from (`Kernel.wallRail`, the file's own curve) closed by the chord between its ends, drafted as the wall is,
- * up and down from the curve's plane as far as the wall reaches. Null when the body is not that (the caller then refuses as before); the rebuilt solid is
- * checked against the original by the caller as for any recognition.
+ * ADR 0259: a body of revolution with one window whose wall has no simple surface. The base is the revolve of the half-plane section farthest from the
+ * window. The window is a cut, by one of two tools:
+ * - slice 1, a wall drafted or straight along a default direction square to the axis: an extrusion of the curve the wall is drawn from
+ *   (`Kernel.wallRail`, the file's own curve) closed by the chord between its ends, drafted as the wall is, up and down from the curve's plane as far as
+ *   the wall reaches;
+ * - slice 2, a ruled wall whose rails lie on two planes of their own in any directions (part-3's A walls): a loft between the rails
+ *   (`Kernel.ruledRails`), each closed by the chord between its ends. The wall must be within a sixth of the file's own precision there of the ruled
+ *   surface between the rails moved onto their planes (the limit the user accepted for part-3's A walls, design doc 6o-A).
+ * The window's other faces: planes, or B-spline faces that are flat (a loft between two chords on one plane makes one). Null when the body is not that
+ * (the caller then refuses as before); the rebuilt solid is checked against the original by the caller as for any recognition.
  */
 function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: number[], frameFor: FrameFor, budget?: Budget, approx?: SplineApproximation): Recognition | null {
-  if (odd.length !== 1) return null;
-  const wallFace = odd[0]!;
-  // the faces of the window: the wall with no simple surface, and the planes that are not square to the axis (a window's straight sides, leaning with the draft)
+  const flat = new Map<number, { point: Vec3; normal: Vec3 }>();
+  for (const i of odd) {
+    const f = kernel.flatFace(shape, i, TOL);
+    if (f) flat.set(i, f);
+  }
+  const walls = odd.filter((i) => !flat.has(i));
+  if (walls.length !== 1 || flat.size > 2) return null;
+  const wallFace = walls[0]!;
+  const planeOf = (i: number): { point: Vec3; normal: Vec3 } | null => {
+    const g = topo.faces[i]!.geometry;
+    if (g?.type === 'plane') return { point: g.origin, normal: unit(g.normal) };
+    return flat.get(i) ?? null;
+  };
+  // the faces of the window: the wall, the flat faces with no simple surface, and the planes that are not square to the axis (a window's straight sides)
   const planes = topo.faces.flatMap((f, i) => (f.geometry?.type === 'plane' ? [i] : []));
   const axis = revolveAxis(topo, new Set([...odd, ...planes]));
   if (!axis) return null;
   const windowFaces = new Set([...odd, ...planes.filter((i) => !parallel((topo.faces[i]!.geometry as Extract<SurfaceGeometry, { type: 'plane' }>).normal, axis.dir))]);
   if (windowFaces.size > 3 || !revolveAxis(topo, windowFaces)) return null;
-  const free = freeWalls(kernel, shape, approx);
-  if (!free) return null;
-  const d = CANONICAL.find((c) => square(c, axis.dir) && free(wallFace, c) !== null);
-  if (!d) return null;
-  const lean = free(wallFace, d)!;
-  const [lo, hi] = extentAlong(topo, d)[wallFace]!;
-  if (!(hi > lo)) return null;
   // the base: the half-plane section farthest round the axis from where the window is
   const around = (p: Vec3): Vec3 | null => {
     const v = sub(p, axis.origin);
@@ -1639,66 +1651,103 @@ function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: num
     }
   }
   if (!planeNormal || farthest < Math.PI / 6) return null;
-  const margin = 1;
-  // the curve the wall is drawn from, on its own plane (a straight wall's anywhere: put below the wall)
-  // the planes that close the wall's ends: those it meets along an edge (a straight wall's may be square to the axis, so not among the window's faces above)
-  const beside = new Set(topo.edges.filter((e) => e.faces.includes(wallFace)).flatMap((e) => e.faces.filter((f) => f !== wallFace)));
-  const ends = [...beside].filter((i) => topo.faces[i]!.geometry?.type === 'plane').map((i) => {
-    const g = topo.faces[i]!.geometry as Extract<SurfaceGeometry, { type: 'plane' }>;
-    return { point: g.origin, normal: unit(g.normal) };
-  });
-  if (ends.length === 0) return null;
-  const drawn = kernel.wallRail(shape, wallFace, d, TOL, lo - margin, ends);
-  if (!drawn || drawn.poles.length < 2) return null;
-  const level = drawn.level;
+  const free = freeWalls(kernel, shape, approx);
+  const d = free ? CANONICAL.find((c) => square(c, axis.dir) && free(wallFace, c) !== null) : undefined;
+  const extras = d ? draftedWindow(kernel, shape, topo, wallFace, d, free!(wallFace, d)!, planeOf, frameFor) : ruledWindow(kernel, shape, wallFace, frameFor);
+  if (!extras || extras.length === 0) return null;
   budget?.check();
   const base = revolveBase(kernel, shape, axis, planeNormal, frameFor, budget);
-  // the tool narrows along d where the material beside it widens: `lean` is + where the material narrows (ADR 0259, measured on the fuzz seeds)
-  const narrowsUp = lean < 0;
-  const angle = Math.abs(lean);
-  const piece = (dir: Vec3, from: number, to: number, inward: boolean) => {
-    const frame = frameFor(dir, [dir[0] * from, dir[1] * from, dir[2] * from]);
-    const at = (p: Vec3): P2 => {
-      const v = sub(p, frame.origin);
-      return [dot(v, frame.xDir), dot(v, frame.yDir)];
-    };
-    const poles = drawn.poles.map(at);
-    let area2 = 0;
-    for (let i = 0; i < poles.length; i++) {
-      const p = poles[i]!;
-      const q = poles[(i + 1) % poles.length]!;
-      area2 += p[0] * q[1] - q[0] * p[1];
-    }
-    // counter-clockwise: the pole polygon closed by the chord says which way the curve runs
-    const rev = area2 < 0;
-    const knots = rev ? drawn.knots.map((x) => drawn.knots[0]! + drawn.knots[drawn.knots.length - 1]! - x).reverse() : drawn.knots;
-    const ordered = rev ? [...poles].reverse() : poles;
-    const nurbs = {
-      kind: 'nurbs' as const,
-      degree: drawn.degree,
-      poles: ordered,
-      ...(drawn.weights ? { weights: rev ? [...drawn.weights].reverse() : drawn.weights } : {}),
-      knots,
-      mults: rev ? [...drawn.mults].reverse() : drawn.mults,
-      a: ordered[0]!,
-      b: ordered[ordered.length - 1]!,
-    };
-    const loop: Loop = { segs: [nurbs, { kind: 'line', a: nurbs.b, b: nurbs.a }], area: Math.abs(area2) / 2, depth: 0 };
-    const profile: PlanarProfile = { frame, loops: [loop], ...(angle > 1e-9 ? { draft: { angle, inward } } : {}) };
-    return { op: 'cut' as const, rec: { type: 'extrude' as const, dir, levels: [from, to], layers: [[profile]] } };
-  };
-  const neg: Vec3 = [-d[0], -d[1], -d[2]];
-  const extras: Extract<BaseRecord, { type: 'composite' }>['extras'] = [];
-  // up from the curve's plane to past the wall's top, and down from it to past the wall's foot (the tool leans the other way going down)
-  if (hi + margin > level) extras.push(piece(d, level, hi + margin, narrowsUp));
-  if (lo - margin < level) extras.push(piece(neg, -level, -(lo - margin), !narrowsUp));
-  if (extras.length === 0) return null;
   return {
     base: { type: 'composite', base, extras },
     holes: [],
     blends: [],
     counts: { faces: topo.faces.length, blendFaces: 0, holeFaces: 0, baseFaces: topo.faces.length },
   };
+}
+
+type Extras = Extract<BaseRecord, { type: 'composite' }>['extras'];
+
+/** A B-spline curve given by its poles in space, in the (x, y) of `frame`, run backwards when `rev`. */
+function nurbsIn(c: { degree: number; poles: Vec3[]; weights?: number[]; knots: number[]; mults: number[] }, frame: Frame, rev: boolean) {
+  const poles = c.poles.map((p): P2 => {
+    const v = sub(p, frame.origin);
+    return [dot(v, frame.xDir), dot(v, frame.yDir)];
+  });
+  const ordered = rev ? [...poles].reverse() : poles;
+  return {
+    kind: 'nurbs' as const,
+    degree: c.degree,
+    poles: ordered,
+    ...(c.weights ? { weights: rev ? [...c.weights].reverse() : c.weights } : {}),
+    knots: rev ? c.knots.map((x) => c.knots[0]! + c.knots[c.knots.length - 1]! - x).reverse() : c.knots,
+    mults: rev ? [...c.mults].reverse() : c.mults,
+    a: ordered[0]!,
+    b: ordered[ordered.length - 1]!,
+  };
+}
+
+/** Twice the signed area of the polygon of the points closed back to the first (+ counter-clockwise). */
+function area2Of(pts: P2[]): number {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i]!;
+    const q = pts[(i + 1) % pts.length]!;
+    a += p[0] * q[1] - q[0] * p[1];
+  }
+  return a;
+}
+
+/** Slice 1: the drafted or straight wall along `d` (`lean` as `freeWalls` reads it) as extrusions up and down from the curve it is drawn from. */
+function draftedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, wallFace: number, d: Vec3, lean: number, planeOf: (i: number) => { point: Vec3; normal: Vec3 } | null, frameFor: FrameFor): Extras | null {
+  const [lo, hi] = extentAlong(topo, d)[wallFace]!;
+  if (!(hi > lo)) return null;
+  const margin = 1;
+  // the planes that close the wall's ends: those it meets along an edge (a straight wall's may be square to the axis, so not among the window's faces)
+  const beside = new Set(topo.edges.filter((e) => e.faces.includes(wallFace)).flatMap((e) => e.faces.filter((f) => f !== wallFace)));
+  const ends = [...beside].map(planeOf).filter((p): p is { point: Vec3; normal: Vec3 } => p !== null);
+  if (ends.length === 0) return null;
+  // the curve the wall is drawn from, on its own plane (a straight wall's anywhere: put below the wall)
+  const drawn = kernel.wallRail(shape, wallFace, d, TOL, lo - margin, ends);
+  if (!drawn || drawn.poles.length < 2) return null;
+  const level = drawn.level;
+  // the tool narrows along d where the material beside it widens: `lean` is + where the material narrows (ADR 0259, measured on the fuzz seeds)
+  const narrowsUp = lean < 0;
+  const angle = Math.abs(lean);
+  const piece = (dir: Vec3, from: number, to: number, inward: boolean) => {
+    const frame = frameFor(dir, [dir[0] * from, dir[1] * from, dir[2] * from]);
+    const area2 = area2Of(nurbsIn(drawn, frame, false).poles);
+    // counter-clockwise: the pole polygon closed by the chord says which way the curve runs
+    const nurbs = nurbsIn(drawn, frame, area2 < 0);
+    const loop: Loop = { segs: [nurbs, { kind: 'line', a: nurbs.b, b: nurbs.a }], area: Math.abs(area2) / 2, depth: 0 };
+    const profile: PlanarProfile = { frame, loops: [loop], ...(angle > 1e-9 ? { draft: { angle, inward } } : {}) };
+    return { op: 'cut' as const, rec: { type: 'extrude' as const, dir, levels: [from, to], layers: [[profile]] } };
+  };
+  const neg: Vec3 = [-d[0], -d[1], -d[2]];
+  const extras: Extras = [];
+  // up from the curve's plane to past the wall's top, and down from it to past the wall's foot (the tool leans the other way going down)
+  if (hi + margin > level) extras.push(piece(d, level, hi + margin, narrowsUp));
+  if (lo - margin < level) extras.push(piece(neg, -level, -(lo - margin), !narrowsUp));
+  return extras;
+}
+
+/** The floor under a file's measured precision: `Kernel.fileTolerance` reads gaps within 1e-7 mm as 0 (its FILE_TOLERANCE_FLOOR). */
+const FILE_PRECISION_FLOOR = 1e-7;
+
+/** Slice 2: the ruled wall as one loft between its rails, each on its own plane and closed by its chord. */
+function ruledWindow(kernel: Kernel, shape: ShapeId, wallFace: number, frameFor: FrameFor): Extras | null {
+  const ruled = kernel.ruledRails(shape, wallFace);
+  if (!ruled) return null;
+  const precision = Math.max(kernel.fileTolerance(shape).faces[wallFace] ?? 0, FILE_PRECISION_FLOOR);
+  if (!(ruled.deviation <= precision / 6)) return null;
+  // each section counter-clockwise on its own plane: the loft lines the sections up itself (`Kernel.loft`: the corner they start at, the way round;
+  // measured, a second rail run backwards rebuilds the same solid)
+  const sections = ruled.rails.map((r): PlanarProfile => {
+    const frame = frameFor(r.normal, r.point);
+    const nurbs = nurbsIn(r, frame, area2Of(nurbsIn(r, frame, false).poles) < 0);
+    const loop: Loop = { segs: [nurbs, { kind: 'line', a: nurbs.b, b: nurbs.a }], area: Math.abs(area2Of(nurbs.poles)) / 2, depth: 0 };
+    return { frame, loops: [loop] };
+  });
+  return [{ op: 'cut', rec: { type: 'sections', sections } }];
 }
 
 /** A plane through the axis: square to one of the default planes' normals when it can be, else to any direction across it. */

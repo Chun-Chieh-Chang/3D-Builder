@@ -1,6 +1,6 @@
 # ADR 0259: part-3 windows are recognized as sharp-edge cuts; the r 0.127 edge chamfers are reported, not rebuilt
 
-Status: Proposed (2026-11-18). No product code has changed yet.
+Status: Accepted (2026-11-18). Slice 1 is in `3694c3fe`; slice 2 is below (not committed when written).
 
 ## Context
 
@@ -37,6 +37,16 @@ Acceptance, changed from §6s: the face count differs from the original by the n
 - A first version read the rail from sections of the wall: 105 to 402 poles, 200 to 500 MiB of heap per recognition, the 512 MiB budget hit, and OCCT traps once the heap had grown in the fuzz file. Not kept.
 - The tool narrows along the direction where `lean < 0` (measured on three seeds).
 - Tests: `recognize-revolved-window.test.ts` (4 cases, all refused before), fuzz 100 (83 parts made, all 83 rebuilt, 0 refused, 0 traps; 17 parts the generator could not make), a heap file (40 drafted recognitions +1391.9 MiB, straight control +190.6 MiB, `liveShapes` unchanged). The window itself makes no Boolean; the growth is OCCT's with B-spline operands in the rebuild and its comparison (AGENTS §3.5), bounded by ADR 0126.
+
+## Slice 2 as built (2026-11-18)
+
+- `revolvedWindow` now takes a second kind of wall: a B-spline surface ruled one way whose two rails each lie on a plane of their own, in any direction (part-3's A walls). The window is one loft cut between the rails, each closed by its chord, each sketched on its own plane (`SectionsRecord`, an extra of a composite; `Reconstructor.lofted`).
+- `Kernel.ruledRails` reads the rails at the surface's own bounds, fits a plane to each (least squares over 64 points, `fitPlane`) and moves its poles onto it, and measures the wall against the ruled surface between the moved rails at the same parameters (9 × 9 points inside the face). The rails are not cut and keep their knots: the parameter pairs the rulings (DEV_LOG 2026-11-16).
+- The limit: that deviation within a sixth of the file's own precision at the wall (`Kernel.fileTolerance`, at least 1e-7 mm). Measured on a cup whose rail is bent off its plane: without the limit, a bend of 1e-2 mm (the wall 8.98e-4 mm off, 600 times the file's precision) was rebuilt with volume error 2.68e-8. The comparison of whole solids does not see a wall that far off; this limit is the only check on it.
+- `Kernel.flatFace` (`GeomLib_IsPlanarSurface`): a B-spline face that is flat counts as one of the window's planes. A loft between two chords on one plane makes one; slice 1's drafted path takes them too.
+- Each section is made counter-clockwise on its own plane. Turning both rails together, as first written, did nothing: a second rail run backwards rebuilt the same solid (the loft lines the sections up itself). Removed.
+- Tests: `recognize-loft-window.test.ts` (planes 28° and −15° apart, parallel planes, and the bent rail: refused at 1e-5 and 1e-3 mm, the unbent control rebuilt); mutations: the loft path off turns the three cases red, the limit off turns the bent case red. Fuzz 100 (two files): 100 rebuilt, 0 refused, 0 traps, both ways of turning (+47, −53); heap 128 → 661 MiB over 50 cases in each file (about 10.7 MiB each, AGENTS §3.5, not claimed flat).
+- Not shown yet: whether part-3's A wall passes the limit. §6o-A measured a loft 3.91e-5 mm off f97 with τ about 2.3e-4 mm, so τ/6 is about 3.8e-5: the margin is small or negative, and the deviation here is measured another way (point for point at the same parameters). Slice 4 measures it on the file.
 
 ## Not decided
 

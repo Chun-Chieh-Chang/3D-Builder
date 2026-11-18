@@ -30,7 +30,7 @@ import { edgeFingerprint, faceFingerprint, ownerFeatures } from '@3db/naming';
 import { sketchSystemSize, SOLVER_SAFE_SIZE, type SketchSolver } from '@3db/sketch';
 import { RECOGNIZE_LIMITS, startBudget, type BudgetLimits } from '../budget';
 import type { Regenerator, RebuildResult } from '../engine';
-import { addv, distanceToSharp, dot, len, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type BaseRecord, type FreeRoundsOption, type HoleRecord, type Recognition, type SharpEdge, type SplineApproximation } from './analyze';
+import { addv, distanceToSharp, dot, len, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type BaseRecord, type SectionsRecord, type FreeRoundsOption, type HoleRecord, type Recognition, type SharpEdge, type SplineApproximation } from './analyze';
 import { compareSections, sectionsClose } from './compareSections';
 import type { Loop, P2 } from '../section/loops';
 
@@ -338,10 +338,19 @@ class Builder {
     }
     if (b.type === 'composite') {
       this.base({ ...rec, base: b.base }, merge);
-      for (const extra of b.extras) this.layers(extra.rec, extra.op, undefined);
+      for (const extra of b.extras) {
+        if (extra.rec.type === 'extrude') this.layers(extra.rec, extra.op, undefined);
+        else this.lofted(extra.rec, extra.op);
+      }
       return;
     }
     this.layers(b, 'boss', merge);
+  }
+
+  /** A loft through sections each on the plane of its own frame (ADR 0259): a sketch per section, then one loft. */
+  private lofted(r: SectionsRecord, op: 'boss' | 'cut'): void {
+    const sections = r.sections.map((sec) => this.sketch(this.plane(sec.frame.normal, sec.frame.origin).ref, sec.loops).id);
+    this.feature({ id: this.ids.take('loft'), type: 'loft', name: this.name('extrude'), suppressed: false, sections, op });
   }
 
   /** Each layer profile gets its own sketch and blind extrusion over the layer's height along `dir`. */
@@ -530,7 +539,7 @@ export function approximateReport(kernel: Kernel, whole: ShapeId, rebuilt: Shape
   let [distance, sectionAreaError, sectionDifference, sections] = [0, 0, 0, 0];
   const box = kernel.bounds(whole);
   const reach = Math.hypot(...sub(box.max, box.min)) + 1;
-  const extrusions = (b: BaseRecord): Extract<BaseRecord, { type: 'extrude' }>[] => (b.type === 'extrude' ? [b] : b.type === 'composite' ? [...extrusions(b.base), ...b.extras.map((x) => x.rec)] : []);
+  const extrusions = (b: BaseRecord): Extract<BaseRecord, { type: 'extrude' }>[] => (b.type === 'extrude' ? [b] : b.type === 'composite' ? [...extrusions(b.base), ...b.extras.flatMap((x) => (x.rec.type === 'extrude' ? [x.rec] : []))] : []);
   for (const record of extrusions(rec.base)) {
     for (let i = 0; i + 1 < record.levels.length; i++) {
       const layer = record.layers[i]?.[0];
@@ -564,7 +573,8 @@ export function approximateReport(kernel: Kernel, whole: ShapeId, rebuilt: Shape
   return { ...base, volume: m0.volume, volumeError, areaError, difference: sectionDifference, approximation: { bound: approx.bound, distance, sectionAreaError, sectionDifference, sections } };
 }
 
-function arcsOf(b: BaseRecord): number {
+function arcsOf(b: BaseRecord | SectionsRecord): number {
+  if (b.type === 'sections') return b.sections.reduce((n, p) => n + p.loops.reduce((m, l) => m + l.segs.filter((x) => x.kind === 'arc').length, 0), 0);
   if (b.type === 'composite') return arcsOf(b.base) + b.extras.reduce((n, x) => n + arcsOf(x.rec), 0);
   const profiles = b.type === 'revolve' ? [b.profile] : b.type === 'loft' ? b.sections : b.layers.flat();
   return profiles.reduce((n, p) => n + p.loops.reduce((m, l) => m + l.segs.filter((s) => s.kind === 'arc').length, 0), 0);
