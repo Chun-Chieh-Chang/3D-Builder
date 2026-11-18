@@ -1,5 +1,13 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-18（傍晚）— S3 使用者端 Claude Code 實測完成（ADR 0238 收尾）
+
+- 前置：`apps/mcp/dist` 是 11-17 建的，落後 main 的 MCP 原始碼，以 `e96953ef` 重建（沙盒內用暫存 vite 設定把 `@3db/*` 指到原始碼、換 Linux 的 rolldown 綁定；產物無寫死路徑，外部依賴與舊版一致）。stdio 煙霧測試：38 個工具，`live_status` 給出連線碼。舊版在 `scratch/mcp-dist-20261117`。
+- 手動實測（使用者本人，Claude Code 2.1.325，`npm run dev`）：連線 → AI 建圓柱 r=10、h=20（1 批）→ 特徵樹與體積 6283.185 mm³ 相符 → GUI 一次復原整批撤回、AI 端 `part_summary` 為空（`live_status` connected:true、open:part）→ 重做 → GUI 改名，AI 端同步新名稱。全部通過。
+- 自動驗證：同日在使用者的 Windows 電腦執行 `node scripts/verify-live.mjs`，PASS。編輯中被拒、組合件被拒、工程圖被拒**只由此腳本涵蓋，沒有手動實測**。
+- 觀察：Claude Code 在連線後第一次回報「圓柱可能只在 MCP 自己的工作階段、不在你的 App」，是依建模前的 `live_status` 推測，與事實不符（GUI 已出現圓柱、狀態列 1 批）。不影響結果，記錄供日後解讀 AI 回覆時參考。
+- 使用者裁定：S3 標為「使用者端已驗收」，註明拒絕路徑僅自動驗證。未改產品程式碼。
+
 ## 2026-11-18 — `analyticFace` reads ruled strips between coaxial arcs (ADR 0258)
 
 What changed: see [ADR 0258](docs/adr/0258-analytic-face-reads-coaxial-arc-strips.md). A B-spline face ruled one way between two circle arcs on one axis is read from its rails (least-squares circles, every gate a length against `tol`) as the cylinder of their mean radius or the cone through both, and that reading is returned before OCCT's converter is asked. Design doc §6r corrected and updated. Probes `scratch/ff/c13g`–`c13o`, mutation script `scratch/ff/c13-mutate.mjs` (not tracked).
