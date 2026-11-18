@@ -363,6 +363,22 @@ export class DrawingSession {
     // the dimensions that determine the part, main view first, then the sections, then the others
     doc = this.dimensionAll(doc, o.ordinateAbove);
 
+    // Hide interfering dashed hidden lines on views whose internal geometry is already exposed by sections (or when hiddenRatio >= 0.35)
+    if (sectionIds.length > 0) {
+      const mainSt = this.stats(main);
+      const mainHr = mainSt.visible + mainSt.hidden > 0 ? mainSt.hidden / (mainSt.visible + mainSt.hidden) : 0;
+      if (mainHr >= 0.35) {
+        doc = applyDrawingCommand(doc, { type: 'setView', viewId: mainId, patch: { display: 'hiddenRemoved' } });
+      }
+      for (const v of page(doc).views) {
+        if (v.kind === 'projected') {
+          const stV = this.sidesOf(main, projection).find((x) => x.side === v.side)?.stats;
+          const hrV = stV && stV.visible + stV.hidden > 0 ? stV.hidden / (stV.visible + stV.hidden) : 0;
+          if (hrV >= 0.35) doc = applyDrawingCommand(doc, { type: 'setView', viewId: v.id, patch: { display: 'hiddenRemoved' } });
+        }
+      }
+    }
+
     // Move micro-fillet/micro-radius dimensions (R < 0.8 mm) into enlarged Detail Views on Page 2 when dense,
     // keeping Page 1 clean and readable while preserving 100% dimension coverage.
     doc = this.offloadMicroDetails(doc, mainId, o);
@@ -376,13 +392,17 @@ export class DrawingSession {
     let best = layOutPage(doc, 0, o.sheet);
     if (!o.sheet || o.sheet === 'auto') {
       let score = this.clutter(best, 0);
+      const hasIso = (d: DrawingDoc) => page(d, 0).views.some((v) => v.display === 'shadedEdges');
+      let isoOk = !(o.isometric ?? true) || hasIso(best);
       const order: SheetSize[] = ['A4', 'A3', 'A2', 'A1'];
-      for (let i = order.indexOf(page(best, 0).sheet.size) + 1; score > 0 && i > 0 && i < order.length; i++) {
+      for (let i = order.indexOf(page(best, 0).sheet.size) + 1; (score > 0 || !isoOk) && i > 0 && i < order.length; i++) {
         const next = layOutPage(doc, 0, order[i]);
         const c = this.clutter(next, 0);
-        if (c < score) {
+        const nextIso = !(o.isometric ?? true) || hasIso(next);
+        if (c < score || (!isoOk && nextIso && c <= score + 5) || (page(best, 0).sheet.size === 'A4' && score > 25 && order[i] === 'A3' && c <= score)) {
           best = next;
           score = c;
+          isoOk = nextIso;
         }
       }
     }
@@ -396,20 +416,42 @@ export class DrawingSession {
         const single: DrawingDoc = { ...doc, pages: [pg] };
         const b = this.build(doc, pi);
         const area = sheetMetrics(pg.sheet).area;
-        const free = emptyRectangles(b.scene.items.slice(sheetItems(single).length), area, 8)
+        const allFree = emptyRectangles(b.scene.items.slice(sheetItems(single).length), area, 8)
           .sort((a, b) => (b.x1 - b.x0) * (b.y1 - b.y0) - (a.x1 - a.x0) * (a.y1 - a.y0));
-        const box = free[0] ?? { x0: area.x + area.w * 0.52, y0: area.y + 70, x1: area.x + area.w - 10, y1: area.y + area.h - 10 };
-        const padX0 = Math.min(box.x0 + 18, (box.x0 + box.x1) / 2);
-        const cols = details.length > 2 ? 2 : 1;
-        const rows = Math.ceil(details.length / cols);
-        const cw = (box.x1 - padX0) / cols;
-        const ch = (box.y1 - box.y0) / rows;
-        for (let di = 0; di < details.length; di++) {
-          const col = di % cols;
-          const row = Math.floor(di / cols);
-          const x = Math.round((padX0 + cw * (col + 0.5)) * 10) / 10;
-          const y = Math.round((box.y1 - ch * (row + 0.5)) * 10) / 10;
-          doc = onPage(doc, pi, (st) => applyDrawingCommand(st, { type: 'setView', viewId: details[di]!.id, patch: { at: [x, y] } }));
+        // Pick up to 2 non-overlapping large free regions (e.g. left + upper-right) to balance the sheet
+        const chosenBoxes: typeof allFree = [];
+        for (const r of allFree) {
+          if (r.x1 - r.x0 < 65 || r.y1 - r.y0 < 65) continue;
+          const overlapsExisting = chosenBoxes.some((q) => Math.min(q.x1, r.x1) > Math.max(q.x0, r.x0) + 5 && Math.min(q.y1, r.y1) > Math.max(q.y0, r.y0) + 5);
+          if (!overlapsExisting) chosenBoxes.push(r);
+          if (chosenBoxes.length >= 2) break;
+        }
+        if (chosenBoxes.length === 0) chosenBoxes.push(allFree[0] ?? { x0: area.x + area.w * 0.52, y0: area.y + 70, x1: area.x + area.w - 10, y1: area.y + area.h - 10 });
+        const areas = chosenBoxes.map((r) => (r.x1 - r.x0) * (r.y1 - r.y0));
+        const totalArea = areas.reduce((s, v) => s + v, 0) || 1;
+        let idx = 0;
+        for (let bi = 0; bi < chosenBoxes.length && idx < details.length; bi++) {
+          const box = chosenBoxes[bi]!;
+          const count = bi === chosenBoxes.length - 1
+            ? details.length - idx
+            : Math.max(1, Math.round((details.length * areas[bi]!) / totalArea));
+          const slice = details.slice(idx, idx + count);
+          idx += count;
+          const padX0 = Math.min(box.x0 + 16, (box.x0 + box.x1) / 2);
+          const padX1 = Math.max(box.x1 - 10, (padX0 + box.x1) / 2);
+          const bw = padX1 - padX0;
+          const bh = box.y1 - box.y0;
+          const cols = slice.length > 2 && bw > bh * 0.9 ? 2 : 1;
+          const rows = Math.ceil(slice.length / cols);
+          const cw = bw / cols;
+          const ch = bh / rows;
+          for (let di = 0; di < slice.length; di++) {
+            const col = di % cols;
+            const row = Math.floor(di / cols);
+            const x = Math.round((padX0 + cw * (col + 0.5)) * 10) / 10;
+            const y = Math.round((box.y1 - ch * (row + 0.5)) * 10) / 10;
+            doc = onPage(doc, pi, (st) => applyDrawingCommand(st, { type: 'setView', viewId: slice[di]!.id, patch: { at: [x, y] } }));
+          }
         }
       }
       doc = this.tidy(doc, pi);
@@ -431,18 +473,25 @@ export class DrawingSession {
   }
 
   /** The views of `doc` as the dimension graph reads them: the main view first, the sections next (inside is drawn solid there), then the rest. */
-  private dimensionViews(doc: DrawingDoc): ViewToDimension[] {
-    const pg = page(doc);
+  private dimensionViews(doc: DrawingDoc, allPages = false): ViewToDimension[] {
     const out: ViewToDimension[] = [];
-    for (const v of pg.views) {
-      if (v.kind === 'detail' || v.kind === 'crop' || v.kind === 'sectionLocal') continue;
-      if (v.kind === 'projected' && (v.side === 'upLeft' || v.side === 'upRight' || v.side === 'downLeft' || v.side === 'downRight')) continue;
-      if (!isDerived(v) && v.direction === 'isometric') continue;
-      const axes = axesOf(pg.views, pg.sheet.projection, v);
-      if (!axes || !this.directionOf(axes)) continue;
-      const features = this.featuresFor(axes);
-      const lines = v.kind === 'section' ? this.project(axes, sectionPlane(axesOf(pg.views, pg.sheet.projection, pg.views.find((x) => x.id === v.parent)!)!, v)) : this.project(axes);
-      out.push({ viewId: v.id, axes, features, hidden: hiddenFeatures(features, lines), ...(v.kind === 'section' ? { section: true } : {}) });
+    const pages = allPages ? doc.pages : [page(doc)];
+    for (const pg of pages) {
+      for (const v of pg.views) {
+        if (v.kind === 'crop' || v.kind === 'sectionLocal') continue;
+        if (!allPages && v.kind === 'detail') continue;
+        if (v.kind === 'projected' && (v.side === 'upLeft' || v.side === 'upRight' || v.side === 'downLeft' || v.side === 'downRight')) continue;
+        if (!isDerived(v) && v.direction === 'isometric') continue;
+        const targetView = v.kind === 'detail' ? pg.views.find((x) => x.id === v.parent) : v;
+        if (!targetView) continue;
+        const axes = axesOf(pg.views, pg.sheet.projection, targetView);
+        if (!axes || !this.directionOf(axes)) continue;
+        const features = this.featuresFor(axes);
+        const lines = targetView.kind === 'section'
+          ? this.project(axes, sectionPlane(axesOf(pg.views, pg.sheet.projection, pg.views.find((x) => x.id === targetView.parent)!)!, targetView))
+          : this.project(axes);
+        out.push({ viewId: v.id, axes, features, hidden: hiddenFeatures(features, lines), ...(targetView.kind === 'section' ? { section: true } : {}) });
+      }
     }
     const rank = (x: ViewToDimension) => (x === out[0] ? 0 : x.section ? 1 : 2);
     return [...out].sort((a, b) => rank(a) - rank(b));
@@ -711,7 +760,7 @@ export class DrawingSession {
     doc = applyDrawingCommand(doc, { type: 'insertPage', page: { name: '剖面與放大詳圖' } });
     const alloc = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const base2Id = alloc.take('view');
-    const base2: DrawingView = { id: base2Id, name: mainView.name, source: mainView.source, direction: mainView.direction };
+    const base2: DrawingView = { id: base2Id, name: mainView.name, source: mainView.source, direction: mainView.direction, ...(mainView.display ? { display: mainView.display } : {}) };
     doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertViews', views: [base2] }));
 
     // Move B-B to Page 2 (re-parented to base2Id)
@@ -780,12 +829,12 @@ export class DrawingSession {
         return [p[0] * r[0] + p[1] * r[1] + p[2] * r[2], p[0] * u[0] + p[1] * u[1] + p[2] * u[2]];
       };
 
-      // Greedy spatial clustering within 2.4 mm radius so each detail view zooms tightly
+      // Greedy spatial clustering within 3.5 mm radius so nearby micro-radii share a clear Detail View
       const clusters: { dims: Dimension[]; pts: [number, number][]; cx: number; cy: number }[] = [];
       for (const d of microDims) {
         const pt = projectPt(d);
         if (!pt) continue;
-        let hit = clusters.find((c) => Math.hypot(pt[0] - c.cx, pt[1] - c.cy) <= 2.4);
+        let hit = clusters.find((c) => Math.hypot(pt[0] - c.cx, pt[1] - c.cy) <= 3.5);
         if (!hit) {
           hit = { dims: [], pts: [], cx: pt[0], cy: pt[1] };
           clusters.push(hit);
@@ -796,16 +845,17 @@ export class DrawingSession {
         hit.cy = hit.pts.reduce((a, p) => a + p[1], 0) / hit.pts.length;
       }
 
-      // Allow up to 4 detail views for A-A / dense views, picking the densest clusters first
+      // Prefer clusters with >= 2 dimensions so we don't spawn tiny single-callout views
       clusters.sort((a, b) => b.dims.length - a.dims.length);
-      const chosenClusters = clusters.slice(0, cand.id === secA2Id ? 4 : 2);
+      const multiClusters = clusters.filter((c) => c.dims.length >= 2);
+      const chosenClusters = (multiClusters.length ? multiClusters : clusters).slice(0, cand.id === secA2Id ? 3 : 2);
       const movedIds = new Set<Id>();
 
       for (const cl of chosenClusters) {
         if (labelIdx >= labels.length) break;
         const label = labels[labelIdx++]!;
-        let maxDist = Math.max(0.6, ...cl.pts.map((p) => Math.hypot(p[0] - cl.cx, p[1] - cl.cy)));
-        let maxR = Math.max(1.4, Math.min(3.5, maxDist + 0.8));
+        let maxDist = Math.max(0.8, ...cl.pts.map((p) => Math.hypot(p[0] - cl.cx, p[1] - cl.cy)));
+        let maxR = Math.max(2.0, Math.min(3.8, maxDist + 0.9));
 
         // Feature cohesion: pull in other dimensions of the same feature that lie within the detail region
         const clFeats = new Set(cl.dims.map(featKey).filter(Boolean));
@@ -927,7 +977,7 @@ export class DrawingSession {
       for (const w of toPdf(built.scene, { ...(f ? { font: f } : {}) }).warnings) missingSet.add(w);
       for (const i of slice) if (i.kind === 'text' && i.text.trim()) heights.push({ text: i.text, h: Math.round(i.height * 100) / 100, caption: i.owner?.startsWith('caption:') === true });
     }
-    const coverage = dimensionCoverage(this.dimensionViews(doc), allDims);
+    const coverage = dimensionCoverage(this.dimensionViews(doc, true), allDims);
     const odd = heights.filter((x) => { const [lo, hi] = x.caption ? TEXT_RANGE.caption : TEXT_RANGE.text; return x.h < lo - 1e-9 || x.h > hi + 1e-9; });
     return {
       overlaps,

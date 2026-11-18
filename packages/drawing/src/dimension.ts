@@ -425,9 +425,44 @@ export function evaluateDimension(d: Dimension, resolved: ElementsResult | undef
   }
   if (d.kind === 'linear') return linear(d, els[0]!, els[1]!, axes, placed, unit, style, viewLines);
   if (d.kind === 'angle') return angle(d, els[0]!, els[1]!, axes, placed, style);
-  if (d.kind === 'ordinate') return ordinate(d, els, axes, placed, unit, style);
+  if (d.kind === 'ordinate') return ordinate(d, els, axes, placed, unit, style, viewLines);
   if (d.kind === 'chamfer') return chamfer(d, els[0]!, axes, placed, unit, style);
   return circle(d, els[0]!, axes, placed, unit, style);
+}
+
+/** The visible contour through `p` along the extension line's direction, as merged intervals of the perpendicular coordinate. */
+function contourIntervals(p: P, across: 0 | 1, viewLines?: ViewLines | null): [number, number][] {
+  const along = across === 0 ? 1 : 0;
+  const intervals: [number, number][] = [];
+  for (const poly of viewLines?.visible ?? []) for (let i = 0; i + 3 < poly.length; i += 2) {
+    const a: P = [poly[i]!, poly[i + 1]!], b: P = [poly[i + 2]!, poly[i + 3]!];
+    if (Math.abs(a[across] - p[across]) > 1e-6 || Math.abs(b[across] - p[across]) > 1e-6) continue;
+    intervals.push([Math.min(a[along], b[along]), Math.max(a[along], b[along])]);
+  }
+  intervals.sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [];
+  for (const interval of intervals) {
+    const last = merged.at(-1);
+    if (last && interval[0] <= last[1] + 1e-6) last[1] = Math.max(last[1], interval[1]);
+    else merged.push([...interval]);
+  }
+  return merged;
+}
+
+/** Finds the end of the referenced visible contour nearest the dimension row so extension lines start near the contour, never the overall view box. */
+function contourAttach(p: P, e: ElementFacts, axes: ViewAxes, across: 0 | 1, outward: 1 | -1, viewLines?: ViewLines | null): P {
+  if (!isBound(e)) return p;
+  const along = across === 0 ? 1 : 0;
+  const centre = e.center ? inView({ ...e, point: e.center }, axes) : p;
+  const merged = contourIntervals(p, across, viewLines);
+  const distance = (range: P) => Math.max(range[0] - centre[along], centre[along] - range[1], 0);
+  merged.sort((a, b) => distance(a) - distance(b));
+  const q: P = [...p];
+  if (merged.length) {
+    const interval = merged[0]!;
+    q[along] = interval[outward > 0 ? 1 : 0];
+  } else q[along] = centre[along];
+  return q;
 }
 
 /**
@@ -435,7 +470,7 @@ export function evaluateDimension(d: Dimension, resolved: ElementsResult | undef
  * view, the origin's 0 among them. Where the values come closer than a text's height, the extension lines jog sideways so that the texts stand apart (ISO 129-1),
  * keeping their order. The first value is the dimension's `value`; `text` lists them all.
  */
-function ordinate(d: Extract<Dimension, { kind: 'ordinate' }>, els: readonly ElementFacts[], axes: ViewAxes, placed: PlacedView, unit: LengthUnit, st: Style): DimensionOutcome {
+function ordinate(d: Extract<Dimension, { kind: 'ordinate' }>, els: readonly ElementFacts[], axes: ViewAxes, placed: PlacedView, unit: LengthUnit, st: Style, viewLines?: ViewLines | null): DimensionOutcome {
   const { line } = pen(st);
   const DIM_TEXT = st.text;
   const k = d.axis === 'x' ? 0 : 1;
@@ -449,7 +484,8 @@ function ordinate(d: Extract<Dimension, { kind: 'ordinate' }>, els: readonly Ele
   const edge = d.axis === 'x' ? (outward > 0 ? box.top : box.bottom) : outward > 0 ? box.right : box.left;
   const row = edge + d.offset;
   const entries = at.map((p, i) => {
-    const s = toSheet(placed, p[0], p[1]);
+    const attached = viewLines ? contourAttach(p, els[i]!, axes, k, outward, viewLines) : p;
+    const s = toSheet(placed, attached[0], attached[1]);
     const value = Math.abs(p[k] - origin);
     const words = i === 0 ? { text: '0', parts: ['0'] } : dimensionWords(d, value, undefined, unit);
     return { s, value, ...words, bound: isBound(els[i]!) };
@@ -471,8 +507,8 @@ function ordinate(d: Extract<Dimension, { kind: 'ordinate' }>, els: readonly Ele
   const jog = 3;
   for (const [i, e] of entries.entries()) {
     const across = place.get(i)!;
-    // from the element (a plane: from the box's edge, a gap off it) to the row, jogging to where its text is
-    const from = e.bound ? edge + outward * GAP : (d.axis === 'x' ? e.s[1] : e.s[0]) + outward * GAP;
+    // from the element's actual contour (a gap off it) to the row, jogging to where its text is
+    const from = (e.bound && !viewLines) ? edge + outward * GAP : (d.axis === 'x' ? e.s[1] : e.s[0]) + outward * GAP;
     const knee = row - outward * jog;
     const pts: P[] =
       d.axis === 'x'
@@ -640,39 +676,8 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
   const inside = d.insideAt !== undefined && d.orientation !== 'aligned';
   // the view's coordinate the feature is placed by (`across`: x for a horizontal dimension) and the one its extension line runs along (`along`)
   const across = d.orientation === 'horizontal' ? 0 : 1, along = across === 0 ? 1 : 0;
-  /** The visible contour through `p` along the extension line's direction, as the merged intervals of the view's `along` it covers. */
-  const contour = (p: P): [number, number][] => {
-    const intervals: [number, number][] = [];
-    for (const poly of viewLines?.visible ?? []) for (let i = 0; i + 3 < poly.length; i += 2) {
-      const a: P = [poly[i]!, poly[i + 1]!], b: P = [poly[i + 2]!, poly[i + 3]!];
-      if (Math.abs(a[across] - p[across]) > 1e-6 || Math.abs(b[across] - p[across]) > 1e-6) continue;
-      intervals.push([Math.min(a[along], b[along]), Math.max(a[along], b[along])]);
-    }
-    intervals.sort((a, b) => a[0] - b[0]);
-    const merged: [number, number][] = [];
-    for (const interval of intervals) {
-      const last = merged.at(-1);
-      if (last && interval[0] <= last[1] + 1e-6) last[1] = Math.max(last[1], interval[1]);
-      else merged.push([...interval]);
-    }
-    return merged;
-  };
-  // Extend from the referenced contour, never the overall view rectangle. Native
-  // face centres select the relevant interval when separate parts are coplanar.
-  const attach = (p: P, e: ElementFacts): P => {
-    if (!isBound(e) || d.orientation === 'aligned') return p;
-    const centre = e.center ? inView({ ...e, point: e.center }, axes) : p;
-    const merged = contour(p);
-    const distance = (range: P) => Math.max(range[0] - centre[along], centre[along] - range[1], 0);
-    merged.sort((a, b) => distance(a) - distance(b));
-    const q: P = [...p];
-    if (merged.length) {
-      const interval = merged[0]!;
-      // the end of the contour on the side the dimension line is: the extension line starts there
-      q[along] = interval[d.offset > 0 ? 1 : 0];
-    } else q[along] = centre[along];
-    return q;
-  };
+  // Extend from the referenced contour, never the overall view rectangle.
+  const attach = (p: P, e: ElementFacts): P => d.orientation === 'aligned' ? p : contourAttach(p, e, axes, across, d.offset > 0 ? 1 : -1, viewLines);
   /**
    * On the view (ADR 0227) the arrow touches the feature where its contour crosses the line, and no extension line is drawn: it would lie on the outline. Where the
    * contour stops short of the line (a rounded corner, a shorter step), or the feature is a point (a vertex, a hole's middle), an extension line runs to the line
@@ -681,7 +686,7 @@ function linear(d: Extract<Dimension, { kind: 'linear' }>, ea: ElementFacts, eb:
    */
   const onViewExtensionFrom = (p: P, e: ElementFacts, side: 1 | -1 | undefined): number | null => {
     const at = d.insideAt!;
-    const merged = contour(p);
+    const merged = contourIntervals(p, across, viewLines);
     if (merged.length) {
       if (merged.some(([lo, hi]) => at >= lo - 1e-6 && at <= hi + 1e-6)) return null;
       const ends = merged.flat();
