@@ -109,6 +109,8 @@ What part-3 needs, as measured (each a new capability, not a fix): (1) drafted c
 
 Decision 4 (user, 2026-11-19): part-3 is only used in assemblies, measured and drawn; a parametric rebuild is not needed. No further slices are added for part-3; the gaps above are kept for reference, not scheduled. Checked the same day: the assembly STEP opened as the app opens it (`stepAssemblyFiles`) gives part-3 as an imported body (227 faces, volume 4420.7624) that can be measured, drawn (2 sheets, 27 dimensions; 27 slanted faces left undimensioned) and placed in the assembly (4 components, valid).
 
+Decision 5 (user, 2026-11-19, the pending-decisions page): part-4 (R1-9035) is treated as part-3, an imported body, no recognition work. Shelved, the decisions kept for when a part needs them: slice 4c ("Skip small rounds", Decision 3), the partial-result mode (Decision 2), raising the slice 4b rebuild rate (37%), and a volume integral good to 1e-6 on spline walls (seed 57 of slice 4a). The STEP name code-page rule stays as built (`ee92e53d`).
+
 ## Not decided
 
 Whether the chamfers later get a rebuild path (a new construction, not an OCCT fillet).
