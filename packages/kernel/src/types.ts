@@ -392,6 +392,8 @@ export interface StepAssemblyPrototype {
 export interface StepAssemblyContents {
   prototypes: StepAssemblyPrototype[];
   root: number;
+  /** The code page the names were read in, when the file wrote them as raw bytes that are not UTF-8 (it does not say which): to be reported. */
+  nameEncoding?: string;
 }
 
 /**

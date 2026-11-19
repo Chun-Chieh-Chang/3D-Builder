@@ -4006,7 +4006,8 @@ class AppStore {
       const file = await readDocumentFile(bytes);
       if (file.kind === 'assembly') await this.openAssembly({ name: handle.name, bytes, handle }, file.doc);
       else this.load(file.doc, file.format === '3dbx' ? handle : null, handle.name, file.blobs);
-      this.notify(t('stepasm.done', { name: picked.name, parts: out.parts, subs: out.subAssemblies, folder: folder.name }), out.warnings.length ? 'error' : 'info');
+      // the warnings are said, not only coloured (a name read in a guessed code page, an assembly with no components)
+      this.notify([t('stepasm.done', { name: picked.name, parts: out.parts, subs: out.subAssemblies, folder: folder.name }), ...out.warnings].join(' '), out.warnings.length ? 'error' : 'info');
     } catch (e) {
       if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'NotAllowedError')) return this.notify(t('file.again'));
       this.notify(t('stepasm.failed', { why: e instanceof Error ? e.message : String(e) }), 'error');

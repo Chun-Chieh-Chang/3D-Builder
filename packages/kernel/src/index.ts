@@ -8,3 +8,4 @@ export { inheritBodySurface, sameSurface } from './sameSurface';
 export * from './section-loops';
 export { nurbsArea, nurbsAt, nurbsEval, nurbsReversed, type Nurbs2 } from './nurbs2d';
 export * from './section-envelope';
+export { escapeStepText, stepBytesAsAscii } from './stepText';

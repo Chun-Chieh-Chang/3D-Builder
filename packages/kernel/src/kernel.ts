@@ -1,8 +1,11 @@
-import { t } from '@3db/i18n';
+import { getLocale, t, type Locale } from '@3db/i18n';
 import type { BRepBuilderAPI_MakeShape, Geom_BSplineCurve, Geom_OffsetCurve, GProp_GProps, NCollection_Array1_gp_Pnt2d, NCollection_List_TopoDS_Shape, TopoDS_Shape, TopoDS_Wire } from 'libcascade/single/init';
 import { anyHit, buildBvh, nearestHitAt, triangleNormal } from './rays';
 import { forEachSample } from './sampling';
-import { escapeStepText } from './stepText';
+import { escapeStepText, stepBytesAsAscii } from './stepText';
+
+/** The code page a STEP file's raw non-ASCII bytes are read in when they are not UTF-8 (the file does not say): that of the user's language. */
+const LEGACY_ENCODING: Record<Locale, string> = { 'zh-TW': 'big5', en: 'windows-1252' };
 import { inheritBodySurface, sameSurface } from './sameSurface';
 import { planSectionPath } from './sectionPath';
 import { loopPoints, sweepVolumeFloor } from './sweepFloor';
@@ -7646,8 +7649,12 @@ export class Kernel {
     const path = `/read-assembly-${++this.fileSeq}.step`;
     const doc = new oc.TDocStd_Document(arena.own(new oc.TCollection_ExtendedString('MDTV-XCAF', false)));
     const made: ShapeId[] = [];
+    let nameEncoding: string | null = null;
     try {
-      oc.FS.writeFile(path, data);
+      // names written as raw bytes of a code page are made escapes first (else 夾具A and 夾具B both come back as the same three wrong characters)
+      const ascii = stepBytesAsAscii(typeof data === 'string' ? new TextEncoder().encode(data) : data, LEGACY_ENCODING[getLocale()]);
+      nameEncoding = ascii.encoding && ascii.encoding !== 'utf-8' ? ascii.encoding : null;
+      oc.FS.writeFile(path, ascii.bytes);
       const reader = arena.own(new oc.STEPCAFControl_Reader());
       reader.SetNameMode(true);
       reader.SetColorMode(true);
@@ -7747,7 +7754,7 @@ export class Kernel {
         root = prototypes.length - 1;
       }
       made.length = 0; // handed over
-      return { prototypes, root };
+      return { prototypes, root, ...(nameEncoding ? { nameEncoding } : {}) };
     } catch (e) {
       for (const id of made) this.release(id);
       throw e;

@@ -23,4 +23,5 @@ export const stepasm: Translation = {
   'stepasm.folderSubs': 'Sub-assemblies',
   'stepasm.unnamed': 'Unnamed {n}',
   'stepasm.emptyAssembly': 'The assembly "{name}" has no components',
+  'stepasm.nameEncoding': 'The names in the file are not encoded as STEP requires; they were read as {encoding}. If a name looks wrong, the file may use another encoding.',
 };

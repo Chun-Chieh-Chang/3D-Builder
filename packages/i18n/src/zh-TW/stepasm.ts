@@ -21,4 +21,5 @@ export const stepasm = {
   'stepasm.folderSubs': '組件',
   'stepasm.unnamed': '未命名{n}',
   'stepasm.emptyAssembly': '組合件「{name}」沒有任何零組件',
+  'stepasm.nameEncoding': '檔案裡的名稱沒有依 STEP 標準編碼，已當作 {encoding} 讀取；如果名稱看起來不對，可能是別的編碼',
 } as const;

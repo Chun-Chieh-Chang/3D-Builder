@@ -29,3 +29,23 @@ export function escapeStepText(text: string): string {
     return out;
   });
 }
+
+/**
+ * A STEP file whose strings hold raw non-ASCII bytes (against ISO 10303-21; SolidWorks 2020 writes the system code page, part-3's 夾具A as Big5 A7 A8
+ * A8 E3 41) as one the library reads: those characters as escapes. The bytes are read as UTF-8 when they are valid UTF-8 (the library's own files
+ * before `escapeStepText`, and most writers); otherwise as `legacy` (a WHATWG encoding label: the code page of the user's language), which the
+ * caller reports, since the file does not say. The whole file is decoded before the strings are found: a Big5 character's second byte may be a
+ * backslash or other ASCII. `encoding` is null when the file was ASCII and is returned as it was.
+ */
+export function stepBytesAsAscii(bytes: Uint8Array, legacy: string): { bytes: Uint8Array; encoding: string | null } {
+  if (!bytes.some((b) => b >= 0x80)) return { bytes, encoding: null };
+  let text: string;
+  let encoding = 'utf-8';
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    encoding = legacy;
+    text = new TextDecoder(legacy).decode(bytes);
+  }
+  return { bytes: new TextEncoder().encode(escapeStepText(text)), encoding };
+}

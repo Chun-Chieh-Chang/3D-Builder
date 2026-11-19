@@ -33,6 +33,8 @@ export interface StepAssemblyPlan {
     part?: { step: Uint8Array; faceCount: number; faceColors?: (string | null)[]; color?: string | null };
   }[];
   root: number;
+  /** See `StepAssemblyContents.nameEncoding`. */
+  nameEncoding?: string;
 }
 
 /**
@@ -45,6 +47,7 @@ export function stepAssemblyPlan(kernel: Kernel, data: Uint8Array | string): Ste
   try {
     return {
       root: contents.root,
+      ...(contents.nameEncoding ? { nameEncoding: contents.nameEncoding } : {}),
       prototypes: contents.prototypes.map((p, i) => ({
         name: p.name,
         ...(p.children ? { children: p.children.map((c) => ({ name: c.name, prototype: c.prototype, rotation: c.rotation, translation: c.translation })) } : {}),
@@ -77,6 +80,9 @@ export interface StepAssemblyFiles {
 }
 
 /** The folders an import writes into, next to the main file (named in the user's language). */
+/** The names of the code pages a STEP file's names may be read in, as people know them. */
+const ENCODING_NAMES: Record<string, string> = { big5: 'Big5', 'windows-1252': 'Windows-1252' };
+
 export const stepAssemblyFolders = () => ({ parts: t('stepasm.folderParts'), subs: t('stepasm.folderSubs') });
 
 /**
@@ -89,6 +95,7 @@ export async function stepAssemblyFiles(plan: StepAssemblyPlan, stem: string, ta
   const folders = stepAssemblyFolders();
   const files: StepAssemblyFiles['files'] = [];
   const warnings: string[] = [];
+  if (plan.nameEncoding) warnings.push(t('stepasm.nameEncoding', { encoding: ENCODING_NAMES[plan.nameEncoding] ?? plan.nameEncoding }));
   // paths already in the folder are not written over: a name that is taken gets a number
   const used = new Set<string>([...taken].map((p) => p.toLowerCase()));
   const unique = (folder: string, name: string, ext: string): string => {
