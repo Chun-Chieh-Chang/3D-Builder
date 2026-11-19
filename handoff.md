@@ -1,5 +1,23 @@
 # 交接與接續工作
 
+## 2026-11-19（夜）— ADR 0260 第二期（視圖配置）開工：只讀程式與量測規劃，**尚未改任何程式**
+
+- **第一期已提交並推送**：`33ac36f7`（main 與 origin/main 同步）。細節見下一節。
+- **本期目標**（`out/agent/自動出圖改善計畫.md` 第二期，規則編號 P／V 見 `out/agent/工程圖標註與配置通則.md`；`out/` 不入庫）：視圖間距依兩側尺寸區推算、圖紙大小與比例與排法一起選、回轉件以縱向視圖為主視圖、詳圖靠近母視圖且不產生空詳圖、視圖標題與等角圖、多頁同圖紙且不重複視圖。
+- **已讀程式得到的事實**（未動手修改）：
+  1. `VIEW_GAP = 25` 是定值（`packages/drawing/src/layout.ts:152`），`offsets()` 與衍生視圖的 `spot()` 都用它；不看兩側有幾排尺寸。
+  2. 已有「讓出空間」的機制，但它依雜亂分數而不是量到的淨空：`DrawingSession.tidy` → `spreadViews` 以 5 mm 為步長沿視圖所在的線滑動（`DrawingView.slide`，`slideAxis`）。R1-8032 淨空 0 mm 就是這條路徑沒擋住。**建議沿用 `slide`（已入檔、使用者可再調），不新增圖面欄位。**
+  3. 圖紙與比例：`fitSheet`（`apps/mcp/src/drawingSession.ts`）先試 A4、A3、A2 找第一個比例 ≥ 1:1 的，`create` 再依雜亂分數往 A1 升；`fitViews`（`packages/drawing/src/fit.ts`）取放得下的最大標準比例並置中。沒有填滿率目標，也不比較排法。
+  4. 詳圖：`offloadMicroDetails` 把微圓角尺寸移到第 2 頁並建詳圖，`create` 再在空白矩形（≥ 65 mm）擺放；詳圖距母視圖沒有限制。
+  5. 主視圖：`rankMainViews` 依投影面積評分，不辨認回轉件。
+- **風險／待確認（使用者確認驗收標準前不動手）**：計畫中的「視圖連同尺寸在可繪區寬、高佔比皆 60–85%」對細長件不可能達成（R1-8032 在 A1 寬向已 85%、高向只有 56%）。要先量 5 個零件（R1-8032 與 `tests/golden` 的 4 件：diamond-pin、locating-plate、sds-plus-bit、v-block）的現況基準，再提出改過的、可達成的標準（例如只要求受限方向落在 60–85%、淨空 ≥ 7 mm、詳圖距離），請使用者確認。
+- **下一步**：
+  1. 寫配置量測函式（純函式，`packages/drawing`；輸入場景與已擺放的視圖，輸出每頁填滿率、相鄰視圖淨空、詳圖到母視圖的距離與是否隔著別的視圖、空詳圖數、非標準比例），單元測試用合成場景。
+  2. 以它量 5 個零件的現況（kit 暫存於 `tests/kit/`，不入庫；`DrawingSession.build` 目前是公開方法，可直接取 `scene` 與 `placed`）。
+  3. 把基準與建議的標準交給使用者確認，再實作。ADR 編號開工時以 `git log origin/main` 與 `docs/adr` 確認（目前最後是 0260，下一個 0261）。
+- **本機暫存（未入庫，用完要停或清）**：進度頁伺服器（`.claude/launch.json` 的 `progress`，127.0.0.1:5480，`out/progress/`）；`.claude/worktrees/p1-baseline`（乾淨 `db051b9a` 的 worktree，含 `npm ci`）；`scratch/` 的測試與 verify:ui 日誌、`scratch/standard-baseline-*.json`；`tests/kit/standard-baseline.kit.ts`（未追蹤）。刪除前須使用者同意（全域規則第 8 條）。
+- **已知延後**：`tests/e2e/manual-browser-projects.js` 間歇失敗（乾淨 `db051b9a` 也會，4 次 1 次），2026-11-19 使用者同意延後。
+
 ## 2026-11-19（傍晚）— ADR 0260 第一期：製圖標準設定檔（CNS 預設）——已驗證並提交
 
 - **任務 ID**：ADR-0260-P1。來源：R1-8032 工程圖審查 →《工程圖標註與配置通則》（`out/agent/工程圖標註與配置通則.md`）→ 四期改善計畫（`out/agent/自動出圖改善計畫.md`）。`out/` 不入庫。
@@ -24,7 +42,7 @@
   2. 修正後以 `npm run verify:ui -- --only "manual-drawing-linked"` 單獨通過（已做）；其餘 277 列在改腳本前後程式碼未變，不重跑。
   3. 使用者已同意提交（2026-11-19）；不提交：`tests/kit/standard-baseline.kit.ts`、`.claude/launch.json` 的 progress 設定。
   4. 清理：`.claude/worktrees/p1-baseline`（乾淨 commit 的 worktree，含 `npm ci` 的 node_modules，供重現用）與 `scratch/` 的日誌；刪除前須使用者同意（AGENTS 全域規則第 8 條）。
-- **已修改（未提交）**：`apps/mcp/src/drawingSession.ts`、`apps/mcp/src/drawingTools.ts`、`apps/web/src/components/{DimensionPanel,DrawingPanel,ParametersDialogs}.tsx`、`apps/web/src/options.ts`、`apps/web/src/state/store.ts`、`packages/drawing/src/{dxf,pdf,scene,sheet,sheetRaster,svg}.ts`、`packages/i18n/src/{en,zh-TW}/{drawing,help,output}.ts`、`packages/model/src/{drawing,serialize}.ts`、`tests/phase5/drawing-{annotations,derived,document,layout,linked}.test.ts`、`tests/support/outputScene.ts`、`docs/repository-inventory.md`、`DEV_LOG.md`、`handoff.md`；新增 `tests/phase5/drawing-standard.test.ts`、`docs/adr/0260-drawing-standard-profile.md`。`.claude/launch.json` 多了 `progress` 設定（本機用，不提交）。
+- **已修改（已隨 `33ac36f7` 提交並推送）**：`apps/mcp/src/drawingSession.ts`、`apps/mcp/src/drawingTools.ts`、`apps/web/src/components/{DimensionPanel,DrawingPanel,ParametersDialogs}.tsx`、`apps/web/src/options.ts`、`apps/web/src/state/store.ts`、`packages/drawing/src/{dxf,pdf,scene,sheet,sheetRaster,svg}.ts`、`packages/i18n/src/{en,zh-TW}/{drawing,help,output}.ts`、`packages/model/src/{drawing,serialize}.ts`、`tests/phase5/drawing-{annotations,derived,document,layout,linked}.test.ts`、`tests/support/outputScene.ts`、`docs/repository-inventory.md`、`DEV_LOG.md`、`handoff.md`；新增 `tests/phase5/drawing-standard.test.ts`、`docs/adr/0260-drawing-standard-profile.md`。`.claude/launch.json` 多了 `progress` 設定（本機用，不提交）。
 - **未解決／注意**：
   - CNS 數值取自 CNS 教材（淡江《機械畫》第 1 章），未讀 CNS 3 原文；A0、A2、A3 的線寬組教材未給（暫取 A1／A4 組）；CNS 最小字高表未讀到。
   - 本期未改：割面線兩端粗線、字高、標題欄（屬後續各期）。

@@ -6660,3 +6660,9 @@ Schema 93 記錄來源本體、基準面或模型平面、帶符號的平面偏�
      - `manual-browser-projects.js`：全量中 ERROR（「開啟對話框列出專案的檔案」為空）。單獨重跑 4 次：通過、ERROR（`null` 的 `click`）、ERROR（等「已開啟 治具組.3dba」逾時）、通過。**在乾淨 commit `db051b9a` 的 worktree（`.claude/worktrees/p1-baseline`，`npm ci`）單獨重跑 4 次：通過、通過、ERROR（「新專案就是該專案」）、通過。** 兩邊都是間歇失敗，每次卡的步驟不同，屬計時競爭；因此不是本次變更造成，但**尚未修好**。依 §3.6，須使用者同意延後才能略過（見 handoff）。
   10. 教訓：全量裡一列 ERROR，單獨重跑一次通過，不能就此宣稱是「偶發」。本次重跑 4 次才看到不穩，再在乾淨 commit 重現，才有「早於本次變更」的證據。
   11. 使用者決定（2026-11-19）：`manual-browser-projects.js` 的間歇失敗同意延後（依 §3.6：已在乾淨 commit 重現、已記入 handoff）；第一期提交。
+
+- **2026-11-19（夜）ADR 0260 第二期開工（視圖配置；只讀程式、未改程式）**：
+  1. 第一期 `33ac36f7` 已推送（origin/main 同步）。使用者確認：`manual-drawing-linked` 已修並單獨重跑通過；`manual-browser-projects` 未修、經同意延後（handoff 已記）。
+  2. 讀過 `layoutViews`／`offsets`、`DrawingSession.tidy／spreadViews／fitSheet／create`、`fitViews` 後的事實：`VIEW_GAP` 為定值 25 mm；現有的「讓出空間」是依雜亂分數沿 `slide` 滑動，不是量到的淨空，所以 R1-8032 的 0 mm 淨空沒被擋住；圖紙與比例只看放得下；主視圖依投影面積評分；詳圖距母視圖無限制。決定沿用 `DrawingView.slide`，不加新的圖面欄位。
+  3. 計畫中的驗收「寬、高佔比皆 60–85%」未經量測就寫入，對細長件不可能達成（R1-8032 在 A1 寬 85%、高 56%）。這是紅隊四問「規格真實性」該先做的事：標準要建立在量到的基準上。改為先量 5 個零件的現況基準，再提出可達成的標準給使用者確認，之後才動程式。
+  4. 本次沒有改任何程式或測試；只更新 handoff 與本記錄。
