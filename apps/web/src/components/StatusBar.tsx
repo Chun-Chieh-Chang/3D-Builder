@@ -33,7 +33,7 @@ export function StatusBar() {
     return (
       <footer className="status-bar">
         <AiConnectionStatus />
-        <span className={`notice ${notice?.kind ?? ''}`} onClick={() => store.dismissNotice()}>
+        <span className={`notice ${notice?.kind ?? ''}`} title={notice?.text} onClick={() => store.dismissNotice()}>
           {notice?.text ?? t('status.ready')}
         </span>
         {mateErrors > 0 && (
@@ -73,7 +73,7 @@ export function StatusBar() {
   return (
     <footer className="status-bar">
       <AiConnectionStatus />
-      <span className={`notice ${notice?.kind ?? ''}`} onClick={() => store.dismissNotice()}>
+      <span className={`notice ${notice?.kind ?? ''}`} title={notice?.text} onClick={() => store.dismissNotice()}>
         {notice?.text ?? (editingName ? t('status.editing', { name: editingName }) : t('status.ready'))}
       </span>
       {(errors > 0 || warnings > 0) && (

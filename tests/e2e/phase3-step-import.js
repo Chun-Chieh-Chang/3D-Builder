@@ -43,6 +43,8 @@ imp.run = async () => {
   await H.wait(1500);
   const ms = performance.now() - started;
   const notice = store.getState().notice.text;
+  // the notice can be longer than the status bar (a name read in a guessed code page adds a sentence): the whole of it is on hover
+  H.check(document.querySelector('.status-bar .notice')?.title === notice, `the whole notice is on hover: ${document.querySelector('.status-bar .notice')?.title}`);
 
   // the files
   const names = [];
