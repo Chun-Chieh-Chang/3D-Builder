@@ -56,6 +56,7 @@ import {
   rankMainViews,
   rasterizeSheet,
   ratio,
+  STANDARD_SCALES,
   readTrueType,
   sheetItems,
   sheetMetrics,
@@ -352,8 +353,9 @@ export class DrawingSession {
           const hrB = stB && stB.visible + stB.hidden > 0 ? stB.hidden / (stB.visible + stB.hidden) : 0;
           if (hrB >= 0.25) {
             const orthOrient = advice.orientation === 'vertical' ? 'horizontal' : 'vertical';
+            // only where the plan finds a place to cut: without one the cut would be anywhere (0 may be off the part), and the projected view stays
             const orthAdv = adviseSection(mainStats, orthOrient);
-            makeSection('B', orthOrient, orthAdv?.at ?? 0, idB);
+            if (orthAdv) makeSection('B', orthOrient, orthAdv.at, idB);
           }
         }
       }
@@ -413,6 +415,7 @@ export class DrawingSession {
     for (let pi = 1; pi < doc.pages.length; pi++) {
       const hasDetails = page(doc, pi).views.some((v) => v.kind === 'detail');
       doc = this.fitSheet(doc, { ...o, sheet: hasDetails ? 'A3' : 'auto' }, pi);
+      doc = enlargeDetails(doc, pi);
       const pg = page(doc, pi);
       const details = pg.views.filter((v) => v.kind === 'detail');
       if (details.length) {
@@ -760,7 +763,7 @@ export class DrawingSession {
     if (!mainView || isDerived(mainView)) return doc;
 
     // Add Page 2
-    doc = applyDrawingCommand(doc, { type: 'insertPage', page: { name: '剖面與放大詳圖' } });
+    doc = applyDrawingCommand(doc, { type: 'insertPage', page: { name: t('drawing.page.sectionsAndDetails') } });
     const alloc = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const base2Id = alloc.take('view');
     const base2: DrawingView = { id: base2Id, name: mainView.name, source: mainView.source, direction: mainView.direction, ...(mainView.display ? { display: mainView.display } : {}) };
@@ -796,7 +799,6 @@ export class DrawingSession {
 
     // Create enlarged Detail Views on Page 2 for spatial clusters of micro-radius features on secA2Id, secB2Id and base2Id.
     // Keep dimensions of the same feature together in one view (feature cohesion).
-    const baseScale = page(doc, 0).sheet.scale;
     const pg1After = page(doc, 1);
     const parentCandidates = [
       ...(secA2Id && secA ? [{ id: secA2Id, srcViewId: secA.id, onPage0: true }] : []),
@@ -877,15 +879,14 @@ export class DrawingSession {
         maxDist = Math.max(0.6, ...cl.pts.map((p) => Math.hypot(p[0] - cl.cx, p[1] - cl.cy)));
         maxR = Math.max(1.4, Math.min(3.5, maxDist + 0.8));
 
-        // Bound sheet diameter of the detail circle to <= 52 mm (radius <= 26 mm) while staying enlarged over baseScale
-        const candidates = [20, 15, 10, 8].filter((s) => s > baseScale[0]);
-        const chosenS = candidates.find((s) => maxR * s <= 26) ?? candidates[candidates.length - 1] ?? Math.min(20, baseScale[0] * 2);
-        const viewScale: Scale = [chosenS, baseScale[1]];
+        // the largest scale (up to 20:1) at which the circle is at most 52 mm across on the sheet; that it is larger than its page's scale is
+        // made sure once page 2 has its scale (create), since the pages are fitted only after this
+        const viewScale: Scale = DETAIL_SCALES.find((sc) => maxR * ratio(sc) <= DETAIL_MAX_RADIUS + 1e-9) ?? [1, 1];
 
         const detailId = alloc.take('view');
         const detailView: DrawingView = {
           id: detailId,
-          name: `詳圖 ${label}`,
+          name: t('drawing.view.detail', { label }),
           kind: 'detail',
           parent: cand.id,
           centre: [Math.round(cl.cx * 100) / 100, Math.round(cl.cy * 100) / 100],
@@ -1556,6 +1557,25 @@ export const TEXT_RANGE = { text: [2.5, 5], caption: [3.5, 7] } as const;
 
 /** How clear of other lines and texts a text must stay (mm on the sheet): a box 0.6 mm larger than the text is checked, so that nothing touches it either. */
 const CLEARANCE = -0.6;
+
+/** A detail view's scales, largest first, and the largest radius its circle may have on the sheet (52 mm across). */
+const DETAIL_SCALES: readonly Scale[] = [[20, 1], [15, 1], [10, 1], [8, 1], [5, 1], [4, 1], [2, 1], [1, 1]];
+const DETAIL_MAX_RADIUS = 26;
+
+/**
+ * A detail view enlarges: when a page's own scale is not smaller than every detail view's on it, the page takes the largest standard scale below the
+ * smallest of theirs (smaller than what was fitted, so the views still fit).
+ */
+export function enlargeDetails(doc: DrawingDoc, pageIndex: number): DrawingDoc {
+  const pg = page(doc, pageIndex);
+  const details = pg.views.filter((v) => v.kind === 'detail');
+  if (!details.length) return doc;
+  const least = Math.min(...details.map((v) => ratio(v.scale ?? pg.sheet.scale)));
+  if (ratio(pg.sheet.scale) < least - 1e-9) return doc;
+  const scale = STANDARD_SCALES.find((sc) => ratio(sc) < least - 1e-9);
+  if (!scale) throw new AgentError(`no standard scale is smaller than the detail views' ${least}:1`);
+  return onPage(doc, pageIndex, (single) => applyDrawingCommand(single, { type: 'setSheet', sheet: { scale } }));
+}
 
 const STANDARD: readonly Scale[] = [[2, 1], [1, 1], [1, 2], [1, 5], [1, 10], [1, 20], [1, 50], [1, 100]];
 const r2 = (x: number) => Math.round(x * 100) / 100;

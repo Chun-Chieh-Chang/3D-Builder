@@ -90,6 +90,19 @@ o.run = async () => {
   const allTexts = [...dxfTexts, ...[...dxfDoc.blockEntities.values()].flat().flatMap((e) => (e.type === 'TEXT' ? [e.text] : [])), ...dxfDoc.entities.flatMap((e) => (e.type === 'DIMENSION' ? [e.text] : []))];
   H.check(dxfTexts.includes('定位板') && allTexts.some((t) => /^4×Ø9 .*貫穿$/.test(t)), `the title and a callout (${allTexts.filter((t) => /Ø9/.test(t)).join(' | ')})`);
 
+  // a drawing of several pages: a DXF holds one sheet, the page shown, named by its page, and the notice says which page and how to get the others
+  store.drawingStore.addPage();
+  await H.waitFor(() => drw()?.doc.pages.length === 2 && drw()?.activePageIndex === 1, 3000, 'page 2');
+  const second = await exported('exportDxf');
+  H.check(second.name === '定位板-2.dxf', `page 2's DXF is named by its page: ${second.name}`);
+  H.check(/第 2 頁，共 2 頁/.test(store.getState().notice?.text ?? ''), `the notice says which page: ${store.getState().notice?.text}`);
+  store.drawingStore.setActivePage(0);
+  await H.waitFor(() => drw()?.activePageIndex === 0, 3000, 'page 1 again');
+  const first = await exported('exportDxf');
+  H.check(first.name === '定位板-1.dxf' && new TextDecoder().decode(first.bytes) === dxfText, `page 1's DXF is the one-page drawing's: ${first.name}`);
+  store.drawingStore.deletePage(1);
+  await H.waitFor(() => drw()?.doc.pages.length === 1 && drw()?.activePageIndex === 0, 3000, 'one page again');
+
   // PDF without a font: Helvetica cannot write the Chinese, and it says so
   const before = store.getState().notice?.text;
   const plain = await exported('exportPdf');

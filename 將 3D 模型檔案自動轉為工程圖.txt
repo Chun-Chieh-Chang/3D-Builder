@@ -1,0 +1,36 @@
+「將 3D 模型檔案自動轉為工程圖」功能由 MCP 工程圖工作階段（[drawingSession.ts](apps/mcp/src/drawingSession.ts)、[drawingTools.ts](apps/mcp/src/drawingTools.ts)）與核心繪圖／標註引擎（[dimension.ts](packages/drawing/src/dimension.ts)、[scene.ts](packages/drawing/src/scene.ts)、[overlap.ts](packages/drawing/src/overlap.ts)）協同完成，完整流程如下：
+
+---
+
+### 1. 工具鏈與協作介面（MCP Tools）
+1. **規劃（`drawing_plan`）**：分析 6 個正交視角（`hiddenRatio`、實形數、平面數、細節度、長寬適配度），推薦最佳主視圖、投影視圖與剖切建議，並輸出預覽縮圖供確認。
+2. **一鍵出圖（`drawing_create`）**：依規劃自動建立視圖、剖視圖、等角投影、全尺寸標註、多頁放大詳圖與圖框排版，回傳自檢結果與各頁 PNG。
+3. **編修與精修**：支援 `drawing_inspect`（查詢尺寸與可標註元素）、`drawing_tolerance`（加公差／配合）、`drawing_annotate`（粗糙度、基準、幾何公差、註記）、`drawing_text_size`（字高調整）、`drawing_complete`（補齊遺漏尺寸）、`drawing_apply` / `drawing_undo`。
+4. **輸出（`drawing_save` / `drawing_export` / `drawing_picture`）**：儲存為 `.3dbd` 工程圖檔；**PDF** 為單一檔案含全部頁，**DXF**／**SVG** 一個檔只有一張圖紙，多頁時每頁一個檔（第 n 頁為 `名稱-n.dxf`，回傳 `files` 列出全部）；`drawing_picture` 可輸出單頁／單視圖高解析 PNG。
+5. **多頁編修**：`drawing_inspect` 的尺寸、視圖與註記都帶 `page`；`drawing_tolerance`／`drawing_annotate`／`drawing_text_size` 作用於該尺寸所在頁；`drawing_complete` 以全部頁判斷缺漏；`drawing_apply` 可用 `pageIndex` 指定頁（2026-11-19 修正）。
+
+---
+
+### 2. 核心自動化能力
+- **主視圖與投影／剖視圖決策**：
+  - 主視圖與投影視圖若隱藏線比例過高，會自動以**剖視圖（`剖面 A-A`、`剖面 B-B`）**取代對應投影視圖以揭露內部結構。
+  - 只要圖上有剖視圖，主視圖或投影視圖的隱藏線比例 `>= 35%` 時即切換為 `hiddenRemoved`（隱藏虛線）。只看比例，不判斷剖面是否真的揭露了該視圖的隱藏特徵。
+  - B-B 只在規劃找得到剖切位置時建立（2026-11-19 起；原本找不到時會切在座標 0）。
+- **特徵覆蓋與延伸線貼合（[dimension.ts](packages/drawing/src/dimension.ts)）**：
+  - 自動標註 `X / Y / Z` 方向座標（`ordinate`）、線性尺寸（`linear`）、孔徑與圓角（`diameter` / `radius`），並依特徵拓樸展開全件覆蓋率檢查（`dimensionCoverage`）。
+  - 透過 `contourIntervals` / `contourAttach` 追蹤可見輪廓，讓延伸線從**實際特徵輪廓外側 `1 mm`（`GAP`）** 延伸出來，而非從視圖最外框起算。`linear` 自 2026-10-26（`c1807eb9`）即如此，`56a97b3b` 延伸到 `ordinate`；此函式在共用的 `@3db/drawing`，App 的工程圖也受影響。
+- **多頁拆圖與「同特徵集中」放大詳圖（`offloadMicroDetails`）**：
+  - 當第 1 頁有 **4 個以上**微圓角尺寸（`< 0.8 mm`，是計數而非密集度：四角各一個小圓角也會觸發）或產生正交第二剖面 `B-B` 時，自動新增第 2 頁（有詳圖時 `A3` 橫式，頁名與視圖名依工程圖語言），將微圓角依空間聚類（`3.5 mm` 內，每個父視圖最多 2～3 群）並連同**同特徵前綴（`featKey`）之關聯尺寸**集中移入放大詳圖。比例取 `20:1`、`15:1`、`10:1`、`8:1`、`5:1`… 中使圖紙直徑 `<= 52 mm` 的最大者；第 2 頁排版後若頁比例不小於放大圖，頁比例會調小以確保放大（2026-11-19 修正）。未被選入群的微圓角留在第 1 頁。
+  - 第 2 頁透過 `emptyRectangles` 將詳圖平均分配至左、右上方空白區域，避開標題欄與既有視圖。
+- **版面防擁擠與自檢（`checks`）**：
+  - 自動升級圖紙尺寸（`A4` → `A3` → `A2` → `A1`）以容納等角投影與降低擁擠度；執行字體高度、字元缺字（CJK）、越界（`outside`）、重疊（`overlaps`）、引線交叉（`crossings`）與失敗尺寸清理。
+
+---
+
+### 3. 實機驗證表現與已知限制
+- **實機成果（以 56 個特徵的 `R1-8032_Rev08_2D_完整修訂.3dbx` 為例；此檔與該次輸出不在 repo 中，下列數字未經本 repo 重現）**：
+  - 自動產出 **2 頁工程圖**（第 1 頁 `A1` 橫式 `20:1` 含 `下視`、`剖面 A-A`、`等角投影`；第 2 頁 `A3` 橫式 `5:1` 含 `剖面 B-B`、參照視圖與詳圖 `C–H`）及多頁 PDF。
+  - 達成 **`overlaps: 0`**、**`outside: 0`**、**`failed: []`**，且 **`X`（`10/10`）、`Y`（`23/23`）、`Z`（`11/11`）、圓角與孔洞（`107/107`）均 100% fully determined**。
+- **已知限制**：
+  - 斜面／斜邊（`slants`，該零件為 `0/22`）目前尚未支援全自動標註（ADR 0256 既有邊界）。
+  - 極高密度複雜零件仍可能需要人工透過 `drawing_annotate` / `drawing_apply` 微調特定引線角度與公差註記。

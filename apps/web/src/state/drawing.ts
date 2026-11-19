@@ -1634,18 +1634,27 @@ export class DrawingStore {
 
   // ------------------------------------------------------------ output and saving
 
-  /** The drawing as SVG, handed to the browser as a download. */
+  /** The drawing as SVG, handed to the browser as a download (the page shown: an SVG holds one sheet). */
   exportSvg(): void {
-    const name = this.name();
-    download(`${name}.svg`, toSvg(this.scene().scene), 'image/svg+xml');
-    this.host.notify(t('drawing.exported', { name: `${name}.svg` }));
+    this.exportSheet('svg', (scene) => toSvg(scene), 'image/svg+xml');
   }
 
-  /** The drawing as DXF (AC1015), handed to the browser as a download. */
+  /** The drawing as DXF (AC1015), handed to the browser as a download (the page shown: a DXF holds one sheet). */
   exportDxf(): void {
+    this.exportSheet('dxf', (scene) => toDxf(scene), 'application/dxf');
+  }
+
+  /**
+   * A one-sheet format of the page shown. A drawing of several pages names the file by its page (「name-2.dxf」, as the MCP export does) and says which page
+   * it is and how to get the others, so a page is never left out without a word.
+   */
+  private exportSheet(ext: 'svg' | 'dxf', write: (scene: Scene) => string, mime: string): void {
     const name = this.name();
-    download(`${name}.dxf`, toDxf(this.scene().scene), 'application/dxf');
-    this.host.notify(t('drawing.exported', { name: `${name}.dxf` }));
+    const pages = this.state.doc.pages.length;
+    const pageIndex = Math.max(0, Math.min(pages - 1, this.state.activePageIndex));
+    const file = pages > 1 ? `${name}-${pageIndex + 1}.${ext}` : `${name}.${ext}`;
+    download(file, write(this.scene(pageIndex).scene), mime);
+    this.host.notify(pages > 1 ? t('drawing.exportedPage', { name: file, page: pageIndex + 1, pages }) : t('drawing.exported', { name: file }));
   }
 
   /** The drawing as a PDF, with the font chosen for the characters Helvetica does not have; what could not be written is said. */

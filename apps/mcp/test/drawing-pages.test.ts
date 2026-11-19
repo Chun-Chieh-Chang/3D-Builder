@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import type { Command, DrawingDoc } from '@3db/model';
 import { dimensionRefs } from '@3db/model';
 import { readAnyDocumentFile } from '@3db/io';
+import { ratio } from '@3db/drawing';
 import { CadSession } from '../src/session';
+import { enlargeDetails } from '../src/drawingSession';
 import { callTool } from '../src/server';
 
 /**
@@ -68,6 +70,25 @@ it('edits, completes and exports every page of a two-page drawing', async () => 
   const second = doc0.pages[1]!.dimensions;
   expect(second.length).toBeGreaterThan(0); // the test needs dimensions on page 2, or it proves nothing
   expect(new Set(allKeys(doc0)).size).toBe(allKeys(doc0).length);
+
+  // page 2 and its detail views are named in the drawing's language (en here), not in Chinese written into the code
+  expect(doc0.pages[1]!.name).toBe('Sections and details');
+  const details = doc0.pages[1]!.views.filter((v) => v.kind === 'detail');
+  expect(details.length).toBeGreaterThan(0);
+  for (const v of details) {
+    if (v.kind !== 'detail') continue;
+    expect(v.name).toBe(`Detail ${v.label}`);
+    // a detail circle is at most 52 mm across on the sheet, and the view is enlarged against its page
+    expect(v.radius * ratio(v.scale!) * 2, v.id).toBeLessThanOrEqual(52 + 1e-9);
+    expect(ratio(v.scale!), v.id).toBeGreaterThan(ratio(doc0.pages[1]!.sheet.scale));
+  }
+  // a page fitted at a scale not below its detail views' takes a standard scale below the smallest of theirs
+  const least = Math.min(...details.map((v) => ratio(v.scale!)));
+  const tooLarge: DrawingDoc = { ...doc0, pages: doc0.pages.map((p, i) => (i === 1 ? { ...p, sheet: { ...p.sheet, scale: [20, 1] as [number, number] } } : p)) };
+  const fixed = enlargeDetails(tooLarge, 1);
+  expect(ratio(fixed.pages[1]!.sheet.scale)).toBeLessThan(least);
+  expect(fixed.pages[0]).toBe(tooLarge.pages[0]);
+  expect(enlargeDetails(doc0, 1)).toBe(doc0); // already enlarged: unchanged
 
   // the report says what is on each page
   expect(made.pageSummaries.map((p: { dimensions: number }) => p.dimensions)).toEqual(doc0.pages.map((p) => p.dimensions.length));
