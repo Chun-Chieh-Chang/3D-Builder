@@ -1,6 +1,6 @@
 import { CALLOUT_SYMBOL_FALLBACKS } from './calloutSymbols';
 import { ARROW, DIM_TEXT, GAP, OVERSHOOT, STACK_SCALE } from './dimension';
-import { LINE_STYLES, type LineStyle, type Scene, type SceneDimension, type SceneItem } from './scene';
+import { sceneLines, type LineStyle, type Scene, type SceneDimension, type SceneItem } from './scene';
 import { textWidthMm } from './sheet';
 
 /**
@@ -129,9 +129,14 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
   const { loose, blocks: blockItems } = splitByDimension(scene);
   const blockRecords = dims.map(() => handle());
 
+  // the sheet's own line styles (ADR 0260); a linetype of theirs that the standard list does not have (CNS 3's centre line) is written after it, from its dashes
+  const styles = sceneLines(scene);
+  const linetypes = [...DXF_LINETYPES];
+  for (const st of Object.values(styles))
+    if (st.dash && !linetypes.some((lt) => lt.name === st.linetype)) linetypes.push({ name: st.linetype, description: st.linetype, pattern: st.dash.map((d, i) => (i % 2 === 0 ? d : -d)) });
   const layers: { name: string; linetype: string; weight: number }[] = [
     { name: '0', linetype: 'CONTINUOUS', weight: 25 },
-    ...(extras?.layers ?? (Object.keys(LINE_STYLES) as LineStyle[]).map((k) => ({ name: LINE_STYLES[k].layer, linetype: LINE_STYLES[k].linetype, weight: Math.round(LINE_STYLES[k].width * 100) }))),
+    ...(extras?.layers ?? (Object.keys(styles) as LineStyle[]).map((k) => ({ name: styles[k].layer, linetype: styles[k].linetype, weight: Math.round(styles[k].width * 100) }))),
     { name: TEXT_LAYER, linetype: 'CONTINUOUS', weight: 25 },
   ];
 
@@ -176,7 +181,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
     o.g(16, 0).g(26, 0).g(36, 1).g(17, 0).g(27, 0).g(37, 0).g(40, scene.height).g(41, scene.width / scene.height).g(42, 50).g(43, 0).g(44, 0).g(50, 0).g(51, 0);
     o.int(71, 0).int(72, 100).int(73, 1).int(74, 3).int(75, 0).int(76, 0).int(77, 0).int(78, 0);
   });
-  table('LTYPE', H.ltypeTable, 2 + DXF_LINETYPES.length, () => {
+  table('LTYPE', H.ltypeTable, 2 + linetypes.length, () => {
     const record = (h: string, name: string, description: string, pattern: number[]) => {
       o.g(0, 'LTYPE').g(5, h).g(330, H.ltypeTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbLinetypeTableRecord').g(2, name).int(70, 0).g(3, description).int(72, 65).int(73, pattern.length);
       o.g(40, pattern.reduce((a, b) => a + Math.abs(b), 0));
@@ -184,7 +189,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
     };
     record(H.byBlock, 'ByBlock', '', []);
     record(H.byLayer, 'ByLayer', '', []);
-    for (const lt of DXF_LINETYPES) record(handle(), lt.name, lt.description, lt.pattern);
+    for (const lt of linetypes) record(handle(), lt.name, lt.description, lt.pattern);
   });
   table('LAYER', H.layerTable, layers.length, () => {
     for (const l of layers) o.g(0, 'LAYER').g(5, handle()).g(330, H.layerTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbLayerTableRecord').g(2, l.name).int(70, 0).int(62, 7).g(6, l.linetype).int(370, l.weight);
@@ -231,13 +236,13 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
       if (item.filled) {
         // a filled polygon: a fan of triangles from its first corner (a SOLID of three corners repeats the third)
         for (let k = 1; k + 1 < n; k++) {
-          entity('SOLID', LINE_STYLES[item.style].layer, 'AcDbTrace', item.width);
+          entity('SOLID', styles[item.style].layer, 'AcDbTrace', item.width);
           const p = [0, k, k + 1].map((j) => [item.points[2 * j]!, item.points[2 * j + 1]!] as const);
           o.g(10, p[0]![0]).g(20, p[0]![1]).g(30, 0).g(11, p[1]![0]).g(21, p[1]![1]).g(31, 0).g(12, p[2]![0]).g(22, p[2]![1]).g(32, 0).g(13, p[2]![0]).g(23, p[2]![1]).g(33, 0);
         }
         return;
       }
-      entity('LWPOLYLINE', LINE_STYLES[item.style].layer, 'AcDbPolyline', item.width);
+      entity('LWPOLYLINE', styles[item.style].layer, 'AcDbPolyline', item.width);
       o.int(90, n).int(70, item.closed ? 1 : 0);
       for (let i = 0; i < item.points.length; i += 2) o.g(10, item.points[i]!).g(20, item.points[i + 1]!);
     } else if (item.text !== '') {
@@ -266,7 +271,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
     // 0 rotated (horizontal or vertical), 1 aligned, 2 angular between two lines, 3 diameter, 4 radius; 32 says the block is this dimension's own, 128 that the text is where it is given
     const kind = gm.kind === 'linear' ? (gm.rotation === undefined ? 1 : 0) : gm.kind === 'diameter' ? 3 : gm.kind === 'radius' ? 4 : 2;
     const def = gm.kind === 'linear' ? gm.line : gm.kind === 'diameter' ? gm.far : gm.kind === 'radius' ? gm.centre : gm.second[1];
-    entity('DIMENSION', LINE_STYLES.dimension.layer, 'AcDbDimension');
+    entity('DIMENSION', styles.dimension.layer, 'AcDbDimension');
     o.g(2, block).g(10, def[0]).g(20, def[1]).g(30, 0).g(11, d.textAt[0]).g(21, d.textAt[1]).g(31, 0).int(70, kind + 32 + 128).int(71, 5).g(3, 'STANDARD').g(1, dimensionOverride(d));
     const point = (code: number, p: readonly [number, number]) => o.g(code, p[0]).g(code + 10, p[1]).g(code + 20, 0);
     if (gm.kind === 'linear') {

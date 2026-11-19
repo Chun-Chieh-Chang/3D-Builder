@@ -25,7 +25,7 @@ export async function plateScene(): Promise<{ scene: Scene; doc: DrawingDoc; val
   try {
     const plate = (await readPartFile(new Uint8Array(readFileSync(new URL('../golden/locating-plate.3dbx', import.meta.url))))).doc;
     const body = regen.rebuild(plate).body!;
-    let doc = applyDrawingCommand(createEmptyDrawing(), {
+    let doc = applyDrawingCommand(createEmptyDrawing('ISO'), {
       type: 'insertViews',
       views: [
         { id: 'view1', name: '上視', source: '定位板.3dbx', direction: 'top' },

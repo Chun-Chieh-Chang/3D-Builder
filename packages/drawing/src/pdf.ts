@@ -2,7 +2,7 @@ import { CALLOUT_SYMBOL_FALLBACKS } from './calloutSymbols';
 import { t } from '@3db/i18n';
 import { HELVETICA_CAP_HEIGHT, helveticaCode, helveticaWidth } from './helvetica';
 import { circlePolyline } from './geometry';
-import { LINE_STYLES, type Scene, type SceneImage, type SceneText } from './scene';
+import { LINE_STYLES, sceneLines, type Scene, type SceneImage, type SceneText } from './scene';
 import { FontError, subsetTrueType, type TrueTypeFont } from './ttf';
 
 /**
@@ -153,7 +153,7 @@ export function toPdf(sceneOrScenes: Scene | readonly Scene[], options: PdfOptio
     });
     for (const item of sc.items) {
       if (item.kind === 'polyline') {
-        const s = LINE_STYLES[item.style] ?? LINE_STYLES.visible;
+        const s = sceneLines(sc)[item.style] ?? LINE_STYLES.visible;
         const pts: string[] = [];
         for (let i = 0; i + 1 < item.points.length; i += 2) pts.push(`${num(item.points[i]! * PT)} ${num(item.points[i + 1]! * PT)} ${i === 0 ? 'm' : 'l'}`);
         if (pts.length < 2) continue;

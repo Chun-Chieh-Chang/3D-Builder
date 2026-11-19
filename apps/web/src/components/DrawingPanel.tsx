@@ -1,5 +1,5 @@
 import { t, type Locale } from '@3db/i18n';
-import { BREAK_GAP, DIM_STYLE_DEFAULT, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, canHatch, hatchStyleOf, displayOf, isCorner, isDerived, isShaded, page, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
+import { BREAK_GAP, DRAWING_STANDARDS, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, canHatch, hatchStyleOf, displayOf, isCorner, isDerived, isShaded, baseDimStyle, page, resolveDimStyle, standardOf, type DrawingStandard, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
 import { STANDARD_SCALES, viewCaptionTemplate, arrangementBase, lineAcrossBox, scaleText, type ViewLines } from '@3db/drawing';
 import { ACTIONS, openDrawingPart, shortcutOf } from '../actions';
 import { DimStyleFields } from './DimStyleFields';
@@ -532,6 +532,16 @@ export function DrawingPanel() {
               <option value="third">{t('drawing.projection.third')}</option>
             </select>
           </label>
+          <label className="pm-row" title={t('drawingUi.standardTip')}>
+            <span>{t('drawingUi.standard')}</span>
+            <select data-field="standard" value={standardOf(curPage.sheet)} onChange={(e) => d.setSheet({ standard: e.target.value as DrawingStandard })}>
+              {DRAWING_STANDARDS.map((s) => (
+                <option key={s} value={s}>
+                  {t(`drawingUi.standard.${s}`)}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="pm-row">
             <span>{t('drawing.title.scale')}</span>
             <select data-field="scale" value={scale} onChange={(e) => d.setSheet({ scale: parseScale(e.target.value) })}>
@@ -567,7 +577,7 @@ export function DrawingPanel() {
 
         <PMGroup title={t('drawingUi.dimStyle')} icon="dimension" group="dimStyle" open={isOpen('dimStyle')} onToggle={() => toggle('dimStyle')} hidden={!onSheetGroups}>
           <div className="sw-message">{t('drawingUi.dimStyleSheetTip')}</div>
-          <DimStyleFields scope="sheet" value={curPage.sheet.dimStyle ?? {}} base={DIM_STYLE_DEFAULT} onChange={(s) => d.setSheet({ dimStyle: s })} />
+          <DimStyleFields scope="sheet" value={curPage.sheet.dimStyle ?? {}} base={resolveDimStyle(baseDimStyle({ ...curPage.sheet, dimStyle: undefined }))} onChange={(s) => d.setSheet({ dimStyle: s })} />
           <label className="pm-row">
             <span>{t('drawingUi.dimCalloutStyle')}</span>
             <select data-field="sheetCalloutStyle" value={curPage.sheet.calloutStyle ?? 'text'} onChange={e => d.setSheet({ calloutStyle: e.target.value as 'text' | 'symbols' })}>

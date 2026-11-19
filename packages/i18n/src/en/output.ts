@@ -211,6 +211,8 @@ export const output: Translation = {
   'options.viewCubeStep': 'The arrows of the view cube turn the view by (degrees; its roll arrows too)',
   'viewOrientation.title': 'View Orientation',
   'options.template': 'Template for "New Part"',
+  'options.drawingStandard': 'Drafting standard of a new drawing',
+  'options.drawingStandardTip': 'The standard a new drawing is drawn to: its line widths, dashes and frame. A drawing keeps its own standard; change it in its sheet settings.',
   'options.pickFilter': 'Elements that can be picked at the start',
   'options.pickFilterBar': 'Show the selection filter bar (toggled with F5)',
   'options.hint': 'These options are kept in this browser and are not part of the part file.',

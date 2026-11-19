@@ -1,7 +1,7 @@
 import { projectionReferenceLines } from './projectionRefs';
 import { bendTableItems } from './bendTable';
 import { getLocale, t, withLocale } from '@3db/i18n';
-import { axesOf, DIM_STYLE_DEFAULT, hatchStyleOf, displayOf, isShaded, page, resolveDimStyle, resolveTitleStyle, sectionEndDirections, type HatchStyle, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
+import { axesOf, baseDimStyle, DIM_STYLE_DEFAULT, hatchStyleOf, displayOf, isShaded, lineGroupOf, page, profileOf, DRAWING_PROFILES, type DrawingProfile, type LineGroup, resolveDimStyle, resolveTitleStyle, sectionEndDirections, standardOf, type HatchStyle, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
 import type { ShadeImage } from './shade';
 import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
 import { annotationItems } from './gdt';
@@ -19,15 +19,34 @@ import { surfaceFinishItems } from './surfaceFinish';
 
 export type LineStyle = 'visible' | 'hidden' | 'center' | 'thin' | 'frame' | 'dimension';
 
-/** How each style is drawn (ISO 128): the width of the line in mm and its dashes (on, off, … in mm), and the layer of the DXF. */
-export const LINE_STYLES: Record<LineStyle, { width: number; dash: number[] | null; layer: string; linetype: string }> = {
-  visible: { width: 0.5, dash: null, layer: 'VISIBLE', linetype: 'CONTINUOUS' },
-  hidden: { width: 0.25, dash: [3, 1], layer: 'HIDDEN', linetype: 'DASHED' },
-  center: { width: 0.25, dash: [12, 2, 2, 2], layer: 'CENTER', linetype: 'CENTER' },
-  thin: { width: 0.25, dash: null, layer: 'THIN', linetype: 'CONTINUOUS' },
-  frame: { width: 0.7, dash: null, layer: 'FRAME', linetype: 'CONTINUOUS' },
-  dimension: { width: 0.25, dash: null, layer: 'DIMENSION', linetype: 'CONTINUOUS' },
-};
+/** How a style is drawn: the width of the line in mm, its dashes (on, off, … in mm), and the layer and linetype of the DXF. */
+export interface LineLook {
+  width: number;
+  dash: number[] | null;
+  layer: string;
+  linetype: string;
+}
+export type LineStyles = Record<LineStyle, LineLook>;
+
+/** How a profile's line group draws each style (ADR 0260): visible lines thick, hidden lines medium, the others thin, with the profile's dashes and frame line. */
+function stylesOf(p: DrawingProfile, g: LineGroup): LineStyles {
+  return {
+    visible: { width: g.thick, dash: null, layer: 'VISIBLE', linetype: 'CONTINUOUS' },
+    hidden: { width: g.medium, dash: [...p.hiddenDash], layer: 'HIDDEN', linetype: 'DASHED' },
+    center: { width: g.thin, dash: [...p.centerDash], layer: 'CENTER', linetype: p.centerLinetype },
+    thin: { width: g.thin, dash: null, layer: 'THIN', linetype: 'CONTINUOUS' },
+    frame: { width: p.frameLine, dash: null, layer: 'FRAME', linetype: 'CONTINUOUS' },
+    dimension: { width: g.thin, dash: null, layer: 'DIMENSION', linetype: 'CONTINUOUS' },
+  };
+}
+
+/** How each style is drawn to ISO (a sheet that names no standard, or ISO): the same on every size, from `DRAWING_PROFILES.ISO`. */
+export const LINE_STYLES: LineStyles = stylesOf(DRAWING_PROFILES.ISO, DRAWING_PROFILES.ISO.lines.A3);
+
+/** How each style is drawn on a sheet (ADR 0260): its standard's profile and its size's line group. An ISO sheet's is `LINE_STYLES` itself. */
+export function lineStylesFor(sheet: Pick<DrawingSheet, 'size' | 'standard'>): LineStyles {
+  return standardOf(sheet) === 'ISO' ? LINE_STYLES : stylesOf(profileOf(sheet), lineGroupOf(sheet));
+}
 
 export interface ScenePolyline {
   kind: 'polyline';
@@ -113,7 +132,13 @@ export interface Scene {
   images?: SceneImage[];
   /** The drawing's dimension style, which a DXF writes as its dimension style. */
   dimStyle?: Required<DimStyle>;
+  /** How each line style is drawn on this sheet (ADR 0260); absent: `LINE_STYLES` (ISO). Every output reads it, so the PDF, SVG, DXF and picture agree. */
+  lines?: LineStyles;
 }
+
+/** How a scene draws each line style: its sheet's, or ISO's for a scene that says nothing. */
+export const sceneLines = (scene: Pick<Scene, 'lines'>): LineStyles => scene.lines ?? LINE_STYLES;
+
 
 const rect = (r: Rect, style: LineStyle): ScenePolyline => ({ kind: 'polyline', points: [r.x, r.y, r.x + r.w, r.y, r.x + r.w, r.y + r.h, r.x, r.y + r.h], style, closed: true });
 
@@ -379,7 +404,7 @@ function buildSceneIn(
     const axes = view ? axesOf(pg.views, pg.sheet.projection, view) : null;
     if (!view || !own || !axes) continue; // nothing to draw it on yet
     const effective = d.kind === 'diameter' ? { ...d, calloutStyle: d.calloutStyle ?? pg.sheet.calloutStyle ?? 'text' } : d;
-    const outcome = evaluateDimension(effective, elements.get(d.id), axes, own, pg.sheet.unit ?? 'mm', resolveDimStyle(pg.sheet.dimStyle, d.style), projectionReferenceLines(resolved.get(d.view), own));
+    const outcome = evaluateDimension(effective, elements.get(d.id), axes, own, pg.sheet.unit ?? 'mm', resolveDimStyle(baseDimStyle(pg.sheet), d.style), projectionReferenceLines(resolved.get(d.view), own));
     dimensions.set(d.id, outcome);
     if (!('error' in outcome)) {
       items.push(...outcome.items.map((i) => ({ ...i, group: d.id })));
@@ -409,7 +434,18 @@ function buildSceneIn(
     items.push(...holeTableItems(table, rows, own, pg.sheet, pg.sheet.unit ?? 'mm'));
     tableBoxes.set(table.id, holeTableBox(table, rows, pg.sheet, pg.sheet.unit ?? 'mm'));
   }
-  const scene: Scene = { width: m.width, height: m.height, items, ...(sceneDimensions.length > 0 ? { dimensions: sceneDimensions } : {}), ...(images.length > 0 ? { images } : {}), ...(pg.sheet.dimStyle ? { dimStyle: resolveDimStyle(pg.sheet.dimStyle) } : {}) };
+  // an ISO sheet's scene says nothing of its lines and dimension style beyond what it always did, so what is written from it is what was written before v39
+  const iso = standardOf(pg.sheet) === 'ISO';
+  const dimBase = baseDimStyle(pg.sheet);
+  const scene: Scene = {
+    width: m.width,
+    height: m.height,
+    items,
+    ...(sceneDimensions.length > 0 ? { dimensions: sceneDimensions } : {}),
+    ...(images.length > 0 ? { images } : {}),
+    ...(dimBase ? { dimStyle: resolveDimStyle(dimBase) } : {}),
+    ...(iso ? {} : { lines: lineStylesFor(pg.sheet) }),
+  };
   return { scene, placed, dimensions, tables, tableBoxes, balloons };
 }
 

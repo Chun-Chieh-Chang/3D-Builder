@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import { countersFor } from './ids';
-import { checkViewCaption, dimensionRefs, validDrawingPointRef, validProjectionRef, DRAWING_SCHEMA_VERSION, type Dimension, type DrawingDoc } from './drawing';
+import { checkViewCaption, dimensionRefs, validDrawingPointRef, validProjectionRef, DRAWING_SCHEMA_VERSION, DRAWING_STANDARDS, type Dimension, type DrawingDoc, type DrawingStandard } from './drawing';
 import { ASSEMBLY_SCHEMA_VERSION, SCHEMA_VERSION, type AssemblyDoc, type PartDoc } from './schema';
 
 /**
@@ -476,6 +476,9 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v38: a linear dimension's line may be drawn on the view (`insideAt`): optional, nothing to convert; the version keeps an older program from opening a
   // drawing whose dimension line it would draw outside the view.
   37: (doc) => doc,
+  // v39: the sheet's drafting standard (ADR 0260). Nothing to convert: a sheet that names none is ISO, as every drawing before v39 was drawn; the version keeps
+  // an older program from opening a CNS drawing and drawing it to ISO's widths and frame without saying so.
+  38: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {
@@ -486,6 +489,8 @@ export function parseDrawing(text: string): DrawingDoc {
   if (!Array.isArray(pages) || pages.length === 0) throw new FormatError(t('format.noViews'));
   for (const p of pages) {
     if (!p.sheet || typeof p.sheet !== 'object') throw new FormatError(t('format.noViews'));
+    const standard = (p.sheet as Json).standard;
+    if (standard !== undefined && !DRAWING_STANDARDS.includes(standard as DrawingStandard)) throw new FormatError(t('drawing.badStandard', { standard: String(standard) }));
     p.title ??= {};
     p.views ??= [];
     p.dimensions ??= [];

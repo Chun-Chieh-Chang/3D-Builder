@@ -2,7 +2,7 @@ import { ANGLE_STEP, GRID_SPACING, SNAP_ITEMS } from '@3db/sketch/snaps';
 import { useEffect, useMemo, useState } from 'react';
 import { getLocale, LOCALES, t, type Locale } from '@3db/i18n';
 import { PICK_FILTER_LABEL } from '../strings';
-import { dimensionName, formatMass, formatQuantity, isDimension, massGrams, MATERIALS, materialById, Parameters, PART_TEMPLATES, settingsOf, type AppearanceTarget, type Command, type DocSettings, type SketchFeature } from '@3db/model';
+import { dimensionName, formatMass, formatQuantity, isDimension, massGrams, MATERIALS, materialById, Parameters, PART_TEMPLATES, settingsOf, DRAWING_STANDARDS, type DrawingStandard, type AppearanceTarget, type Command, type DocSettings, type SketchFeature } from '@3db/model';
 import { ACTIONS, shortcutOf } from '../actions';
 import { conflictWith, formatEvent, overrides, resetOverrides, setOverride, subscribeShortcuts } from '../shortcuts';
 import { AUTOSAVE_SECONDS, VIEW_ARROW_STEP } from '../options';
@@ -805,6 +805,14 @@ export function OptionsDialog() {
             {PART_TEMPLATES.map((x) => (
               <option key={x.id} value={x.id}>
                 {t(`template.${x.id}`)}
+              </option>
+            ))}
+          </select>
+          <label htmlFor="option-drawing-standard" title={t('options.drawingStandardTip')}>{t('options.drawingStandard')}</label>
+          <select id="option-drawing-standard" data-option="drawingStandard" value={options.drawingStandard} onChange={(e) => store.setOptions({ drawingStandard: e.target.value as DrawingStandard })}>
+            {DRAWING_STANDARDS.map((s) => (
+              <option key={s} value={s}>
+                {t(`drawingUi.standard.${s}`)}
               </option>
             ))}
           </select>

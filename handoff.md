@@ -1,5 +1,36 @@
 # 交接與接續工作
 
+## 2026-11-19（傍晚）— ADR 0260 第一期：製圖標準設定檔（CNS 預設）——已驗證並提交
+
+- **任務 ID**：ADR-0260-P1。來源：R1-8032 工程圖審查 →《工程圖標註與配置通則》（`out/agent/工程圖標註與配置通則.md`）→ 四期改善計畫（`out/agent/自動出圖改善計畫.md`）。`out/` 不入庫。
+- **使用者決定（2026-11-19）**：
+  1. 預設 CNS 3，ISO 可切換；整份工程圖一個標準（設一頁即全部頁）。
+  2. 沒有 `standard` 欄位的舊圖視為 ISO，外觀不變。
+  3. SSOT：系統預設只寫在 `DEFAULT_DRAWING_STANDARD`（`packages/model/src/drawing.ts`）；所有標準數值集中在 `DRAWING_PROFILES`。
+  4. 「選項」加入「新工程圖的製圖標準」（`SystemOptions.drawingStandard`，初值取上述常數）。
+  5. 第二到第四期（視圖配置、標註佈置與內容、品質閘門）待第一期提交後再開工，各自一份 ADR。
+- **已完成**：
+  - 模型：`sheet.standard`、圖面結構版本 38 → 39（`serialize.ts` 遷移＋讀檔驗證）、`DRAWING_PROFILES`／`profileOf`／`lineGroupOf`／`frameMarginsOf`／`baseDimStyle`、`createEmptyDrawing(standard = DEFAULT_DRAWING_STANDARD)`、`setSheet` 驗證並套用到全部頁。
+  - 繪圖：`LINE_STYLES` 與 `lineStylesFor` 由設定表推出、`Scene.lines`（ISO 不帶）、`sceneLines`；`sheetMetrics` 圖框取自設定表；SVG／PDF／DXF（圖層線寬與 `CENTER_CNS` 線型）／PNG 預覽都讀場景線型；CNS 尺寸線預設為細線寬。
+  - MCP：`drawing_create` 新增 `standard`，說明文字讀常數。網頁：圖紙設定「製圖標準」選單、「選項」預設、兩個尺寸樣式面板的基準改用 `baseDimStyle`、新圖讀選項。
+  - 文件：ADR `docs/adr/0260-drawing-standard-profile.md`、`help.conceptDrawingDimensions.body`（中英）、i18n 字串、`docs/repository-inventory.md`（docs:sync）、DEV_LOG。
+  - 測試：新增 `tests/phase5/drawing-standard.test.ts` 44 項；7 種突變全部轉紅。既有 7 檔 12 項以 ISO 手算的測試改用 `createEmptyDrawing('ISO')`（含 `tests/support/outputScene.ts`），期望值與容差未改。
+  - 舊檔不變（驗收 1-4）：4 個 golden 零件以 ISO 出圖匯出 SVG／DXF／PDF，14/14 與 `db051b9a` 逐位元組相同；改版前連跑兩次相同；以 CNS 跑則 14/14 不同。kit 在 `tests/kit/standard-baseline.kit.ts`（暫存、**不提交**），比對腳本 `scratch/cmp-baseline.cjs`。
+- **驗證結果**：
+  1. 驗收 1-8 通過：typecheck、四項 lint、單元測試 496 檔通過、5 略過，6270 項通過、30 略過、0 失敗。
+  2. 驗收 1-9：完整 `verify:ui` 280 列，278 通過。`manual-drawing-linked.js` 是本次造成（置中檢查以 ISO A3 手算，CNS 圖框右移 5 mm），已改該腳本的新圖為 ISO（一行），單獨重跑通過。**`manual-browser-projects.js` 間歇失敗：單獨 4 次，在變更後的樹 2 次 ERROR、在乾淨 `db051b9a` worktree 1 次 ERROR，每次卡的步驟不同（計時競爭）。不是本次造成，但沒有修好；依 AGENTS §3.6 須使用者同意延後，尚未取得（見下）。**
+- **未完成**：
+  1. **`manual-browser-projects.js` 已獲使用者同意延後（2026-11-19）**：間歇失敗（乾淨 `db051b9a` 同樣 4 次中 1 次失敗），不是本次造成，另案處理（計時競爭，每次卡的步驟不同）。下次動 e2e 或專案管理時修掉。
+  2. 修正後以 `npm run verify:ui -- --only "manual-drawing-linked"` 單獨通過（已做）；其餘 277 列在改腳本前後程式碼未變，不重跑。
+  3. 使用者已同意提交（2026-11-19）；不提交：`tests/kit/standard-baseline.kit.ts`、`.claude/launch.json` 的 progress 設定。
+  4. 清理：`.claude/worktrees/p1-baseline`（乾淨 commit 的 worktree，含 `npm ci` 的 node_modules，供重現用）與 `scratch/` 的日誌；刪除前須使用者同意（AGENTS 全域規則第 8 條）。
+- **已修改（未提交）**：`apps/mcp/src/drawingSession.ts`、`apps/mcp/src/drawingTools.ts`、`apps/web/src/components/{DimensionPanel,DrawingPanel,ParametersDialogs}.tsx`、`apps/web/src/options.ts`、`apps/web/src/state/store.ts`、`packages/drawing/src/{dxf,pdf,scene,sheet,sheetRaster,svg}.ts`、`packages/i18n/src/{en,zh-TW}/{drawing,help,output}.ts`、`packages/model/src/{drawing,serialize}.ts`、`tests/phase5/drawing-{annotations,derived,document,layout,linked}.test.ts`、`tests/support/outputScene.ts`、`docs/repository-inventory.md`、`DEV_LOG.md`、`handoff.md`；新增 `tests/phase5/drawing-standard.test.ts`、`docs/adr/0260-drawing-standard-profile.md`。`.claude/launch.json` 多了 `progress` 設定（本機用，不提交）。
+- **未解決／注意**：
+  - CNS 數值取自 CNS 教材（淡江《機械畫》第 1 章），未讀 CNS 3 原文；A0、A2、A3 的線寬組教材未給（暫取 A1／A4 組）；CNS 最小字高表未讀到。
+  - 本期未改：割面線兩端粗線、字高、標題欄（屬後續各期）。
+- **進度頁**：`out/progress/`（`index.html`、`state.json`、`server.mjs`），以 `.claude/launch.json` 的 `progress` 設定啟動（127.0.0.1:5480，每 3 分鐘更新；`/live.json` 即時讀 `state.json` 中 `live` 指定的日誌）。用完要停掉，不要留著佔埠。
+- **下一步**：開第二期（視圖配置，ADR 另取號：開工時以 `git log origin/main` 確認）。
+
 ## 2026-11-19（午）— 「3D 模型自動轉工程圖」審查與修正（ADR 0256 後續，已推送）
 
 - **審查**：讀根目錄「將 3D 模型檔案自動轉為工程圖.txt」對照程式。單頁流程有測試支撐；`71290bc0`／`56a97b3b` 的多頁與局部放大圖延伸不完整，且文件多處與程式不符。審查文件已更正並一併提交。

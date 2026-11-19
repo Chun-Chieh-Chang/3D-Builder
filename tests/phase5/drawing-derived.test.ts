@@ -101,7 +101,7 @@ describe('where a derived view looks from', () => {
   });
 
   it('is found through the parents, and the source of a derived view is its root\'s', () => {
-    const doc: DrawingDoc = applyDrawingCommand(createEmptyDrawing(), {
+    const doc: DrawingDoc = applyDrawingCommand(createEmptyDrawing('ISO'), {
       type: 'insertViews',
       views: [
         { id: 'view1', name: 'front', source: 'a.3dbx', direction: 'front' },
@@ -117,7 +117,7 @@ describe('where a derived view looks from', () => {
 });
 
 describe('the derived views in the document', () => {
-  const base = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [{ id: 'view1', name: '前視', source: 'a.3dbx', direction: 'front' }] });
+  const base = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing('ISO'), { type: 'insertViews', views: [{ id: 'view1', name: '前視', source: 'a.3dbx', direction: 'front' }] });
 
   it('checks each kind: a parent that is there, a section line that is not a point, a letter, a radius', () => {
     const d = base();
@@ -265,7 +265,7 @@ describe('the plate cut through a hole (C16.3)', () => {
 
 describe('where the derived views go and what is drawn on the parent', () => {
   const lines = (w: number, h: number, x = 0, y = 0): ViewLines => ({ visible: [[x, y, x + w, y + h]], hidden: [], box: { min: [x, y], max: [x + w, y + h] } });
-  const doc = (views: DrawingView[], sheet: Partial<DrawingPage['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet: { projection: 'first', ...sheet } }), { type: 'insertViews', views });
+  const doc = (views: DrawingView[], sheet: Partial<DrawingPage['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing('ISO'), { type: 'setSheet', sheet: { projection: 'first', ...sheet } }), { type: 'insertViews', views });
   const front: DrawingView = { id: 'f', name: 'f', source: 'a.3dbx', direction: 'front' };
 
   it('a projected view goes on its side, a gap from the parent, in line with it: the origin of the model at the same height', () => {

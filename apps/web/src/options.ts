@@ -1,4 +1,4 @@
-import { PART_TEMPLATES, type PartTemplateId } from '@3db/model';
+import { DEFAULT_DRAWING_STANDARD, DRAWING_STANDARDS, PART_TEMPLATES, type DrawingStandard, type PartTemplateId } from '@3db/model';
 import { DEFAULT_SNAPS, parseSnapSettings, type SnapSettings } from '@3db/sketch/snaps';
 
 /**
@@ -12,6 +12,8 @@ export interface SystemOptions {
   autosaveSeconds: number;
   /** What 「新零件」 makes (B1.4). */
   defaultTemplate: PartTemplateId;
+  /** The drafting standard a new drawing is made to (ADR 0260); at first the system's (`DEFAULT_DRAWING_STANDARD`). */
+  drawingStandard: DrawingStandard;
   /** Which kinds of element the graphics area lets be picked (D5.4): model faces, edges and vertices, and the reference planes (ADR 0127). What 「選項」 sets takes effect at once and is kept for the next page. */
   pickFilter: { faces: boolean; edges: boolean; vertices: boolean; planes: boolean };
   /** Whether the graphics area shows the selection filter bar (ADR 0145; SolidWorks hides its Selection Filter toolbar until asked). */
@@ -37,6 +39,7 @@ export const DEFAULT_OPTIONS: SystemOptions = {
   autosave: true,
   autosaveSeconds: 5,
   defaultTemplate: 'blank',
+  drawingStandard: DEFAULT_DRAWING_STANDARD,
   pickFilter: { faces: true, edges: true, vertices: true, planes: true },
   pickFilterBar: false,
   datumOffset: '10',
@@ -63,6 +66,7 @@ export function parseOptions(raw: unknown): SystemOptions {
     autosave: typeof o.autosave === 'boolean' ? o.autosave : DEFAULT_OPTIONS.autosave,
     autosaveSeconds: Math.min(AUTOSAVE_SECONDS.max, Math.max(AUTOSAVE_SECONDS.min, Math.round(seconds))),
     defaultTemplate: PART_TEMPLATES.some((x) => x.id === o.defaultTemplate) ? (o.defaultTemplate as PartTemplateId) : DEFAULT_OPTIONS.defaultTemplate,
+    drawingStandard: DRAWING_STANDARDS.includes(o.drawingStandard as DrawingStandard) ? (o.drawingStandard as DrawingStandard) : DEFAULT_OPTIONS.drawingStandard,
     pickFilter: { faces: on(filter.faces), edges: on(filter.edges), vertices: on(filter.vertices), planes: on(filter.planes) },
     pickFilterBar: typeof o.pickFilterBar === 'boolean' ? o.pickFilterBar : DEFAULT_OPTIONS.pickFilterBar,
     datumOffset: typeof o.datumOffset === 'string' && Number.isFinite(Number(o.datumOffset)) && o.datumOffset.trim() !== '' ? o.datumOffset.trim() : DEFAULT_OPTIONS.datumOffset,

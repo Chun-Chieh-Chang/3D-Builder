@@ -8,11 +8,11 @@ import { olderDrawingFile } from '../support/drawingVersion';
 import { drawingFileName, readAnyDocumentFile, writeAssemblyFile, writeDrawingFile } from '@3db/io';
 
 const view = (id: string, direction: ModelDrawingView['direction'] = 'front', extra: Partial<ModelDrawingView> = {}): DrawingView => ({ id, name: id, source: '零件/基板.3dbx', direction, ...extra });
-const withViews = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [view('view1'), view('view2', 'top'), view('view3', 'right')] });
+const withViews = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing('ISO'), { type: 'insertViews', views: [view('view1'), view('view2', 'top'), view('view3', 'right')] });
 
 describe('the drawing document', () => {
   it('starts as an A3 landscape sheet at 1:1 in third angle, with no views and an empty title block', () => {
-    const d = createEmptyDrawing();
+    const d = createEmptyDrawing('ISO');
     expect(d).toMatchObject({ kind: 'drawing', schemaVersion: DRAWING_SCHEMA_VERSION, pages: [{ id: 'page1', name: '', sheet: { size: 'A3', orientation: 'landscape', projection: 'third', scale: [1, 1] }, views: [], title: {} }] });
   });
 
@@ -48,8 +48,8 @@ describe('the drawing document', () => {
   });
 
   it('writes the sheet and the title block: a field written, a field taken away by an empty text', () => {
-    let d = applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet: { size: 'A4', orientation: 'portrait', projection: 'third', scale: [1, 2] } });
-    expect(page(d).sheet).toEqual({ size: 'A4', orientation: 'portrait', projection: 'third', scale: [1, 2] });
+    let d = applyDrawingCommand(createEmptyDrawing('ISO'), { type: 'setSheet', sheet: { size: 'A4', orientation: 'portrait', projection: 'third', scale: [1, 2] } });
+    expect(page(d).sheet).toEqual({ size: 'A4', orientation: 'portrait', projection: 'third', scale: [1, 2], standard: 'ISO' });
     d = applyDrawingCommand(d, { type: 'setTitle', field: 'drawingName', value: ' 基板加工圖 ' });
     d = applyDrawingCommand(d, { type: 'setTitle', field: 'material', value: 'S45C' });
     expect(page(d).title).toEqual({ drawingName: '基板加工圖', material: 'S45C' });
@@ -60,7 +60,7 @@ describe('the drawing document', () => {
   });
 
   it('undoes and redoes, one step for each command', () => {
-    const h = new DrawingHistory(createEmptyDrawing());
+    const h = new DrawingHistory(createEmptyDrawing('ISO'));
     h.execute({ type: 'insertViews', views: [view('view1')] }, 'add');
     h.execute({ type: 'setTitle', field: 'drawingNo', value: 'D-001' }, 'title');
     expect(page(h.doc).title).toEqual({ drawingNo: 'D-001' });
@@ -93,13 +93,13 @@ describe('the drawing file (.3dbd)', () => {
 
   it('refuses text that is not a drawing, and a drawing from a newer version', () => {
     expect(() => parseDrawing('{"kind":"part"}')).toThrow(/工程圖/);
-    expect(() => parseDrawing(JSON.stringify({ ...createEmptyDrawing(), schemaVersion: 99 }))).toThrow(/99/);
+    expect(() => parseDrawing(JSON.stringify({ ...createEmptyDrawing('ISO'), schemaVersion: 99 }))).toThrow(/99/);
     expect(() => parseDrawing(JSON.stringify({ kind: 'drawing', schemaVersion: 1 }))).toThrow();
   });
 
   it('reads a drawing from before the surface finishes: it has none', () => {
     // v9 had views, dimensions and tables but no surface finishes
-    const read = parseDrawing(JSON.stringify(olderDrawingFile(createEmptyDrawing(), 9)));
+    const read = parseDrawing(JSON.stringify(olderDrawingFile(createEmptyDrawing('ISO'), 9)));
     expect(read.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     expect(page(read).surfaceFinishes).toEqual([]);
   });

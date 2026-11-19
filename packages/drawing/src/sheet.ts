@@ -1,5 +1,5 @@
 import { HELVETICA_CAP_HEIGHT, helveticaCode, helveticaWidth } from './helvetica';
-import type { DrawingSheet, SheetSize, TitleField } from '@3db/model';
+import { frameMarginsOf, type DrawingSheet, type SheetSize, type TitleField } from '@3db/model';
 
 /**
  * The sheet (C16.1, ISO 5457 and ISO 7200): its size, the frame, and the title block at the lower right, all in mm from the lower left corner of the sheet.
@@ -18,7 +18,7 @@ export interface Rect {
 export interface SheetMetrics {
   width: number;
   height: number;
-  /** The frame of the drawing: 20 mm from the left edge (for filing), 10 mm from the others on A4 and A3, 20 mm on the larger sheets. */
+  /** The frame of the drawing, as far from the edges as the sheet's standard puts it (`frameMarginsOf`). */
   frame: Rect;
   titleBlock: Rect;
   /** Where the views go: the frame above the title block, kept clear of the frame's own line. */
@@ -27,11 +27,12 @@ export interface SheetMetrics {
 
 export const TITLE_BLOCK = { width: 180, height: 48 } as const;
 
-export function sheetMetrics(sheet: Pick<DrawingSheet, 'size' | 'orientation'>): SheetMetrics {
+export function sheetMetrics(sheet: Pick<DrawingSheet, 'size' | 'orientation' | 'standard'>): SheetMetrics {
   const [lw, lh] = SIZES[sheet.size];
   const [width, height] = sheet.orientation === 'landscape' ? [lw, lh] : [lh, lw];
-  const margin = sheet.size === 'A4' || sheet.size === 'A3' ? 10 : 20;
-  const frame: Rect = { x: 20, y: margin, w: width - 20 - margin, h: height - 2 * margin };
+  // the frame as far from the edges as the sheet's standard puts it (ADR 0260, `DRAWING_PROFILES`)
+  const { left, other: margin } = frameMarginsOf(sheet);
+  const frame: Rect = { x: left, y: margin, w: width - left - margin, h: height - 2 * margin };
   const titleBlock: Rect = { x: frame.x + frame.w - TITLE_BLOCK.width, y: frame.y, w: TITLE_BLOCK.width, h: TITLE_BLOCK.height };
   const pad = 8;
   const area: Rect = { x: frame.x + pad, y: frame.y + TITLE_BLOCK.height + pad, w: frame.w - 2 * pad, h: frame.h - TITLE_BLOCK.height - 2 * pad };

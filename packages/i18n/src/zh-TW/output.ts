@@ -209,6 +209,8 @@ export const output = {
   'options.viewCubeStep': '視角方塊箭頭旋轉的角度（度；滾轉箭頭也用它）',
   'viewOrientation.title': '視角方位',
   'options.template': '「新零件」使用的範本',
+  'options.drawingStandard': '新工程圖的製圖標準',
+  'options.drawingStandardTip': '新建工程圖依哪一個標準繪製：線寬、線段與圖框。已存在的工程圖保留它自己的標準，可在該圖的圖紙設定中更改。',
   'options.pickFilter': '開始時可以點選的元素',
   'options.pickFilterBar': '顯示選擇濾器列（F5 切換）',
   'options.hint': '這些選項存在這個瀏覽器裡，不屬於零件檔。',

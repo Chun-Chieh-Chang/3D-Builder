@@ -28,6 +28,7 @@ import {
   type DimensionTolerance,
   type DrawingCommand,
   type DrawingDoc,
+  type DrawingStandard,
   type DrawingPage,
   type DrawingView,
   type GeometricCharacteristic,
@@ -114,6 +115,8 @@ export interface CreateOptions {
   orientation?: 'landscape' | 'portrait';
   scale?: Scale;
   projection?: 'first' | 'third';
+  /** The drafting standard (ADR 0260); absent: CNS 3, as every new drawing. */
+  standard?: DrawingStandard;
   title?: Partial<Record<TitleField, string>>;
   ordinateAbove?: number;
   path?: string;
@@ -302,7 +305,7 @@ export class DrawingSession {
     const sourceRel = relative(dirname(full), s.path).split(sep).join('/');
 
     let doc = createEmptyDrawing();
-    doc = applyDrawingCommand(doc, { type: 'setSheet', sheet: { projection, orientation: o.orientation ?? 'landscape' } });
+    doc = applyDrawingCommand(doc, { type: 'setSheet', sheet: { projection, orientation: o.orientation ?? 'landscape', ...(o.standard ? { standard: o.standard } : {}) } });
     const ids = () => new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const mainId = ids().take('view');
     doc = applyDrawingCommand(doc, { type: 'insertViews', views: [{ id: mainId, name: t(`drawing.view.${main}`), source: sourceRel, direction: main }] });

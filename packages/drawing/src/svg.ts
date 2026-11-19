@@ -1,4 +1,4 @@
-import { LINE_STYLES, type Scene } from './scene';
+import { sceneLines, type Scene } from './scene';
 import { shadeHref } from './shade';
 
 const num = (v: number) => String(Math.round(v * 1000) / 1000 + 0);
@@ -23,7 +23,7 @@ export function toSvg(scene: Scene, options: { font?: string; /** Screen zoom co
   });
   for (const item of scene.items) {
     if (item.kind === 'polyline') {
-      const s = LINE_STYLES[item.style];
+      const s = sceneLines(scene)[item.style];
       const pts: string[] = [];
       for (let i = 0; i < item.points.length; i += 2) pts.push(`${num(item.points[i]!)},${y(item.points[i + 1]!)}`);
       const attrs = `fill="${item.filled ? '#000000' : 'none'}" stroke="#000000" stroke-width="${strokeWidth(item.width ?? s.width)}" stroke-linecap="round" stroke-linejoin="round"${s.dash ? ` stroke-dasharray="${s.dash.join(' ')}"` : ''}`;

@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 38;
+export const DRAWING_SCHEMA_VERSION = 39;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -52,7 +52,100 @@ export interface DrawingSheet {
   titleStyle?: TitleStyle;
   /** The font chosen for PDF export (e.g. 'sans', 'kai', 'serif', 'fangsong', a system font name, or custom font file name). */
   pdfFont?: string;
+  /**
+   * The drafting standard the sheet is drawn to (v39, ADR 0260): its line widths, its dashes and its frame. Absent is ISO, which is what every drawing made
+   * before v39 was drawn to, so an older drawing looks the same when it is opened again; a new drawing is made to the system's default
+   * (`DEFAULT_DRAWING_STANDARD`, or the one chosen in 「選項」).
+   */
+  standard?: DrawingStandard;
 }
+
+/** The drafting standards a sheet can be drawn to (ADR 0260): Taiwan's CNS 3 and ISO (128-20 lines, 5457 frame). */
+export type DrawingStandard = 'CNS' | 'ISO';
+export const DRAWING_STANDARDS: readonly DrawingStandard[] = ['CNS', 'ISO'];
+
+/**
+ * The standard a new drawing is made to, everywhere in the system (ADR 0260): the web app (unless 「選項」 says otherwise), the MCP tools and the CLI. This is
+ * the one place it is written.
+ */
+export const DEFAULT_DRAWING_STANDARD: DrawingStandard = 'CNS';
+
+/** The standard a sheet that names none was drawn to: ISO, as every drawing before v39 was. */
+export const LEGACY_DRAWING_STANDARD: DrawingStandard = 'ISO';
+
+/** The standard a sheet is drawn to: its own, or ISO for a sheet that names none (made before v39). */
+export const standardOf = (sheet: Pick<DrawingSheet, 'standard'>): DrawingStandard => sheet.standard ?? LEGACY_DRAWING_STANDARD;
+
+/** A line group (mm): the widths of the thick, medium and thin lines of one sheet. */
+export interface LineGroup {
+  thick: number;
+  medium: number;
+  thin: number;
+}
+
+/** How far the frame is from the edges of the sheet (mm): `left` (the edge it is filed or bound by) and `other` (the three others). */
+export interface FrameMargins {
+  left: number;
+  other: number;
+}
+
+/**
+ * Everything a drafting standard decides about how a sheet is drawn (ADR 0260). Every value of a standard is in `DRAWING_PROFILES` and nowhere else: the
+ * renderers, the sheet's frame, the dimension style and the panels all read it.
+ */
+export interface DrawingProfile {
+  /** The line group on each sheet size. */
+  lines: Readonly<Record<SheetSize, LineGroup>>;
+  /** The width of the frame's line (mm). */
+  frameLine: number;
+  /** The frame's distance from the edges on each sheet size. */
+  frame: Readonly<Record<SheetSize, FrameMargins>>;
+  /** The dashes of a hidden line and of a centre line (on, off, … mm). */
+  hiddenDash: readonly number[];
+  centerDash: readonly number[];
+  /** The DXF linetype the centre line is written with. */
+  centerLinetype: string;
+}
+
+const bySize = <T>(f: (size: SheetSize) => T): Readonly<Record<SheetSize, T>> => Object.fromEntries(SHEET_SIZES.map((s) => [s, f(s)])) as Record<SheetSize, T>;
+const small = (s: SheetSize) => s === 'A4' || s === 'A3';
+
+/**
+ * The two standards (ADR 0260).
+ * - ISO, as this program has always drawn it: ISO 128-20's 0.5 thick and 0.25 thin on every size (ISO has no medium line, so hidden lines are thin); ISO 5457's
+ *   frame, 20 mm on the left, 10 mm elsewhere on A4 and A3 and 20 mm on the larger sheets.
+ * - CNS 3, from CNS teaching material (Tamkang University, 機械畫 ch. 1; to be checked against the CNS 3 text): three widths, the thick about 1.5 times the medium
+ *   and the medium about twice the thin, 0.7 / 0.5 / 0.25 on A1 and 0.5 / 0.35 / 0.18 on A4 (A0 takes A1's group, A2 and A3 the narrower A4 one); hidden lines
+ *   medium, dashes of about 3 mm with gaps of about 1 mm; centre lines a dash of about 20 mm, a gap of about 1 mm, a dot (drawn 0.5 mm, round caps make it a dot);
+ *   the frame 25 mm from the left edge for binding, 15 mm elsewhere on A0 to A2 and 10 mm on A3 and A4 (table 1.4).
+ */
+export const DRAWING_PROFILES: Readonly<Record<DrawingStandard, DrawingProfile>> = {
+  ISO: {
+    lines: bySize(() => ({ thick: 0.5, medium: 0.25, thin: 0.25 })),
+    frameLine: 0.7,
+    frame: bySize((s) => ({ left: 20, other: small(s) ? 10 : 20 })),
+    hiddenDash: [3, 1],
+    centerDash: [12, 2, 2, 2],
+    centerLinetype: 'CENTER',
+  },
+  CNS: {
+    lines: bySize((s) => (s === 'A0' || s === 'A1' ? { thick: 0.7, medium: 0.5, thin: 0.25 } : { thick: 0.5, medium: 0.35, thin: 0.18 })),
+    frameLine: 0.7,
+    frame: bySize((s) => ({ left: 25, other: small(s) ? 10 : 15 })),
+    hiddenDash: [3, 1],
+    centerDash: [20, 1, 0.5, 1],
+    centerLinetype: 'CENTER_CNS',
+  },
+};
+
+/** The profile of the standard a sheet is drawn to. */
+export const profileOf = (sheet: Pick<DrawingSheet, 'standard'>): DrawingProfile => DRAWING_PROFILES[standardOf(sheet)];
+
+/** The line group of a sheet: its standard's, for its size. */
+export const lineGroupOf = (sheet: Pick<DrawingSheet, 'size' | 'standard'>): LineGroup => profileOf(sheet).lines[sheet.size];
+
+/** How far a sheet's frame is from its edges: its standard's, for its size. */
+export const frameMarginsOf = (sheet: Pick<DrawingSheet, 'size' | 'standard'>): FrameMargins => profileOf(sheet).frame[sheet.size];
 
 /**
  * The end of a dimension line (v19, ADR 0146): a filled arrowhead (ISO 129-1's usual), an open one (two strokes), an oblique stroke (architectural), a dot, or
@@ -80,6 +173,15 @@ export const DIM_STYLE_LIMITS = { text: [1, 20], arrow: [0.5, 20], line: [0.13, 
 
 /** The style a dimension is drawn in: its own sizes over the drawing's, over ISO's. */
 export const resolveDimStyle = (sheet: DimStyle | undefined, own?: DimStyle): Required<DimStyle> => ({ ...DIM_STYLE_DEFAULT, ...sheet, ...own });
+
+/**
+ * The style a sheet's dimensions are drawn in before a dimension's own (ADR 0260): the drawing's own (`sheet.dimStyle`) over the sheet's standard — ISO's sizes,
+ * with the dimension lines as wide as the sheet's thin lines when the standard is CNS. Undefined for an ISO sheet with no style of its own, as before v39.
+ */
+export function baseDimStyle(sheet: Pick<DrawingSheet, 'size' | 'standard' | 'dimStyle'>): DimStyle | undefined {
+  if (standardOf(sheet) === 'ISO') return sheet.dimStyle;
+  return { line: lineGroupOf(sheet).thin, ...sheet.dimStyle };
+}
 
 /** Checks a dimension style: each size a finite number within its limits, the arrow one of the styles. Nothing is rounded or put in range: what is wrong is refused. */
 function checkDimStyle(s: unknown): void {
@@ -792,11 +894,12 @@ export const withPage = (doc: DrawingDoc, p: DrawingPage, index = 0): DrawingDoc
 /** All views across all pages in the drawing (B2.8 shape 2). */
 export const allViews = (doc: Pick<DrawingDoc, 'pages'>): DrawingView[] => doc.pages.flatMap((p) => p.views);
 
-export function createEmptyDrawing(): DrawingDoc {
+/** An empty drawing, made to `standard` (absent: the system's default, `DEFAULT_DRAWING_STANDARD`). */
+export function createEmptyDrawing(standard: DrawingStandard = DEFAULT_DRAWING_STANDARD): DrawingDoc {
   return {
     kind: 'drawing',
     schemaVersion: DRAWING_SCHEMA_VERSION,
-    pages: [{ id: 'page1', name: '', sheet: { size: 'A3', orientation: 'landscape', projection: 'third', scale: [1, 1] }, title: {}, views: [], dimensions: [], tables: [], surfaceFinishes: [], annotations: [] }],
+    pages: [{ id: 'page1', name: '', sheet: { size: 'A3', orientation: 'landscape', projection: 'third', scale: [1, 1], standard }, title: {}, views: [], dimensions: [], tables: [], surfaceFinishes: [], annotations: [] }],
     properties: {},
     idCounters: {},
   };
@@ -1254,11 +1357,14 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (s.scale !== undefined && !scaleOk(s.scale)) throw new CommandError(t('drawing.badScale', { scale: s.scale.join(':') }));
       if (s.shift && !(s.shift.length === 2 && s.shift.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
       if (s.unit !== undefined && s.unit !== 'mm' && s.unit !== 'in') throw new CommandError(t('drawing.badUnit'));
+      if (s.standard !== undefined && !DRAWING_STANDARDS.includes(s.standard)) throw new CommandError(t('drawing.badStandard', { standard: String(s.standard) }));
       if (s.calloutStyle !== undefined && !['text', 'symbols'].includes(s.calloutStyle)) throw new CommandError(t('drawing.dimBadCalloutStyle'));
       if (s.language !== undefined && s.language !== null && !LOCALES.includes(s.language)) throw new CommandError(t('drawing.badLanguage'));
       if (s.dimStyle !== undefined && s.dimStyle !== null) checkDimStyle(s.dimStyle);
       if (s.titleStyle !== undefined && s.titleStyle !== null) checkTitleStyle(s.titleStyle);
-      const { shift, language, dimStyle, titleStyle, pdfFont, ...rest } = s;
+      const { shift, language, dimStyle, titleStyle, pdfFont, standard, ...rest } = s;
+      // one standard for the whole drawing (ADR 0260): its pages are not drawn to two
+      if (standard !== undefined) for (const p of draft.pages) p.sheet.standard = standard;
       // an empty style is the default's, written as none
       if (dimStyle === null || (dimStyle && Object.keys(dimStyle).length === 0)) delete pg.sheet.dimStyle;
       else if (dimStyle) pg.sheet.dimStyle = { ...dimStyle };

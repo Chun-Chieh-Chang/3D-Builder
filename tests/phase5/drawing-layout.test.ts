@@ -8,7 +8,7 @@ import { applyDrawingCommand, createEmptyDrawing, type DrawingDoc, type DrawingP
 import { buildScene, layoutViews, readDxf, readPdf, sheetMetrics, STANDARD_SCALES, titleCells, toDxf, toPdf, toSvg, VIEW_GAP, type SceneText, type ViewLines } from '@3db/drawing';
 
 const view = (id: string, direction: ModelDrawingView['direction'], extra: Partial<ModelDrawingView> = {}): DrawingView => ({ id, name: id, source: 'x.3dbx', direction, ...extra });
-const doc = (views: DrawingView[], sheet: Partial<DrawingPage['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet: { projection: 'first', ...sheet } }), { type: 'insertViews', views });
+const doc = (views: DrawingView[], sheet: Partial<DrawingPage['sheet']> = {}): DrawingDoc => applyDrawingCommand(applyDrawingCommand(createEmptyDrawing('ISO'), { type: 'setSheet', sheet: { projection: 'first', ...sheet } }), { type: 'insertViews', views });
 const box = (w: number, h: number, x = 0, y = 0): ViewLines => ({ visible: [[x, y, x + w, y + h]], hidden: [], box: { min: [x, y], max: [x + w, y + h] } });
 
 describe('the sheet (ISO 5457, ISO 7200)', () => {
@@ -37,7 +37,7 @@ describe('the sheet (ISO 5457, ISO 7200)', () => {
     }
   });
   it.each([{ unit: 'mm', language: 'zh-TW', label: '單位' }, { unit: 'in', language: 'en', label: 'Unit' }] as const)('shows the actual sheet unit $unit in the title block', ({ unit, language, label }) => {
-    const drawing = applyDrawingCommand(createEmptyDrawing(), { type: 'setSheet', sheet: { size: 'A4', orientation: 'landscape', unit, language } });
+    const drawing = applyDrawingCommand(createEmptyDrawing('ISO'), { type: 'setSheet', sheet: { size: 'A4', orientation: 'landscape', unit, language } });
     const cell = titleCells().find(c => c.field === 'unit')!;
     const block = sheetMetrics({ size: 'A4', orientation: 'landscape' }).titleBlock;
     const scene = buildScene(drawing, new Map()).scene;
@@ -69,7 +69,7 @@ describe('laying out the views (C16.2)', () => {
   });
 
   it('default third angle: the top view above, the right view to the right', () => {
-    const p = layoutViews(applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views }), lines);
+    const p = layoutViews(applyDrawingCommand(createEmptyDrawing('ISO'), { type: 'insertViews', views }), lines);
     const f = p.get('f')!.at;
     expect([p.get('t')!.at[0] - f[0], p.get('t')!.at[1] - f[1]]).toEqual([expect.closeTo(0, 9), expect.closeTo(75, 9)]);
     expect([p.get('r')!.at[0] - f[0], p.get('r')!.at[1] - f[1]]).toEqual([expect.closeTo(95, 9), expect.closeTo(0, 9)]);

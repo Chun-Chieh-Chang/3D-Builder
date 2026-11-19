@@ -78,8 +78,9 @@ M.run = async () => {
     // set to first angle on the empty sheet, before 「標準三視圖」 lays the views out and they are fitted (a new drawing defaults to third angle).
     await H.action('檔案', '新工程圖');
     await H.waitFor(() => store.getState().drw, 20000, 'the new drawing');
-    store.drawingStore.setSheet({ projection: 'first' });
-    await H.waitFor(() => page()?.sheet.projection === 'first', 3000, 'first angle');
+    // and to ISO's frame (ADR 0260): the numbers below are the area of an ISO A3 (x 28 to 402); a new drawing is made to CNS, whose frame is 5 mm further right
+    store.drawingStore.setSheet({ projection: 'first', standard: 'ISO' });
+    await H.waitFor(() => page()?.sheet.projection === 'first' && page()?.sheet.standard === 'ISO', 3000, 'first angle, ISO');
     const standardViews = await H.waitFor(() => {
       const b = document.querySelector('[data-action="standardViews"]');
       return b && !b.disabled ? b : null;

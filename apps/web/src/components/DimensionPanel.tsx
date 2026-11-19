@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import { formatNumber, overlappingDimensions, toView } from '@3db/drawing';
-import { MM_PER_INCH, axesOf, normalizedViewAxes, rightOf, sheetUp, page, resolveDimStyle } from '@3db/model';
+import { MM_PER_INCH, axesOf, baseDimStyle, normalizedViewAxes, rightOf, sheetUp, page, resolveDimStyle } from '@3db/model';
 import type { DimStyle, Dimension, DimensionOrientation, DimensionTolerance, DrawingSketchCircle, ViewFeature } from '@3db/model';
 import { DimStyleFields } from './DimStyleFields';
 import { useEffect, useState } from 'react';
@@ -528,7 +528,7 @@ export function DimensionPanel() {
                   <FitBox value={current.tolerance.fit} onCommit={(fit) => d.setDimension(current.id, { tolerance: { type: 'fit', fit } })} />
                 </label>
               )}
-              <OwnStyle style={current.style} sheet={curPage.sheet.dimStyle} onChange={(style) => d.setDimension(current.id, { style })} />
+              <OwnStyle style={current.style} sheet={baseDimStyle(curPage.sheet)} onChange={(style) => d.setDimension(current.id, { style })} />
             </>
           )}
         </>
@@ -696,7 +696,7 @@ function BatchDimensions({ dims, perUnit }: { dims: readonly Dimension[]; perUni
         </label>
       )}
       {/* their own style: shown when they all have the same one (or none); set, it is set on all of them as one step */}
-      <OwnStyle style={common(dims.map((x) => x.style)) ?? undefined} sheet={page(d.getState().doc, d.getState().activePageIndex ?? 0).sheet.dimStyle} onChange={(style) => set({ style })} />
+      <OwnStyle style={common(dims.map((x) => x.style)) ?? undefined} sheet={baseDimStyle(page(d.getState().doc, d.getState().activePageIndex ?? 0).sheet)} onChange={(style) => set({ style })} />
       <div className="pm-row wrap">
         <button className="pm-button" data-action="alignCollinear" title={t('drawingUi.alignCollinearTip')} onClick={() => d.alignCollinear(ids)}>
           {t('drawingUi.alignCollinear')}

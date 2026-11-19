@@ -98,7 +98,7 @@ describe('what the model says of a hole', () => {
 });
 
 describe('the annotations in the document', () => {
-  const base = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [{ id: 'view1', name: 'f', source: 'a.3dbx', direction: 'top' }, { id: 'view2', name: 'g', source: 'a.3dbx', direction: 'front' }] });
+  const base = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing('ISO'), { type: 'insertViews', views: [{ id: 'view1', name: 'f', source: 'a.3dbx', direction: 'top' }, { id: 'view2', name: 'g', source: 'a.3dbx', direction: 'front' }] });
   const dia = (extra: Record<string, unknown> = {}): Dimension => ({ id: 'dim1', view: 'view1', kind: 'diameter', ref: { kind: 'face', name: 'x' }, angle: 45, ...extra }) as Dimension;
 
   it('a view can turn its centre marks on or off; a callout belongs to a diameter', () => {
@@ -233,7 +233,7 @@ describe('the locating plate: centre marks, callouts and the hole table', () => 
   });
 
   it('the table is drawn in the upper right corner of the area, 7 rows of 6; the tags are beside the holes', () => {
-    const doc3: DrawingDoc = applyDrawingCommand(applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [topView] }), { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1' }] });
+    const doc3: DrawingDoc = applyDrawingCommand(applyDrawingCommand(createEmptyDrawing('ISO'), { type: 'insertViews', views: [topView] }), { type: 'insertTables', tables: [{ id: 'tbl1', kind: 'holes', view: 'view1' }] });
     const lines: ViewLines = { visible: [[-60, -40, 60, -40, 60, 40, -60, 40, -60, -40]], hidden: [], box: { min: [-60, -40], max: [60, 40] } };
     const { scene, tables } = buildScene(doc3, new Map([['view1', lines]]), new Map(), new Map([['view1', features()]]));
     expect(tables.get('tbl1')).toHaveLength(6);

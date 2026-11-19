@@ -4217,7 +4217,7 @@ class AppStore {
       if (asm) {
         // an assembly: its front and isometric views, with its parts list and balloons (C16.6)
         const title = asm.name();
-        let drawing = createEmptyDrawing();
+        let drawing = createEmptyDrawing(this.state.options.drawingStandard);
         // an empty sheet, as SolidWorks starts one (D-V2, ADR 0134): the views are placed by the user from the palette, the parts list added when wanted
         const source = baseName(path);
         drawing = applyDrawingCommand(drawing, { type: 'setTitle', field: 'drawingName', value: title });
@@ -4225,7 +4225,7 @@ class AppStore {
         return;
       }
       const part = this.history.doc;
-      let doc = createEmptyDrawing();
+      let doc = createEmptyDrawing(this.state.options.drawingStandard);
       const name = partName(part, this.state.fileName, this.state.untitled);
       const source = baseName(path);
       // no views yet: the user chooses the main view and draws the others out of it (D-V2, ADR 0134); 「標準三視圖」 makes the three at once

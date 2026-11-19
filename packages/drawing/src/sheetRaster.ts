@@ -1,4 +1,4 @@
-import type { Scene, SceneItem } from './scene';
+import { sceneLines, type Scene, type SceneItem } from './scene';
 import type { ShadeRaster } from './shade';
 import type { TrueTypeFont } from './ttf';
 import { CALLOUT_SYMBOL_FALLBACKS } from './calloutSymbols';
@@ -27,6 +27,7 @@ const MAX_PIXELS = 12_000_000;
 
 export function rasterizeSheet(scene: Scene, options: SheetRasterOptions = {}): ShadeRaster {
   const win = options.window ?? { x0: 0, y0: 0, x1: scene.width, y1: scene.height };
+  const lines = sceneLines(scene);
   if (!(win.x1 > win.x0 && win.y1 > win.y0)) throw new Error('the window of the sheet to draw is empty');
   let px = options.px ?? 4;
   if (!(Number.isFinite(px) && px > 0)) throw new Error(`pixels per millimetre must be a positive number, not ${px}`);
@@ -91,7 +92,8 @@ export function rasterizeSheet(scene: Scene, options: SheetRasterOptions = {}): 
     const pts: [number, number][] = [];
     for (let i = 0; i + 1 < it.points.length; i += 2) pts.push(toPx(it.points[i]!, it.points[i + 1]!));
     if (it.filled && pts.length >= 3) return fill([pts], c);
-    const w = it.style === 'visible' || it.style === 'frame' ? Math.max(1, Math.round(0.35 * px)) : 1;
+    // a visible line as wide as 0.7 of its width on the sheet (0.35 mm for ISO's 0.5, as always), so a CNS sheet's wider group shows; the frame stays 0.35 mm
+    const w = it.style === 'visible' ? Math.max(1, Math.round(0.7 * lines.visible.width * px)) : it.style === 'frame' ? Math.max(1, Math.round(0.35 * px)) : 1;
     for (let i = 0; i + 1 < pts.length; i++) segment(pts[i]!, pts[i + 1]!, c, w);
     if (it.closed && pts.length > 2) segment(pts[pts.length - 1]!, pts[0]!, c, w);
   };

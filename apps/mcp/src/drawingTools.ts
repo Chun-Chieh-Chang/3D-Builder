@@ -5,7 +5,7 @@
  */
 import { z } from 'zod';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
-import { GEOMETRIC_CHARACTERISTICS, type DrawingCommand, type Scale } from '@3db/model';
+import { DEFAULT_DRAWING_STANDARD, DRAWING_STANDARDS, GEOMETRIC_CHARACTERISTICS, type DrawingCommand, type DrawingStandard, type Scale } from '@3db/model';
 import { AgentError, type CadSession } from './session';
 import { DrawingSession, type AnnotateInput, type CreateOptions } from './drawingSession';
 
@@ -27,6 +27,7 @@ const schemas = {
     orientation: z.enum(['landscape', 'portrait']).optional(),
     scale: z.string().regex(/^\d+:\d+$/).optional().describe('「1:2」, 「2:1」; default: the largest standard scale that fits.'),
     projection: z.enum(['first', 'third']).optional(),
+    standard: z.enum(DRAWING_STANDARDS as [DrawingStandard, ...DrawingStandard[]]).optional().describe(`The drafting standard the sheet is drawn to: its line widths, dashes and frame. Default ${DEFAULT_DRAWING_STANDARD}.`),
     title: z.partialRecord(z.enum(['company', 'drawingName', 'drawingNo', 'material', 'drafter', 'date', 'revision', 'generalTolerance']), z.string()).optional(),
     ordinate_above: z.number().int().min(1).max(50).optional().describe('More places than this along one way of a view become one ordinate row (default 6).'),
     path: z.string().min(1).optional().describe('The .3dbd file, relative to the workspace; default the part file with .3dbd.'),
@@ -139,6 +140,7 @@ export async function callDrawingTool(session: CadSession, name: string, raw: un
         ...(a.orientation ? { orientation: a.orientation } : {}),
         ...(a.scale ? { scale: a.scale.split(':').map(Number) as Scale } : {}),
         ...(a.projection ? { projection: a.projection } : {}),
+        ...(a.standard ? { standard: a.standard } : {}),
         ...(a.title ? { title: a.title } : {}),
         ...(a.ordinate_above ? { ordinateAbove: a.ordinate_above } : {}),
         ...(a.path ? { path: a.path } : {}),
