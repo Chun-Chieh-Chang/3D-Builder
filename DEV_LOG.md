@@ -1,5 +1,11 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-19 — pull 後新基準（`bb9eb8d3`）完整關門全綠；ADR 0231／0232 的交付已推送
+
+- `git pull` 後 origin/main 前進到 `bb9eb8d3`（ADR 0259 辨識切片、多頁工程圖）。本工作階段的 ADR 0231／0232 兩個提交（`440eaf6` 功能、`0e78483` 文件與現況）仍是 main 的祖先，兩個 ADR 檔都在樹上。
+- 整輪 `npm run check` 在新基準上跑完：**494 個測試檔通過、5 個略過（499）；6225 項測試通過、30 項略過（6255）；exit 0**；耗時 3086 s（型別、反模式、分層、i18n、文件盤點、單元測試六道關門全綠）。
+- 這一輪跑得久，期間用了一個本機進度頁（`out/progress/`，被 `.gitignore` 的 `out/` 規則忽略，不在版本庫內）即時顯示各階段與測試檔進度，資料直接讀那一輪自己的日誌；跑完已停止。此工具不入庫。
+
 ## 2026-11-18（夜）— part-3 Stage 0′ 重試：銳邊窗口本體做不出來，依停止規則在第 1 步停下（探針，產品程式未改）
 
 - 環境：`handoff/scratch-tools` 遠端分支不存在，`c9lib.ts` 與 `c10*` 探針不在本機（重寫）；part-3 STEP 在 `D:DB實機確認	mp\`，不在根目錄（`scratch/ff/c5a.test.ts` 路徑已改）。`c5a-run.mjs` 在本機無輸出，改直接跑 `npx vitest run --config scratch/ff/ff.config.mts`。
@@ -5929,11 +5935,13 @@ ADR 0146 確效時記下的後續（下一節 §5 第三點）：新工程圖的
 1. 輸入破壞：不再有「終止型態必須完全貫穿」的硬限制，深度／貫穿／成形至某一面／平面對稱／雙向都是合法輸入；非伸長特徵與非除料仍在命令層明確拒絕（`cmd.onlyExtrudeHasKeepInside`、`cmd.keepInsideOnlyCut`），引擎層對「boss 帶著 keepInside」的結構性文件也明確拒絕（`feature.keepInsideOnlyCut`）；沒有任何 `Math.round`／`Math.abs` 吞掉使用者意圖的處理——範圍完全由終止型態與幾何算出。
 2. 幾何自相交：範圍是凸的稜柱（4 段 CCW 區域）、工具是既有除料的路徑產物，兩者的交集不會自相交；相較 ADR 0231 多了一層布林，記憶體風險不增加。
 3. 依賴鏈完整性：`schema.ts`（不變）→ `commands.ts`（`setKeepInside`）→ `dag.ts`／`engine.ts`（`keepInside`／`extentOf`）→ `PropertyManager.tsx` → 中英字典 → `help.extrudeCut.body` 說明文字 → `docs/help-links.json`（沿用 `extrude-cut` 主題，不新增項目）全部到位；命令層與引擎層都沒有死守一邊。
-4. 規格真實性：所有體積都由真實模型算出（`tests/phase3/keep-inside.test.ts` 19 項、`tests/phase8/help-examples.test.ts` 2 項、瀏覽器 e2e），說明文字裡的 1000 mm³ 與 7600 mm³ 也由真實模型算出；使用者的實機零件以真實檔案量測。
+4. 規格真實性：所有體積都由真實模型算出（`tests/phase3/keep-inside.test.ts` 20 項、`tests/phase8/help-examples.test.ts` 2 項、瀏覽器 e2e），說明文字裡的 1000 mm³ 與 7600 mm³ 也由真實模型算出；使用者的實機零件以真實檔案量測。
 
-**測試確有效的證明**：把範圍改成「整個工具外框再加 1000」（`MUTANT=1` 的臨時改動，量完已還原）時，19 項中有 13 項轉紅——「範圍受限」不是靠「量到接近的數字」而過關的。體積斷言用 1e-3 mm³ 的絕對容差，理由是布林切到面時留下混亂容差（1e-7 mm）的薄片，在這些本體上是幾次 1e-4 mm³。
+**測試確有效的證明**：把範圍改成「整個工具外框再加 1000」（`MUTANT=1` 的臨時改動，量完已還原）時，當時 19 項中有 13 項轉紅（該檔其後另加一項形狀釋放測試，共 20 項）——「範圍受限」不是靠「量到接近的數字」而過關的。體積斷言用 1e-3 mm³ 的絕對容差，理由是布林切到面時留下混亂容差（1e-7 mm）的薄片，在這些本體上是幾次 1e-4 mm³。
 
 **自審發現並修掉的一個形狀洩漏**：檢視程式碼時發現範圍的稜柱在成功路徑上沒有 `release`（只放在失敗路徑的 `made` 裡，而 `made` 在成功時不會被釋放——它裝的是結果本體的形狀）。補上釋放後，新增一項 `liveShapes` 連續 5 次重建嚴格相等的測試；把該行拿掉，這項測試確實轉紅（28 → 33 個形狀），還原後轉綠。
+
+驗證：交付基準（`0e78483`）上整輪 `npm run check` 通過（361 個測試檔通過、4 個略過，exit 0），其中 `tests/phase3/keep-inside.test.ts` 20/20；完整 `npm run verify:ui` 266/266 PASS（私有埠 5395，含 `tests/e2e/manual-keep-inside-extrude.js`）。`tests/phase8/help-examples.test.ts` 的給定深度案例原以 `toBeCloseTo(..., 6)` 斷言，因布林切到面時留下混亂容差（1e-7 mm）的薄片（幾次 1e-4 mm³）而失敗，改成 1e-3 mm³ 的絕對容差後通過——是量測精度的問題，沒有放寬任何幾何門檻。提交 `440eaf6`（功能）與 `0e78483`（文件與現況）已推送。
 
 
 ## 2026-11-03 牙孔流程整合（進行中）

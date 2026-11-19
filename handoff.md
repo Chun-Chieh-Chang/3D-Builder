@@ -1,5 +1,12 @@
 # 交接與接續工作
 
+## 2026-11-19 — 「保留輪廓內」已交付並推送；pull 後新基準完整關門全綠
+
+- **功能**：伸長除料多一個「保留輪廓內」勾選框——只在終止型態掃到的範圍內留下輪廓內的材料、拿掉範圍內輪廓外的材料；**範圍外的材料完全不動**（草圖平面另一側不動）。範圍隨終止型態自動對上（給定深度／完全貫通／成形至某一面／成形至下一面／頂點／本體／平面對稱／雙向）。拔模供給錐度：拔模在 `Kernel.sweep` 內施加，早於任何布林，只歪牆、不改掃描軸上的長度，所以範圍不變而範圍內留下的是斜出來的那一塊。
+- **位置**：命令層 `setKeepInside`；引擎層 `Engine.keepInside`／`Engine.extentOf`（`packages/regen/src/engine.ts`）。ADR [0231](docs/adr/0231-keep-inside-extrude-cut.md)（語意已被取代，保留為當時的決策紀錄）與 [0232](docs/adr/0232-keep-inside-reach.md)（現行語意）；說明文字 `help.extrudeCut.body`，介面提示在 PropertyManager 的除料選項。
+- **驗證**：交付基準上整輪 `npm run check` exit 0（361 個測試檔通過、4 個略過），完整 `npm run verify:ui` 266/266 PASS（私有埠 5395，含 `tests/e2e/manual-keep-inside-extrude.js`）。pull 後新基準 `bb9eb8d3` 再跑整輪 check：494 檔通過、5 略過、6225 項通過、30 略過、exit 0。
+- **狀態**：兩個提交（`440eaf6` 功能、`0e78483` 文件與現況）已推送，main 與 origin/main 同在 `bb9eb8d3`。本次只補文件，未改產品程式。
+
 ## 2026-11-19 — 剩下 5 件能否以「照片／工程圖＋Agent 協作」解決（討論結論，程式未改）
 
 - **使用者目標**：35 件中一直無法完成的 5 件（part-3、part-4、E13、MT17203、治具）要能完成。
