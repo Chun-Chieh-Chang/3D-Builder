@@ -470,9 +470,15 @@ function removeBlends(
     if (analyticSh.length > 0 && analyticSh.every((x) => x.s !== null)) {
       const fillets = new Map<string, FilletRecord>();
       const chamfer: ChamferRecord = { type: 'chamfer', edges: [] };
+      // one round that OCCT made as several faces on the same two supports (ADR 0259 slice 4b: a round along a loft wall, split where the wall's spline
+      // is, fitted r 0.29999998 and 0.29999979): one record, else the first fillet takes the whole edge on the rebuilt body and the next finds none
+      const bySupports = new Map<string, string>();
       for (const { c, s } of analyticSh) {
         if (c.type === 'fillet') {
-          const key = `${c.convex === false ? '0' : '1'}:${c.radius!.toPrecision(12)}`;
+          const pair = `${c.convex === false ? '0' : '1'}:${[...c.supports].sort((a, b) => a - b).join(',')}`;
+          const same = bySupports.get(pair);
+          const key = same && Math.abs(fillets.get(same)!.radius - c.radius!) <= ROLLING_BALL_TOLERANCE ? same : `${c.convex === false ? '0' : '1'}:${c.radius!.toPrecision(12)}`;
+          if (!same) bySupports.set(pair, key);
           const rec = fillets.get(key) ?? { type: 'fillet' as const, radius: c.radius!, edges: [], convex: c.convex };
           rec.edges.push(s!);
           fillets.set(key, rec);
@@ -1607,7 +1613,17 @@ function revolveBase(kernel: Kernel, shape: ShapeId, axis: { origin: Vec3; dir: 
  * The window's other faces: planes, or B-spline faces that are flat (a loft between two chords on one plane makes one). Null when the body is not that
  * (the caller then refuses as before); the rebuilt solid is checked against the original by the caller as for any recognition.
  */
-function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: number[], frameFor: FrameFor, budget?: Budget, approx?: SplineApproximation): Recognition | null {
+function revolvedWindow(
+  kernel: Kernel,
+  shape: ShapeId,
+  topo: Topology,
+  odd: number[],
+  frameFor: FrameFor,
+  budget?: Budget,
+  approx?: SplineApproximation,
+  rounds: Set<number> = new Set(),
+  layoutOnly = false,
+): Recognition | null {
   const flat = new Map<number, { point: Vec3; normal: Vec3 }>();
   for (const i of odd) {
     const f = kernel.flatFace(shape, i, TOL);
@@ -1625,7 +1641,7 @@ function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: num
   // to it but off it, ADR 0259 slice 3)
   const turns: { axis: { origin: Vec3; dir: Vec3 }; area: number }[] = [];
   for (const [i, f] of topo.faces.entries()) {
-    const a = odd.includes(i) ? null : axisOf(f.geometry);
+    const a = odd.includes(i) || rounds.has(i) ? null : axisOf(f.geometry);
     if (!a) continue;
     const g = turns.find((x) => coaxial(x.axis.origin, x.axis.dir, a.origin, a.dir));
     if (g) g.area += f.area;
@@ -1640,13 +1656,13 @@ function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: num
   if (windowFaces.size > 3 * walls.length) return null;
   // the walls of cuts along the axis: planes holding its direction, cylinders along it but off it
   const axial = topo.faces.flatMap((f, i) => {
-    if (windowFaces.has(i)) return [];
+    if (windowFaces.has(i) || rounds.has(i)) return [];
     const g = f.geometry;
     if (g?.type === 'plane' && square(g.normal, major.dir)) return [i];
     if (g?.type === 'cylinder' && parallel(g.axis, major.dir) && !coaxial(major.origin, major.dir, g.origin, g.axis)) return [i];
     return [];
   });
-  const axis = revolveAxis(topo, new Set([...windowFaces, ...axial]));
+  const axis = revolveAxis(topo, new Set([...windowFaces, ...axial, ...rounds]));
   if (!axis || !coaxial(axis.origin, axis.dir, major.origin, major.dir)) return null;
   // the base: the half-plane section farthest round the axis from where the window is
   const around = (p: Vec3): Vec3 | null => {
@@ -1703,6 +1719,8 @@ function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: num
         }));
   if (!chosen || chosen.clear < CLEAR) return null;
   const planeNormal = chosen.n;
+  // asked only whether the body is laid out so (no section or tool made yet): `recognize` asks it before it reads the rounds
+  if (layoutOnly) return LAYOUT_OK;
   const free = freeWalls(kernel, shape, approx);
   const extras: Extras = [];
   for (const wallFace of walls) {
@@ -1727,6 +1745,9 @@ function revolvedWindow(kernel: Kernel, shape: ShapeId, topo: Topology, odd: num
 }
 
 type Extras = Extract<BaseRecord, { type: 'composite' }>['extras'];
+
+/** What `revolvedWindow` gives when asked only for the layout: not a recognition to use. */
+const LAYOUT_OK = { base: { type: 'composite', base: { type: 'extrude', dir: [0, 0, 1], levels: [], layers: [] }, extras: [] }, holes: [], blends: [], counts: { faces: 0, blendFaces: 0, holeFaces: 0, baseFaces: 0 } } as unknown as Recognition;
 
 /** A B-spline curve given by its poles in space, in the (x, y) of `frame`, run backwards when `rev`. */
 function nurbsIn(c: { degree: number; poles: Vec3[]; weights?: number[]; knots: number[]; mults: number[] }, frame: Frame, rev: boolean) {
@@ -2083,6 +2104,8 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
   const made: ShapeId[] = [];
   const reading = { on: rounds.analytic !== false, count: 0, tol: 0 };
   analyticRef.set(kernel, reading);
+  // windows read after the rounds (slice 4b), and the refusal to give if that fails on the way: the free faces, as when they are not deferred
+  let windowsAfterRounds: { odd: number[]; freeform: RecognizeError | null } | null = null;
   try {
     const raw = kernel.topology(shape);
     const odd0 = raw.faces.flatMap((f, i) => (ANALYTIC.has(f.surface) && f.geometry ? [] : [i]));
@@ -2125,9 +2148,15 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
       const walls = free && checkDirs.some((d) => along(d));
       // a body of revolution with windows (ADR 0259): tried even when the faces are walls along some direction, since a cut along the axis gives the
       // body planes facing across it (slice 3); it takes only a body of revolution with windows and returns null for any other
-      const windowed = revolvedWindow(kernel, shape, topo0, odd, frameFor, budget, approx);
+      // with rounds, the windows are read after the rounds are (slice 4b: the rounds stay in the body and are rebuilt as blends on the windows' edges)
+      const windowed = rounds0.length ? null : revolvedWindow(kernel, shape, topo0, odd, frameFor, budget, approx);
       if (windowed) return windowed;
-      if (!walls) throw new RecognizeError(`${t('recognize.freeform', { n: odd.length, faces: describe(topo0, odd) })}${approx ? '' : ` ${t('recognize.freeformHint')}`}`, true);
+      const freeform = new RecognizeError(`${t('recognize.freeform', { n: odd.length, faces: describe(topo0, odd) })}${approx ? '' : ` ${t('recognize.freeformHint')}`}`, true);
+      // deferred only when the body is laid out as one (its rounds, free and analytic, set aside): else reading the rounds first only costs time and
+      // gives another reason for the same refusal (measured on the real parts: part-4 8.0 → 20.2 s, its message no longer the free faces)
+      const blendFaces = rounds0.length ? blendCandidates(topo0, kernel.smoothEdges(shape, topo0.edges.map((_, i) => i)), adjacency(topo0)).map((c) => c.face) : [];
+      if (rounds0.length && revolvedWindow(kernel, shape, topo0, odd, frameFor, budget, approx, new Set([...roundSet, ...blendFaces]), true)) windowsAfterRounds = { odd, freeform: walls ? null : freeform };
+      else if (!walls) throw freeform;
     }
     let current = shape;
     const allBlends: BlendRecord[] = [];
@@ -2215,6 +2244,14 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
       const chRec = allBlends.find((b): b is ChamferRecord => b.type === 'chamfer');
       if (chRec) unremovedChamfersRef.set(topo2, chRec.edges);
     }
+    if (windowsAfterRounds) {
+      // the body as read: the rounds were left in it (`skipDeleteFaces`), so its faces are numbered as at the start
+      const windowed = current === shape ? revolvedWindow(kernel, shape, topo0, windowsAfterRounds.odd, frameFor, budget, approx, new Set([...roundSet, ...analyticUnremoved])) : null;
+      if (windowed) {
+        return { ...windowed, holes: holes.map((h) => h.record), blends: allBlends, counts: { faces: topo0.faces.length, blendFaces: totalBlendFaces, holeFaces, baseFaces: topo2.faces.length - analyticUnremoved.size } };
+      }
+      if (windowsAfterRounds.freeform) throw windowsAfterRounds.freeform;
+    }
     const axis = revolveAxis(topo2);
     const base = axis ? revolveBase(kernel, current, axis, planeThroughAxis(axis.dir), frameFor, budget) : baseOf(kernel, current, topo2, frameFor, 0, budget, approx);
     return {
@@ -2223,6 +2260,9 @@ export function recognize(kernel: Kernel, shape: ShapeId, frameFor: FrameFor, bu
       blends: allBlends,
       counts: { faces: topo0.faces.length, blendFaces: totalBlendFaces, holeFaces, baseFaces: topo2.faces.length - analyticUnremoved.size },
     };
+  } catch (e) {
+    if (e instanceof RecognizeError && windowsAfterRounds?.freeform) throw windowsAfterRounds.freeform;
+    throw e;
   } finally {
     rounds.substituted = reading.count;
     analyticRef.delete(kernel);
