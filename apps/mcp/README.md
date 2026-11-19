@@ -62,7 +62,7 @@
    - `text.outOfRange`：字高超出範圍。
    - `failed`：無法繪製的尺寸。
    - `outside`：超出圖框。
-5. `drawing_export` 匯出 PDF、DXF 或 SVG。
+5. `drawing_export` 匯出 PDF、DXF 或 SVG。多頁工程圖：PDF 為單一檔案含全部頁；DXF／SVG 每頁一個檔（第 n 頁為 `名稱-n.dxf`），回傳的 `files` 列出全部。`drawing_inspect` 的尺寸、視圖與註記都帶 `page`（0 起算），`drawing_apply` 可用 `pageIndex` 指定頁。
 
 字型依序尋找：`DRAWING_FONT`、Windows 的微軟正黑體、macOS 的蘋方、Linux 的文泉驛／文鼎、DejaVu。PDF 與圖片使用同一套字型和缺字替代規則，所以圖片上看到的就是 PDF 會寫出的內容。
 

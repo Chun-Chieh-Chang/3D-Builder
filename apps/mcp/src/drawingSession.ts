@@ -28,6 +28,7 @@ import {
   type DimensionTolerance,
   type DrawingCommand,
   type DrawingDoc,
+  type DrawingPage,
   type DrawingView,
   type GeometricCharacteristic,
   type Id,
@@ -120,6 +121,8 @@ export interface CreateOptions {
 export interface DrawingReport {
   path: string | null;
   pages?: number;
+  /** Each page of a drawing of more than one (`sheet`, `views` and the counts below are the first page's). */
+  pageSummaries?: { page: number; name: string; sheet: { size: SheetSize; orientation: string; scale: string }; views: { id: Id; name: string; kind: string }[]; dimensions: number; annotations: number }[];
   sheet: { size: SheetSize; orientation: string; scale: string; projection: string };
   views: { id: Id; name: string; kind: string; direction?: ViewName; parent?: Id; side?: string }[];
   dimensions: number;
@@ -995,7 +998,19 @@ export class DrawingSession {
     const pg = page(doc);
     return {
       path: this.path,
-      ...(doc.pages.length > 1 ? { pages: doc.pages.length } : {}),
+      ...(doc.pages.length > 1
+        ? {
+            pages: doc.pages.length,
+            pageSummaries: doc.pages.map((p, i) => ({
+              page: i,
+              name: p.name ?? '',
+              sheet: { size: p.sheet.size, orientation: p.sheet.orientation, scale: `${p.sheet.scale[0]}:${p.sheet.scale[1]}` },
+              views: p.views.map((v) => ({ id: v.id, name: v.name, kind: v.kind ?? 'model' })),
+              dimensions: p.dimensions.length,
+              annotations: (p.annotations ?? []).length,
+            })),
+          }
+        : {}),
       sheet: { size: pg.sheet.size, orientation: pg.sheet.orientation, scale: `${pg.sheet.scale[0]}:${pg.sheet.scale[1]}`, projection: pg.sheet.projection },
       views: pg.views.map((v) => ({ id: v.id, name: v.name, kind: v.kind ?? 'model', ...(!isDerived(v) ? { direction: v.direction } : { parent: v.parent }), ...(v.kind === 'projected' ? { side: v.side } : {}) })),
       dimensions: pg.dimensions.length,
@@ -1012,15 +1027,27 @@ export class DrawingSession {
    */
   inspect(): unknown {
     const doc = this.need();
-    const b = this.build(doc);
-    const pg = page(doc);
+    const pages = doc.pages.map((_, pi) => this.inspectPage(doc, pi));
+    return {
+      report: this.report(),
+      dimensions: pages.flatMap((p) => p.dimensions),
+      annotations: pages.flatMap((p) => p.annotations),
+      surfaceFinishes: pages.flatMap((p) => p.surfaceFinishes),
+      views: pages.flatMap((p) => p.views),
+    };
+  }
+
+  /** What `inspect` lists of one page, each item with its page (0-based, as drawing_picture's pageIndex). */
+  private inspectPage(doc: DrawingDoc, pageIndex: number) {
+    const b = this.build(doc, pageIndex);
+    const pg = page(doc, pageIndex);
     const dims = pg.dimensions.map((d) => {
       const o = b.outcomes.get(d.id);
-      return { id: d.id, view: d.view, kind: d.kind, text: o && 'text' in o ? o.text : null, ...(o && 'error' in o ? { error: o.error } : {}), refs: dimensionRefs(d).map((r) => r.name), ...(d.tolerance ? { tolerance: d.tolerance } : {}), ...(d.reference ? { reference: true } : {}) };
+      return { id: d.id, page: pageIndex, view: d.view, kind: d.kind, text: o && 'text' in o ? o.text : null, ...(o && 'error' in o ? { error: o.error } : {}), refs: dimensionRefs(d).map((r) => r.name), ...(d.tolerance ? { tolerance: d.tolerance } : {}), ...(d.reference ? { reference: true } : {}) };
     });
     const views = pg.views.map((v) => {
       const placed = b.placed.get(v.id);
-      const features = b.features.get(v.id) ?? [];
+      const features = this.shownBy(b, pg, v.id).features;
       const planes = features.filter((f): f is Extract<ViewFeature, { type: 'plane' }> => f.type === 'plane');
       const ext = (axis: 'x' | 'y') => { const on = planes.filter((p) => p.axis === axis).map((p) => p.coord); return on.length ? [Math.min(...on), Math.max(...on)] : [NaN, NaN]; };
       const [x0, x1] = ext('x');
@@ -1037,16 +1064,45 @@ export class DrawingSession {
         if (f.type === 'axis') return [{ ref: f.ref.name, type: 'cylinder side-on', diameter: r2(f.radius * 2) }];
         return [];
       });
-      return { id: v.id, name: v.name, kind: v.kind ?? 'model', ...(!isDerived(v) ? { direction: v.direction } : {}), sheetBox: placed ? { at: placed.at.map(r2), w: r2(placed.w), h: r2(placed.h), scale: placed.scale } : null, elements };
+      return { id: v.id, page: pageIndex, name: v.name, kind: v.kind ?? 'model', ...(!isDerived(v) ? { direction: v.direction } : {}), sheetBox: placed ? { at: placed.at.map(r2), w: r2(placed.w), h: r2(placed.h), scale: placed.scale } : null, elements };
     });
-    return { report: this.report(), dimensions: dims, annotations: pg.annotations ?? [], surfaceFinishes: pg.surfaceFinishes, views };
+    return {
+      dimensions: dims,
+      annotations: (pg.annotations ?? []).map((a) => ({ ...a, page: pageIndex })),
+      surfaceFinishes: pg.surfaceFinishes.map((f) => ({ ...f, page: pageIndex })),
+      views,
+    };
   }
 
-  /** Applies drawing commands as one step: all or nothing. */
-  apply(commands: DrawingCommand[]): void {
+  /**
+   * What a view shows, in its own coordinates: its features and the box of its lines. A detail view is drawn from its parent's lines (same axes, same page),
+   * so it shows the parent's features inside its circle, and its box is the circle's.
+   */
+  private shownBy(b: Built, pg: DrawingPage, viewId: Id): { features: ViewFeature[]; box: { min: [number, number]; max: [number, number] } | undefined } {
+    const v = pg.views.find((x) => x.id === viewId);
+    if (v?.kind === 'detail') {
+      const [cx, cy] = v.centre;
+      const inside = (p: readonly number[]) => Math.hypot(p[0]! - cx, p[1]! - cy) <= v.radius + 1e-6;
+      const features = (b.features.get(v.parent) ?? []).filter((f) =>
+        f.type === 'circle' ? Math.hypot(f.centre[0] - cx, f.centre[1] - cy) <= v.radius + f.radius : f.type === 'torus' || f.type === 'slant' ? inside(f.at) : true,
+      );
+      return { features, box: { min: [cx - v.radius, cy - v.radius], max: [cx + v.radius, cy + v.radius] } };
+    }
+    const box = b.lines.get(viewId)?.box;
+    return { features: b.features.get(viewId) ?? [], box: box ? { min: [box.min[0], box.min[1]], max: [box.max[0], box.max[1]] } : undefined };
+  }
+
+  /** The page (0-based) a view is on, or null. */
+  private pageOfView(doc: DrawingDoc, viewId: Id): number | null {
+    const i = doc.pages.findIndex((p) => p.views.some((v) => v.id === viewId));
+    return i < 0 ? null : i;
+  }
+
+  /** Applies drawing commands to a page (the first by default) as one step: all or nothing. */
+  apply(commands: DrawingCommand[], pageIndex = 0): void {
     const doc = this.need();
-    let next = doc;
-    for (const c of commands) next = applyDrawingCommand(next, c);
+    if (!(Number.isInteger(pageIndex) && pageIndex >= 0 && pageIndex < doc.pages.length)) throw new AgentError(`the drawing has pages 0 to ${doc.pages.length - 1}, not ${pageIndex}`);
+    const next = onPage(doc, pageIndex, (single) => commands.reduce((d, c) => applyDrawingCommand(d, c), single));
     this.undoStack.push(doc);
     this.doc = next;
   }
@@ -1061,29 +1117,39 @@ export class DrawingSession {
 
   /** A dimension by id, or by the text it writes (「Ø10」, 「25」), when only one writes it. */
   findDimension(which: string): Dimension {
+    return this.locateDimension(which).dimension;
+  }
+
+  /** A dimension on any page, by id, or by the text it writes when only one on the whole drawing writes it; with the page it is on. */
+  private locateDimension(which: string): { dimension: Dimension; pageIndex: number } {
     const doc = this.need();
-    const pg = page(doc);
-    const byId = pg.dimensions.find((d) => d.id === which);
-    if (byId) return byId;
-    const b = this.build(doc);
+    for (const [pageIndex, pg] of doc.pages.entries()) {
+      const byId = pg.dimensions.find((d) => d.id === which);
+      if (byId) return { dimension: byId, pageIndex };
+    }
     const norm = (s: string) => s.replace(/\s+/g, '').replace(/^\d+[x×]/i, '').toLowerCase();
-    const hits = pg.dimensions.filter((d) => {
-      const o = b.outcomes.get(d.id);
-      return o && 'text' in o && (norm(o.text) === norm(which) || norm(o.text).startsWith(norm(which)));
+    const hits = doc.pages.flatMap((pg, pageIndex) => {
+      const b = this.build(doc, pageIndex);
+      return pg.dimensions
+        .filter((d) => {
+          const o = b.outcomes.get(d.id);
+          return o && 'text' in o && (norm(o.text) === norm(which) || norm(o.text).startsWith(norm(which)));
+        })
+        .map((dimension) => ({ dimension, pageIndex }));
     });
     if (hits.length === 1) return hits[0]!;
     if (hits.length === 0) throw new AgentError(`no dimension is ${JSON.stringify(which)}: drawing_inspect lists them with their ids and texts`);
-    throw new AgentError(`${hits.length} dimensions write ${JSON.stringify(which)} (${hits.map((d) => d.id).join(', ')}): give the id`);
+    throw new AgentError(`${hits.length} dimensions write ${JSON.stringify(which)} (${hits.map((h) => h.dimension.id).join(', ')}): give the id`);
   }
 
   setTolerance(which: string, tolerance: string | null, extra: { reference?: boolean; precision?: number } = {}): Id {
-    const d = this.findDimension(which);
+    const { dimension: d, pageIndex } = this.locateDimension(which);
     const patch: Extract<DrawingCommand, { type: 'setDimension' }>['patch'] = { tolerance: tolerance === null ? null : parseTolerance(tolerance) };
     if (extra.reference !== undefined) patch.reference = extra.reference;
     if (extra.precision !== undefined) patch.precision = extra.precision;
-    this.apply([{ type: 'setDimension', dimensionId: d.id, patch }]);
+    this.apply([{ type: 'setDimension', dimensionId: d.id, patch }], pageIndex);
     // a longer text (「Ø10 H7 (+0.015/0)」) may now cross what it did not: swing the leaders again (only where they are, never what they measure)
-    this.doc = this.steerLeaders(this.doc!);
+    this.doc = this.steerLeaders(this.doc!, true, pageIndex);
     return d.id;
   }
 
@@ -1093,8 +1159,6 @@ export class DrawingSession {
    */
   annotate(a: AnnotateInput): Id {
     const doc = this.need();
-    const pg = page(doc);
-    const b = this.build(doc);
     let viewId = a.view;
     let refName = a.target;
     if (a.target) {
@@ -1104,13 +1168,28 @@ export class DrawingSession {
         refName = dimensionRefs(dim).at(-1)?.name;
       }
     }
-    viewId ??= refName ? pg.views.find((v) => (b.features.get(v.id) ?? []).some((f) => f.ref.name === refName))?.id : pg.views[0]?.id;
+    // the page: the view's when it is known, else the first page with a view that shows the element (page 0 first)
+    let pageIndex = viewId !== undefined ? this.pageOfView(doc, viewId) : 0;
+    if (viewId !== undefined && pageIndex === null) throw new AgentError(`no view ${viewId} on the drawing`);
+    if (viewId === undefined && refName) {
+      for (let pi = 0; pi < doc.pages.length && viewId === undefined; pi++) {
+        const bp = this.build(doc, pi);
+        const pgi = page(doc, pi);
+        viewId = pgi.views.find((v) => this.shownBy(bp, pgi, v.id).features.some((f) => f.ref.name === refName))?.id;
+        if (viewId !== undefined) pageIndex = pi;
+      }
+    }
+    const pi = pageIndex ?? 0;
+    const pg = page(doc, pi);
+    const b = this.build(doc, pi);
+    viewId ??= refName ? undefined : pg.views[0]?.id;
     if (!viewId) throw new AgentError(refName ? `no view shows ${refName}` : 'the drawing has no views');
     const placed = b.placed.get(viewId);
     if (!placed) throw new AgentError(`view ${viewId} is not drawn`);
-    const feature = refName ? (b.features.get(viewId) ?? []).find((f) => f.ref.name === refName) : undefined;
+    const shown = this.shownBy(b, pg, viewId);
+    const feature = refName ? shown.features.find((f) => f.ref.name === refName) : undefined;
     if (refName && !feature) throw new AgentError(`view ${viewId} does not show ${refName}: drawing_inspect lists what each view shows`);
-    const lines = b.lines.get(viewId)?.box;
+    const lines = shown.box;
     const mid: [number, number] = lines ? [(lines.min[0] + lines.max[0]) / 2, (lines.min[1] + lines.max[1]) / 2] : [0, 0];
     const halfW = lines ? (lines.max[0] - lines.min[0]) / 2 : 0;
     const halfH = lines ? (lines.max[1] - lines.min[1]) / 2 : 0;
@@ -1177,7 +1256,7 @@ export class DrawingSession {
         const lines = (pg.annotations ?? []).filter((x) => x.kind === 'note' && !x.leader).length;
         const sheetAt: [number, number] = [area.x + 2, area.y + 2 + lines * 6];
         const viewAt = pt([placed.centre[0] + (sheetAt[0] - placed.at[0]) / placed.scale, placed.centre[1] + (sheetAt[1] - placed.at[1]) / placed.scale]);
-        this.apply([{ type: 'insertAnnotations', annotations: [{ id, view: viewId, kind: 'note', at: viewAt, text } satisfies Annotation] }]);
+        this.apply([{ type: 'insertAnnotations', annotations: [{ id, view: viewId, kind: 'note', at: viewAt, text } satisfies Annotation] }], pi);
         return id;
       }
     }
@@ -1186,16 +1265,17 @@ export class DrawingSession {
       for (const spot of spots) {
         let trial: DrawingDoc;
         try {
-          trial = applyDrawingCommand(doc, make(spot, reach));
+          trial = onPage(doc, pi, (single) => applyDrawingCommand(single, make(spot, reach)));
         } catch {
           continue;
         }
-        const b2 = this.build(trial);
-        const items = b2.scene.items.slice(sheetItems(trial).length);
+        const b2 = this.build(trial, pi);
+        const trialPage: DrawingDoc = { ...trial, pages: [page(trial, pi)] };
+        const items = b2.scene.items.slice(sheetItems(trialPage).length);
         const drawn = itemsBounds(items);
         const frame = sheetMetrics(pg.sheet).frame;
         const outside = drawn ? Math.max(0, frame.x - drawn.x0, drawn.x1 - (frame.x + frame.w), frame.y - drawn.y0, drawn.y1 - (frame.y + frame.h)) : 0;
-        const score = clutterOf(items, CLEARANCE, viewsOfDimensions(trial)).count + (outside > 0 ? 100 : 0);
+        const score = clutterOf(items, CLEARANCE, viewsOfDimensions(trialPage)).count + (outside > 0 ? 100 : 0);
         if (!best || score < best.score) best = { doc: trial, score };
         if (best.score === 0) break search;
       }
@@ -1213,49 +1293,78 @@ export class DrawingSession {
    */
   textSize(o: { all?: number; reset?: boolean; item?: string; size?: number | null }): string[] {
     const doc = this.need();
-    const pg = page(doc);
     const changed: string[] = [];
-    const commands: DrawingCommand[] = [];
+    // the commands for each page they go to
+    const commandsOn = new Map<number, DrawingCommand[]>();
+    const push = (pageIndex: number, c: DrawingCommand) => commandsOn.set(pageIndex, [...(commandsOn.get(pageIndex) ?? []), c]);
     const within = (size: number, [lo, hi]: readonly [number, number], what: string) => {
       if (!(Number.isFinite(size) && size >= lo && size <= hi)) throw new AgentError(`${what} 的字高以 ${lo}–${hi} mm 為宜（ISO 3098），不是 ${size}`);
     };
     if (o.all !== undefined) {
       within(o.all, TEXT_RANGE.text, '尺寸、註記與符號');
       const caption = Math.min(TEXT_RANGE.caption[1], Math.round(o.all * (10 / 7) * 10) / 10);
-      commands.push({ type: 'setSheet', sheet: { dimStyle: { ...(pg.sheet.dimStyle ?? {}), text: o.all, arrow: Math.round(o.all * (3 / 3.5) * 100) / 100 } } });
-      for (const v of pg.views) commands.push({ type: 'setView', viewId: v.id, patch: { caption: { ...(v.caption ?? {}), height: o.reset || v.caption?.height === undefined ? caption : v.caption.height } } });
-      if (o.reset) {
-        for (const d of pg.dimensions) if (d.style?.text !== undefined) { const { text: _t, ...rest } = d.style; commands.push({ type: 'setDimension', dimensionId: d.id, patch: { style: Object.keys(rest).length ? rest : null } as never }); }
-        for (const a of pg.annotations ?? []) if (a.kind === 'note' && a.height !== undefined) commands.push({ type: 'setAnnotation', annotationId: a.id, patch: { height: null } as never });
+      // the whole drawing: every page
+      for (const [pi, pg] of doc.pages.entries()) {
+        push(pi, { type: 'setSheet', sheet: { dimStyle: { ...(pg.sheet.dimStyle ?? {}), text: o.all, arrow: Math.round(o.all * (3 / 3.5) * 100) / 100 } } });
+        for (const v of pg.views) push(pi, { type: 'setView', viewId: v.id, patch: { caption: { ...(v.caption ?? {}), height: o.reset || v.caption?.height === undefined ? caption : v.caption.height } } });
+        if (o.reset) {
+          for (const d of pg.dimensions) if (d.style?.text !== undefined) { const { text: _t, ...rest } = d.style; push(pi, { type: 'setDimension', dimensionId: d.id, patch: { style: Object.keys(rest).length ? rest : null } as never }); }
+          for (const a of pg.annotations ?? []) if (a.kind === 'note' && a.height !== undefined) push(pi, { type: 'setAnnotation', annotationId: a.id, patch: { height: null } as never });
+        }
       }
       changed.push(`all ${o.all} mm（視圖標題 ${caption} mm）`);
     }
     if (o.item !== undefined) {
       if (o.size === undefined) throw new AgentError('give the size (mm) for the item, or null to make it follow the drawing again');
-      const d = pg.dimensions.find((x) => x.id === o.item) ?? (() => { try { return this.findDimension(o.item!); } catch { return undefined; } })();
-      const a = (pg.annotations ?? []).find((x) => x.id === o.item);
-      const v = pg.views.find((x) => x.id === o.item || x.name === o.item);
+      const item = o.item;
+      const located = (() => { try { return this.locateDimension(item); } catch { return undefined; } })();
+      const d = located?.dimension;
+      const aPage = doc.pages.findIndex((p) => (p.annotations ?? []).some((x) => x.id === item));
+      const a = aPage < 0 ? undefined : (page(doc, aPage).annotations ?? []).find((x) => x.id === item);
+      const vPage = doc.pages.findIndex((p) => p.views.some((x) => x.id === item || x.name === item));
+      const v = vPage < 0 ? undefined : page(doc, vPage).views.find((x) => x.id === item || x.name === item);
+      const itemPage = d ? located!.pageIndex : a ? aPage : vPage;
       if (o.size !== null) within(o.size, v && !d && !a ? TEXT_RANGE.caption : TEXT_RANGE.text, v && !d && !a ? '視圖標題' : '尺寸與註記');
-      if (d) commands.push({ type: 'setDimension', dimensionId: d.id, patch: { style: o.size === null ? (() => { const { text: _t, ...rest } = d.style ?? {}; return Object.keys(rest).length ? rest : null; })() : { ...(d.style ?? {}), text: o.size } } as never });
-      else if (a && a.kind === 'note') commands.push({ type: 'setAnnotation', annotationId: a.id, patch: { height: o.size } as never });
-      else if (v) commands.push({ type: 'setView', viewId: v.id, patch: { caption: { ...(v.caption ?? {}), ...(o.size === null ? { height: undefined } : { height: o.size }) } } });
+      if (d) push(itemPage, { type: 'setDimension', dimensionId: d.id, patch: { style: o.size === null ? (() => { const { text: _t, ...rest } = d.style ?? {}; return Object.keys(rest).length ? rest : null; })() : { ...(d.style ?? {}), text: o.size } } as never });
+      else if (a && a.kind === 'note') push(itemPage, { type: 'setAnnotation', annotationId: a.id, patch: { height: o.size } as never });
+      else if (v) push(itemPage, { type: 'setView', viewId: v.id, patch: { caption: { ...(v.caption ?? {}), ...(o.size === null ? { height: undefined } : { height: o.size }) } } });
       else throw new AgentError(`${o.item} is not a dimension, a note or a view of the drawing (finishes and frames follow the drawing's size)`);
       changed.push(`${o.item} ${o.size === null ? '跟隨全圖' : `${o.size} mm`}`);
     }
-    if (commands.length === 0) throw new AgentError('give all (one size for the whole drawing) or item and size');
-    this.apply(commands);
-    this.doc = this.tidy(this.doc!);
+    if (commandsOn.size === 0) throw new AgentError('give all (one size for the whole drawing) or item and size');
+    // one step for undo: every page changed, then laid out again
+    let next = doc;
+    for (const [pi, commands] of commandsOn) next = onPage(next, pi, (single) => commands.reduce((x, c) => applyDrawingCommand(x, c), single));
+    for (const pi of commandsOn.keys()) next = this.tidy(next, pi);
+    this.undoStack.push(doc);
+    this.doc = next;
     return changed;
   }
 
   /** Adds the dimensions the graph still finds missing (after the user deleted some, or the part changed), arranged again. */
   complete(): number {
     const doc = this.need();
-    const before = page(doc).dimensions.length;
-    const next = this.tidy(this.dimensionAll(doc));
+    const count = (d: DrawingDoc) => d.pages.reduce((n, p) => n + p.dimensions.length, 0);
+    // every page: what was moved to page 2 (a section, a detail view) is there, not missing
+    const views = this.dimensionViews(doc, true);
+    const existing = doc.pages.flatMap((p) => p.dimensions) as DimensionLike[];
+    const planned = planDrawingDimensions(views, existing, {});
+    let next = doc;
+    if (planned.length) {
+      const alloc = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
+      const byPage = new Map<number, Dimension[]>();
+      for (const p of planned) {
+        const pi = this.pageOfView(doc, p.view);
+        if (pi === null) throw new AgentError(`the dimension planner chose view ${p.view}, which is on no page`);
+        byPage.set(pi, [...(byPage.get(pi) ?? []), { ...p.draft, id: alloc.take('dim'), view: p.view } as Dimension]);
+      }
+      for (const [pi, dimensions] of byPage) next = onPage(next, pi, (single) => applyDrawingCommand(single, { type: 'insertDimensions', dimensions }));
+      for (const pi of byPage.keys()) if (pi !== 0) next = this.tidy(next, pi);
+    }
+    next = this.tidy(next, 0); // as before: the first page is always arranged again
     this.undoStack.push(doc);
     this.doc = next;
-    return page(next).dimensions.length - before;
+    return count(next) - count(doc);
   }
 
   async open(path: string): Promise<void> {
@@ -1284,22 +1393,37 @@ export class DrawingSession {
     return { path: full, bytes: bytes.length };
   }
 
-  async export(path: string, format: 'pdf' | 'dxf' | 'svg'): Promise<{ path: string; bytes: number; warnings: string[] }> {
+  /**
+   * PDF: one file with every page. DXF and SVG hold one sheet each, so a drawing of several pages is written as one file per page: the first at `path`,
+   * page n (n ≥ 2) beside it as 「name-n.dxf」. `files` lists them all; `path` and `bytes` are the first's.
+   */
+  async export(path: string, format: 'pdf' | 'dxf' | 'svg'): Promise<{ path: string; bytes: number; warnings: string[]; files: { page: number; path: string; bytes: number }[] }> {
     const doc = this.need();
     const full = await this.part.inside(path);
-    const b = this.build(doc);
     const f = font();
     let warnings: string[] = [];
-    let data: Uint8Array | string;
+    const outputs: { page: number; full: string; data: Uint8Array | string }[] = [];
     if (format === 'pdf') {
       const scenes = doc.pages.map((_, i) => this.build(doc, i).scene);
       const pdf = toPdf(scenes.length === 1 ? scenes[0]! : scenes, { ...(f ? { font: f } : {}), title: page(doc).title.drawingName ?? 'drawing' });
-      data = pdf.bytes;
+      outputs.push({ page: 0, full, data: pdf.bytes });
       warnings = pdf.warnings;
-    } else data = format === 'dxf' ? toDxf(b.scene) : toSvg(b.scene);
+    } else {
+      const ext = extname(full);
+      const stem = full.slice(0, full.length - ext.length);
+      for (let pi = 0; pi < doc.pages.length; pi++) {
+        const scene = this.build(doc, pi).scene;
+        const at = pi === 0 ? full : await this.part.inside(relative(this.part.root, `${stem}-${pi + 1}${ext}`));
+        outputs.push({ page: pi, full: at, data: format === 'dxf' ? toDxf(scene) : toSvg(scene) });
+      }
+    }
     await mkdir(dirname(full), { recursive: true });
-    await writeFile(full, data);
-    return { path: full, bytes: typeof data === 'string' ? Buffer.byteLength(data) : data.length, warnings };
+    const files: { page: number; path: string; bytes: number }[] = [];
+    for (const o of outputs) {
+      await writeFile(o.full, o.data);
+      files.push({ page: o.page, path: o.full, bytes: typeof o.data === 'string' ? Buffer.byteLength(o.data) : o.data.length });
+    }
+    return { path: files[0]!.path, bytes: files[0]!.bytes, warnings, files };
   }
 
   /** A PNG of the sheet (or of one view and what is drawn on it), for the agent to look at. */

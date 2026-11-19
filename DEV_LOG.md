@@ -1,5 +1,15 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-19 — 多頁工程圖：補齊、編修與匯出看得到每一頁（ADR 0256 後續修正）
+
+- 起因：審查「將 3D 模型檔案自動轉為工程圖」功能。`71290bc0`／`56a97b3b` 把 B-B 剖面與微圓角詳圖移到第 2 頁後，其餘工具仍只看第 1 頁。以 40×30×8 板、四角 R0.3～R0.6 實測確認三個缺陷：
+  1. `drawing_complete` 只以第 1 頁規劃，把已移到第 2 頁的尺寸當成缺漏，在第 1 頁重複標註（5 → 7）。
+  2. `drawing_export` 的 DXF／SVG 只寫第 1 頁且不警告（第 2 頁的 R0.5、R0.6 不在檔內）。
+  3. `findDimension`／`drawing_tolerance`／`drawing_annotate`／`drawing_text_size`／`drawing_inspect` 只找第 1 頁，第 2 頁的尺寸無法加公差。
+- 修正（`apps/mcp/src/drawingSession.ts`、`drawingTools.ts`）：`complete()` 以全部頁的視圖與既有尺寸規劃，新尺寸放進其視圖所在頁；DXF／SVG 每頁一個檔（第 n 頁 `名稱-n.ext`），回傳 `files`；尺寸依 id 或文字跨頁查找，公差、註記、字高寫入該頁；`textSize all` 套用全部頁；`inspect` 每項帶 `page`；`report.pageSummaries`；`drawing_apply` 加 `pageIndex`。詳圖沒有自己的特徵（由父視圖線條畫出），`shownBy` 取父視圖在詳圖圓內的特徵，否則無法在詳圖尺寸上加註記（測試第一次轉紅即此）。
+- 驗證：新增 `apps/mcp/test/drawing-pages.test.ts`（修正前紅、修正後綠）。突變：三項修正各自改回只看第 1 頁，測試皆轉紅（`added` 2≠0、DXF 檔數 1≠2、找不到 `dim1`）。`apps/mcp` 全部＋`auto-drawing-plan`／`drawing-ordinate`／`drawing-output`／`crash-no-swallow` 18 檔 123 過 1 略過（無中文字型的機器才跑）；`typecheck`、四項 lint、`mcp:build` 通過。
+- 未處理（審查的其他發現）：第 2 頁頁名與「詳圖 C」寫死中文、未經 `t()`；`offloadMicroDetails` 的 `baseScale` 在 `fitSheet` 之前讀取、詳圖直徑 ≤ 52 mm 不保證；B-B 在 `adviseSection` 為 null 時切在 0；網頁 App 的 DXF／SVG 匯出同樣只輸出一頁；`56a97b3b` 的標尺改動影響 GUI，未見完整 `verify:ui` 紀錄。
+
 ## 2026-11-19 — pull 後新基準（`bb9eb8d3`）完整關門全綠；ADR 0231／0232 的交付已推送
 
 - `git pull` 後 origin/main 前進到 `bb9eb8d3`（ADR 0259 辨識切片、多頁工程圖）。本工作階段的 ADR 0231／0232 兩個提交（`440eaf6` 功能、`0e78483` 文件與現況）仍是 main 的祖先，兩個 ADR 檔都在樹上。

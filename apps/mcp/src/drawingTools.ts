@@ -64,7 +64,7 @@ const schemas = {
     size: z.number().nullable().optional().describe('Its height in mm (2.5–5; a caption 3.5–7), or null to follow the drawing again.'),
     picture,
   }),
-  drawing_apply: z.strictObject({ commands: z.array(z.record(z.string(), z.unknown())).min(1).describe('DrawingCommand objects (command_reference topic types, names ["DrawingCommand"]).'), picture }),
+  drawing_apply: z.strictObject({ commands: z.array(z.record(z.string(), z.unknown())).min(1).describe('DrawingCommand objects (command_reference topic types, names ["DrawingCommand"]).'), pageIndex: z.number().int().min(0).optional().describe('0-based page the commands go to (drawing_inspect gives each item its page); the first by default.'), picture }),
   drawing_undo: z.strictObject({ picture }),
   drawing_picture: z.strictObject({ view: z.string().optional().describe('Only this view, enlarged.'), px: z.number().min(1).max(16).optional().describe('Pixels per mm of the sheet.'), pageIndex: z.number().int().min(0).optional().describe('0-based page index.') }),
   drawing_save: z.strictObject({ path: z.string().min(1).optional() }),
@@ -84,7 +84,7 @@ const DESCRIPTIONS: Record<keyof typeof schemas, string> = {
   drawing_undo: 'Takes back the last change to the drawing.',
   drawing_picture: 'A PNG of the sheet, or of one view enlarged.',
   drawing_save: 'Saves the drawing (it is saved after every change already; a path saves a copy in the same folder).',
-  drawing_export: 'Exports the drawing as PDF, DXF or SVG.',
+  drawing_export: 'Exports the drawing as PDF (one file, every page), DXF or SVG (one file per page: page n of a drawing of several beside the first as name-n.dxf; files lists them).',
   drawing_open: 'Opens a .3dbd drawing of one part (and that part) to go on with it.',
 };
 
@@ -176,7 +176,7 @@ export async function callDrawingTool(session: CadSession, name: string, raw: un
     }
     case 'drawing_apply': {
       const a = parse('drawing_apply');
-      d.apply(a.commands as unknown as DrawingCommand[]);
+      d.apply(a.commands as unknown as DrawingCommand[], a.pageIndex ?? 0);
       await d.save();
       return answer(d, { applied: a.commands.length }, a.picture ?? true);
     }
