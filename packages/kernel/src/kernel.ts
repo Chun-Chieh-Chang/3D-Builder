@@ -5315,6 +5315,22 @@ export class Kernel {
     }
   }
 
+  /**
+   * The body's extent: the box its surfaces reach, without the shape's tolerances. `bounds` is a cover for fast checks (on a B-spline face it takes the
+   * poles, and adds the tolerance): on part-3 (R1-10226) 5.6 mm past the body along z. Slower than `bounds` (it samples the faces); for what is reported
+   * as a size, not for a quick reject.
+   */
+  extent(id: ShapeId): { min: Vec3; max: Vec3 } {
+    const arena = new Arena();
+    try {
+      const box = arena.own(new this.oc.Bnd_Box());
+      this.oc.BRepBndLib.AddOptimal(this.get(id), box, false, false);
+      return { min: this.xyz(arena.own(box.CornerMin())), max: this.xyz(arena.own(box.CornerMax())) };
+    } finally {
+      arena.dispose();
+    }
+  }
+
   isValid(id: ShapeId): boolean {
     return this.valid(this.get(id));
   }

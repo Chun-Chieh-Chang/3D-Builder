@@ -518,7 +518,8 @@ export class CadSession {
         if (!name) throw new AgentError(`missing persistent face name for body ${b.id}, face ${index}`);
         return [{ ref: { kind: 'face' as const, name, fingerprint: faceFingerprint(topology, index) }, axis: g.axis, axisOrigin: g.origin, radius: g.radius, rims }];
       });
-      const box = this.kernel.bounds(b.shape);
+      // the extent, not `bounds` (a cover: on spline faces it reaches past the body, part-3 by 5.6 mm along z)
+      const box = this.kernel.extent(b.shape);
       return { id: b.id, name: b.name, reference: b.reference, mass: b.curve || b.surface ? null : this.kernel.massPropsExact(b.shape), box: { ...box, size: box.max.map((v, i) => v - box.min[i]!) }, holes, holeInterpretation: 'Concave cylindrical walls and circular rim centers in model mm. Mounting purpose is not inferred.' };
     });
   }

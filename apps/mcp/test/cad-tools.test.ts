@@ -1,8 +1,10 @@
 import { beforeAll, afterAll, it, expect } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { serializePart } from '@3db/model';
+import { stepAsPart, writePartFile } from '@3db/io';
+import type { Kernel } from '@3db/kernel';
 import { CadSession } from '../src/session';
 import { callTool } from '../src/server';
 import { PLATE_WITH_HOLE } from '../src/examples';
@@ -102,4 +104,25 @@ it('exhausts repair without altering the original document or requested value', 
   expect(missing.isError).toBe(true);
   expect(JSON.parse((missing.content[0] as { text: string }).text).attempts).toHaveLength(1);
   expect(serializePart(s.doc)).toBe(snapshot);
+});
+
+it('gives the extent of a body with B-spline faces, not the cover its poles make', async () => {
+  // a cylinder r 5, h 10 about y as B-spline faces, imported from STEP as a part: the cover reaches to the rational circle's poles (part-3, R1-10226,
+  // was given 53.22 mm along z for a body of 42.10)
+  const kernel = (s as unknown as { kernel: Kernel }).kernel;
+  const L = (a: number[], b: number[], n: string) => ({ kind: 'line', a, b, source: n });
+  const prof = [[0, 0], [5, 0], [5, 10], [0, 10]];
+  const cyl = kernel.revolve({ origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 1, 0], normal: [0, 0, 1] } as never, [{ outer: prof.map((a, i) => L(a, prof[(i + 1) % 4]!, 'p' + i)), holes: [] }] as never, { origin: [0, 0, 0], dir: [0, 1, 0] }, 2 * Math.PI).shape;
+  const spline = kernel.toBSpline(cyl);
+  const step = new TextEncoder().encode(kernel.exportStep(spline, 'c'));
+  kernel.release(spline);
+  kernel.release(cyl);
+  const file = await stepAsPart(step, 'c.step');
+  writeFileSync(join(root, 'spline-cylinder.3dbx'), await writePartFile(file.doc, file.blobs));
+  await s.open('spline-cylinder.3dbx');
+  const shape = (s as unknown as { result: { bodies: { shape: import("@3db/kernel").ShapeId }[] } }).result.bodies[0]!.shape;
+  const cover = kernel.bounds(shape);
+  expect(cover.max[0]! - cover.min[0]!).toBeGreaterThan(11);
+  const box = s.inspectBodies()[0]!.box;
+  for (const [got, want] of [...box.min.map((v, i) => [v, [-5, 0, -5][i]!]), ...box.max.map((v, i) => [v, [5, 10, 5][i]!])]) expect(Math.abs(got! - want!)).toBeLessThan(1e-6);
 });
