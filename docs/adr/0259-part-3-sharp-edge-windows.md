@@ -89,6 +89,26 @@ Measured on part-3 first (c18a–c18d): the window path stops at its first check
 - Fuzz 100 (`recognize-window-rounds-fuzz-1..25.test.ts`, four seeds a file, each file a fresh heap): a seed whose part OCCT will not make takes its next attempt, at most five (the user's choice, 2026-11-19). 83 parts made, 17 seeds not made in five attempts; **31 rebuilt (37%)**, 37 refused, 15 stopped by the job's 512 MiB budget; 0 traps, 0 accepted wrongly; heap at most 2808 MiB in a file (files of ten reached 4 GiB and trapped). Refusals: about 20 with rounds not nominated, so taken for free faces; about 10 with a rebuilt fillet that cannot be made.
 - The fuzz bar (user, 2026-11-19): each file has at least one part made that went through recognition (rebuilt or refused); every case must be rebuilt as the same solid, refused, or stopped by the budget, and a trap or other error fails it. The first bar, "at least one rebuilt in each file", failed in 6 files of 25: it measured the product's rate (37%), not whether the fuzz ran. The rate is recorded here, not a bar; raising it is work for later (the largest class first: rounds not nominated).
 
+## Slice 4d, first measurement (2026-11-19, after slice 4b)
+
+Part-3 is still refused with the free-face message. Probes `scratch/ff/c20a` (recognition traced with hooks patched in for the run and then removed; `analyze.ts` is as committed) and `c20b` (read only):
+
+- The window path is not taken: the layout check stops at the revolve axis (`revolvedWindow`, `revolveAxis` with the rounds and blend candidates set aside). Of the faces it does not set aside, **19 are surfaces of revolution about another axis**:
+  - 10 cones about a line along z at y 25.65 (half-angles 0.25°–1°, 1226.8 mm² together, the largest group after the main axis): a drafted cut across the axis.
+  - 9 cones along the axis but off it by 0.1–0.99 mm (f0, f1, f223, f33, f222, f34, f221, f36, f219; half-angles 0.06°, 0.5°, 17.5°): drafted cuts along the axis. Slice 3 reads cuts along the axis as planes and cylinders only.
+- Also off the main axis, but set aside here as blend candidates: cylinders r 1.27 along z (f8/f119, f13/f86), r 0.508 along z (f99, f131), r 3.81 along x (f203, f205, f207, f209), and the r 0.127 class. Whether those are rounds or cuts is not measured yet.
+- So slices 4c (skip small rounds) and 4d as planned do not reach part-3. It also needs cuts that are not windows: drafted cuts along the axis (cones) and a drafted cut across it. This is the risk named above ("Slice 4 may show more missing pieces"), now measured. The next scope is the user's decision.
+
+Second measurement, the same day (`scratch/ff/c20c`: each round, the faces that block the revolve axis are set aside and recognition runs again; setting faces aside only finds the next stop, it rebuilds nothing; hooks removed afterwards):
+
+- Round 0: 77 faces block the axis (the first and the second try of recognition together). Beyond the 19 cones above: 2 spheres near the axis (f4, f197); 7 planes near the axis that lean (f35, f202, f204, f208, f210, f217, f220: with the 12 off-axis cones, a small drafted pocket along the axis, x ±1.3, y −6 to 24); 12 planes at ±x that are neither square nor parallel to the axis (f83, f84, f87, f88, f90, f91, f116, f117, f120, f121, f123, f124; normals such as (0.99, 0.139, 0) and (0.866, −0.5, 0); f91 and f124 100.6 mm² each); cylinders r 1.27 and r 0.508 along z at ±x, r 3.81 along x near the axis; and the r 0.127 class.
+- Round 1 (those 77 set aside): the window path stops at the base half-plane: **no direction round the axis is 2° clear**. Planes beside the cross cut cover wide ranges (f192 171.4°, f45 76.2°, f44 and f191 about 29°), and the windows and the cuts along the axis cover the rest. The base is read from one section through the axis; part-3 has no such section that crosses no cut.
+- Not seen: what follows the half-plane (the section, the tools, the comparison). It cannot be reached without a base read some other way.
+
+What part-3 needs, as measured (each a new capability, not a fix): (1) drafted cuts along the axis (cones off it, spheres, leaning planes); (2) a drafted cut across the axis; (3) cuts by planes leaning to the axis at ±x; (4) cylinders along other axes (cut or round, not measured); (5) the small rounds (slice 4c); (6) the revolved base read without a clear section (for example from the coaxial faces alone). This is far more than slices 4c and 4d planned.
+
+Decision 4 (user, 2026-11-19): part-3 is only used in assemblies, measured and drawn; a parametric rebuild is not needed. No further slices are added for part-3; the gaps above are kept for reference, not scheduled. Checked the same day: the assembly STEP opened as the app opens it (`stepAssemblyFiles`) gives part-3 as an imported body (227 faces, volume 4420.7624) that can be measured, drawn (2 sheets, 27 dimensions; 27 slanted faces left undimensioned) and placed in the assembly (4 components, valid).
+
 ## Not decided
 
 Whether the chamfers later get a rebuild path (a new construction, not an OCCT fillet).
