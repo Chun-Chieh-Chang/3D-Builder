@@ -43,7 +43,8 @@ export function stepBytesAsAscii(bytes: Uint8Array, legacy: string): { bytes: Ui
   let encoding = 'utf-8';
   try {
     text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch {
+  } catch (e) {
+    if (!(e instanceof TypeError)) throw e;
     encoding = legacy;
     text = new TextDecoder(legacy).decode(bytes);
   }

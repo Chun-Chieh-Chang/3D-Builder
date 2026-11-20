@@ -1,5 +1,12 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-20（夜）— 修復 CI #309 `crash-no-swallow` 失敗（`stepText.ts`）
+
+- **問題現象**：GitHub Actions `Repository integrity #309`（`full-suite (1)`）於 `tests/phase3/crash-no-swallow.test.ts` 失敗，指出 `packages/kernel/src/stepText.ts:46` 存在未過濾例外型別的 `catch`。
+- **根本原因 (RCA)**：`stepBytesAsAscii()` 以無參數 `catch {` 接住 `new TextDecoder('utf-8', { fatal: true }).decode(bytes)` 的錯誤，違反幾何路徑不得吞掉非預期例外（如 WASM trap）的靜態守門。
+- **矯正措施 (CAPA)**：改為 `catch (e) { if (!(e instanceof TypeError)) throw e; ... }`，僅攔截無效 UTF-8 位元組產生的 `TypeError`。
+- **驗證**：`tests/phase3/crash-no-swallow.test.ts`（4/4）、`tests/phase3/step-names-codepage.test.ts`（7/7）、`lint:rules`、`lint:repo` 全數通過。
+
 ## 2026-11-20（晚）— 完整瀏覽器 UI 驗收（280/280 全綠）與 `verify:ui` 斷點續跑機制
 
 - **完成項目**：
