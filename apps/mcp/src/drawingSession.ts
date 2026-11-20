@@ -437,14 +437,21 @@ export class DrawingSession {
         // a detail with nothing in it is not made (its dimensions go back), the others go beside the view they enlarge (ADR 0261, rules V4 and V6)
         d = this.dropEmptyDetails(d, pi);
         d = this.placeDetails(d, pi);
-        return this.tidyFitted(d, { ...o, sheet }, pi);
+        d = this.tidyFitted(d, { ...o, sheet }, pi);
+        // the leaders and numbers of the details are only final after tidy and may reach further than the room kept for them: place the details once more with that known
+        if (this.layoutFaults(d, pi) > 0) d = this.tidy(this.placeDetails(d, pi), pi, 'keep');
+        return d;
       };
-      if (!hasDetails) doc = layOut('auto');
+      // every page of a drawing is on the same sheet (rule P3, ADR 0261): the first page is laid out already, so the others start from its size
+      const sheets: SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
+      const same = page(doc, 0).sheet.size;
+      if (!hasDetails) doc = layOut(same);
       else {
-        // A page of detail views takes the smallest sheet, from A3, on which none is crowded: the views clear of each other, every detail beside its parent with
-        // nothing between them, everything inside the area. When no sheet is clean, the one with the fewest faults (the smaller on a tie).
+        // A page of detail views takes the smallest sheet on which none is crowded — from the first page's size (and not below A3): the views clear of each other,
+        // every detail beside its parent with nothing between them, everything inside the area. When no sheet is clean, the one with the fewest faults (the smaller
+        // on a tie).
         let pick: { doc: DrawingDoc; faults: number } | null = null;
-        for (const sheet of ['A3', 'A2', 'A1'] as const) {
+        for (const sheet of sheets.slice(Math.max(sheets.indexOf(same), sheets.indexOf('A3')))) {
           const trial = layOut(sheet);
           const faults = this.layoutFaults(trial, pi);
           if (!pick || faults < pick.faults) pick = { doc: trial, faults };
