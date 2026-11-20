@@ -22,17 +22,18 @@ export function toSvg(scene: Scene, options: { font?: string; /** Screen zoom co
     out.push(`<image x="${num(img.at[0])}" y="${y(img.at[1] + img.h)}" width="${num(img.w)}" height="${num(img.h)}" preserveAspectRatio="none" href="${shadeHref(img.image)}"${clip ? ` clip-path="url(#${clip})"` : ''}/>`);
   });
   for (const item of scene.items) {
+    const ink = item.color ?? '#000000';
     if (item.kind === 'polyline') {
       const s = sceneLines(scene)[item.style];
       const pts: string[] = [];
       for (let i = 0; i < item.points.length; i += 2) pts.push(`${num(item.points[i]!)},${y(item.points[i + 1]!)}`);
-      const attrs = `fill="${item.filled ? '#000000' : 'none'}" stroke="#000000" stroke-width="${strokeWidth(item.width ?? s.width)}" stroke-linecap="round" stroke-linejoin="round"${s.dash ? ` stroke-dasharray="${s.dash.join(' ')}"` : ''}`;
+      const attrs = `fill="${item.filled ? ink : 'none'}" stroke="${ink}" stroke-width="${strokeWidth(item.width ?? s.width)}" stroke-linecap="round" stroke-linejoin="round"${s.dash ? ` stroke-dasharray="${s.dash.join(' ')}"` : ''}`;
       out.push(item.closed ? `<polygon points="${pts.join(' ')}" ${attrs}/>` : `<polyline points="${pts.join(' ')}" ${attrs}/>`);
     } else {
       // the text of a dimension has a white edge: what is drawn under it does not strike through it
       const anchor = item.anchor === 'center' ? 'middle' : item.anchor === 'right' ? 'end' : 'start';
       const rotate = item.angle ? ` transform="rotate(${num(-item.angle)} ${num(item.at[0])} ${y(item.at[1])})"` : '';
-      out.push(`<text${item.viewCaption ? ` data-view-caption="${esc(item.viewCaption)}"` : ''} x="${num(item.at[0])}" y="${y(item.at[1])}" font-size="${num(item.height * 1.4)}" font-family="${esc(options.font ?? 'sans-serif')}" text-anchor="${anchor}" fill="#000000"${item.group ? ` stroke="#ffffff" stroke-width="${num(item.height * 0.3)}" stroke-linejoin="round" paint-order="stroke"` : ''}${rotate}>${esc(item.text)}</text>`);
+      out.push(`<text${item.viewCaption ? ` data-view-caption="${esc(item.viewCaption)}"` : ''} x="${num(item.at[0])}" y="${y(item.at[1])}" font-size="${num(item.height * 1.4)}" font-family="${esc(options.font ?? 'sans-serif')}" text-anchor="${anchor}" fill="${ink}"${item.group ? ` stroke="#ffffff" stroke-width="${num(item.height * 0.3)}" stroke-linejoin="round" paint-order="stroke"` : ''}${rotate}>${esc(item.text)}</text>`);
     }
   }
   out.push('</svg>');

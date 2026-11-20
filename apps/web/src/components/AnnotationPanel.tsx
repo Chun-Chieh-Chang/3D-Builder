@@ -14,6 +14,7 @@ import {
   page,
 } from '@3db/model';
 import type { AnnotateWhat } from '../state/drawing';
+import { ColorRow } from './DimStyleFields';
 import { useState } from 'react';
 import { store, useStore } from '../state/store';
 
@@ -173,9 +174,19 @@ function AnnotationFields({ a }: { a: Annotation }) {
   const d = store.drawingStore!;
   const curPage = page(drw.doc, drw.activePageIndex ?? 0);
   const datums = (curPage.annotations ?? []).flatMap((x) => (x.kind === 'datum' ? [x.label] : []));
+  const colorControl = (
+    <ColorRow
+      field="annotationColor"
+      value={a.color ?? '#000000'}
+      canReset={!!a.color}
+      onChange={(color) => d.setAnnotation(a.id, { color: color === '#000000' ? null : color })}
+      onReset={() => d.setAnnotation(a.id, { color: null })}
+    />
+  );
   if (a.kind === 'note')
     return (
       <>
+        {colorControl}
         <label className="pm-row">
           <span>{t('drawingUi.noteText')}</span>
           <NoteBox value={a.text} onCommit={(v) => d.setAnnotation(a.id, { text: v })} />
@@ -204,6 +215,7 @@ function AnnotationFields({ a }: { a: Annotation }) {
   if (a.kind === 'datum')
     return (
       <>
+        {colorControl}
         <label className="pm-row">
           <span>{t('drawingUi.datumLabel')}</span>
           <TextBox field="datumLabel" value={a.label} onCommit={(v) => d.setAnnotation(a.id, { label: v.trim().toUpperCase() })} />
@@ -218,14 +230,24 @@ function AnnotationFields({ a }: { a: Annotation }) {
         </label>
       </>
     );
-  if (a.kind === 'fcf') return <FrameEditor a={a} datums={datums} />;
+  if (a.kind === 'fcf')
+    return (
+      <>
+        {colorControl}
+        <FrameEditor a={a} datums={datums} />
+      </>
+    );
   if (a.kind === 'centreMark')
     return (
-      <label className="pm-row">
-        <span>{t('drawingUi.centreMarkRadius')}</span>
-        <NumberBox field="centreMarkRadius" value={a.radius} onCommit={(v) => d.setAnnotation(a.id, { radius: v })} />
-      </label>
+      <>
+        {colorControl}
+        <label className="pm-row">
+          <span>{t('drawingUi.centreMarkRadius')}</span>
+          <NumberBox field="centreMarkRadius" value={a.radius} onCommit={(v) => d.setAnnotation(a.id, { radius: v })} />
+        </label>
+      </>
     );
+  if (a.kind === 'centreLine') return colorControl;
   return null;
 }
 

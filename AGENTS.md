@@ -310,3 +310,7 @@
   2. **門檻量到的若是產品能力，不是測試有沒有空跑，就不能靠調產生器變綠**：4b fuzz「每檔至少重建一件」在 6／25 檔失敗，因為重建率只有 37%；改產生器、拆檔都改不了。照實回報，由使用者裁決門檻，重建率另外記錄。
   3. **量測工具要用量測的方法**：`Kernel.bounds`（`BRepBndLib.Add`）是給快速判斷的保守外框，在 B-spline 面上取控制點再加容差，part-3 沿 z 多 11 mm；回報尺寸用 `Kernel.extent`（`AddOptimal`，不加容差）。同一個量在兩個工具給出不同值時，用第三個獨立量（網格、頂點）裁決。
   4. **讀外部檔案的文字先看位元組**：SolidWorks 2020 的 STEP 把名稱寫成 Big5 位元組（違反 ISO 10303-21），兩個零件因此撞名。外部檔案的文字問題，先用 `od` 看原始位元組，再判斷是讀取端還是檔案本身。
+
+- **2026-11-20（`.3dbd` 開啟卡死與 MCP 參考草圖圓標註，RSI）**：
+  1. **瀏覽器 FileSystemHandle／IndexedDB 非互動呼叫不得無界等待**：Windows Chrome 對 IndexedDB 跨工作階段留存的 `FileSystemDirectoryHandle`／`FileSystemFileHandle` 呼叫 `queryPermission`、`resolve` 或 `indexedDB.open`（`onblocked`）時可能回傳永不 settle 的 Promise，造成無 Console 錯誤、無 UI 提示的靜默卡死。凡非互動的句柄查詢一律須加有界逾時退路（`withTimeout`）與失效率重試，並以永不 settle 的 mock Promise 寫入單元測試硬化（`tests/phase5/files-handle-timeout.test.ts`）。
+  2. **MCP 與 Web Worker 的圖元事實分派必須維持對等**：`apps/web/src/worker/kernel.worker.ts` 支援新的 `DrawingRef` 種類（如 `kind: 'sketch'` → `drawingSketchFacts`）時，必須同步檢查 `apps/mcp/src/drawingSession.ts` 的 `getFacts`，避免同一份 `.3dbd` 在 Web 可畫、在無頭 MCP 輸出失敗。

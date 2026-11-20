@@ -151,18 +151,29 @@ export function toPdf(sceneOrScenes: Scene | readonly Scene[], options: PdfOptio
       const clip = img.clip ? `${circlePolyline(img.clip.centre, img.clip.radius, 64).reduce<string[]>((acc, v, k, all) => (k % 2 === 0 ? [...acc, `${num(v * PT)} ${num(all[k + 1]! * PT)} ${k === 0 ? 'm' : 'l'}`] : acc), []).join(' ')} h W n ` : '';
       ops.push(`q ${clip}${num(img.w * PT)} 0 0 ${num(img.h * PT)} ${num(img.at[0] * PT)} ${num(img.at[1] * PT)} cm /Im${localIndex + 1} Do Q`);
     });
+    const colorPrefix = (hex?: string): string => {
+      if (!hex || hex.toLowerCase() === '#000000' || !/^#[0-9a-fA-F]{6}$/.test(hex)) return '';
+      const r = num(parseInt(hex.slice(1, 3), 16) / 255);
+      const g = num(parseInt(hex.slice(3, 5), 16) / 255);
+      const b = num(parseInt(hex.slice(5, 7), 16) / 255);
+      return `${r} ${g} ${b} RG ${r} ${g} ${b} rg `;
+    };
     for (const item of sc.items) {
+      const col = colorPrefix(item.color);
       if (item.kind === 'polyline') {
         const s = sceneLines(sc)[item.style] ?? LINE_STYLES.visible;
         const pts: string[] = [];
         for (let i = 0; i + 1 < item.points.length; i += 2) pts.push(`${num(item.points[i]! * PT)} ${num(item.points[i + 1]! * PT)} ${i === 0 ? 'm' : 'l'}`);
         if (pts.length < 2) continue;
-        if (item.filled) ops.push(`${pts.join(' ')} h f`);
-        else ops.push(`${num((item.width ?? s.width) * PT)} w ${s.dash ? `[${s.dash.map((d) => num(d * PT)).join(' ')}] 0 d` : '[] 0 d'} ${pts.join(' ')}${item.closed ? ' h' : ''} S`);
+        const draw = item.filled
+          ? `${pts.join(' ')} h f`
+          : `${num((item.width ?? s.width) * PT)} w ${s.dash ? `[${s.dash.map((d) => num(d * PT)).join(' ')}] 0 d` : '[] 0 d'} ${pts.join(' ')}${item.closed ? ' h' : ''} S`;
+        ops.push(col ? `q ${col}${draw} Q` : draw);
       } else if (item.text !== '') {
         const run = plan(item.text, font, used);
         for (const c of run.replaced) replacedChars.add(c);
-        ops.push(textOps(item, run, font));
+        const draw = textOps(item, run, font);
+        ops.push(col ? `q ${col}${draw} Q` : draw);
       }
     }
     ops.push('Q');

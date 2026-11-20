@@ -2,8 +2,50 @@ import { t } from '@3db/i18n';
 import { ARROW_STYLES, type ArrowStyle, type DimStyle } from '@3db/model';
 import { NumberBox } from './DimensionPanel';
 
+const COLOR_SWATCHES = ['#000000', '#DC2626', '#2563EB', '#059669', '#D97706', '#7C3AED'] as const;
+
+export function ColorRow({ field, value, onChange, onReset, canReset }: { field: string; value: string; onChange: (hex: string) => void; onReset?: () => void; canReset?: boolean }) {
+  return (
+    <div className="pm-row" style={{ flexWrap: 'wrap', gap: 4 }}>
+      <span>{t('drawingUi.color')}</span>
+      <input
+        type="color"
+        data-field={field}
+        value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : '#000000'}
+        onChange={(e) => onChange(e.target.value.toUpperCase())}
+        style={{ width: 28, height: 22, padding: 0, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}
+      />
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        {COLOR_SWATCHES.map((hex) => (
+          <button
+            key={hex}
+            type="button"
+            title={hex}
+            data-color-swatch={hex}
+            onClick={() => onChange(hex)}
+            style={{
+              width: 16,
+              height: 16,
+              padding: 0,
+              borderRadius: 4,
+              background: hex,
+              border: value.toUpperCase() === hex ? '2px solid var(--accent)' : '1px solid var(--border)',
+              cursor: 'pointer',
+            }}
+          />
+        ))}
+      </div>
+      {onReset && (
+        <button type="button" className="pm-button" data-action={`${field}Reset`} disabled={!canReset} onClick={onReset}>
+          {t('drawingUi.colorReset')}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /**
- * The fields of a dimension style (ADR 0146): text height, arrow length and kind, line width. `value` is what the style says itself; `base` what is drawn where it
+ * The fields of a dimension style (ADR 0146): text height, arrow length and kind, line width, color. `value` is what the style says itself; `base` what is drawn where it
  * says nothing (the drawing's style for a dimension, ISO's for the drawing). A size out of its limits is refused by the command, which says why — nothing here
  * puts it in range. 「恢復預設」 takes the style away (`null`).
  */
@@ -12,6 +54,7 @@ export function DimStyleFields({ scope, value, base, onChange }: { scope: 'sheet
   const set = (patch: DimStyle) => onChange({ ...value, ...patch });
   return (
     <div data-group={`dimStyle-${scope}`}>
+      <ColorRow field={`dimStyleColor-${scope}`} value={shown.color} onChange={(color) => set({ color })} />
       <label className="pm-row">
         <span>{t('drawingUi.dimStyleText')}</span>
         <NumberBox field="dimStyleText" value={shown.text} onCommit={(v) => set({ text: v })} />

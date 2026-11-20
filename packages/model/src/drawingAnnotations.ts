@@ -69,6 +69,8 @@ interface AnnotationCommon {
   id: Id;
   /** The view it is drawn on. */
   view: Id;
+  /** Optional `#RRGGBB` ink color; absent draws black (`#000000`). */
+  color?: string;
 }
 
 /**
@@ -158,10 +160,13 @@ const finite = (p: unknown): p is P => Array.isArray(p) && p.length === 2 && p.e
  * Checks an annotation on its own and against the others of the drawing: what its kind needs, what ISO 1101 allows a characteristic, and that every datum a
  * frame refers to is a datum symbol of the drawing. `others` are the annotations it is checked against (the drawing's, without it).
  */
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
 export function checkAnnotation(a: Annotation, viewExists: (id: Id) => boolean, others: readonly Annotation[]): void {
   if (!a.id) throw new CommandError(t('drawing.idMissing'));
   if (!ANNOTATION_KINDS.includes(a.kind)) throw new CommandError(t('drawing.annBadKind', { kind: String((a as { kind?: unknown }).kind) }));
   if (!viewExists(a.view)) throw new CommandError(t('drawing.dimNoView', { id: String(a.view) }));
+  if (a.color !== undefined && (typeof a.color !== 'string' || !HEX_COLOR.test(a.color))) throw new CommandError(t('drawing.badDimStyle'));
   const attach = (a as { attach?: Attachment }).attach;
   if (attach !== undefined) {
     const r = attach?.ref;
@@ -233,11 +238,11 @@ export type AnnotationPatch = { [K in string]?: unknown };
 
 /** The fields each kind may have changed, and which of them may be taken away. */
 export const ANNOTATION_FIELDS: Record<AnnotationKind, { set: string[]; optional: string[] }> = {
-  note: { set: ['at', 'text', 'height', 'enclosure', 'leader', 'attach'], optional: ['height', 'enclosure', 'leader', 'attach'] },
-  datum: { set: ['at', 'label', 'angle', 'length', 'attach'], optional: ['angle', 'length', 'attach'] },
-  fcf: { set: ['at', 'characteristic', 'tolerance', 'diameter', 'material', 'datums', 'leader', 'attach'], optional: ['diameter', 'material', 'leader', 'attach'] },
-  centreLine: { set: ['from', 'to'], optional: [] },
-  centreMark: { set: ['at', 'radius', 'attach'], optional: ['attach'] },
+  note: { set: ['at', 'text', 'height', 'enclosure', 'leader', 'attach', 'color'], optional: ['height', 'enclosure', 'leader', 'attach', 'color'] },
+  datum: { set: ['at', 'label', 'angle', 'length', 'attach', 'color'], optional: ['angle', 'length', 'attach', 'color'] },
+  fcf: { set: ['at', 'characteristic', 'tolerance', 'diameter', 'material', 'datums', 'leader', 'attach', 'color'], optional: ['diameter', 'material', 'leader', 'attach', 'color'] },
+  centreLine: { set: ['from', 'to', 'color'], optional: ['color'] },
+  centreMark: { set: ['at', 'radius', 'attach', 'color'], optional: ['attach', 'color'] },
 };
 
 /** The text of a note with `$PRP:key` replaced by what `lookup` says of the key; a key it does not know is left as written, so that it is seen to be wrong. */

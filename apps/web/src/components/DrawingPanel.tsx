@@ -1,5 +1,5 @@
 import { t, type Locale } from '@3db/i18n';
-import { BREAK_GAP, DRAWING_STANDARDS, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, baseName, canHatch, hatchStyleOf, displayOf, isCorner, isDerived, isShaded, baseDimStyle, page, resolveDimStyle, standardOf, type DrawingStandard, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewSide } from '@3db/model';
+import { BREAK_GAP, DRAWING_STANDARDS, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, VIEW_ORIENTATION_PRESETS, axesOf, axesToOrientation, baseName, canHatch, hatchStyleOf, displayOf, isCorner, isDerived, isShaded, baseDimStyle, page, resolveDimStyle, standardOf, type DrawingStandard, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewOrientation, type ViewSide } from '@3db/model';
 import { STANDARD_SCALES, viewCaptionTemplate, arrangementBase, lineAcrossBox, scaleText, type ViewLines } from '@3db/drawing';
 import { ACTIONS, openDrawingPart, shortcutOf } from '../actions';
 import { DimStyleFields } from './DimStyleFields';
@@ -608,7 +608,10 @@ export function DrawingPanel() {
               {!isDerived(view) && (
                 <label className="pm-row">
                   <span>{t('drawingUi.direction')}</span>
-                  <select data-field="viewDirection" value={view.direction} onChange={(e) => d.setView(view.id, { direction: e.target.value as ViewName, name: t(`drawing.view.${e.target.value as ViewName}`) })}>
+                  <select data-field="viewDirection" value={view.direction} onChange={(e) => {
+                    const nextDir = e.target.value as ViewName;
+                    d.setView(view.id, { direction: nextDir, name: t(`drawing.view.${nextDir}`), ...(view.orientation ? { orientation: null } : {}) });
+                  }}>
                     {VIEW_NAMES.map((n) => (
                       <option key={n} value={n}>
                         {t(`drawing.view.${n}`)}
@@ -620,7 +623,10 @@ export function DrawingPanel() {
               {view.kind === 'projected' && (
                 <label className="pm-row">
                   <span>{t('drawingUi.side')}</span>
-                  <select data-field="viewSide" value={view.side} onChange={(e) => d.setView(view.id, { side: e.target.value as ViewSide | ViewCorner })}>
+                  <select data-field="viewSide" value={view.side} onChange={(e) => {
+                    const nextSide = e.target.value as ViewSide | ViewCorner;
+                    d.setView(view.id, { side: nextSide, ...(view.orientation ? { orientation: null } : {}) });
+                  }}>
                     {/* a view off a corner turns to another corner; one on a side, to another side */}
                     {(isCorner(view.side) ? VIEW_CORNERS : SIDES).map((s) => (
                       <option key={s} value={s}>
@@ -630,6 +636,65 @@ export function DrawingPanel() {
                   </select>
                 </label>
               )}
+              {((!isDerived(view) && view.direction !== 'flat') || (view.kind === 'projected' && isCorner(view.side))) && (() => {
+                const currentAxes = axesOf(curPage.views, curPage.sheet.projection, view);
+                const cur: ViewOrientation = view.orientation ?? (currentAxes ? axesToOrientation(currentAxes) : { azimuth: 45, elevation: 35.3, roll: 0 });
+                const applyOrient = (patch: Partial<ViewOrientation>) => {
+                  const nextAz = patch.azimuth ?? cur.azimuth;
+                  const nextEl = Math.max(-89.9, Math.min(89.9, patch.elevation ?? cur.elevation));
+                  const nextRoll = patch.roll ?? cur.roll ?? 0;
+                  d.setView(view.id, { orientation: { azimuth: nextAz, elevation: nextEl, roll: nextRoll } });
+                };
+                const presets: readonly { key: keyof typeof VIEW_ORIENTATION_PRESETS; label: string }[] = [
+                  { key: 'isoFR', label: t('drawingUi.presetIsoFR') },
+                  { key: 'isoFL', label: t('drawingUi.presetIsoFL') },
+                  { key: 'isoBR', label: t('drawingUi.presetIsoBR') },
+                  { key: 'isoBL', label: t('drawingUi.presetIsoBL') },
+                  { key: 'dimetric', label: t('drawingUi.presetDimetric') },
+                  { key: 'trimetric', label: t('drawingUi.presetTrimetric') },
+                ];
+                return (
+                  <div className="pm-sub" data-section="viewOrientation" style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                    <div className="pm-row" style={{ justifyContent: 'space-between' }}>
+                      <span>{t('drawingUi.viewOrientation')}</span>
+                      <button type="button" className="pm-button" data-action="resetViewOrientation" disabled={!view.orientation} onClick={() => d.setView(view.id, { orientation: null })}>
+                        {t('drawingUi.orientationReset')}
+                      </button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                      {presets.map((p) => (
+                        <button
+                          key={p.key}
+                          type="button"
+                          className="pm-button"
+                          data-preset-orientation={p.key}
+                          onClick={() => d.setView(view.id, { orientation: { ...VIEW_ORIENTATION_PRESETS[p.key] } })}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                    <label className="pm-row">
+                      <span>{t('drawingUi.azimuth')}</span>
+                      <input type="range" min={-180} max={180} step={1} value={Math.round(cur.azimuth)} onChange={(e) => applyOrient({ azimuth: Number(e.target.value) })} style={{ flex: 1, minWidth: 60 }} />
+                      <input data-field="viewAzimuth" type="number" step={1} value={cur.azimuth} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) applyOrient({ azimuth: v }); }} onKeyDown={(e) => e.stopPropagation()} style={{ width: 58 }} />
+                      <span className="suffix">°</span>
+                    </label>
+                    <label className="pm-row">
+                      <span>{t('drawingUi.elevation')}</span>
+                      <input type="range" min={-89} max={89} step={1} value={Math.round(cur.elevation)} onChange={(e) => applyOrient({ elevation: Number(e.target.value) })} style={{ flex: 1, minWidth: 60 }} />
+                      <input data-field="viewElevation" type="number" min={-89.9} max={89.9} step={1} value={cur.elevation} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= -89.9 && v <= 89.9) applyOrient({ elevation: v }); }} onKeyDown={(e) => e.stopPropagation()} style={{ width: 58 }} />
+                      <span className="suffix">°</span>
+                    </label>
+                    <label className="pm-row">
+                      <span>{t('drawingUi.roll')}</span>
+                      <input type="range" min={-180} max={180} step={1} value={Math.round(cur.roll ?? 0)} onChange={(e) => applyOrient({ roll: Number(e.target.value) })} style={{ flex: 1, minWidth: 60 }} />
+                      <input data-field="viewRoll" type="number" step={1} value={cur.roll ?? 0} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) applyOrient({ roll: v }); }} onKeyDown={(e) => e.stopPropagation()} style={{ width: 58 }} />
+                      <span className="suffix">°</span>
+                    </label>
+                  </div>
+                );
+              })()}
               <label className="pm-row">
                 <span>{t('drawingUi.viewScale')}</span>
                 <select data-field="viewScale" value={view.scale ? scaleText(view.scale) : ''} onChange={(e) => d.setView(view.id, { scale: e.target.value ? parseScale(e.target.value) : null })}>

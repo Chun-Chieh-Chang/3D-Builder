@@ -6733,3 +6733,14 @@ Schema 93 記錄來源本體、基準面或模型平面、帶符號的平面偏�
   13. 2-6 階段 B：使用者決定把 A-A 整個搬到第 2 頁（不是複製），第 1 頁不再畫它，剖面代號整份圖唯一。改 `offloadMicroDetails`：插入 secA2、尺寸一併搬過去並從第 1 頁刪除、第 1 頁的 secA 刪除、詳圖母視圖候選改為 `onPage0: false`。後果：R1-8032 第 1 頁只剩主視圖與等角圖，自己縮成 A4 5:1，與第 2 頁 A2 不同；→ 在 `create()` 最後取各頁最大圖紙，第 1 頁（先刪等角圖）用 `layOutPage` 重排一次，結果兩頁 A2。一個小失誤：新增的 `const ranked` 與同函式已有的 `ranked`（主視圖排名）同名，typecheck 才抓到，改名 `bySize`。新增回歸測試（同圖紙、代號唯一）；91 檔 894 項通過。階段 C（同一視圖不在兩頁重畫）未解決：主視圖因為要當 B-B、A-A 的母視圖而在第 2 頁再畫一次，待與使用者討論。
   14. 2-6 階段 C：使用者決定把第 2 頁重畫的主視圖標為「參考」（不是保持現狀）。改視圖名稱（標題取自名稱）而不是另加文字圖元，所以 `drawing_inspect`、DXF、PDF 都一致；新增 i18n 鍵 `drawing.view.reference`（中英）。測試加一項，突變轉紅。91 檔 895 項通過。一個小失誤：測試標題裡的 `\'` 被 Python 寫成單引號，語法錯誤，typecheck 抓到，改用雙引號標題。
   15. 2-7：標題比例。`viewCaptionItem(v, own, scale, sheetScale?)`；三個突變（永遠加、覆蓋使用者文字、詳圖重複加）全紅。量「標題有沒有被壓到」時，`checks()` 的雜亂文字只列前 12 個，不能直接拿來判斷標題，所以自己用 `clutterOf` 取完整清單再與標題集合比對（4 個零件 7 頁皆空）。教訓：自檢的摘要欄位被截斷時，要自己取完整資料再下結論。`apps/mcp/test`＋`tests/phase5` 92 檔 901 項通過。
+
+- **2026-11-20 開啟 `.3dbd` 工程圖無聲卡死 & MCP 參考草圖圓標註（RSI 自進化）**：
+  1. **事件一（前端開啟舊檔／`.3dbd` 無聲卡死）**：
+     - 現象：點擊「檔案 → 開啟舊檔」選擇 `.3dbd` 後，頁面無錯誤提示、無 Console 紅字、亦不彈出「選擇專案資料夾」對話框，直接停在空畫面。
+     - 根因（RCA）：透過執行期追蹤定位，瀏覽器 IndexedDB 留有舊的 `remembered` 專案資料夾 handle（`hasRemembered: true`），`openDrawing()` 呼叫 `rememberedWithAccess()` → `folderAccess(folder, false)`（`queryPermission`）與 `pathIn(folder, picked.handle)`（`folder.resolve(file)`）時，在 Windows Chrome 對失效／停滯的 `FileSystemDirectoryHandle` 呼叫 `queryPermission` 或 `resolve` 會回傳**永不 settle 的 Promise**，導致整個非同步開啟流程永久懸置，既不進 `catch` 也不會觸發 `askForFolder()`。同源脆弱點亦存在於 `pick()` 呼叫 `showOpenFilePicker` 前的 `lastOpenedFile()`／`browserProjectName()` 與未處置的 `indexedDB.open().onblocked`。
+     - 矯正與預防措施（CAPA）：在共用底層 `apps/web/src/files.ts` 新增 `withTimeout` 防卡死保護，為非互動的 `folderAccess(folder, false)`（1 s）、`pathIn()`（1 s）、`lastOpenedFile()`／`browserProjectName()`／`LAST_OPEN` 寫入（400 ms）加上界限；`database()` 補上 `onblocked` 拒絕處理；`pick()` 於 `startIn` 失效時自動清除 `LAST_OPEN` 並重試無 `startIn`。水平展開自動涵蓋 `.3dbd`、`.3dba`、另存新檔與封裝。
+     - 物理硬化（Layer 1）：新增單元測試 `tests/phase5/files-handle-timeout.test.ts`，以永不 settle 的 mock Promise 驗證 `folderAccess(folder, false)` 與 `pathIn()` 必於逾時內安全回傳 `false`／`null`。
+  2. **事件二（MCP 工程圖引擎缺少 `kind: 'sketch'` 參考草圖圓解析）**：
+     - 現象：在 3D 模型建立檢具量測基準面與量測圓草圖，並於工程圖局部放大視圖直接以 `kind: 'sketch'`（`sketchPositive`／`sketchNegative`）標註高度與直徑時，Web 端 `kernel.worker.ts` 支援，但 MCP `apps/mcp/src/drawingSession.ts` 回傳「正在讀取尺寸指的元素…」。
+     - 根因（RCA）：`apps/mcp/src/drawingSession.ts` 的兩處 `getFacts` 僅呼叫 `elementFacts(...)`，未比照 `apps/web/src/worker/kernel.worker.ts:743` 將 `r.kind === 'sketch'` 分派給 `drawingSketchFacts(s.built.sketches, r)`。
+     - 矯正措施（CAPA）：補齊 `apps/mcp/src/drawingSession.ts` 兩處 `r.kind === 'sketch' ? drawingSketchFacts(...) : elementFacts(...)` 分派並重建 `@3db/mcp`，使局部放大圖 `B (6:1)` 的 6 個量測基準尺寸全部由真實幾何計算通過（`failed: []`）。

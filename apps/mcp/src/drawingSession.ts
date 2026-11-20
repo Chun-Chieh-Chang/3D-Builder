@@ -80,7 +80,7 @@ import {
   type SectionAdvice,
 } from '@3db/drawing';
 import { readAnyDocumentFile, writeDrawingFile } from '@3db/io';
-import { elementFacts, holeFeatures, projectDrawingView, viewFeatures } from '@3db/regen';
+import { drawingSketchFacts, elementFacts, holeFeatures, projectDrawingView, viewFeatures } from '@3db/regen';
 import { isTrap } from '@3db/kernel';
 import { AgentError, messageOf, type CadSession } from './session';
 import { renderView } from './render';
@@ -748,7 +748,7 @@ export class DrawingSession {
     const getFacts = (r: Parameters<typeof elementFacts>[2]) => {
       const key = JSON.stringify(r);
       if (this.elementCache.has(key)) return this.elementCache.get(key)!;
-      const f = elementFacts(s.body.topology, s.body.names, r, holeFeatures(s.doc), s.built.cosmeticThreads);
+      const f = r.kind === 'sketch' ? drawingSketchFacts(s.built.sketches, r) : elementFacts(s.body.topology, s.body.names, r, holeFeatures(s.doc), s.built.cosmeticThreads);
       const val = 'error' in f ? null : f;
       this.elementCache.set(key, val);
       return val;
@@ -935,7 +935,7 @@ export class DrawingSession {
     const getFacts = (r: Parameters<typeof elementFacts>[2]): Exclude<ReturnType<typeof elementFacts>, { error: string }> | null => {
       const key = JSON.stringify(r);
       if (this.elementCache.has(key)) return this.elementCache.get(key)!;
-      const f = elementFacts(s.body.topology, s.body.names, r, holes, s.built.cosmeticThreads);
+      const f = r.kind === 'sketch' ? drawingSketchFacts(s.built.sketches, r) : elementFacts(s.body.topology, s.body.names, r, holes, s.built.cosmeticThreads);
       const val = 'error' in f ? null : f;
       this.elementCache.set(key, val);
       return val;

@@ -93,7 +93,7 @@ describe('the sizes drawn are the style\'s', () => {
     const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
     const within = (k: 'text' | 'arrow' | 'line') => DIM_STYLE_LIMITS[k][0] + rnd() * (DIM_STYLE_LIMITS[k][1] - DIM_STYLE_LIMITS[k][0]);
     for (let n = 0; n < 200; n++) {
-      const st: Required<DimStyle> = { text: within('text'), arrow: within('arrow'), line: within('line'), arrowStyle: ARROW_STYLES[Math.floor(rnd() * 5)]! };
+      const st: Required<DimStyle> = { text: within('text'), arrow: within('arrow'), line: within('line'), arrowStyle: ARROW_STYLES[Math.floor(rnd() * 5)]!, color: '#000000' };
       for (const d of [linear, diameter]) {
         const m = measure(draw(d, st));
         expect(m.texts.every((t) => t.height === st.text)).toBe(true);
@@ -123,7 +123,7 @@ describe('the drawing\'s style and a dimension\'s own', () => {
     expect(texts(doc)).toEqual([5]);
     doc = applyDrawingCommand(doc, { type: 'setDimension', dimensionId: 'd1', patch: { style: { text: 7 } } });
     expect(texts(doc)).toEqual([7]);
-    expect(resolveDimStyle(page(doc).sheet.dimStyle, page(doc).dimensions[0]!.style)).toEqual({ text: 7, arrow: 3, arrowStyle: 'tick', line: 0.25 });
+    expect(resolveDimStyle(page(doc).sheet.dimStyle, page(doc).dimensions[0]!.style)).toEqual({ text: 7, arrow: 3, arrowStyle: 'tick', line: 0.25, color: '#000000' });
     doc = applyDrawingCommand(doc, { type: 'setDimension', dimensionId: 'd1', patch: { style: null } });
     expect(page(doc).dimensions[0]).not.toHaveProperty('style');
     expect(texts(doc)).toEqual([5]);

@@ -135,27 +135,82 @@ export function pickPartFile(startIn: FileSystemDirectoryHandle): Promise<Opened
   return pick([either, PART_TYPE, STEP_TYPE], startIn, 'copy');
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(fallback);
+      }
+    }, ms);
+    promise.then(
+      (v) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(v);
+        }
+      },
+      () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(fallback);
+        }
+      },
+    );
+  });
+}
+
 async function pick(types: PickerType[], startIn: FileSystemDirectoryHandle | null = null, outside: 'open' | 'copy' = 'open', id = PICKER_ID): Promise<OpenedFile | null> {
-  const recent = id === OPEN_PICKER_ID && window.showOpenFilePicker ? await lastOpenedFile() : null;
-  const projectName = await browserProjectName(startIn);
-  if (startIn && projectName !== null) {
-    const extensions = [...new Set(types.flatMap((x) => Object.values(x.accept).flat()))].map((e) => e.toLowerCase());
-    const answer = await askProjectFile({ mode: 'open', folder: startIn, projectName, extensions, accept: acceptOf(types), outside });
-    if (!answer) return null;
-    const file = 'handle' in answer ? await answer.handle.getFile() : answer.file;
-    return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()), handle: 'handle' in answer ? answer.handle : null };
+  const recent = id === OPEN_PICKER_ID && window.showOpenFilePicker ? await withTimeout(lastOpenedFile(), 400, null) : null;
+  if (startIn) {
+    const projectName = await withTimeout(browserProjectName(startIn), 400, null);
+    if (projectName !== null) {
+      const extensions = [...new Set(types.flatMap((x) => Object.values(x.accept).flat()))].map((e) => e.toLowerCase());
+      const answer = await askProjectFile({ mode: 'open', folder: startIn, projectName, extensions, accept: acceptOf(types), outside });
+      if (!answer) return null;
+      const file = 'handle' in answer ? await answer.handle.getFile() : answer.file;
+      return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()), handle: 'handle' in answer ? answer.handle : null };
+    }
   }
   if (window.showOpenFilePicker) {
+    const location = recent ?? startIn;
+    const openPicker = async (withStartIn: boolean): Promise<FileSystemFileHandle | null> => {
+      const [handle] = await window.showOpenFilePicker!({ id, types, ...(withStartIn && location ? { startIn: location } : {}) });
+      return handle ?? null;
+    };
     try {
-      const location = recent ?? startIn;
-      const [handle] = await window.showOpenFilePicker({ id, types, ...(location ? { startIn: location } : {}) });
+      let handle: FileSystemFileHandle | null;
+      try {
+        handle = await openPicker(true);
+      } catch (e) {
+        if (cancelled(e)) return null;
+        if (location) {
+          // Stale/moved/restricted startIn handle: clear LAST_OPEN and retry without startIn.
+          if (id === OPEN_PICKER_ID && recent) {
+            void handles('readwrite', (s) => s.delete(LAST_OPEN)).catch(() => {});
+          }
+          handle = await openPicker(false);
+        } else {
+          throw e;
+        }
+      }
       if (!handle) return null;
       const file = await handle.getFile();
       const bytes = new Uint8Array(await file.arrayBuffer());
-      if (id === OPEN_PICKER_ID) await handles('readwrite', (s) => s.put(handle, LAST_OPEN)).catch(() => {});
+      if (id === OPEN_PICKER_ID) {
+        await withTimeout(handles('readwrite', (s) => s.put(handle, LAST_OPEN)).catch(() => {}), 400, undefined);
+      }
       return { name: file.name, bytes, handle };
     } catch (e) {
       if (cancelled(e)) return null;
+      // Fallback to standard <input type="file"> if showOpenFilePicker is blocked by transient activation/policy.
+      if (e instanceof DOMException && (e.name === 'SecurityError' || e.name === 'NotAllowedError')) {
+        const file = await chooseFile(acceptOf(types));
+        return file && { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()), handle: null };
+      }
       throw e;
     }
   }
@@ -246,6 +301,7 @@ function database(): Promise<IDBDatabase> {
     open.onupgradeneeded = () => open.result.createObjectStore(HANDLES);
     open.onsuccess = () => resolve(open.result);
     open.onerror = () => reject(open.error);
+    open.onblocked = () => reject(new Error('IndexedDB blocked'));
   });
 }
 
@@ -322,13 +378,14 @@ export async function rememberedFolder(): Promise<FileSystemDirectoryHandle | nu
 export async function folderAccess(folder: FileSystemDirectoryHandle, ask: boolean): Promise<boolean> {
   const h = folder as FileSystemDirectoryHandle & PermissionMethods;
   if (!h.queryPermission) return true;
-  if ((await h.queryPermission({ mode: 'read' })) === 'granted') return true;
+  const queried = ask ? await h.queryPermission({ mode: 'read' }) : await withTimeout(h.queryPermission({ mode: 'read' }), 1000, 'prompt');
+  if (queried === 'granted') return true;
   return ask && !!h.requestPermission && (await h.requestPermission({ mode: 'read' })) === 'granted';
 }
 
 /** A file's path inside the folder ("零件/銷.3dbx"), or null when it lies elsewhere. */
 export async function pathIn(folder: FileSystemDirectoryHandle, file: FileSystemFileHandle): Promise<string | null> {
-  const parts = await folder.resolve(file);
+  const parts = await withTimeout(folder.resolve(file), 1000, null);
   return parts ? parts.join('/') : null;
 }
 
