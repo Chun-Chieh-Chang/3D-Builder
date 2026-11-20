@@ -93,7 +93,8 @@ describe('a detail', () => {
       area,
     });
     expect(m.details).toHaveLength(1);
-    expect(m.details[0]).toMatchObject({ id: 'D', parent: 'A', distance: 170, blocked: true, parentDiagonal: Math.round(Math.hypot(40, 20) * 1000) / 1000 });
+    // the parent's diagonal is 44.721; the detail is 20 across, so twice that is 40: the diagonal is the larger
+    expect(m.details[0]).toMatchObject({ id: 'D', parent: 'A', distance: 170, blocked: true, parentDiagonal: Math.round(Math.hypot(40, 20) * 1000) / 1000, diameter: 20, maxDistance: Math.round(Math.hypot(40, 20) * 1000) / 1000 });
     expect(m.details[0]!.inkRatio).toBeCloseTo(0.5, 3);
   });
 
@@ -107,6 +108,15 @@ describe('a detail', () => {
       area,
     });
     expect(m.details[0]).toMatchObject({ distance: 40, blocked: false });
+  });
+
+  it("how far still counts as beside: the larger of the parent diagonal and twice the detail diameter", () => {
+    // a small parent (10 × 10, diagonal 14.142) and a large detail (50 across): twice the detail, 100, is the larger
+    const small = placed('S', 100, 100, 10, 10);
+    const big = placed('B2', 100, 170, 50, 50);
+    const m = layoutMetrics({ items: [outline('S', 100, 100, 10, 10)], views: [view('S'), view('B2', { kind: 'detail', parent: 'S' })], placed: new Map([small, big]), dimensionView: new Map(), area });
+    expect(m.details[0]).toMatchObject({ diameter: 50, maxDistance: 100 });
+    expect(m.details[0]!.parentDiagonal).toBeCloseTo(14.142, 3);
   });
 
   it('a detail over its parent is 0 mm from it, never a negative distance', () => {

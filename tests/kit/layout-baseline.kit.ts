@@ -55,7 +55,7 @@ it('measures the layout of every part', async () => {
           viewAreaFill: m.viewAreaFill,
           minClearance: m.minClearance,
           clearances: m.clearances.slice(0, 4).map((c) => `${c.a}-${c.b} ${c.axis} ${c.gap}`),
-          details: m.details.map((x) => `${x.id}<-${x.parent} dist ${x.distance}/${x.parentDiagonal} blocked ${x.blocked} ink ${x.inkRatio}`),
+          details: m.details.map((x) => `${x.id}<-${x.parent} dist ${x.distance}/${x.maxDistance} blocked ${x.blocked} ink ${x.inkRatio}`),
           nonStandardScales: m.nonStandardScales.map((x) => `${x.id} ${x.scale}`),
           reach: m.views.map((v) => `${v.id} L${Math.round(v.reach.left)} R${Math.round(v.reach.right)} B${Math.round(v.reach.below)} T${Math.round(v.reach.above)}`),
           seconds: Math.round((Date.now() - t0) / 100) / 10,

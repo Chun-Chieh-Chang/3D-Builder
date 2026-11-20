@@ -55,8 +55,15 @@ export interface DetailMetrics {
   parent: Id;
   /** The distance between the drawn boxes of the detail and of its parent (mm); 0 when they touch or overlap. */
   distance: number;
-  /** The diagonal of the parent's box (mm): how far away is still beside it. */
+  /** The diagonal of the parent's box (mm). */
   parentDiagonal: number;
+  /** The circle's diameter on the sheet (mm). */
+  diameter: number;
+  /**
+   * How far away still counts as beside the parent (mm, rule V4): the larger of the parent's diagonal and twice the detail's own diameter. A detail is often as large
+   * as the view it enlarges, or larger, and then "within the parent's diagonal" would ask for the impossible.
+   */
+  maxDistance: number;
   /** Another view's box lies on the line between the two. */
   blocked: boolean;
   /** The length of what the detail draws (mm on the sheet) and the length of its circle: a detail with next to nothing in it has a small ratio. */
@@ -170,12 +177,15 @@ export function layoutMetrics(input: LayoutMetricsInput): LayoutMetrics {
       for (let k = 0; k + 3 < i.points.length; k += 2) ink += Math.hypot(i.points[k + 2]! - i.points[k]!, i.points[k + 3]! - i.points[k + 1]!);
     }
     const w = d.box.x1 - d.box.x0;
+    const diagonal = Math.hypot(parent.box.x1 - parent.box.x0, parent.box.y1 - parent.box.y0);
     const perimeter = Math.PI * w;
     details.push({
       id: v.id,
       parent: v.parent,
       distance: round(g.gap > 0 ? g.gap : 0),
-      parentDiagonal: round(Math.hypot(parent.box.x1 - parent.box.x0, parent.box.y1 - parent.box.y0)),
+      parentDiagonal: round(diagonal),
+      diameter: round(w),
+      maxDistance: round(Math.max(diagonal, 2 * w)),
       blocked,
       ink: round(ink),
       perimeter: round(perimeter),

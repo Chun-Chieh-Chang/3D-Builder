@@ -62,7 +62,7 @@ it('every detail view is at a standard scale, has something in it, is beside its
   for (const x of m.details) {
     expect(x.inkRatio, `${x.id} has something in it`).toBeGreaterThanOrEqual(MIN_DETAIL_INK);
     expect(x.blocked, `${x.id} has a view between it and ${x.parent}`).toBe(false);
-    expect(x.distance, `${x.id} is ${x.distance} mm from ${x.parent}`).toBeLessThanOrEqual(x.parentDiagonal);
+    expect(x.distance, `${x.id} is ${x.distance} mm from ${x.parent}, the most is ${x.maxDistance}`).toBeLessThanOrEqual(x.maxDistance);
   }
   const need = 2 * (page(doc, 1).sheet.dimStyle?.text ?? 3.5);
   expect(m.minClearance === null || m.minClearance >= need, `page 2: the nearest two views are ${m.minClearance} mm apart, need ${need}`).toBe(true);
