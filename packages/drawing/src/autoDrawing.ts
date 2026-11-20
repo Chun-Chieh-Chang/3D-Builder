@@ -412,6 +412,9 @@ function readDimension(d: DimensionLike, views: readonly ViewToDimension[], mapp
     for (const s of sourcesOf(v, i)) if (s.ref.name === name && s.along === k) return `${m.way(k)}:${m.world(k, s.coord)}`;
     return null;
   };
+  if (d.kind === 'linear' && d.a.name === d.b.name && d.aSide !== undefined && d.bSide !== undefined && d.aSide !== d.bSide) {
+    return { ties: [], sizes: [d.a.name] };
+  }
   if (d.kind === 'linear' && d.orientation !== 'aligned') {
     const k = d.orientation === 'horizontal' ? 'x' : 'y';
     return { ties: [place(d.a.name, k), place(d.b.name, k)].filter((x): x is string => x !== null), sizes: [] };
@@ -427,6 +430,9 @@ function roundKey(f: ViewFeature, callouts: boolean): string | null {
   if (f.type === 'torus') return `t|${f.convex}|${Math.round(f.radius * 1e4)}`;
   return null;
 }
+
+/** The surface identity of a round element: faces cut from the same coaxial cylinder or fillet ring share one surface (ADR 0262, rules C1 and C2). */
+const roundSurface = (f: Extract<ViewFeature, { type: 'circle' | 'torus' }>): string => f.surface ?? f.ref.name;
 
 export interface CoverageReport {
   /** Every way of the model: how many places it has, how many are tied to its datum, and those that are not. */
@@ -456,8 +462,14 @@ export function dimensionCoverage(views: readonly ViewToDimension[], dimensions:
     const missing = list.filter((n) => n !== datum && u.find(n.key) !== u.find(datum.key)).sort((a, b) => a.at - b.at);
     ways.push({ way, datum: datum.at, places: list.length, determined: list.length - missing.length, missing: missing.map((n) => ({ at: n.at, refs: [...new Set(n.sources.map((s) => s.ref.name))] })) });
   }
-  // a size written for one of several equal rounds (「4×Ø6」) gives all of them: equal by the callout key, in the view it is written in
+  // a size written for one of several equal rounds (「4×Ø6」) or for one face of a split coaxial surface (including a side-on Ø linear dimension) gives all of them
   const keysGiven = new Set<string>();
+  const surfacesSized = new Set<string>();
+  for (const v of views) {
+    for (const x of v.features) {
+      if ((x.type === 'circle' || x.type === 'torus') && sized.has(x.ref.name)) surfacesSized.add(roundSurface(x));
+    }
+  }
   for (const d of dimensions) {
     if (d.kind !== 'diameter' && d.kind !== 'radius') continue;
     const f = views.find((v) => v.viewId === d.view)?.features.find((x) => x.ref.name === d.ref.name);
@@ -469,7 +481,7 @@ export function dimensionCoverage(views: readonly ViewToDimension[], dimensions:
     for (const f of v.features) {
       if (f.type !== 'circle' && f.type !== 'torus') continue;
       const key = roundKey(f, callouts)!;
-      const ok = sized.has(f.ref.name) || keysGiven.has(`${v.viewId}|${key}`);
+      const ok = sized.has(f.ref.name) || surfacesSized.has(roundSurface(f)) || keysGiven.has(`${v.viewId}|${key}`);
       const had = rounds.get(f.ref.name);
       if (had) had.ok ||= ok;
       else rounds.set(f.ref.name, { name: f.ref.name, radius: r3(f.radius), kind: f.type === 'torus' ? 'fillet' : f.full ? 'hole' : 'arc', ok });
@@ -528,9 +540,9 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
     }
   }
   const placeDrafts: { view: number; along: 'x' | 'y'; datum: Source; to: Source; span: number }[] = [];
-  /** How well a view shows a place: true shape first, then inside a section, then edge-on in the main view. */
-  // a section helps only what is inside: a hole's axis is drawn solid there, while a plane may be on the side cut away
-  const merit = (s: Source) => (s.kind === 'centre' ? 3 : 0) + (s.kind === 'plane' ? 2 : 0) + (s.kind === 'axis' ? (views[s.view]!.section ? 2.5 : 0.5) : 0) + (s.view === 0 ? 0.5 : 0) - (views[s.view]!.hidden?.has(s.ref.name) ? 4 : 0);
+  /** How well a view shows a place: true shape first, then edge-on on an unsectioned view (so extension lines do not cross hatching, rule D1), then inside a section. */
+  // a section helps only what is inside: a hole's axis is drawn solid there, while a plane edge-on is better dimensioned on a regular view so its extension lines do not cross hatching
+  const merit = (s: Source) => (s.kind === 'centre' ? 3 : 0) + (s.kind === 'plane' ? (views[s.view]!.section ? 1.2 : 2) : 0) + (s.kind === 'axis' ? (views[s.view]!.section ? 2.5 : 0.5) : 0) + (s.view === 0 ? 0.5 : 0) - (views[s.view]!.hidden?.has(s.ref.name) ? 4 : 0);
   const byWay = new Map<string, Node[]>();
   for (const n of nodes.values()) byWay.set(n.way, [...(byWay.get(n.way) ?? []), n]);
   for (const list of byWay.values()) {
@@ -564,27 +576,78 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
   }
 
   const out: PlannedDimension[] = [];
-  // sizes: one dimension for the equal rounds of a view that still lack theirs
-  views.forEach((v) => {
-    const groups = new Map<string, ViewFeature[]>();
-    const faces = new Set<string>();
+  const sizedSurfaces = new Set<string>();
+  for (const v of views) {
     for (const f of v.features) {
-      if ((f.type !== 'circle' && f.type !== 'torus') || sized.has(f.ref.name) || faces.has(f.ref.name)) continue;
-      faces.add(f.ref.name); // a fillet's tube is cut twice in a view: one face, one count
-      const key = roundKey(f, callouts)!;
-      groups.set(key, [...(groups.get(key) ?? []), f]);
+      if ((f.type === 'circle' || f.type === 'torus') && sized.has(f.ref.name)) sizedSurfaces.add(roundSurface(f));
     }
-    for (const g of groups.values()) {
-      const first = g[0]!;
-      const count = g.length > 1 ? { count: g.length } : {};
-      let draft: DimensionDraft;
-      if (first.type === 'circle' && first.full) draft = { kind: 'diameter', ref: first.ref, angle: first.outward, ...count, ...(callouts && (first.hole || first.thread) ? { callout: true } : {}) };
-      else if (first.type === 'circle' || first.type === 'torus') draft = { kind: 'radius', ref: first.ref, angle: first.outward, ...count };
-      else continue;
-      out.push({ view: v.viewId, draft, role: 'size' });
-      for (const f of g) sized.add(f.ref.name);
+  }
+  // sizes: one dimension for the equal rounds of a view that still lack theirs.
+  // Pass 1: visible end-on circles & torus fillets.
+  // Pass 2: hidden circles whose cylinder is visibly seen side-on (`axis`) in another view (e.g. a section) get a side-on Ø dimension there (rule C2 / D6).
+  // Pass 3: any remaining rounds.
+  const placeVisibleRoundSizes = (visibleOnly: boolean) => {
+    views.forEach((v) => {
+      const groups = new Map<string, ViewFeature[]>();
+      const surfacesInView = new Set<string>();
+      for (const f of v.features) {
+        if (f.type !== 'circle' && f.type !== 'torus') continue;
+        if (visibleOnly && v.hidden?.has(f.ref.name)) continue;
+        const surf = roundSurface(f);
+        if (sized.has(f.ref.name) || sizedSurfaces.has(surf) || surfacesInView.has(surf)) continue;
+        surfacesInView.add(surf); // a fillet's tube is cut twice in a view, and a cylinder cut by slots has several faces: one surface, one count
+        const key = roundKey(f, callouts)!;
+        groups.set(key, [...(groups.get(key) ?? []), f]);
+      }
+      for (const g of groups.values()) {
+        const first = g[0]!;
+        const count = g.length > 1 ? { count: g.length } : {};
+        let draft: DimensionDraft;
+        if (first.type === 'circle' && first.full) draft = { kind: 'diameter', ref: first.ref, angle: first.outward, ...count, ...(callouts && (first.hole || first.thread) ? { callout: true } : {}) };
+        else if (first.type === 'circle' || first.type === 'torus') draft = { kind: 'radius', ref: first.ref, angle: first.outward, ...count };
+        else continue;
+        out.push({ view: v.viewId, draft, role: 'size' });
+        for (const f of g) {
+          if (f.type === 'circle' || f.type === 'torus') {
+            const surf = roundSurface(f);
+            sizedSurfaces.add(surf);
+            for (const vw of views) for (const x of vw.features) if ((x.type === 'circle' || x.type === 'torus') && roundSurface(x) === surf) sized.add(x.ref.name);
+          }
+          sized.add(f.ref.name);
+        }
+      }
+    });
+  };
+  placeVisibleRoundSizes(true);
+  // Pass 2: any unsized full circle that is hidden where seen end-on, but seen side-on as an axis in another view, gets a side-on Ø dimension there
+  // (preferring unhidden axes in sections first, then sections, then unhidden axes in regular views).
+  const sideViews = [...views].sort(
+    (a, b) => Number(Boolean(b.section)) - Number(Boolean(a.section)) || views.indexOf(a) - views.indexOf(b),
+  );
+  for (const allowHiddenSide of [false, true]) {
+    for (const vSide of sideViews) {
+      let sideIdx = 0;
+      for (const f of vSide.features) {
+        if (f.type !== 'axis' || (!allowHiddenSide && vSide.hidden?.has(f.ref.name)) || sized.has(f.ref.name)) continue;
+        // Only use side-on Ø when another view had it as a circle (so it counts in rounds)
+        const circleFeat = views.flatMap((vw) => vw.features).find((x): x is Extract<ViewFeature, { type: 'circle' }> => x.type === 'circle' && x.ref.name === f.ref.name);
+        if (!circleFeat) continue;
+        const surf = roundSurface(circleFeat);
+        if (sizedSurfaces.has(surf)) continue;
+        const runsX = Math.abs(f.to[0] - f.from[0]) >= Math.abs(f.to[1] - f.from[1]);
+        out.push({
+          view: vSide.viewId,
+          draft: { kind: 'linear', a: f.ref, b: f.ref, aSide: 1, bSide: -1, orientation: runsX ? 'vertical' : 'horizontal', offset: (runsX ? 1 : -1) * (FIRST + sideIdx * STEP), prefix: 'Ø' },
+          role: 'size',
+        });
+        sideIdx++;
+        sizedSurfaces.add(surf);
+        for (const vw of views) for (const x of vw.features) if ((x.type === 'circle' || x.type === 'torus') && roundSurface(x) === surf) sized.add(x.ref.name);
+        sized.add(f.ref.name);
+      }
     }
-  });
+  }
+  placeVisibleRoundSizes(false);
 
   // places: by view and way, a baseline row from each datum, the shortest nearest; many from one datum become an ordinate row
   const ordinateAbove = options.ordinateAbove ?? 6;
@@ -612,7 +675,15 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
     for (const [, same] of fromSame) {
       if (same.length > ordinateAbove) {
         same.sort((a, b) => a.to.coord - b.to.coord);
-        out.push({ view, draft: { kind: 'ordinate', axis: along, origin: same[0]!.datum.ref, refs: same.map((p) => p.to.ref), offset: sign * (FIRST + stacked * STEP) }, role: 'ordinate' });
+        const uniqueRefs: ViewFeature['ref'][] = [];
+        let lastCoord = -Infinity;
+        for (const p of same) {
+          if (Math.abs(p.to.coord - lastCoord) > 1e-4) {
+            uniqueRefs.push(p.to.ref);
+            lastCoord = p.to.coord;
+          }
+        }
+        out.push({ view, draft: { kind: 'ordinate', axis: along, origin: same[0]!.datum.ref, refs: uniqueRefs, offset: sign * (FIRST + stacked * STEP) }, role: 'ordinate' });
         stacked++;
       } else linear.push(...same);
     }

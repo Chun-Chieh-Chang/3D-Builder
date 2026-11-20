@@ -1,5 +1,18 @@
 # 交接與接續工作
 
+## 2026-11-20（傍晚）— ADR 0262 第三期（標註的佈置與內容）完成，準備進入第四期（品質閘門）
+
+- **本輪已完成（`main` 上未提交，待使用者核准提交與推送）**：
+  - 詳見 [ADR 0262](docs/adr/0262-drawing-dimension-placement-and-content.md) 與 `DEV_LOG.md`。
+  - 完成第三期規則 `3-1`～`3-11`（`D1`, `D3`, `D5`, `D6`, `D7`, `D9`, `D10`, `C1`, `C2`, `C4`, `L1`, `L2`）：
+    - `packages/model/src/drawing.ts`、`packages/regen/src/drawingDimensions.ts`：`ViewFeature.surface`、同軸拆分圓柱與環面圓角歸併、`MIN_DIMENSION_FACE_AREA = 0.01` 碎面過濾、收斂圓錐/環面盲孔偵測（`D9`）、側面拆分圓柱與圓錐軸線輸出（`L1`）。
+    - `packages/drawing/src/annotation.ts`：同心整圓單一中心十字（歐氏距 `≤ 1e-2` mm 取最大半徑，`L2`）、共線軸線合併為單一連續軸線（`L1`）。
+    - `packages/drawing/src/dimension.ts`、`autoDrawing.ts`、`autoDimension.ts`：`contourAttach` `clearCut()` 避開剖面線區（`D1`）、座標標註文字淨距 `2.0` mm 與同座標去重（`D3`/`D5`）、拆分圓遠端單箭頭退路（`D6`）、三階段圓尺寸配置（含側面線性 `Ø`）與 `surfacesSized` 覆蓋率修復（`C1`/`C2`）。
+    - `apps/mcp/src/drawingSession.ts`：自動剖面啟用 `centreMarks: true`、`arrowHitsView()` 錯誤/空箭頭顯式回傳 `false`、`steerLeaders()` 雙階段角度搜尋不劣化命中箭頭、`offloadMicroDetails()` 圓弧實際附著點群聚（半徑 `≤ 3.5` mm）、`tidy()` 於 `clearViews()` 後重算 `placeCaptions()`。
+  - **5 個基準零件實測**：全數維持 `layout.pass: true`、`rounds` 覆蓋率 100%（`R1-8032` 102/102、`sds-plus-bit` 16/16），`3-1/3-2/3-5/3-6/3-7/3-8/3-9/3-10` 全數歸 **0**；`R1-8032` 雜亂 `38/5 → 10/2`、箭頭偏離 `21 → 3`；`sds-plus-bit` 雜亂 `39/1 → 7/2`、箭頭偏離 `2 → 0`。
+  - **測試與突變**：`tests/phase5/drawing-dimension-content.test.ts`（11 項單元測試）＋ **7/7 突變測試全紅**。
+- **下一步**：提交並推送第三期（ADR 0262）後，進入第四期（品質閘門 `Q1`, `Q2`, `C5`, `C7`，未來 ADR 0263）。
+
 ## 2026-11-20（下午）— ADR 0261 第二期（視圖配置）規則 2-1～2-9 全數完成，正在執行全量關門測試
 
 - **使用者裁示（2026-11-20）**：

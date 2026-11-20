@@ -1,5 +1,23 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-20 — 自動出圖改善計畫・第三期（標註的佈置與內容 D1–D10 / C1–C4 / L1–L2）完成（ADR 0262）
+
+- **範圍與決策**：見 [ADR 0262](docs/adr/0262-drawing-dimension-placement-and-content.md) 與 [自動出圖改善計畫](docs/drawing-improvement-plan.md)。完成規則 `3-1`～`3-11`：
+  1. **C1 / C2 / C4 特徵萃取與面片歸併**（`packages/model/src/drawing.ts`、`packages/regen/src/drawingDimensions.ts`）：`ViewFeature` 的 `circle` / `torus` 新增 `surface?: string`；過濾碎面 `MIN_DIMENSION_FACE_AREA = 0.01`（`3-10`）；以同軸軸向重疊區間 `[tMin, tMax]` 歸併被槽切開的同軸圓柱（標為 `full: true` 並共用 `surface`，軸向分離的凸台維持獨立）並以歐氏距離歸併被切開的環面圓角（`3-6`、`3-7`）；被切開的側面圓柱與圓錐一併輸出 `'axis'` 特徵（`3-9`）。
+  2. **D9 真實貫穿孔判斷**（`packages/regen/src/drawingDimensions.ts`）：`holeInfo()` 偵測凹圓柱端部接合收斂圓錐或圓角環面（其餘圓邊半徑 `≤ g.radius`）時標記為盲孔（`closed`），不再誤判為「貫穿」（`3-8`）。
+  3. **L1 / L2 軸線合併與同心十字去重**（`packages/drawing/src/annotation.ts`、`apps/mcp/src/drawingSession.ts`）：同心整圓以歐氏中心距 `≤ 1e-2` mm 歸併為單一中心十字並取最大半徑（`3-9`）；共線 `'axis'` 特徵合併為單一連續軸線；自動建立剖面（`makeSection()`）顯式開啟 `centreMarks: true`（同時保留 `showsCentre` 對既有手動剖面的向後相容）。
+  4. **D1 / D3 / D5 / D6 尺寸繪製與規劃**（`packages/drawing/src/dimension.ts`、`autoDrawing.ts`、`autoDimension.ts`）：`contourAttach()` 新增 `clearCut()` 避開 `viewLines.cut` 剖面線多邊形、`merit()` 降低剖面視圖平面邊線優先度（`3-1`）；`ordinate()` 文字間距由 `1.5` 提高為 `2.0` mm（消除 `CLEARANCE = -0.6` 造成的假性自身雜亂）並對同座標去重（`3-2`、`3-3`）；`circle()` 檢查遠端是否落在可見/相切線段上，否則改單箭頭引線（`3-4`）；`planDrawingDimensions()` 三階段配置（可見端圓與圓角 → 隱藏端圓於側面/剖面標側面線性 `Ø` → 其餘圓），`readDimension()` 與 `dimensionCoverage()` 正確識別側面線性 `Ø` 並填入 `surfacesSized`（修復 19 處拆分圓柱漏報覆蓋）。
+  5. **D6 / D7 引線修正、詳圖群聚與標題避讓**（`apps/mcp/src/drawingSession.ts`）：修正 `arrowHitsView()` 於 `tips.length === 0` 或 `error` 時回傳 `true` 的根因（先前導致 `steerLeaders()` 誤保留 `circleCentre() === null` 的壞角度，使 `tidy()` 刪掉 11 個環面圓角）；`offloadMicroDetails()` 改以實際圓弧附著點群聚並限制半徑 `≤ 3.5` mm（`3-5`）；`tidy()` 尾端於 `clearViews()` 後重新執行 `placeCaptions()` 避免參考視圖標題重疊。
+- **RCA 與 CAPA**：
+  - **RCA 1（11 個圓角 `R0.254`/`R0.122` 遺失）**：`arrowHitsView()` 在 `outcome` 回傳 `{ error: 'drawing.dimNotTrueShape' }` 時取得 0 個箭頭並回傳 `true`，`steerLeaders()` 誤判有效而保留壞角度，後續 `afterFailed` 刪除該標註。**CAPA**：強制 `!outcome || 'error' in outcome || tips.length === 0` 回傳 `false`。
+  - **RCA 2（19 處拆分圓柱覆蓋漏報）**：`dimensionCoverage()` 僅由 `diameter`/`radius` 填 `surfacesSized`，漏掉側面線性 `Ø`（`aSide: 1, bSide: -1`）。**CAPA**：統一由 `sized` 集合回填 `surfacesSized`。
+  - **RCA 3（40+ 筆座標標註假性自身雜亂）**：`ordinate()` 界線至 `row + 1` 而文字在 `row + 1.5`，小於 `CLEARANCE = 0.6`。**CAPA**：文字外移至 `row + 2`（淨距 `1.0` mm）。
+- **紅隊四問（Self-Red-Teaming）**：
+  1. **輸入破壞**：面積 `< 0.01 mm²` 碎面、`NaN` 面積、退化零長度軸線與無效角度皆安全過濾或顯式拒絕，不靜默竄改。
+  2. **幾何干涉**：軸向分離的同軸圓柱凸台不錯誤歸併為同一 `surface`；延伸線 `clearCut()` 僅在剖面多邊形外推離；`placeCaptions()` 在 `clearViews()` 後重算避免碰撞。
+  3. **依賴鏈**：`@3db/model` (`ViewFeature.surface`) → `@3db/regen` (`viewFeatures`, `holeInfo`, `MIN_DIMENSION_FACE_AREA`) → `@3db/drawing` (`annotation`, `dimension`, `autoDrawing`, `autoDimension`) → `@3db/mcp` (`drawingSession`) 全鏈路對齊。
+  4. **真值與突變測試**：新增 `tests/phase5/drawing-dimension-content.test.ts`（11 項單元測試），並完成 **7/7 突變測試全紅**（忽略 `f.surface`、同心十字取最小半徑、關閉軸線合併、`MIN_DIMENSION_FACE_AREA = 0`、關閉 `clearCut`、座標文字退回 `1.5`、關閉收斂圓錐盲孔偵測）。5 個基準零件全部維持 `layout.pass: true`，`rounds` 覆蓋率全數 100%（`R1-8032` 102/102、`sds-plus-bit` 16/16），`3-1/3-2/3-5/3-6/3-7/3-8/3-9/3-10` 全數歸 0，`R1-8032` 雜亂 `38/5 → 10/2`、箭頭偏離 `21 → 3`，`sds-plus-bit` 雜亂 `39/1 → 7/2`、箭頭偏離 `2 → 0`。
+
 ## 2026-11-20 — 自動出圖改善計畫・第二期（視圖配置 V1–V8 / P1–P4）完成（ADR 0261）
 
 - **範圍與決策**：見 [ADR 0261](docs/adr/0261-drawing-view-layout.md) 與 [自動出圖改善計畫](docs/drawing-improvement-plan.md)。完成規則 `2-1`～`2-9`：

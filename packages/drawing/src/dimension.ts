@@ -427,7 +427,7 @@ export function evaluateDimension(d: Dimension, resolved: ElementsResult | undef
   if (d.kind === 'angle') return angle(d, els[0]!, els[1]!, axes, placed, style);
   if (d.kind === 'ordinate') return ordinate(d, els, axes, placed, unit, style, viewLines);
   if (d.kind === 'chamfer') return chamfer(d, els[0]!, axes, placed, unit, style);
-  return circle(d, els[0]!, axes, placed, unit, style);
+  return circle(d, els[0]!, axes, placed, unit, style, viewLines);
 }
 
 /** The visible contour through `p` along the extension line's direction, as merged intervals of the perpendicular coordinate. */
@@ -449,20 +449,52 @@ function contourIntervals(p: P, across: 0 | 1, viewLines?: ViewLines | null): [n
   return merged;
 }
 
-/** Finds the end of the referenced visible contour nearest the dimension row so extension lines start near the contour, never the overall view box. */
+/** Finds the end of the referenced visible contour nearest the dimension row so extension lines start near the contour and never cross section hatching (ADR 0262 rule D1). */
 function contourAttach(p: P, e: ElementFacts, axes: ViewAxes, across: 0 | 1, outward: 1 | -1, viewLines?: ViewLines | null): P {
-  if (!isBound(e)) return p;
   const along = across === 0 ? 1 : 0;
+  const clearCut = (q: P): P => {
+    if (!viewLines?.cut || viewLines.cut.length === 0) return q;
+    const x = q[across];
+    let extreme = q[along];
+    for (const poly of viewLines.cut) {
+      for (let i = 0; i + 3 < poly.length; i += 2) {
+        const a: P = [poly[i]!, poly[i + 1]!];
+        const b: P = [poly[i + 2]!, poly[i + 3]!];
+        const da = a[across] - x;
+        const db = b[across] - x;
+        if ((da <= 1e-6 && db >= -1e-6) || (db <= 1e-6 && da >= -1e-6)) {
+          const span = b[across] - a[across];
+          const atAlong = Math.abs(span) > 1e-12 ? a[along] + ((x - a[across]) / span) * (b[along] - a[along]) : (outward > 0 ? Math.max(a[along], b[along]) : Math.min(a[along], b[along]));
+          if (outward > 0 ? atAlong > extreme : atAlong < extreme) extreme = atAlong;
+        }
+      }
+    }
+    if (extreme !== q[along]) {
+      const out: P = [...q];
+      out[along] = extreme;
+      return out;
+    }
+    return q;
+  };
+  if (!isBound(e)) return clearCut(p);
   const centre = e.center ? inView({ ...e, point: e.center }, axes) : p;
   const merged = contourIntervals(p, across, viewLines);
-  const distance = (range: P) => Math.max(range[0] - centre[along], centre[along] - range[1], 0);
-  merged.sort((a, b) => distance(a) - distance(b));
   const q: P = [...p];
   if (merged.length) {
-    const interval = merged[0]!;
-    q[along] = interval[outward > 0 ? 1 : 0];
+    if (viewLines?.cut && viewLines.cut.length > 0) {
+      // In a section view, start from the outermost contour interval on the `outward` side so the extension line never drags through interior section hatching.
+      const interval = outward > 0 ? merged.reduce((a, b) => (b[1] > a[1] ? b : a)) : merged.reduce((a, b) => (b[0] < a[0] ? b : a));
+      q[along] = interval[outward > 0 ? 1 : 0];
+    } else {
+      const distance = (range: P) => Math.max(range[0] - centre[along], centre[along] - range[1], 0);
+      merged.sort((a, b) => distance(a) - distance(b));
+      const interval = merged[0]!;
+      q[along] = interval[outward > 0 ? 1 : 0];
+    }
+  } else if (viewLines?.cut && viewLines.cut.length > 0 && viewLines.box) {
+    q[along] = outward > 0 ? viewLines.box.max[along]! : viewLines.box.min[along]!;
   } else q[along] = centre[along];
-  return q;
+  return clearCut(q);
 }
 
 /**
@@ -515,10 +547,10 @@ function ordinate(d: Extract<Dimension, { kind: 'ordinate' }>, els: readonly Ele
         ? [[e.s[0], from], [e.s[0], knee], [across, row], [across, row + outward * 1]]
         : [[from, e.s[1]], [knee, e.s[1]], [row, across], [row + outward * 1, across]];
     items.push(line(...pts));
-    // the text along the extension line beyond the row, read from the bottom or the right of the sheet
+    // the text along the extension line beyond the row, read from the bottom or the right of the sheet (1 mm clear of the extension line end)
     const anchor = outward > 0 ? 'left' : 'right';
-    if (d.axis === 'x') items.push(...dimensionTextItems(e.parts, [across + DIM_TEXT / 2, row + outward * 1.5], DIM_TEXT, anchor, 90).items);
-    else items.push(...dimensionTextItems(e.parts, [row + outward * 1.5, across - DIM_TEXT / 2], DIM_TEXT, anchor).items);
+    if (d.axis === 'x') items.push(...dimensionTextItems(e.parts, [across + DIM_TEXT / 2, row + outward * 2], DIM_TEXT, anchor, 90).items);
+    else items.push(...dimensionTextItems(e.parts, [row + outward * 2, across - DIM_TEXT / 2], DIM_TEXT, anchor).items);
   }
   const values = entries.slice(1).map((e) => e.value);
   const handle: DimensionHandle = {
@@ -796,7 +828,7 @@ function circleCentre(e: ElementFacts, axes: ViewAxes, u: P): P | null {
   return [at[0] + side * across[0] * e.major, at[1] + side * across[1] * e.major];
 }
 
-function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: ElementFacts, axes: ViewAxes, placed: PlacedView, unit: LengthUnit, st: Style): DimensionOutcome {
+function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: ElementFacts, axes: ViewAxes, placed: PlacedView, unit: LengthUnit, st: Style, viewLines?: ViewLines | null): DimensionOutcome {
   const { line, arrowhead } = pen(st);
   const DIM_TEXT = st.text;
   const ARROW = st.arrow;
@@ -836,12 +868,22 @@ function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: Eleme
   const label = dimensionTextItems(parts, textAt, DIM_TEXT, dir > 0 ? 'left' : 'right');
   const shelfEnd: P = [outer[0] + dir * (label.width + 2), outer[1]];
   const items: SceneItem[] = [];
-  if (d.kind === 'diameter' && 2 * r >= 2 * ARROW + 2) {
-    // room inside: the line crosses the circle through its middle, an arrow at each end touching the circle from inside
+  const farView: P = [at[0] - u[0] * e.radius, at[1] - u[1] * e.radius];
+  const farOnGeom = !viewLines || [...viewLines.visible, ...(viewLines.tangent ?? [])].some((poly) => {
+    for (let k = 0; k + 3 < poly.length; k += 2) {
+      const ax = poly[k]!, ay = poly[k + 1]!, bx = poly[k + 2]!, by = poly[k + 3]!;
+      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+      const s = l2 > 1e-18 ? Math.max(0, Math.min(1, ((farView[0] - ax) * dx + (farView[1] - ay) * dy) / l2)) : 0;
+      if (Math.hypot(farView[0] - (ax + s * dx), farView[1] - (ay + s * dy)) * placed.scale <= 0.2) return true;
+    }
+    return false;
+  });
+  if (d.kind === 'diameter' && 2 * r >= 2 * ARROW + 2 && farOnGeom) {
+    // room inside and both ends of the diameter lie on drawn arcs: the line crosses the circle through its middle, an arrow at each end touching from inside
     const far = add(centre, u, -r);
     items.push(line(far, outer, shelfEnd), ...arrowhead(far, [-u[0], -u[1]]), ...arrowhead(near, u));
   } else {
-    // a small circle, or a radius: the leader comes from outside and its arrow touches the circle pointing in
+    // a small circle, a split cylinder whose far side is cut away, or a radius: the leader comes from outside and its arrow touches the arc pointing in
     items.push(line(shelfEnd, outer, near), ...arrowhead(near, [-u[0], -u[1]]));
   }
   items.push(...label.items);

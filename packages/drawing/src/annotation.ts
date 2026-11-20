@@ -29,25 +29,63 @@ export function centreItems(view: DrawingView, features: readonly ViewFeature[],
   if (!showsCentre(view)) return [];
   const ext = CENTRE_OVERSHOOT / placed.scale;
   const halves: [number, number, number, number][] = [];
-  const seen: string[] = [];
+  // Concentric whole circles share one centre cross sized to the largest circle at that centre (ISO 128-24, ADR 0262 rule L2).
+  const circlesByCentre: { cx: number; cy: number; radius: number }[] = [];
   for (const f of features) {
-    if (f.type === 'circle' && f.full) {
-      const [cx, cy] = f.centre;
-      const r = f.radius + ext;
-      halves.push([cx, cy, cx + r, cy], [cx, cy, cx - r, cy], [cx, cy, cx, cy + r], [cx, cy, cx, cy - r]);
-    } else if (f.type === 'axis') {
-      const key = [f.from, f.to].map((p) => p.map((v) => Math.round(v * 1e5)).join(',')).sort().join('|');
-      if (seen.includes(key)) continue;
-      seen.push(key);
-      const [fx, fy] = f.from;
-      const [tx, ty] = f.to;
-      const l = Math.hypot(tx - fx, ty - fy);
-      if (l < 1e-9) continue;
-      const u = [(tx - fx) / l, (ty - fy) / l];
-      const mx = (fx + tx) / 2;
-      const my = (fy + ty) / 2;
-      halves.push([mx, my, tx + u[0]! * ext, ty + u[1]! * ext], [mx, my, fx - u[0]! * ext, fy - u[1]! * ext]);
+    if (f.type !== 'circle' || !f.full) continue;
+    const prev = circlesByCentre.find((c) => Math.hypot(c.cx - f.centre[0], c.cy - f.centre[1]) <= 1e-2);
+    if (!prev) {
+      circlesByCentre.push({ cx: f.centre[0], cy: f.centre[1], radius: f.radius });
+    } else if (f.radius > prev.radius) {
+      prev.cx = f.centre[0];
+      prev.cy = f.centre[1];
+      prev.radius = f.radius;
     }
+  }
+  for (const { cx, cy, radius } of circlesByCentre) {
+    const r = radius + ext;
+    halves.push([cx, cy, cx + r, cy], [cx, cy, cx - r, cy], [cx, cy, cx, cy + r], [cx, cy, cx, cy - r]);
+  }
+  // Coaxial cylinders and cones along the same line merge into one axis line spanning their combined extent (ISO 128-24, ADR 0262 rule L1).
+  const axes: { u: [number, number]; p0: [number, number]; tMin: number; tMax: number }[] = [];
+  for (const f of features) {
+    if (f.type !== 'axis') continue;
+    const [fx, fy] = f.from;
+    const [tx, ty] = f.to;
+    const l = Math.hypot(tx - fx, ty - fy);
+    if (l < 1e-9) continue;
+    let ux = (tx - fx) / l;
+    let uy = (ty - fy) / l;
+    if (Math.abs(ux) > 1e-4 ? ux < 0 : uy < 0) {
+      ux = -ux;
+      uy = -uy;
+    }
+    const t0 = fx * ux + fy * uy;
+    const t1 = tx * ux + ty * uy;
+    const lo = Math.min(t0, t1);
+    const hi = Math.max(t0, t1);
+    const hit = axes.find((a) => {
+      const dotU = Math.abs(a.u[0] * ux + a.u[1] * uy);
+      if (dotU < 1 - 1e-4) return false;
+      const dx = fx - a.p0[0];
+      const dy = fy - a.p0[1];
+      return Math.abs(dx * a.u[1] - dy * a.u[0]) <= 1e-3;
+    });
+    if (hit) {
+      hit.tMin = Math.min(hit.tMin, lo);
+      hit.tMax = Math.max(hit.tMax, hi);
+    } else {
+      axes.push({ u: [ux, uy], p0: [fx - t0 * ux, fy - t0 * uy], tMin: lo, tMax: hi });
+    }
+  }
+  for (const a of axes) {
+    const fx = a.p0[0] + a.tMin * a.u[0];
+    const fy = a.p0[1] + a.tMin * a.u[1];
+    const tx = a.p0[0] + a.tMax * a.u[0];
+    const ty = a.p0[1] + a.tMax * a.u[1];
+    const mx = (fx + tx) / 2;
+    const my = (fy + ty) / 2;
+    halves.push([mx, my, tx + a.u[0] * ext, ty + a.u[1] * ext], [mx, my, fx - a.u[0] * ext, fy - a.u[1] * ext]);
   }
   const out: SceneItem[] = [];
   for (const h of halves) {

@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 96／7／39 |
-| ADR 文件 | 260 |
+| ADR 文件 | 261 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 233／228／280 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -608,6 +608,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0259: part-3 windows are recognized as sharp-edge cuts; the r 0.127 edge chamfers are reported, not rebuilt](<adr/0259-part-3-sharp-edge-windows.md>)
 - [ADR 0260: a drawing is drawn to a standard (CNS 3 by default, ISO on request), and every value of a standard is in one profile](<adr/0260-drawing-standard-profile.md>)
 - [ADR 0261: measured view layout for automatic drawings (clearance, detail placement, turned-part main view, multi-page sheet consistency and layout self-check)](<adr/0261-drawing-view-layout.md>)
+- [ADR 0262: drawing dimension placement and content (hatch avoidance, surface clustering, side-on Ø, blind-hole detection, centre axes and leader accuracy)](<adr/0262-drawing-dimension-placement-and-content.md>)
 
 ### 歷史驗證
 

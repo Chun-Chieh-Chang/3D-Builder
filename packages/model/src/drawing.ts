@@ -775,8 +775,8 @@ export function placeElementFacts(f: ElementFacts, rows: readonly number[]): Ele
 export type ViewFeature =
   /** A plane seen edge-on: a line across the view's x (`axis: 'x'`, at x = `coord`) or its y. */
   | { type: 'plane'; ref: Ref; axis: 'x' | 'y'; coord: number; area: number }
-  /** A cylinder seen along its axis: a circle (a whole one, `full`, or an arc) with its middle in the view's coordinates and the direction (degrees) from there to the middle of the arc. */
-  | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number; hole?: HoleInfo; thread?: ThreadCallout }
+  /** A cylinder seen along its axis: a circle (a whole one, `full`, or an arc) with its middle in the view's coordinates and the direction (degrees) from there to the middle of the arc. `surface` names the coaxial cylindrical surface when a cylinder is cut into several faces. */
+  | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number; surface?: string; hole?: HoleInfo; thread?: ThreadCallout }
   /** A whole cylinder seen from the side: its axis from one end to the other, in the view's coordinates. */
   | { type: 'axis'; ref: Ref; from: [number, number]; to: [number, number]; radius: number; thread?: ThreadCallout; hole?: HoleInfo }
   /**
@@ -788,9 +788,9 @@ export type ViewFeature =
    *
    * A fillet at a hole mouth is a whole ring, and the view cuts it **twice** — once either side of the axis — so one face gives two of these, both naming the same
    * face and the same R. They are their own kind and not a `circle` so that the automatic dimensions leave them alone (E1a): drafting a fillet's radius changes
-   * what that button does, and that is a decision of its own.
+   * what that button does, and that is a decision of its own. `surface` names the shared torus surface when a ring is split into several faces.
    */
-  | { type: 'torus'; ref: Ref; centre: [number, number]; at: [number, number]; radius: number; major: number; axis: [number, number]; convex: boolean; outward: number }
+  | { type: 'torus'; ref: Ref; centre: [number, number]; at: [number, number]; radius: number; major: number; axis: [number, number]; convex: boolean; outward: number; surface?: string }
   /** A plane seen edge-on that is neither square to the view's x nor to its y (a slanted face): the middle of the face and the direction of the line it is seen as (a unit vector), in the view's coordinates. */
   | { type: 'slant'; ref: Ref; at: [number, number]; dir: [number, number]; area: number; cone?: { side: 1 | -1; from: [number, number]; to: [number, number]; axial: number; radial: number; setback?: number } };
 

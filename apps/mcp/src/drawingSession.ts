@@ -352,7 +352,7 @@ export class DrawingSession {
         const line: [[number, number], [number, number]] =
           orientation === 'horizontal' ? [[box.min[0] - pad, at], [box.max[0] + pad, at]] : [[at, box.min[1] - pad], [at, box.max[1] + pad]];
         const id = ids().take('view');
-        const section: DrawingView = { id, name: t('drawing.view.section', { label }), kind: 'section', parent: mainId, line, label };
+        const section: DrawingView = { id, name: t('drawing.view.section', { label }), kind: 'section', parent: mainId, line, label, centreMarks: true };
         let chosen = section;
         if (replaced) {
           const all = page(doc).views;
@@ -424,12 +424,20 @@ export class DrawingSession {
       let score = this.clutter(best, 0);
       const hasIso = (d: DrawingDoc) => page(d, 0).views.some((v) => v.display === 'shadedEdges');
       let isoOk = !(o.isometric ?? true) || hasIso(best);
-      const order: SheetSize[] = ['A4', 'A3', 'A2', 'A1'];
-      for (let i = order.indexOf(page(best, 0).sheet.size) + 1; (score > 0 || !isoOk) && i > 0 && i < order.length; i++) {
+      const order: SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
+      const overfull = (d: DrawingDoc) => {
+        const m = this.layout(d, 0);
+        return Math.max(m.fillW, m.fillH) > FILL_RANGE[1] + 1e-9;
+      };
+      for (let i = order.indexOf(page(best, 0).sheet.size) + 1; (score > 0 || !isoOk || overfull(best)) && i > 0 && i < order.length; i++) {
         const next = layOutPage(doc, 0, order[i]);
         const c = this.clutter(next, 0);
         const nextIso = !(o.isometric ?? true) || hasIso(next);
-        if (c < score || (!isoOk && nextIso && c <= score + 5) || (page(best, 0).sheet.size === 'A4' && score > 25 && order[i] === 'A3' && c <= score)) {
+        if (overfull(best) && !overfull(next)) {
+          best = next;
+          score = c;
+          isoOk = nextIso;
+        } else if (c < score || (!isoOk && nextIso && c <= score + 5) || (page(best, 0).sheet.size === 'A4' && score > 25 && order[i] === 'A3' && c <= score)) {
           best = next;
           score = c;
           isoOk = nextIso;
@@ -629,17 +637,26 @@ export class DrawingSession {
     doc = this.placeCaptions(this.steerLeaders(this.spreadViews(this.steerLeaders(this.spreadViews(doc, pageIndex), false, pageIndex), pageIndex), true, pageIndex), pageIndex);
     const afterFailed = [...this.build(doc, pageIndex).outcomes].filter(([, o]) => 'error' in o).map(([id]) => id);
     if (afterFailed.length) doc = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'deleteDimensions', dimensionIds: afterFailed }));
-    // and last, whatever the clutter steps did: the views are as far apart as the dimensions between them need (measured, not guessed)
-    return this.clearViews(doc, pageIndex, room === 'keep');
+    // and last, whatever the clutter steps did: the views are as far apart as the dimensions between them need (measured, not guessed), then any dirty caption is cleared
+    return this.placeCaptions(this.clearViews(doc, pageIndex, room === 'keep'), pageIndex, true);
   }
 
   /**
    * Moves a view's caption that something crosses (the extension lines of the dimensions under the view, as a rule) to where nothing does: further down,
    * under the rows of dimensions, or over the view. The caption is only moved, never changed.
    */
-  private placeCaptions(doc: DrawingDoc, pageIndex = 0): DrawingDoc {
+  private placeCaptions(doc: DrawingDoc, pageIndex = 0, onlyDirty = false): DrawingDoc {
     let score = this.clutter(doc, pageIndex);
-    const b = this.build(doc, pageIndex);
+    const captionTexts = (d: DrawingDoc) => {
+      const b0 = this.build(d, pageIndex);
+      const pg0 = page(d, pageIndex);
+      const single0 = pageIndex === 0 ? d : { ...d, pages: [pg0] };
+      const items0 = b0.scene.items.slice(sheetItems(single0).length);
+      const cl0 = clutterOf(items0, CLEARANCE, viewsOfDimensions(single0));
+      const caps = new Set(b0.scene.items.flatMap((i) => (i.kind === 'text' && i.viewCaption ? [i.text] : [])));
+      return { b0, capClutter: new Set(cl0.texts.filter((x) => caps.has(x))) };
+    };
+    let { b0: b, capClutter } = captionTexts(doc);
     for (const v of page(doc, pageIndex).views) {
       const own = b.placed.get(v.id);
       if (!own) continue;
@@ -648,40 +665,48 @@ export class DrawingSession {
       const below = itemsBounds(b.scene.items.filter((i) => i.group !== undefined && dimIds.has(i.group) && i.kind === 'polyline'));
       const auto = own.at[1] - own.h / 2 - 8; // where the caption's baseline is by default (viewCaptionItem)
       const first: [number, number] | null = below && below.y0 < auto + 6 ? [0, Math.round((below.y0 - 8 - auto) * 10) / 10] : null;
+      const ownCapText = b.scene.items.find((i): i is Extract<SceneItem, { kind: 'text' }> => i.kind === 'text' && i.viewCaption === v.id)?.text;
       const attempt = (offset: [number, number], keepEqual: boolean) => {
         const trial = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setView', viewId: v.id, patch: { caption: { ...(v.caption ?? {}), offset } } }));
         const c = this.clutter(trial, pageIndex);
         const frame = sheetMetrics(page(trial, pageIndex).sheet).area;
         const capY = auto + offset[1];
         if (capY < frame.y - 2) return false; // never into the title block's row
-        if (c < score || (keepEqual && c === score)) {
+        const nextCaps = captionTexts(trial).capClutter;
+        const clearsCap = ownCapText !== undefined && capClutter.has(ownCapText) && !nextCaps.has(ownCapText);
+        if (c < score || (keepEqual && c === score) || (clearsCap && c <= score + 1)) {
           doc = trial;
           score = c;
+          capClutter = nextCaps;
           return true;
         }
         return false;
       };
+      const ownDirty = ownCapText !== undefined && capClutter.has(ownCapText);
+      if (onlyDirty && !ownDirty) continue;
       if (first && attempt(first, true) && score === 0) continue;
-      if (score === 0) continue;
+      if (score === 0 && !ownDirty) continue;
       const tries: [number, number][] = [];
       for (let k = 7; k <= 70; k += 7) tries.push([0, (first?.[1] ?? 0) - k]);
-      tries.push([0, own.h + 14], [0, own.h + 24]);
+      tries.push([0, own.h + 14], [0, own.h + 24], [-24, 0], [24, 0], [-24, own.h + 14], [24, own.h + 14], [-40, 0], [40, 0]);
       // the best of them all, not the first that helps: a little lower may help a little where over the view clears it
-      let pick: { offset: [number, number]; c: number } | null = null;
+      let pick: { offset: [number, number]; c: number; clears: boolean } | null = null;
       for (const offset of tries) {
         const auto2 = auto + offset[1];
         if (auto2 < sheetMetrics(page(doc, pageIndex).sheet).area.y - 2) continue;
-        const c = this.clutter(onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setView', viewId: v.id, patch: { caption: { ...(v.caption ?? {}), offset } } })), pageIndex);
-        if (!pick || c < pick.c) pick = { offset, c };
+        const trial = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setView', viewId: v.id, patch: { caption: { ...(v.caption ?? {}), offset } } }));
+        const c = this.clutter(trial, pageIndex);
+        const clears = ownCapText !== undefined && capClutter.has(ownCapText) && !captionTexts(trial).capClutter.has(ownCapText);
+        if (!pick || (clears && !pick.clears) || (clears === pick.clears && c < pick.c)) pick = { offset, c, clears };
       }
-      if (pick && pick.c < score) attempt(pick.offset, true);
+      if (pick && (pick.c < score || pick.clears)) attempt(pick.offset, true);
     }
     return doc;
   }
 
   /** How far `doc` is from a clean sheet: what `clutterOf` counts, plus a penalty for out-of-frame items or broken dimensions. */
-  private clutterInfo(doc: DrawingDoc, pageIndex = 0): { score: number; groups: Set<string>; failed: number } {
-    const b = this.build(doc, pageIndex);
+  private clutterInfo(doc: DrawingDoc, pageIndex = 0, built?: Built): { score: number; groups: Set<string>; failed: number } {
+    const b = built ?? this.build(doc, pageIndex);
     const failed = [...b.outcomes.values()].filter((o) => 'error' in o).length;
     const pg = page(doc, pageIndex);
     const single = pageIndex === 0 ? doc : { ...doc, pages: [pg] };
@@ -787,17 +812,81 @@ export class DrawingSession {
   }
 
   /**
-   * Turns the leader of each diameter and radius dimension (and lengthens it) to where its text crosses nothing, as a drafter swings a callout into free
-   * room: the turn that leaves the sheet least cluttered, the one it has when none is better. A linear dimension's text is slid along its line likewise.
+   * Whether every arrowhead of dimension `dimId` on page `pageIndex` lands within `tol` mm of its view's drawn geometry (and inside the detail circle when the view
+   * is a detail view, ADR 0262 rules D6 and D7).
+   */
+  private arrowHitsView(built: Built, pg: DrawingPage, dimId: Id, tol = 0.2, allowHidden = false): boolean {
+    const dim = pg.dimensions.find((x) => x.id === dimId);
+    if (!dim) return false;
+    const outcome = built.outcomes.get(dimId);
+    if (!outcome || 'error' in outcome) return false;
+    const v = pg.views.find((x) => x.id === dim.view);
+    const placed = built.placed.get(dim.view);
+    if (!v || !placed) return false;
+    const tips: [number, number][] = [];
+    const polys: number[][] = [];
+    for (const item of built.scene.items) {
+      if (item.kind !== 'polyline') continue;
+      if (item.filled && item.group === dimId && item.points.length >= 2) tips.push([item.points[0]!, item.points[1]!]);
+      else if (!item.filled && item.owner === `view:${dim.view}` && (item.style === 'visible' || item.style === 'thin' || (allowHidden && item.style === 'hidden'))) polys.push(item.points);
+    }
+    if (tips.length === 0) return false;
+    if (polys.length === 0) return true;
+    const rSheet = placed.w / 2;
+    for (const [tx, ty] of tips) {
+      if (v.kind === 'detail' && Math.hypot(tx - placed.at[0], ty - placed.at[1]) > rSheet + 0.5) return false;
+      let best = Infinity;
+      for (const poly of polys) {
+        for (let k = 0; k + 3 < poly.length; k += 2) {
+          const ax = poly[k]!, ay = poly[k + 1]!, bx = poly[k + 2]!, by = poly[k + 3]!;
+          const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+          const t = l2 > 1e-18 ? Math.max(0, Math.min(1, ((tx - ax) * dx + (ty - ay) * dy) / l2)) : 0;
+          const d = Math.hypot(tx - (ax + t * dx), ty - (ay + t * dy));
+          if (d < best) best = d;
+        }
+      }
+      if (best > tol) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Turns the leader of each diameter and radius dimension (and lengthens it) to where its text crosses nothing and its arrow lands on the drawn geometry
+   * (ADR 0262 rules D5, D6, D7), as a drafter swings a callout into free room: the turn that leaves the sheet least cluttered, the one it has when none is
+   * better. A linear dimension's text is slid along its line likewise.
    */
   private steerLeaders(doc: DrawingDoc, slideNumbers = true, pageIndex = 0): DrawingDoc {
-    let info = this.clutterInfo(doc, pageIndex);
+    // First snap any round dimension whose initial leader angle misses the drawn arc (e.g. a split or trimmed cylinder) onto an angle that hits the geometry.
+    const b0 = this.build(doc, pageIndex);
+    const pg0 = page(doc, pageIndex);
+    const candidateAngles = [45, 135, 225, 315, 30, 60, 120, 150, 210, 240, 300, 330, 15, 75, 105, 165, 195, 255, 285, 345, 0, 90, 180, 270];
+    const fineAngles = Array.from({ length: 72 }, (_, i) => i * 5);
+    for (const d of pg0.dimensions) {
+      if (d.kind !== 'diameter' && d.kind !== 'radius') continue;
+      if (this.arrowHitsView(b0, pg0, d.id)) continue;
+      for (const angle of [d.angle, ...candidateAngles, ...fineAngles]) {
+        try {
+          const trial = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setDimension', dimensionId: d.id, patch: { angle } }));
+          const bt = this.build(trial, pageIndex);
+          if (this.arrowHitsView(bt, page(trial, pageIndex), d.id)) {
+            doc = trial;
+            break;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    let info = this.clutterInfo(doc, pageIndex, this.build(doc, pageIndex));
     if (info.score === 0) return doc;
     const baseFailed = info.failed;
-    const try_ = (patch: Extract<DrawingCommand, { type: 'setDimension' }>['patch'], id: Id): boolean => {
+    const try_ = (patch: Extract<DrawingCommand, { type: 'setDimension' }>['patch'], id: Id, requireHit: boolean): boolean => {
       try {
         const trial = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setDimension', dimensionId: id, patch }));
-        const next = this.clutterInfo(trial, pageIndex);
+        const bt = this.build(trial, pageIndex);
+        if (requireHit && !this.arrowHitsView(bt, page(trial, pageIndex), id)) return false;
+        const next = this.clutterInfo(trial, pageIndex, bt);
         if (next.failed > baseFailed) return false;
         if (next.score < info.score) {
           doc = trial;
@@ -817,15 +906,25 @@ export class DrawingSession {
         if (info.score === 0) break;
         if (!targets.has(d.id)) continue;
         if (d.kind === 'diameter' || d.kind === 'radius') {
+          const hitsNow = this.arrowHitsView(this.build(doc, pageIndex), page(doc, pageIndex), d.id);
           // longer leaders last: at a large scale (or with large text) the part is wider on the sheet than the first four reach across (ADR 0261)
+          const angles = hitsNow ? [d.angle, ...candidateAngles.filter((a) => Math.abs(a - d.angle) > 1e-3)] : [d.angle];
           outer: for (const leader of [8, 14, 22, 32, 46, 64]) {
-            for (const angle of [45, 135, 225, 315, 30, 150, 210, 330, 0, 90, 180, 270]) {
-              if (try_({ angle, leader }, d.id) && !info.groups.has(d.id)) break outer;
+            for (const angle of angles) {
+              if (try_({ angle, leader }, d.id, hitsNow) && !info.groups.has(d.id)) break outer;
             }
           }
-        } else if (d.kind === 'linear' && slideNumbers) {
-          for (const slide of [-12, 12, -24, 24, -36, 36]) {
-            if (try_({ slide }, d.id) && !info.groups.has(d.id)) break;
+        } else if (d.kind === 'linear') {
+          const baseOff = Math.abs(d.offset) || 10;
+          const curSign = Math.sign(d.offset) || 1;
+          outerLinear: for (const sgn of [curSign, -curSign]) {
+            for (const off of [baseOff, baseOff + 7, baseOff + 14]) {
+              const slides = slideNumbers ? [0, -12, 12, -24, 24, -36, 36] : [0];
+              for (const slide of slides) {
+                if (sgn === curSign && off === baseOff && slide === (d.slide ?? 0)) continue;
+                if (try_({ offset: sgn * off, ...(slide === 0 ? { slide: null } : { slide }) }, d.id, false) && !info.groups.has(d.id)) break outerLinear;
+              }
+            }
           }
         }
       }
@@ -938,15 +1037,30 @@ export class DrawingSession {
         const e = dimensionRefs(d).map(getFacts)[0];
         if (!e) return null;
         const p = e.point;
-        return [p[0] * r[0] + p[1] * r[1] + p[2] * r[2], p[0] * u[0] + p[1] * u[1] + p[2] * u[2]];
+        const at: [number, number] = [p[0] * r[0] + p[1] * r[1] + p[2] * r[2], p[0] * u[0] + p[1] * u[1] + p[2] * u[2]];
+        if ((d.kind === 'radius' || d.kind === 'diameter') && e.radius !== undefined) {
+          const th = (d.angle * Math.PI) / 180;
+          const dir: [number, number] = [Math.cos(th), Math.sin(th)];
+          if (e.type === 'torus' && e.dir && e.major !== undefined) {
+            const ax: [number, number] = [e.dir[0] * r[0] + e.dir[1] * r[1] + e.dir[2] * r[2], e.dir[0] * u[0] + e.dir[1] * u[1] + e.dir[2] * u[2]];
+            const l = Math.hypot(ax[0], ax[1]);
+            if (l > 1e-9) {
+              const across: [number, number] = [ax[1] / l, -ax[0] / l];
+              const side = dir[0] * across[0] + dir[1] * across[1] >= 0 ? 1 : -1;
+              return [at[0] + side * across[0] * e.major + dir[0] * e.radius, at[1] + side * across[1] * e.major + dir[1] * e.radius];
+            }
+          }
+          return [at[0] + dir[0] * e.radius, at[1] + dir[1] * e.radius];
+        }
+        return at;
       };
 
-      // Greedy spatial clustering within 3.5 mm radius so nearby micro-radii share a clear Detail View
+      // Greedy spatial clustering within 2.5 mm radius so nearby micro-radii fit cleanly inside a <= 3.5 mm Detail View
       const clusters: { dims: Dimension[]; pts: [number, number][]; cx: number; cy: number }[] = [];
       for (const d of microDims) {
         const pt = projectPt(d);
         if (!pt) continue;
-        let hit = clusters.find((c) => Math.hypot(pt[0] - c.cx, pt[1] - c.cy) <= 3.5);
+        let hit = clusters.find((c) => Math.hypot(pt[0] - c.cx, pt[1] - c.cy) <= 2.5);
         if (!hit) {
           hit = { dims: [], pts: [], cx: pt[0], cy: pt[1] };
           clusters.push(hit);
@@ -967,9 +1081,9 @@ export class DrawingSession {
         if (labelIdx >= labels.length) break;
         const label = labels[labelIdx++]!;
         let maxDist = Math.max(0.8, ...cl.pts.map((p) => Math.hypot(p[0] - cl.cx, p[1] - cl.cy)));
-        let maxR = Math.max(2.0, Math.min(3.8, maxDist + 0.9));
+        let maxR = Math.max(2.0, Math.min(3.5, maxDist + 0.9));
 
-        // Feature cohesion: pull in other dimensions of the same feature that lie within the detail region
+        // Feature cohesion: pull in other dimensions of the same feature whose attachment point lies inside the detail circle
         const clFeats = new Set(cl.dims.map(featKey).filter(Boolean));
         const clusterDims = [...cl.dims];
         for (const d of allParentDims) {
@@ -977,7 +1091,7 @@ export class DrawingSession {
           const fk = featKey(d);
           if (!fk || !clFeats.has(fk)) continue;
           const pt = projectPt(d);
-          if (pt && Math.hypot(pt[0] - cl.cx, pt[1] - cl.cy) <= maxR + 0.4) {
+          if (pt && Math.hypot(pt[0] - cl.cx, pt[1] - cl.cy) <= maxR - 0.2) {
             clusterDims.push(d);
             cl.pts.push(pt);
           }
@@ -1775,8 +1889,19 @@ export function hiddenFeatures(features: readonly ViewFeature[], lines: ViewLine
       const c = runsX ? f.from[1] : f.from[0];
       if (!along(runsX ? 'y' : 'x', c + f.radius) && !along(runsX ? 'y' : 'x', c - f.radius)) out.add(f.ref.name);
     } else if (f.type === 'circle') {
+      const rTol = Math.max(tol, f.radius * 1e-3);
+      // Chord sagitta of a tessellated arc (up to ~36 deg per segment) is R*(1 - cos(theta/2)) <= 0.05*R, while a secant across the circle is much deeper.
+      const midTol = Math.max(rTol, f.radius * 0.05);
       const on = seen.some((l) => {
-        for (let i = 0; i + 1 < l.length; i += 2) if (Math.abs(Math.hypot(l[i]! - f.centre[0], l[i + 1]! - f.centre[1]) - f.radius) < Math.max(tol, f.radius * 1e-3)) return true;
+        for (let i = 0; i + 3 < l.length; i += 2) {
+          if (Math.hypot(l[i + 2]! - l[i]!, l[i + 3]! - l[i + 1]!) <= tol) continue;
+          const d0 = Math.abs(Math.hypot(l[i]! - f.centre[0], l[i + 1]! - f.centre[1]) - f.radius);
+          const d1 = Math.abs(Math.hypot(l[i + 2]! - f.centre[0], l[i + 3]! - f.centre[1]) - f.radius);
+          const mx = (l[i]! + l[i + 2]!) / 2;
+          const my = (l[i + 1]! + l[i + 3]!) / 2;
+          const dm = Math.abs(Math.hypot(mx - f.centre[0], my - f.centre[1]) - f.radius);
+          if (d0 < rTol && d1 < rTol && dm < midTol) return true;
+        }
         return false;
       });
       if (!on) out.add(f.ref.name);

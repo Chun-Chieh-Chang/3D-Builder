@@ -159,8 +159,16 @@ export function holeInfo(topology: Topology, face: number): HoleInfo | null {
     const f = e.edge.faces.find((x) => x !== face);
     const o = f === undefined ? undefined : topology.faces[f]!;
     if (!o?.geometry) return false;
-    // a cone that comes to a point (one circular edge: the hole's) is a drill point; a chamfer or countersink (two circular edges) leaves the hole open
-    if (o.geometry.type === 'cone') return topology.edges.filter((x) => x.geometry?.type === 'circle' && x.faces.includes(f!)).length <= 1;
+    // a cone that comes to a point (one circular edge: the hole's) is a drill point; a cone that narrows or leads to another internal step is not an open exit
+    if (o.geometry.type === 'cone') {
+      const circles = topology.edges.filter((x) => x.geometry?.type === 'circle' && x.faces.includes(f!));
+      if (circles.length <= 1) return true;
+      return circles.every((x) => x === e.edge || (x.geometry?.type === 'circle' && x.geometry.radius <= g.radius + 1e-6 * Math.max(1, g.radius)));
+    }
+    if (o.geometry.type === 'torus') {
+      const circles = topology.edges.filter((x) => x.geometry?.type === 'circle' && x.faces.includes(f!));
+      return circles.every((x) => x === e.edge || (x.geometry?.type === 'circle' && x.geometry.radius <= g.radius + 1e-6 * Math.max(1, g.radius)));
+    }
     return o.geometry.type === 'plane' && parallel(o.geometry.normal, g.axis) && Math.abs(o.area - disc) <= 1e-3 * disc;
   });
   if (closed[0] && closed[1]) return null;
@@ -277,6 +285,42 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Drawi
   return { error: t('drawing.refKind', { name: ref.name }) };
 }
 
+/** The smallest face area (mm²) a drawing offers for dimensioning (ADR 0262, drawing rule C4): a sliver below this is left out. */
+export const MIN_DIMENSION_FACE_AREA = 0.01;
+
+/**
+ * A signature for a cylinder or a torus surface so that several faces cut from the one coaxial cylinder or fillet ring share one identity (ADR 0262,
+ * drawing rules C1 and C2): a cylinder turned on the part and then cut by slots or flats into two, four or six pieces is still one cylindrical feature of
+ * that diameter, not six radii.
+ */
+function coaxialCylinderKey(g: Extract<NonNullable<Topology['faces'][number]['geometry']>, { type: 'cylinder' }>): string {
+  const len = Math.hypot(g.axis[0], g.axis[1], g.axis[2]) || 1;
+  let ax: V3 = [g.axis[0] / len, g.axis[1] / len, g.axis[2] / len];
+  for (const c of ax) {
+    if (Math.abs(c) > 1e-4) {
+      if (c < 0) ax = [-ax[0], -ax[1], -ax[2]];
+      break;
+    }
+  }
+  const t = dot(g.origin, ax);
+  const foot: V3 = [g.origin[0] - t * ax[0], g.origin[1] - t * ax[1], g.origin[2] - t * ax[2]];
+  const q = (v: number, s = 1e3) => Math.round(v * s);
+  return `cyl|${g.convex ? 1 : 0}|${q(g.radius, 1e4)}|${ax.map((c) => q(c)).join(',')}|${foot.map((c) => q(c, 100)).join(',')}`;
+}
+
+function coaxialTorusKey(g: Extract<NonNullable<Topology['faces'][number]['geometry']>, { type: 'torus' }>): string {
+  const len = Math.hypot(g.axis[0], g.axis[1], g.axis[2]) || 1;
+  let ax: V3 = [g.axis[0] / len, g.axis[1] / len, g.axis[2] / len];
+  for (const c of ax) {
+    if (Math.abs(c) > 1e-4) {
+      if (c < 0) ax = [-ax[0], -ax[1], -ax[2]];
+      break;
+    }
+  }
+  const q = (v: number, s = 1e3) => Math.round(v * s);
+  return `tor|${g.convex ? 1 : 0}|${q(g.minor, 1e4)}|${q(g.major, 1e3)}|${ax.map((c) => q(c)).join(',')}|${g.center.map((c) => q(c, 100)).join(',')}`;
+}
+
 /**
  * The elements of the part that a view looking from `axes` sees edge-on or as a circle, in the view's coordinates (x to its right, y up): the planes square to the
  * view's x or y, and the cylinders along its direction. `faceAllowed` leaves out faces (those of a workpiece that is only there for reference).
@@ -286,12 +330,83 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
   const right = rightOf(axes);
   const up = sheetUp(axes);
   const out: ViewFeature[] = [];
-  // the longest circular edge of each face tells whether a cylinder is whole or an arc
+  // the longest circular edge of each face tells whether a cylinder is whole or an arc; faces cut from the same coaxial cylinder are also grouped (rules C1, C2)
   const longest = new Map<number, number>();
   for (const e of topology.edges) if (e.geometry?.type === 'circle') for (const f of e.faces) longest.set(f, Math.max(longest.get(f) ?? 0, e.length));
+  const cylSpans = new Map<number, [number, number]>();
+  const cylGroups = new Map<string, { face: number; tMin: number; tMax: number }[]>();
   topology.faces.forEach((f, i) => {
     const g = f.geometry;
-    if (!g || !faceAllowed(i)) return;
+    if (!g || !faceAllowed(i) || !(f.area >= MIN_DIMENSION_FACE_AREA) || g.type !== 'cylinder') return;
+    let tMin = Infinity;
+    let tMax = -Infinity;
+    for (const e of topology.edges) {
+      if (!e.faces.includes(i)) continue;
+      for (const vi of e.vertices) {
+        const vp = topology.vertices[vi]?.point;
+        if (!vp) continue;
+        const t = dot([vp[0] - g.origin[0], vp[1] - g.origin[1], vp[2] - g.origin[2]], g.axis);
+        if (t < tMin) tMin = t;
+        if (t > tMax) tMax = t;
+      }
+    }
+    if (!(tMax > tMin)) {
+      const t = dot([f.center[0] - g.origin[0], f.center[1] - g.origin[1], f.center[2] - g.origin[2]], g.axis);
+      tMin = t;
+      tMax = t;
+    }
+    cylSpans.set(i, [tMin, tMax]);
+    const k = coaxialCylinderKey(g);
+    cylGroups.set(k, [...(cylGroups.get(k) ?? []), { face: i, tMin, tMax }]);
+  });
+  // Faces on the same torus ring (same convexity, minor/major radii, axis, and center within 1e-2 mm) share one surface key (rule C1).
+  const torusSurface = new Map<number, string>();
+  const torusClusters: { convex: boolean; minor: number; major: number; ax: V3; center: V3; key: string }[] = [];
+  topology.faces.forEach((f, i) => {
+    const g = f.geometry;
+    if (!g || !faceAllowed(i) || !(f.area >= MIN_DIMENSION_FACE_AREA) || g.type !== 'torus') return;
+    const len = Math.hypot(g.axis[0], g.axis[1], g.axis[2]) || 1;
+    let ax: V3 = [g.axis[0] / len, g.axis[1] / len, g.axis[2] / len];
+    for (const c of ax) {
+      if (Math.abs(c) > 1e-4) {
+        if (c < 0) ax = [-ax[0], -ax[1], -ax[2]];
+        break;
+      }
+    }
+    let hit = torusClusters.find(
+      (c) =>
+        c.convex === g.convex &&
+        Math.abs(c.minor - g.minor) <= 1e-4 &&
+        Math.abs(c.major - g.major) <= 1e-3 &&
+        Math.abs(c.ax[0] * ax[0] + c.ax[1] * ax[1] + c.ax[2] * ax[2]) >= 1 - 1e-4 &&
+        Math.hypot(c.center[0] - g.center[0], c.center[1] - g.center[1], c.center[2] - g.center[2]) <= 1e-2,
+    );
+    if (!hit) {
+      hit = { convex: g.convex, minor: g.minor, major: g.major, ax, center: [...g.center] as V3, key: `tor#${torusClusters.length}` };
+      torusClusters.push(hit);
+    }
+    torusSurface.set(i, hit.key);
+  });
+  const splitCylinderSurface = new Map<number, string>();
+  for (const [k, members] of cylGroups) {
+    if (members.length < 2) continue;
+    const clusters: { tMin: number; tMax: number; faces: number[] }[] = [];
+    for (const m of [...members].sort((a, b) => a.tMin - b.tMin)) {
+      const hit = clusters.find((c) => Math.min(c.tMax, m.tMax) > Math.max(c.tMin, m.tMin) + 1e-3);
+      if (hit) {
+        hit.tMin = Math.min(hit.tMin, m.tMin);
+        hit.tMax = Math.max(hit.tMax, m.tMax);
+        hit.faces.push(m.face);
+      } else clusters.push({ tMin: m.tMin, tMax: m.tMax, faces: [m.face] });
+    }
+    clusters.forEach((c, ci) => {
+      if (c.faces.length >= 2) for (const fi of c.faces) splitCylinderSurface.set(fi, `${k}#${ci}`);
+    });
+  }
+  // Faces on the same torus ring (same convexity, minor/major radii, axis, and center within 1e-2 mm) share one surface key (rule C1).
+  topology.faces.forEach((f, i) => {
+    const g = f.geometry;
+    if (!g || !faceAllowed(i) || !(f.area >= MIN_DIMENSION_FACE_AREA)) return;
     const ref = (): Ref => ({ kind: 'face', name: names.faces[i]!, fingerprint: faceFingerprint(topology, i) });
     if (g.type === 'plane' && Math.abs(dot(g.normal, axes.dir)) < 1e-6) {
       if (parallel(g.normal, right)) out.push({ type: 'plane', ref: ref(), axis: 'x', coord: dot(g.origin, right), area: f.area });
@@ -305,10 +420,14 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
     } else if (g.type === 'cylinder' && parallel(g.axis, axes.dir)) {
       const centre: [number, number] = [dot(g.origin, right), dot(g.origin, up)];
       const to: V3 = [f.center[0] - g.origin[0], f.center[1] - g.origin[1], f.center[2] - g.origin[2]];
-      const full = (longest.get(i) ?? 0) >= 2 * Math.PI * g.radius * (1 - 1e-3);
-      const hole = full ? holeInfo(topology, i) : null;
+      const splitSurf = splitCylinderSurface.get(i);
+      const singleFull = (longest.get(i) ?? 0) >= 2 * Math.PI * g.radius * (1 - 1e-3);
+      const splitCylinder = splitSurf !== undefined;
+      const full = singleFull || splitCylinder;
+      const hole = singleFull ? holeInfo(topology, i) : null;
       const faceName = names.faces[i];
       const ct = threadOnFace(topology, names, i, cosmeticThreads);
+      const arcAngle = (Math.atan2(dot(to, up), dot(to, right)) * 180) / Math.PI;
       out.push({
         type: 'circle',
         ref: ref(),
@@ -316,31 +435,59 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
         radius: g.radius,
         convex: g.convex,
         full,
+        ...(splitSurf ? { surface: splitSurf } : {}),
         ...(hole ? { hole: withFeature(hole, faceName!, features) } : {}),
         ...(ct ? { thread: ct } : {}),
-        // a whole circle has no middle of its arc: its leader goes up and to the right
-        outward: full ? 45 : (Math.atan2(dot(to, up), dot(to, right)) * 180) / Math.PI,
+        // a whole circle has no middle of its arc: its leader goes up and to the right; a split cylinder's leader aims at this face's own arc
+        outward: singleFull ? 45 : arcAngle,
       });
-    } else if (g.type === 'cylinder' && Math.abs(dot(g.axis, axes.dir)) < 1e-6 && (longest.get(i) ?? 0) >= 2 * Math.PI * g.radius * (1 - 1e-3)) {
-      // a whole cylinder seen from the side: its axis from end to end
-      const ends = cylinderEnds(topology, i);
-      if (ends.length === 2) {
-        const at = (e: (typeof ends)[number]): [number, number] => [dot(e.center, right), dot(e.center, up)];
-        const thread = threadOnFace(topology, names, i, cosmeticThreads);
-        const hole = holeInfo(topology, i);
-        out.push({ type: 'axis', ref: ref(), from: at(ends[0]!), to: at(ends[1]!), radius: g.radius,
-          ...(thread ? { thread } : {}), ...(hole ? { hole: withFeature(hole, names.faces[i]!, features) } : {}) });
+    } else if (g.type === 'cylinder' && Math.abs(dot(g.axis, axes.dir)) < 1e-6) {
+      // a whole cylinder (or a cylinder split by slots into coaxial pieces) seen from the side: its axis from end to end (rule L1)
+      const singleFull = (longest.get(i) ?? 0) >= 2 * Math.PI * g.radius * (1 - 1e-3);
+      const splitCylinder = splitCylinderSurface.has(i);
+      if (singleFull || splitCylinder) {
+        const ends = cylinderEnds(topology, i);
+        const at = (p: readonly [number, number, number]): [number, number] => [dot(p, right), dot(p, up)];
+        let span: [[number, number], [number, number]] | null = ends.length === 2 ? [at(ends[0]!.center), at(ends[1]!.center)] : null;
+        if (!span && splitCylinder) {
+          const ts: number[] = [];
+          for (const e of topology.edges) {
+            if (!e.faces.includes(i)) continue;
+            for (const vi of e.vertices) {
+              const vp = topology.vertices[vi]?.point;
+              if (vp) ts.push(dot([vp[0] - g.origin[0], vp[1] - g.origin[1], vp[2] - g.origin[2]], g.axis));
+            }
+          }
+          if (ts.length >= 2) {
+            const t0 = Math.min(...ts), t1 = Math.max(...ts);
+            if (t1 - t0 > 1e-3) {
+              const p0: V3 = [g.origin[0] + t0 * g.axis[0], g.origin[1] + t0 * g.axis[1], g.origin[2] + t0 * g.axis[2]];
+              const p1: V3 = [g.origin[0] + t1 * g.axis[0], g.origin[1] + t1 * g.axis[1], g.origin[2] + t1 * g.axis[2]];
+              span = [at(p0), at(p1)];
+            }
+          }
+        }
+        if (span) {
+          const thread = threadOnFace(topology, names, i, cosmeticThreads);
+          const hole = singleFull ? holeInfo(topology, i) : null;
+          out.push({ type: 'axis', ref: ref(), from: span[0], to: span[1], radius: g.radius,
+            ...(thread ? { thread } : {}), ...(hole ? { hole: withFeature(hole, names.faces[i]!, features) } : {}) });
+        }
       }
     } else if (g.type === 'cone' && Math.abs(dot(g.axis, axes.dir)) < 1e-6) {
       const ends = coneEnds(topology, i);
       if (ends.length === 2) {
         const dx = dot(g.axis, right), dy = dot(g.axis, up), len = Math.hypot(dx, dy);
         const axial = Math.abs(ends[1]!.t - ends[0]!.t), radial = Math.abs(ends[1]!.radius - ends[0]!.radius);
-        if (axial > 1e-9 && radial > 1e-9) for (const side of [1, -1] as const) {
-          const at = (e: (typeof ends)[number]): [number, number] => [dot(e.center, right) - side * e.radius * dy / len, dot(e.center, up) + side * e.radius * dx / len];
-          const from = at(ends[0]!), to = at(ends[1]!), l = Math.hypot(to[0] - from[0], to[1] - from[1]);
-          const setback = taperedChamferSetback(topology, i);
-          out.push({ type: 'slant', ref: ref(), at: [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2], dir: [(to[0] - from[0]) / l, (to[1] - from[1]) / l], area: f.area, cone: { side, from, to, axial, radial, ...(setback !== undefined ? { setback } : {}) } });
+        if (axial > 1e-9 && radial > 1e-9) {
+          const atAxis = (e: (typeof ends)[number]): [number, number] => [dot(e.center, right), dot(e.center, up)];
+          out.push({ type: 'axis', ref: ref(), from: atAxis(ends[0]!), to: atAxis(ends[1]!), radius: (ends[0]!.radius + ends[1]!.radius) / 2 });
+          for (const side of [1, -1] as const) {
+            const at = (e: (typeof ends)[number]): [number, number] => [dot(e.center, right) - side * e.radius * dy / len, dot(e.center, up) + side * e.radius * dx / len];
+            const from = at(ends[0]!), to = at(ends[1]!), l = Math.hypot(to[0] - from[0], to[1] - from[1]);
+            const setback = taperedChamferSetback(topology, i);
+            out.push({ type: 'slant', ref: ref(), at: [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2], dir: [(to[0] - from[0]) / l, (to[1] - from[1]) / l], area: f.area, cone: { side, from, to, axial, radial, ...(setback !== undefined ? { setback } : {}) } });
+          }
         }
       }
     } else if (g.type === 'torus' && Math.abs(dot(g.axis, axes.dir)) < 1e-6 && g.major > 1e-9) {
@@ -354,6 +501,7 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
         // the tube is cut twice, once either side of the axis; a fillet at a hole mouth is a whole ring, so the view really does see two arcs. Both are of the
         // same face, so they are given the one reference rather than two that happen to agree.
         const face = ref();
+        const surface = torusSurface.get(i) ?? coaxialTorusKey(g);
         for (const side of [1, -1] as const) {
           out.push({
             type: 'torus',
@@ -364,6 +512,7 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
             major: g.major,
             axis: [ax[0] / l, ax[1] / l],
             convex: g.convex,
+            surface,
             // the leader leans away from the axis, which is the outside of the fillet — the way the kit's two `R… MAX` callouts ask for it
             outward: (Math.atan2(side * across[1], side * across[0]) * 180) / Math.PI,
           });

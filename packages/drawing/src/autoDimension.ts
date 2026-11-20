@@ -56,9 +56,14 @@ export function autoDimensions(features: readonly ViewFeature[], options: AutoDi
   const out: DimensionDraft[] = [];
 
   if (options.holes) {
-    // equal circles are one dimension with their count (with callouts, only those the callout says the same of: a countersunk Ø6 is not a dowel Ø6)
+    // equal circles are one dimension with their count (with callouts, only those the callout says the same of: a countersunk Ø6 is not a dowel Ø6);
+    // faces cut from the same coaxial cylinder share `surface` and count as one feature (rule C1)
     const groups = new Map<string, Circle[]>();
+    const seenCircles = new Set<string>();
     for (const c of circles) {
+      const surf = c.surface ?? c.ref.name;
+      if (seenCircles.has(surf)) continue;
+      seenCircles.add(surf);
       // Placement locates a side-view leader; equal specifications still share a count.
       const key = `${c.full}|${c.convex}|${Math.round(c.radius * 1e4)}|${options.callouts && c.full ? `${holeSignature(c.hole)}|${threadSignature(c.thread)}` : ''}`;
       groups.set(key, [...(groups.get(key) ?? []), c]);
@@ -69,10 +74,10 @@ export function autoDimensions(features: readonly ViewFeature[], options: AutoDi
       const callout = options.callouts && (first.hole || first.thread) ? { callout: true } : {};
       out.push(first.full ? { kind: 'diameter', ref: first.ref, angle: first.outward, ...count, ...callout } : { kind: 'radius', ref: first.ref, angle: first.outward, ...count });
     }
-    // A fillet is one radius per *face*, and a face gives the view two features — the tube is cut once either side of its axis — so the faces are collected first
-    // and counted, not the features. Counting features would write 「2×R0.2」 for a single fillet, which is the opposite of what is true.
+    // A fillet is one radius per *surface* (a torus face gives the view two features, and a ring split into several faces shares `surface`), so the surfaces are
+    // collected first and counted, not the features. Counting features would write 「2×R0.2」 for a single fillet, which is the opposite of what is true.
     const faces = new Map<string, Torus>();
-    for (const f of features) if (f.type === 'torus') faces.set(f.ref.name, faces.get(f.ref.name) ?? f);
+    for (const f of features) if (f.type === 'torus') faces.set(f.surface ?? f.ref.name, faces.get(f.surface ?? f.ref.name) ?? f);
     // a concave fillet and a convex round of the same R are different callouts, and neither is grouped with a cylinder's arc: the same number written for a
     // different kind of edge is not the same dimension
     const filletGroups = new Map<string, Torus[]>();
