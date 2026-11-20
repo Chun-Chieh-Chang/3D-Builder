@@ -1,5 +1,13 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-20（晚）— 完整瀏覽器 UI 驗收（280/280 全綠）與 `verify:ui` 斷點續跑機制
+
+- **完成項目**：
+  1. **完整 `npm run verify:ui` 驗收通過（`30daf59d` 後續）**：**280 / 280 PASS**（0 失敗、0 已知缺陷，exit code `0`），確認自動出圖改善計畫第一至四期（ADR 0260～0263）於瀏覽器 UI 層全數無回歸。
+  2. **環境問題 RCA 與 CAPA**：初跑 `verify:ui` 時全數報 `Failed to resolve import "@3db/model"`，追查發現工作區目錄遷移後 `node_modules/@3db/*` NTFS junction 仍指向舊路徑 `G3\3D-Builder`；重建所有 `@3db/*` junction 後恢復正常。
+  3. **`scripts/verify-ui.mjs` 加入 `--checkpoint <file>` 斷點續跑**：以測試檔為最小單位即時將結果寫入 `.jsonl`，重啟或中斷後帶同一個 `--checkpoint` 參數即可自動 `RESUME` 已通過檔案並接續執行（同檔內多步驟共用瀏覽器儲存狀態，故僅在整檔 `PASS`/`KNOWN` 時快取跳過）。
+- **驗證**：`node --check scripts/verify-ui.mjs` 通過；`npm run verify:ui -- --checkpoint out/ui.jsonl` 實戰驗證 `RESUME` 與接續完成 **280 / 280 PASS**。
+
 ## 2026-11-20 — 自動出圖改善計畫・第四期（品質閘門 Q1 / Q2 / C5 / C7 / Q3）完成（ADR 0263）
 
 - **範圍與決策**：見 [ADR 0263](docs/adr/0263-drawing-quality-gate.md) 與 [自動出圖改善計畫](docs/drawing-improvement-plan.md)。四期改善計畫至此全數完成：

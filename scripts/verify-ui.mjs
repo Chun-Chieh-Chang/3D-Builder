@@ -5,6 +5,7 @@
 //   npm run verify:ui -- --only "mirror|hole"   the scripts whose file name matches
 //   npm run verify:ui -- --shots out/shots  also a screenshot of the page after each script (png)
 //   npm run verify:ui -- --json out/ui.json the result as JSON as well
+//   npm run verify:ui -- --checkpoint out/ui.jsonl  save per-file progress and skip already-passed files on resume
 //
 // VERIFY_UI_ORIGIN (dev server), VERIFY_UI_DEBUG_PORT (Chrome DevTools, default 9333) and VERIFY_UI_SAMPLES_PORT
 // (the read-only STEP folder, default 5393) are overridable, so two sessions can run verify:ui at once; the harness
@@ -18,7 +19,7 @@
 // `beforeunload` of an unsaved part) is dismissed so the run goes on, and reported on the row it happened in.
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,6 +50,7 @@ const option = (name) => {
 const only = option('only') ? new RegExp(option('only')) : null;
 const shotsDir = option('shots');
 const jsonFile = option('json');
+const checkpointFile = option('checkpoint');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const kill = (child) => {
@@ -254,12 +256,38 @@ window.__setDpr = async (dpr) => { const n = ++window.__shotN; window.__capture(
       return bad;
     };
 
+    const cachedByFile = new Map();
+    if (checkpointFile && existsSync(checkpointFile)) {
+      for (const line of readFileSync(checkpointFile, 'utf8').split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        try {
+          const row = JSON.parse(line);
+          if (!cachedByFile.has(row.file)) cachedByFile.set(row.file, new Map());
+          cachedByFile.get(row.file).set(row.call, row);
+        } catch {
+          // ignore a truncated trailing line if a previous run was interrupted mid-write
+        }
+      }
+    }
+
     const results = [];
     for (const { file, calls } of uiJobs(join(ROOT, 'tests', 'e2e'), only)) {
       if (calls.length === 0) {
         results.push({ file, call: '-', status: 'NO ENTRY', detail: 'no `await __x.run();` line in the header' });
         continue;
       }
+      if (checkpointFile) {
+        const prev = cachedByFile.get(file);
+        if (prev && calls.every((c) => { const r = prev.get(c); return r && (r.status === 'PASS' || r.status === 'KNOWN'); })) {
+          for (const c of calls) {
+            const r = prev.get(c);
+            results.push(r);
+            console.log(`RESUME   ${file} ${c}  ${r.seconds}s (cached ${r.status})`);
+          }
+          continue;
+        }
+      }
+      const fileRows = [];
       for (const [k, call] of calls.entries()) {
         // read before the fresh page: a panel dismissed while loading this one belongs to the row being started, not to the one before it
         const dialogsBefore = dialogs.length;
@@ -306,7 +334,12 @@ window.__setDpr = async (dpr) => { const n = ++window.__shotN; window.__capture(
           if (shot.result?.data) writeFileSync(join(jobShots, '99-end.png'), Buffer.from(shot.result.data, 'base64'));
         }
         results.push(row);
+        fileRows.push(row);
         console.log(`${row.status.padEnd(8)} ${file} ${call}  ${row.seconds}s${row.detail ? `  ${row.detail}` : ''}`);
+      }
+      if (checkpointFile && fileRows.length > 0) {
+        mkdirSync(dirname(resolve(checkpointFile)), { recursive: true });
+        appendFileSync(checkpointFile, fileRows.map((r) => JSON.stringify(r)).join('\n') + '\n');
       }
     }
     ws.close();
