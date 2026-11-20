@@ -3,7 +3,7 @@ import { copyFileSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { page } from '@3db/model';
-import { minViewClearance } from '@3db/drawing';
+import { clutterOf, minViewClearance, sheetItems } from '@3db/drawing';
 import { CadSession } from '../src/session';
 import { drawingOf } from '../src/drawingTools';
 import { callTool } from '../src/server';
@@ -45,5 +45,12 @@ it.each(parts)('%s: every page keeps its views apart by at least twice the dimen
     const m = d.layout(doc, pi);
     const worst = m.clearances[0];
     expect(m.minClearance === null || m.minClearance >= need, `page ${pi + 1}: ${worst ? `${worst.a} and ${worst.b} are ${worst.gap} mm apart (${worst.axis})` : ''}, need ${need}`).toBe(true);
+    // rule 2-7: no view caption is over another text or crossed by a line that is not its own
+    const single = pi === 0 && doc.pages.length === 1 ? doc : { ...doc, pages: [pg] };
+    const built = d.build(doc, pi);
+    const captions = new Set(built.scene.items.flatMap((i) => (i.kind === 'text' && i.viewCaption ? [i.text] : [])));
+    const items = built.scene.items.slice(sheetItems(single).length);
+    const hit = clutterOf(items, -0.6, new Map(pg.dimensions.map((x) => [x.id, x.view]))).texts.filter((t) => captions.has(t));
+    expect(hit, `page ${pi + 1}: captions in the way of something`).toEqual([]);
   }
 }, 600_000);

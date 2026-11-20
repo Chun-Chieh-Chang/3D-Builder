@@ -9,7 +9,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { page } from '@3db/model';
-import { layoutMetrics, sheetItems, sheetMetrics } from '@3db/drawing';
+import { clutterOf, layoutMetrics, sheetItems, sheetMetrics } from '@3db/drawing';
 import { CadSession } from '../../apps/mcp/src/session';
 import { callTool } from '../../apps/mcp/src/server';
 import { drawingOf } from '../../apps/mcp/src/drawingTools';
@@ -57,6 +57,12 @@ it('measures the layout of every part', async () => {
           clearances: m.clearances.slice(0, 4).map((c) => `${c.a}-${c.b} ${c.axis} ${c.gap}`),
           details: m.details.map((x) => `${x.id}<-${x.parent} dist ${x.distance}/${x.maxDistance} blocked ${x.blocked} ink ${x.inkRatio}`),
           nonStandardScales: m.nonStandardScales.map((x) => `${x.id} ${x.scale}`),
+          // the captions among the texts that are over another text or crossed by a line that is not their own (the whole list, not the first 12 of `checks`)
+          captionClutter: (() => {
+            const caps = new Set(b.scene.items.filter((i) => i.kind === 'text' && i.viewCaption).map((i) => (i.kind === 'text' ? i.text : '')));
+            return clutterOf(items, -0.6, new Map(pg.dimensions.map((x) => [x.id, x.view]))).texts.filter((t) => caps.has(t));
+          })(),
+          captions: b.scene.items.filter((i) => i.kind === 'text' && i.viewCaption).map((i) => (i.kind === 'text' ? i.text : '')),
           reach: m.views.map((v) => `${v.id} L${Math.round(v.reach.left)} R${Math.round(v.reach.right)} B${Math.round(v.reach.below)} T${Math.round(v.reach.above)}`),
           seconds: Math.round((Date.now() - t0) / 100) / 10,
         });

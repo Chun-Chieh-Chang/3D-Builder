@@ -39,6 +39,10 @@
 
 使用者決定（2026-11-20）：第 2 頁為了放 B-B、A-A 與詳圖而重畫的主視圖，標題標為「參考」。`offloadMicroDetails` 把它的名稱改成 `drawing.view.reference`（中文「{name}（參考，同第 1 頁）」、英文「{name} (reference, as on page 1)」），標題取自名稱，所以圖上看得到。測試（`drawing-details.test.ts`）：第 2 頁的主視圖名稱為「第 1 頁主視圖名稱＋參考」，第 1 頁沒有「參考」；突變（名稱不改）轉紅。**2-6 的三項都有了結論**：各頁同圖紙（階段 A、B）、代號整份圖唯一（階段 B）、同一視圖重畫者明確標為參考（階段 C）。`apps/mcp/test`＋`tests/phase5` 91 檔 895 項通過。
 
+### 2-7 完成：視圖標題標出比例、標題不被壓到（2026-11-20）
+
+`viewCaptionItem` 多一個參數 `sheetScale`：視圖比例與圖紙不同、且標題是預設範本（使用者沒自己寫字）、且範本裡還沒有 `<SCALE>` 時，在標題後加「 (<SCALE>)」，所以等角圖寫成「等角投影 (1:2)」、比例不同的剖面寫成「A-A (5:1)」；詳圖本來就寫比例，不會重複；使用者自己寫的標題不動。測試 `tests/phase5/drawing-caption-scale.test.ts`（6 項，突變 3 種全紅）。標題不被壓到：量測 4 個零件共 7 頁（`tests/kit/layout-baseline.kit.ts` 新增 `captionClutter`）沒有任何標題在雜亂清單裡，並把這個檢查加進 `apps/mcp/test/drawing-clearance.test.ts`（三個黃金零件）。**sds-plus-bit 沒有重量這項**（每次 200 秒）。整份圖還有的雜亂（座標尺寸數字互相擠、引線交叉：diamond-pin 3、sds-plus-bit 39、R1-8032 47）不是標題，是第三期（標註佈置）的項目。`apps/mcp/test`＋`tests/phase5` 92 檔 901 項通過。
+
 ### 未完成（照這個順序）
 
 1. 2-6：各頁用同一張圖紙（取各頁需要的最大者，其餘頁在該圖紙上重排一次）、剖面與詳圖代號整份圖唯一（R1-8032 的代號 A 出現兩次）、同一個視圖不在兩頁重畫（下視圖兩頁都畫）。

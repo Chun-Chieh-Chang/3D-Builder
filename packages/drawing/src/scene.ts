@@ -8,7 +8,7 @@ import { annotationItems } from './gdt';
 import { balloonSpots, bomTableBox, bomTableItems, spotItems, type BalloonSpot, type ViewBom } from './bomTable';
 import { evaluateDimension, type DimensionOutcome, type DimensionTextPart, type ElementsResult } from './dimension';
 import { circlePolyline, clipToOutline, clipToBand, hatch, outlinePoints, type Polyline } from './geometry';
-import { layoutViews, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
+import { layoutViews, ratio, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
 import { fittedTitleHeight, sheetMetrics, titleCells, type Rect } from './sheet';
 import { surfaceFinishItems } from './surfaceFinish';
 
@@ -290,9 +290,12 @@ function sectionItems(v: Pick<SectionDrawingView, 'line' | 'label' | 'flip'>, pa
 
 /** Caption templates retain the model label and scale; an offset moves text without moving the view. */
 export const viewCaptionTemplate = (v: DrawingView): string => v.kind === 'detail' ? '<LABEL> (<SCALE>)' : v.kind === 'section' || v.kind === 'sectionLocal' || v.kind === 'auxiliary' ? '<LABEL>-<LABEL>' : '<NAME>';
-export function viewCaptionItem(v: DrawingView, own: PlacedView, scale: Scale): SceneText {
+export function viewCaptionItem(v: DrawingView, own: PlacedView, scale: Scale, sheetScale?: Scale): SceneText {
   const tokens: Record<string, string> = { NAME: v.name, LABEL: 'label' in v ? v.label : v.name, SCALE: scaleText(scale) };
-  const text = (v.caption?.text ?? viewCaptionTemplate(v)).replace(/<(NAME|LABEL|SCALE)>/g, (_, token: string) => tokens[token]!);
+  // a view drawn at a scale other than the sheet's says so (ISO 5455, ADR 0261 rule V5); a caption the user wrote is left as written
+  let template = v.caption?.text ?? viewCaptionTemplate(v);
+  if (v.caption?.text === undefined && sheetScale && Math.abs(ratio(scale) - ratio(sheetScale)) > 1e-9 && !template.includes('<SCALE>')) template += ' (<SCALE>)';
+  const text = template.replace(/<(NAME|LABEL|SCALE)>/g, (_, token: string) => tokens[token]!);
   const offset = v.caption?.offset ?? [0, 0];
   return { kind: 'text', viewCaption: v.id, at: [own.at[0] + offset[0], own.at[1] - own.h / 2 - 8 + offset[1]], text, height: v.caption?.height ?? 5, anchor: 'center' };
 }
@@ -376,7 +379,7 @@ function buildSceneIn(
     items.push(...viewItems(v, resolved.get(v.id), own, hatchStyleOf(v, pg.views)).map((i) => ({ ...i, owner: ofView })));
     if (!resolved.get(v.id)) continue;
     // Exactly one caption per view; section/detail markers remain attached to their parent geometry.
-    items.push({ ...viewCaptionItem(v, own, scaleOf(doc, v)), owner: `caption:${v.id}` });
+    items.push({ ...viewCaptionItem(v, own, scaleOf(doc, v), pg.sheet.scale), owner: `caption:${v.id}` });
     items.push(...bendTableItems(v, resolved.get(v.id), own));
     items.push(...centreItems(v, features.get(v.id) ?? [], own).map((i) => ({ ...i, owner: ofView })));
     // the symbols and notes follow the drawing's text height (ADR 0256): drawn at ISO's 3.5 mm and scaled about the point they mark, so that one setting
