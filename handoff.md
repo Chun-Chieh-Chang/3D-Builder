@@ -1,5 +1,46 @@
 # 交接與接續工作
 
+## 2026-11-20 — ADR 0260 第二期（視圖配置）進行中，因每週額度 97% 提前交接（給別台電腦的 agent）
+
+**先做這三件事**：`git fetch`；`git switch wip/adr-0261-phase2`（第二期的程式與測試在這個分支，**尚未合併進 main**）；讀完本節與 `docs/drawing-improvement-plan.md`。main 只有本交接文件與規則文件，因為全量單元測試與完整 `verify:ui` 還沒跑，不能把未驗證的程式放進 main。
+
+- **背景**：第一期（製圖標準 CNS／ISO，預設 CNS）已在 main（`33ac36f7`，ADR 0260）。第二期要讓自動出圖的視圖配置合乎製圖規範。規則全文：`docs/design/drawing-rules-cns.md`；四期計畫、現況基準、驗收標準：`docs/drawing-improvement-plan.md`。兩份是 2026-11-19／20 由 R1-8032 的審查整理出來的，數值多取自 CNS 教材（淡江《機械畫》第 1 章），**尚未對照 CNS 3 原文**。
+- **使用者的決定**：預設 CNS 3、ISO 可切換；沒有 `standard` 欄位的舊圖視為 ISO；系統預設只寫在 `DEFAULT_DRAWING_STANDARD`；`manual-browser-projects.js` 的間歇失敗已同意延後（2026-11-19，乾淨 `db051b9a` 也會 4 次失敗 1 次）；第二期驗收標準已確認（2-1 淨空 ≥ 7 mm、2-2 受限方向填滿 0.60–0.95 且不超出可繪區、2-3 詳圖不被擋且距離 ≤ 母視圖對角線、2-5 標準比例等，詳見計畫文件）。**提交前一律先問使用者**；刪任何檔案前先說明並取得同意；不得放寬測試門檻（AGENTS §3.3）。
+
+### 分支上已完成（程式與測試都在分支裡）
+
+1. `packages/drawing/src/layoutMetrics.ts`：純函式，量一頁的配置（填滿率、相鄰視圖連同尺寸與標題的淨空、詳圖到母視圖的距離與是否被擋、詳圖的線長／圓周、非標準比例）。`minViewClearance`＝2 × 字高、`MIN_DETAIL_INK`＝0.25。測試 `tests/phase5/drawing-layout-metrics.test.ts`（11 項，突變 7 種、1 種為等價突變）。
+2. `DrawingSession.layout()`（公開）把上面的量測接到場景；`clearViews`／`slideApart`（`apps/mcp/src/drawingSession.ts`）依量到的淨空，沿 `DrawingView.slide` 拉開視圖（取代只看雜亂分數的 `spreadViews` 作為最後一步，`spreadViews` 仍在）；`fitWithRoom`（拉開後重新貼合圖紙與比例）；`tidyFitted`（`tidy` 之後頁面仍超出可繪區就再貼合，最多兩次）；`tidy(…, 'keep')` 給編輯路徑（`drawing_text_size`、`drawing_complete`）：**編輯不改圖紙與比例**，只在放得下時拉開。
+3. `create()`：自動選圖紙後，**在選定的圖紙上再排一次**（避免「經由較小圖紙拉開再貼合」留下的路徑相依雜亂）。
+4. `steerLeaders` 的引線長度多試 46、64 mm（比例大或字大時，標註要能擺到零件外面）。
+5. 詳圖：`DETAIL_SCALES` 只用標準比例（20、10、5、2、1:1，原本有 15、8、4）；`nearestFreeSpot`（`packages/drawing/src/detailPlacement.ts`，6 項測試、6 種突變全紅）找離母視圖最近、視線不被擋的空位；`placeDetails` 取代原本「放進最大的兩塊空白」；`dropEmptyDetails` 把沒有內容的詳圖拿掉（尺寸還給原視圖、字母重新連號）。測試 `apps/mcp/test/drawing-details.test.ts`（2 項，突變 4 種全紅）。
+6. 量測 kit：`tests/kit/layout-baseline.kit.ts`（`npx vitest run --config tests/kit/vitest.kit.config.ts layout-baseline`；`LAYOUT_BASELINE_EXTRA` 可加檔案、`LAYOUT_BASELINE_ONLY` 用正規式篩選）；`apps/mcp/test/drawing-clearance.test.ts`（三個黃金零件每頁淨空 ≥ 7 mm；sds-plus-bit 要 200 秒，只由 kit 量）。
+
+### 驗證狀況（誠實版）
+
+- 已過：`apps/mcp/test` 與 `tests/phase5` 共 89 檔 884 項（詳圖步驟之前的版本）；詳圖步驟之後只跑了 `drawing-details`、`drawing-pages`、`drawing-detail-placement`、`drawing-layout-metrics`、`drawing-clearance`、`drawing`，皆過；typecheck 過。
+- **還沒跑**：詳圖步驟之後的全套 `apps/mcp/test`＋`tests/phase5`；全量 `npm run check`（單元測試約 1 小時，用 `npx vitest run --reporter=verbose > scratch/test.log` 才看得到進度）；完整 `npm run verify:ui`（280 列，執行期間不得改原始碼）。
+- 量測（5 個零件，原電腦 `scratch/layout-step2d.json`）：淨空 7 頁中 6 頁 ≥ 7 mm（diamond-pin 8、R1-8032 p1 7.5、sds-plus-bit p2 7.45，其餘原本就 ≥ 9）；R1-8032 第 2 頁仍是 −42 mm（詳圖互相重疊，第三步要解的）。詳圖步驟後的量測（2026-11-20，原電腦）：R1-8032 第 2 頁 A3 5:1 → A3 2:1、受限方向填滿 1.161 → 0.833（不再超出可繪區）、淨空 −42 → −0.18 mm（仍差一點點）；詳圖 6 → 5 個（空的那個被拿掉，字母已重新連號）、非標準比例 4 → 0、被擋 5／6 → 1／5、線長比 0.81–7.8；其餘 4 個零件與第 1 頁沒有變。**2-3 還沒達標**：詳圖到母視圖的距離 46–86 mm 仍大於母視圖對角線（頁面降到 2:1，母視圖變小，對角線只有 31–47 mm，而詳圖圓周直徑就有 40–52 mm，這條「≤ 母視圖對角線」的標準可能本身太嚴，請與使用者討論要不要改成相對於詳圖大小），且 view10 仍被擋。**R1-8032 的 `.3dbx` 不在 repo**（原電腦 `D:\Self-developed_Apps\3DB實機確認\塑膠件\R1-8032-Rev08-剖面修訂\R1-8032_Rev08_2D_完整修訂.3dbx`），別台電腦只能量 4 個黃金零件。
+
+### 我改過、尚未請使用者確認的事
+
+- **`MIN_DETAIL_INK` 從計畫中的 1.0 改成 0.25**：板件實測詳圖（轉角帶圓角）的線長／圓周是 0.39，一條直線橫過圓是 0.32，真正空的是 0。1.0 會把合理的詳圖全拿掉（與 AGENTS「標準要建立在量到的基準上」同一教訓）。請在下次對話跟使用者說明並確認。
+- 拉開視圖會改變圖紙／比例：diamond-pin A4 1:1 → A3 2:1；R1-8032 第 1 頁 A3 5:1 → A1 20:1；sds-plus-bit 第 2 頁 A2 1:1（視圖重疊）→ A3 1:5（比例很小，來自 `fitSheet` 只試 A4～A2 的既有後備）。這是否可接受要問使用者；建議在「圖紙與比例一起選」的步驟處理。
+
+### 未完成（照這個順序）
+
+1. 處理 2-3 的餘項（R1-8032 第 2 頁：view10 被擋、距離、淨空 −0.18）：詳圖太多而第 2 頁圖紙固定為 A3，可能要讓第 2 頁在有詳圖時選更大的圖紙，並先和使用者確認「距離 ≤ 母視圖對角線」這條標準是否合理（見上）。kit 命令：`LAYOUT_BASELINE_ONLY=diamond npx vitest run --config tests/kit/vitest.kit.config.ts layout-baseline` 可只量一件。
+2. 計畫 2-6（多頁：圖紙相同、剖面與詳圖字母整份圖唯一、同一視圖不在兩頁重畫）、2-7（視圖標題不與尺寸重疊、比例不同的視圖標比例）、2-8（回轉件以軸線水平的視圖為主視圖；回轉面比例門檻 X 須先量 5 個零件再訂）、2-9（`drawing_inspect` 回報配置量測）。
+3. 全量單元測試、完整 `verify:ui`、ADR 0261（取號前先 `git log origin/main` 與 `ls docs/adr` 確認；目前最後是 0260）、說明文件（`help.*` 中英）、DEV_LOG，然後問使用者能否提交與合併進 main。
+
+### 不要提交／本機才有的東西
+
+`.claude/launch.json` 的 `progress` 設定、`out/progress/`（進度頁，127.0.0.1:5480，每 3 分鐘更新，`/live.json` 即時讀日誌）、`out/agent/`、`scratch/`、`tests/kit/standard-baseline.kit.ts`、`tests/kit/debug-p2.kit.ts`、根目錄的 `probe.txt`（我的暫存，需使用者同意才刪）、`.claude/worktrees/p1-baseline`（乾淨 commit 的 worktree，含 `npm ci`，供重現 flaky 用；刪除前先 `cmd /c rmdir <path>\node_modules` 不加 `/s`，見記憶）。
+
+### 額度
+
+2026-11-20 本週（全模型）額度已用 97%，下週重置時間 2026-11-23 09:00 UTC。這一節是依全域規則 §9 在 97% 時寫的；若額度耗盡，以本節與分支為準，不要依賴原電腦的對話。
+
 ## 2026-11-19（夜）— ADR 0260 第二期（視圖配置）開工：只讀程式與量測規劃，**尚未改任何程式**
 
 - **第一期已提交並推送**：`33ac36f7`（main 與 origin/main 同步）。細節見下一節。

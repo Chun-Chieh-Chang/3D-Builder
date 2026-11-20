@@ -2,6 +2,8 @@ export * from './sheet';
 export * from './layout';
 export * from './sectionLine';
 export * from './fit';
+export * from './layoutMetrics';
+export * from './detailPlacement';
 export * from './pick';
 export * from './scene';
 export * from './svg';

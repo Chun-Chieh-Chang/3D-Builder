@@ -13,12 +13,14 @@ import { t } from '@3db/i18n';
 import {
   applyDrawingCommand,
   axesOf,
+  baseDimStyle,
   createEmptyDrawing,
   dimensionRefs,
   drawingIdsInUse,
   IdAllocator,
   isDerived,
   page,
+  resolveDimStyle,
   rightOf,
   sectionPlane,
   sheetUp,
@@ -52,6 +54,10 @@ import {
   encodeShade,
   fitViews,
   itemsBounds,
+  layoutMetrics,
+  MIN_DETAIL_INK,
+  minViewClearance,
+  nearestFreeSpot,
   overlappingDimensions,
   planDrawingDimensions,
   rankMainViews,
@@ -61,6 +67,7 @@ import {
   readTrueType,
   sheetItems,
   sheetMetrics,
+  slideAxis,
   toDxf,
   toPdf,
   toSvg,
@@ -73,6 +80,8 @@ import {
   type Scene,
   type SceneItem,
   type DimensionOutcome,
+  type Clearance,
+  type LayoutMetrics,
   type TrueTypeFont,
   type ViewChoice,
   type ViewLines,
@@ -201,6 +210,8 @@ interface Built {
 
 export class DrawingSession {
   doc: DrawingDoc | null = null;
+  /** The dimensions each detail view was made for and the view they were on before (ADR 0261): given back when the detail is not made. */
+  private detailSources = new Map<Id, { dims: Dimension[]; page: number; view: Id }>();
   path: string | null = null;
   private readonly undoStack: DrawingDoc[] = [];
   /** Lines and features of the part from a direction (and a cut), kept while the part is the same build. */
@@ -393,12 +404,15 @@ export class DrawingSession {
 
     // the sheet and the scale: lay out each page cleanly
     const layOutPage = (d0: DrawingDoc, pageIndex: number, sheetOpt: CreateOptions['sheet']) => {
-      let d = this.fitSheet(d0, { ...o, sheet: sheetOpt }, pageIndex);
+      let d = this.fitWithRoom(d0, { ...o, sheet: sheetOpt }, pageIndex);
       if (pageIndex === 0 && (o.isometric ?? true)) d = this.placeIsometric(d, mainId);
-      return this.tidy(d, pageIndex);
+      return this.tidyFitted(d, { ...o, sheet: sheetOpt }, pageIndex);
     };
     let best = layOutPage(doc, 0, o.sheet);
     if (!o.sheet || o.sheet === 'auto') {
+      // The fit above found the sheet by way of a smaller one (the views are slid apart for their dimensions, and a sheet that held them before may not now), and what
+      // it slid then is not what the views need on the sheet it ended on. Lay the page out again on that sheet, as if it had been asked for (ADR 0261): one layout per sheet.
+      best = layOutPage(doc, 0, page(best, 0).sheet.size);
       let score = this.clutter(best, 0);
       const hasIso = (d: DrawingDoc) => page(d, 0).views.some((v) => v.display === 'shadedEdges');
       let isoOk = !(o.isometric ?? true) || hasIso(best);
@@ -417,53 +431,12 @@ export class DrawingSession {
     doc = best;
     for (let pi = 1; pi < doc.pages.length; pi++) {
       const hasDetails = page(doc, pi).views.some((v) => v.kind === 'detail');
-      doc = this.fitSheet(doc, { ...o, sheet: hasDetails ? 'A3' : 'auto' }, pi);
+      doc = this.fitWithRoom(doc, { ...o, sheet: hasDetails ? 'A3' : 'auto' }, pi);
       doc = enlargeDetails(doc, pi);
-      const pg = page(doc, pi);
-      const details = pg.views.filter((v) => v.kind === 'detail');
-      if (details.length) {
-        const single: DrawingDoc = { ...doc, pages: [pg] };
-        const b = this.build(doc, pi);
-        const area = sheetMetrics(pg.sheet).area;
-        const allFree = emptyRectangles(b.scene.items.slice(sheetItems(single).length), area, 8)
-          .sort((a, b) => (b.x1 - b.x0) * (b.y1 - b.y0) - (a.x1 - a.x0) * (a.y1 - a.y0));
-        // Pick up to 2 non-overlapping large free regions (e.g. left + upper-right) to balance the sheet
-        const chosenBoxes: typeof allFree = [];
-        for (const r of allFree) {
-          if (r.x1 - r.x0 < 65 || r.y1 - r.y0 < 65) continue;
-          const overlapsExisting = chosenBoxes.some((q) => Math.min(q.x1, r.x1) > Math.max(q.x0, r.x0) + 5 && Math.min(q.y1, r.y1) > Math.max(q.y0, r.y0) + 5);
-          if (!overlapsExisting) chosenBoxes.push(r);
-          if (chosenBoxes.length >= 2) break;
-        }
-        if (chosenBoxes.length === 0) chosenBoxes.push(allFree[0] ?? { x0: area.x + area.w * 0.52, y0: area.y + 70, x1: area.x + area.w - 10, y1: area.y + area.h - 10 });
-        const areas = chosenBoxes.map((r) => (r.x1 - r.x0) * (r.y1 - r.y0));
-        const totalArea = areas.reduce((s, v) => s + v, 0) || 1;
-        let idx = 0;
-        for (let bi = 0; bi < chosenBoxes.length && idx < details.length; bi++) {
-          const box = chosenBoxes[bi]!;
-          const count = bi === chosenBoxes.length - 1
-            ? details.length - idx
-            : Math.max(1, Math.round((details.length * areas[bi]!) / totalArea));
-          const slice = details.slice(idx, idx + count);
-          idx += count;
-          const padX0 = Math.min(box.x0 + 16, (box.x0 + box.x1) / 2);
-          const padX1 = Math.max(box.x1 - 10, (padX0 + box.x1) / 2);
-          const bw = padX1 - padX0;
-          const bh = box.y1 - box.y0;
-          const cols = slice.length > 2 && bw > bh * 0.9 ? 2 : 1;
-          const rows = Math.ceil(slice.length / cols);
-          const cw = bw / cols;
-          const ch = bh / rows;
-          for (let di = 0; di < slice.length; di++) {
-            const col = di % cols;
-            const row = Math.floor(di / cols);
-            const x = Math.round((padX0 + cw * (col + 0.5)) * 10) / 10;
-            const y = Math.round((box.y1 - ch * (row + 0.5)) * 10) / 10;
-            doc = onPage(doc, pi, (st) => applyDrawingCommand(st, { type: 'setView', viewId: slice[di]!.id, patch: { at: [x, y] } }));
-          }
-        }
-      }
-      doc = this.tidy(doc, pi);
+      // a detail with nothing in it is not made (its dimensions go back), the others go beside the view they enlarge (ADR 0261, rules V4 and V6)
+      doc = this.dropEmptyDetails(doc, pi);
+      doc = this.placeDetails(doc, pi);
+      doc = this.tidyFitted(doc, { ...o, sheet: hasDetails ? 'A3' : 'auto' }, pi);
       // Remove any detail views whose dimensions were all pruned by tidy
       const pgAfter = page(doc, pi);
       const emptyDetails = pgAfter.views
@@ -515,6 +488,16 @@ export class DrawingSession {
     const alloc = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const dimensions = planned.map((p) => ({ ...p.draft, id: alloc.take('dim'), view: p.view }) as Dimension);
     return applyDrawingCommand(doc, { type: 'insertDimensions', dimensions });
+  }
+
+  /**
+   * The sheet and the scale of a page, with room between its views: fitted, the views slid apart for the dimensions between them (`clearViews`), and fitted again,
+   * since the slides widen the arrangement and a sheet or scale that held it before may not hold it now (ADR 0261).
+   */
+  private fitWithRoom(doc: DrawingDoc, o: CreateOptions, pageIndex = 0): DrawingDoc {
+    const fitted = this.fitSheet(doc, o, pageIndex);
+    const cleared = this.clearViews(fitted, pageIndex);
+    return cleared === fitted ? fitted : this.fitSheet(cleared, o, pageIndex);
   }
 
   private fitSheet(doc: DrawingDoc, o: CreateOptions, pageIndex = 0): DrawingDoc {
@@ -575,8 +558,22 @@ export class DrawingSession {
     return applyDrawingCommand(doc, { type: 'insertViews', views: [view] });
   }
 
+  /**
+   * `tidy`, and the page fitted again where it left the drawing beyond the area of the sheet: what tidy does after the fit (a caption moved under the rows of
+   * dimensions, a view slid for them) can widen the arrangement, and a scale that held it before may not hold it now (ADR 0261). At most twice.
+   */
+  private tidyFitted(doc: DrawingDoc, o: CreateOptions, pageIndex = 0): DrawingDoc {
+    let d = this.tidy(doc, pageIndex);
+    for (let i = 0; i < 2; i++) {
+      const m = this.layout(d, pageIndex);
+      if (m.fillW <= 1 + 1e-9 && m.fillH <= 1 + 1e-9) break;
+      d = this.tidy(this.fitSheet(d, o, pageIndex), pageIndex);
+    }
+    return d;
+  }
+
   /** Takes out what cannot be drawn, and lays the rows out again (the shortest nearest, as SolidWorks's Auto Arrange). */
-  private tidy(doc: DrawingDoc, pageIndex = 0): DrawingDoc {
+  private tidy(doc: DrawingDoc, pageIndex = 0, room: 'refit' | 'keep' = 'refit'): DrawingDoc {
     let b = this.build(doc, pageIndex);
     const failed = [...b.outcomes].filter(([, o]) => 'error' in o).map(([id]) => id);
     if (failed.length) {
@@ -592,7 +589,8 @@ export class DrawingSession {
     doc = this.placeCaptions(this.steerLeaders(this.spreadViews(this.steerLeaders(this.spreadViews(doc, pageIndex), false, pageIndex), pageIndex), true, pageIndex), pageIndex);
     const afterFailed = [...this.build(doc, pageIndex).outcomes].filter(([, o]) => 'error' in o).map(([id]) => id);
     if (afterFailed.length) doc = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'deleteDimensions', dimensionIds: afterFailed }));
-    return doc;
+    // and last, whatever the clutter steps did: the views are as far apart as the dimensions between them need (measured, not guessed)
+    return this.clearViews(doc, pageIndex, room === 'keep');
   }
 
   /**
@@ -692,6 +690,63 @@ export class DrawingSession {
   }
 
   /**
+   * Slides views apart until the clear space between every two of them, counting the dimensions and the caption drawn for each, is at least twice the dimension
+   * text (`minViewClearance`, drawing rule V1, ADR 0261). Unlike `spreadViews` it works from the measured space (`layout`), not from a clutter score: the worst pair
+   * first, the view that can slide (a projected or section view without a place of its own) along the axis the two are side by side on, away from the other, by
+   * just what is missing. Slides are the document's own (`DrawingView.slide`), so the user can change them afterwards. A pair with no view that can slide that
+   * way is left as it is. With `keepInside` (the edits of a drawing that is made) a slide that would take the drawing beyond the sheet is not made.
+   */
+  private clearViews(doc: DrawingDoc, pageIndex = 0, keepInside = false): DrawingDoc {
+    const need = minViewClearance(resolveDimStyle(baseDimStyle(page(doc, pageIndex).sheet)).text);
+    const short = (m: LayoutMetrics) => m.clearances.filter((c) => c.gap < need - 1e-6);
+    for (let i = 0; i < 24; i++) {
+      const m = this.layout(doc, pageIndex);
+      let next: DrawingDoc | null = null;
+      for (const c of short(m)) {
+        next = this.slideApart(doc, pageIndex, m, c, need);
+        if (next) break;
+      }
+      if (!next) break;
+      // an edit of a drawing that is made does not change its sheet or its scale: the views are parted only as far as the sheet still holds them
+      if (keepInside) {
+        const after = this.layout(next, pageIndex);
+        if ((after.fillW > 1 + 1e-9 && after.fillW > m.fillW + 1e-9) || (after.fillH > 1 + 1e-9 && after.fillH > m.fillH + 1e-9)) break;
+      }
+      doc = next;
+    }
+    return doc;
+  }
+
+  /** `doc` with one view of the pair `c` slid away from the other by what is missing, or null when neither can slide along the axis the pair needs. */
+  private slideApart(doc: DrawingDoc, pageIndex: number, m: LayoutMetrics, c: Clearance, need: number): DrawingDoc | null {
+    const pg = page(doc, pageIndex);
+    const single: DrawingDoc = { ...doc, pages: [pg] };
+    const box = (id: Id) => m.views.find((x) => x.id === id)!.drawn;
+    const centre = (id: Id, axis: 0 | 1) => (axis === 0 ? (box(id).x0 + box(id).x1) / 2 : (box(id).y0 + box(id).y1) / 2);
+    // the child first: a view slid off its parent keeps what hangs on it, and the parent keeps the arrangement still
+    const pair = [c.a, c.b].map((id) => pg.views.find((v) => v.id === id)!).sort((p, q) => Number(isDerived(q)) - Number(isDerived(p)));
+    for (const v of pair) {
+      const other = v.id === c.a ? c.b : c.a;
+      if (v.at || (v.kind !== 'projected' && v.kind !== 'section')) continue;
+      if (v.kind === 'projected' && (v.side === 'upLeft' || v.side === 'upRight' || v.side === 'downLeft' || v.side === 'downRight')) continue;
+      const axis = slideAxis(single, v);
+      if (axis === null) continue;
+      // a pair side by side is parted along x, one above the other along y; boxes that overlap either way, along the axis this view slides on
+      if ((c.axis === 'x' && axis !== 0) || (c.axis === 'y' && axis !== 1)) continue;
+      const missing = need - (axis === 0 ? c.gx : c.gy);
+      if (missing <= 1e-6) continue;
+      const dir = centre(v.id, axis) >= centre(other, axis) ? 1 : -1;
+      const slide = Math.round(((v.slide ?? 0) + dir * (missing + 0.5)) * 10) / 10;
+      try {
+        return onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setView', viewId: v.id, patch: { slide } }));
+      } catch {
+        /* a view that does not slide */
+      }
+    }
+    return null;
+  }
+
+  /**
    * Turns the leader of each diameter and radius dimension (and lengthens it) to where its text crosses nothing, as a drafter swings a callout into free
    * room: the turn that leaves the sheet least cluttered, the one it has when none is better. A linear dimension's text is slid along its line likewise.
    */
@@ -722,7 +777,8 @@ export class DrawingSession {
         if (info.score === 0) break;
         if (!targets.has(d.id)) continue;
         if (d.kind === 'diameter' || d.kind === 'radius') {
-          outer: for (const leader of [8, 14, 22, 32]) {
+          // longer leaders last: at a large scale (or with large text) the part is wider on the sheet than the first four reach across (ADR 0261)
+          outer: for (const leader of [8, 14, 22, 32, 46, 64]) {
             for (const angle of [45, 135, 225, 315, 30, 150, 210, 330, 0, 90, 180, 270]) {
               if (try_({ angle, leader }, d.id) && !info.groups.has(d.id)) break outer;
             }
@@ -743,6 +799,7 @@ export class DrawingSession {
    * so Page 1 remains uncluttered and readable while preserving 100% dimension coverage.
    */
   private offloadMicroDetails(doc: DrawingDoc, mainId: Id, o: CreateOptions): DrawingDoc {
+    this.detailSources.clear();
     const s = this.source();
     const pg0 = page(doc, 0);
     const getFacts = (r: Parameters<typeof elementFacts>[2]) => {
@@ -899,6 +956,8 @@ export class DrawingSession {
           scale: viewScale,
         };
         doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertViews', views: [detailView] }));
+        // where its dimensions came from, so that a detail that turns out to show nothing gives them back (`dropEmptyDetails`)
+        this.detailSources.set(detailId, { dims: clusterDims, page: cand.onPage0 ? 0 : 1, view: cand.srcViewId });
         if (!cand.onPage0) {
           doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'deleteDimensions', dimensionIds: clusterDims.map((d) => d.id) }));
           doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertDimensions', dimensions: clusterDims.map((d) => ({ ...d, view: detailId })) }));
@@ -907,6 +966,63 @@ export class DrawingSession {
           doc = onPage(doc, 0, (st) => applyDrawingCommand(st, { type: 'deleteDimensions', dimensionIds: clusterDims.map((d) => d.id) }));
         }
       }
+    }
+    return doc;
+  }
+
+  /**
+   * Takes out the detail views that show next to nothing — the lines drawn in one shorter than its circle is round (`MIN_DETAIL_INK`) — and gives their dimensions
+   * back to the views they came from; the details that are left are lettered C, D, E … again with no gap (ADR 0261, rule V6). A detail is made from where a
+   * dimension is anchored, and that is not always where something is drawn.
+   */
+  private dropEmptyDetails(doc: DrawingDoc, pageIndex: number): DrawingDoc {
+    const empty = this.layout(doc, pageIndex).details.filter((d) => d.inkRatio < MIN_DETAIL_INK).map((d) => d.id);
+    if (empty.length === 0) return doc;
+    for (const id of empty) {
+      const own = page(doc, pageIndex).dimensions.filter((d) => d.view === id).map((d) => d.id);
+      if (own.length) doc = onPage(doc, pageIndex, (st) => applyDrawingCommand(st, { type: 'deleteDimensions', dimensionIds: own }));
+      doc = onPage(doc, pageIndex, (st) => applyDrawingCommand(st, { type: 'deleteViews', viewIds: [id] }));
+      const src = this.detailSources.get(id);
+      if (src && src.dims.length) doc = onPage(doc, src.page, (st) => applyDrawingCommand(st, { type: 'insertDimensions', dimensions: src.dims }));
+    }
+    const labels = ['C', 'D', 'E', 'F', 'G', 'H'];
+    page(doc, pageIndex)
+      .views.filter((v) => v.kind === 'detail')
+      .forEach((v, i) => {
+        const label = labels[i];
+        if (!label || (v.kind === 'detail' && v.label === label)) return;
+        doc = onPage(doc, pageIndex, (st) => applyDrawingCommand(st, { type: 'setView', viewId: v.id, patch: { label, name: t('drawing.view.detail', { label }) } }));
+      });
+    return doc;
+  }
+
+  /**
+   * Puts each detail view of a page in the free spot nearest the view it enlarges, with no other view between them (`nearestFreeSpot`), one after another, each
+   * kept clear of the views and of what is drawn for them, the details already placed included. The room it asks for is its circle and the dimensions drawn for it,
+   * less where the page is crowded (30 mm each side, then 20, 10, none).
+   */
+  private placeDetails(doc: DrawingDoc, pageIndex: number): DrawingDoc {
+    for (const dv of page(doc, pageIndex).views.filter((v) => v.kind === 'detail')) {
+      const pg = page(doc, pageIndex);
+      const single: DrawingDoc = { ...doc, pages: [pg] };
+      const b = this.build(doc, pageIndex);
+      const m = this.layout(doc, pageIndex, b);
+      const own = new Set(pg.dimensions.filter((d) => d.view === dv.id).map((d) => d.id));
+      const items = b.scene.items.slice(sheetItems(single).length).filter((i) => i.owner !== `view:${dv.id}` && i.owner !== `caption:${dv.id}` && !(i.group !== undefined && own.has(i.group)));
+      const parent = m.views.find((v) => v.id === dv.parent);
+      const placed = b.placed.get(dv.id);
+      if (!parent || !placed) continue;
+      const area = sheetMetrics(pg.sheet).area;
+      const occupied = m.views.filter((v) => v.id !== dv.id).map((v) => v.drawn);
+      let spot = null as ReturnType<typeof nearestFreeSpot>;
+      for (const margin of [30, 20, 10, 0]) {
+        const side = placed.w + 2 * margin;
+        spot = nearestFreeSpot({ items, occupied, parent: parent.drawn, area, footprint: { w: side, h: side }, gap: 8 });
+        if (spot) break;
+      }
+      if (!spot) continue;
+      const at: [number, number] = [Math.round(spot.at[0] * 10) / 10, Math.round(spot.at[1] * 10) / 10];
+      doc = onPage(doc, pageIndex, (st) => applyDrawingCommand(st, { type: 'setView', viewId: dv.id, patch: { at } }));
     }
     return doc;
   }
@@ -945,6 +1061,23 @@ export class DrawingSession {
     );
     const built = buildScene(single, lines, elements, features);
     return { lines, features, elements, scene: built.scene, placed: built.placed, outcomes: built.dimensions };
+  }
+
+  /**
+   * How page `pageIndex` is laid out, measured on what is drawn (`layoutMetrics`): the fill of the area, the clear space between views counting their dimensions,
+   * how far each detail is from its parent. The same measurement the layout steps work from and the self-check reports.
+   */
+  layout(doc: DrawingDoc = this.need(), pageIndex = 0, built?: Built): LayoutMetrics {
+    const pg = page(doc, pageIndex);
+    const single: DrawingDoc = pageIndex === 0 && doc.pages.length === 1 ? doc : { ...doc, pages: [pg] };
+    const b = built ?? this.build(doc, pageIndex);
+    return layoutMetrics({
+      items: b.scene.items.slice(sheetItems(single).length),
+      views: pg.views,
+      placed: b.placed,
+      dimensionView: new Map(pg.dimensions.map((d) => [d.id, d.view])),
+      area: sheetMetrics(pg.sheet).area,
+    });
   }
 
   private need(): DrawingDoc {
@@ -1339,7 +1472,7 @@ export class DrawingSession {
     // one step for undo: every page changed, then laid out again
     let next = doc;
     for (const [pi, commands] of commandsOn) next = onPage(next, pi, (single) => commands.reduce((x, c) => applyDrawingCommand(x, c), single));
-    for (const pi of commandsOn.keys()) next = this.tidy(next, pi);
+    for (const pi of commandsOn.keys()) next = this.tidy(next, pi, 'keep');
     this.undoStack.push(doc);
     this.doc = next;
     return changed;
@@ -1363,9 +1496,9 @@ export class DrawingSession {
         byPage.set(pi, [...(byPage.get(pi) ?? []), { ...p.draft, id: alloc.take('dim'), view: p.view } as Dimension]);
       }
       for (const [pi, dimensions] of byPage) next = onPage(next, pi, (single) => applyDrawingCommand(single, { type: 'insertDimensions', dimensions }));
-      for (const pi of byPage.keys()) if (pi !== 0) next = this.tidy(next, pi);
+      for (const pi of byPage.keys()) if (pi !== 0) next = this.tidy(next, pi, 'keep');
     }
-    next = this.tidy(next, 0); // as before: the first page is always arranged again
+    next = this.tidy(next, 0, 'keep'); // as before: the first page is always arranged again
     this.undoStack.push(doc);
     this.doc = next;
     return count(next) - count(doc);
@@ -1561,8 +1694,8 @@ export const TEXT_RANGE = { text: [2.5, 5], caption: [3.5, 7] } as const;
 /** How clear of other lines and texts a text must stay (mm on the sheet): a box 0.6 mm larger than the text is checked, so that nothing touches it either. */
 const CLEARANCE = -0.6;
 
-/** A detail view's scales, largest first, and the largest radius its circle may have on the sheet (52 mm across). */
-const DETAIL_SCALES: readonly Scale[] = [[20, 1], [15, 1], [10, 1], [8, 1], [5, 1], [4, 1], [2, 1], [1, 1]];
+/** A detail view's scales, largest first: the standard ones only (ISO 5455, ADR 0261), and the largest radius its circle may have on the sheet (52 mm across). */
+const DETAIL_SCALES: readonly Scale[] = [[20, 1], [10, 1], [5, 1], [2, 1], [1, 1]];
 const DETAIL_MAX_RADIUS = 26;
 
 /**
