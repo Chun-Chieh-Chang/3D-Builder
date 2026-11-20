@@ -431,12 +431,27 @@ export class DrawingSession {
     doc = best;
     for (let pi = 1; pi < doc.pages.length; pi++) {
       const hasDetails = page(doc, pi).views.some((v) => v.kind === 'detail');
-      doc = this.fitWithRoom(doc, { ...o, sheet: hasDetails ? 'A3' : 'auto' }, pi);
-      doc = enlargeDetails(doc, pi);
-      // a detail with nothing in it is not made (its dimensions go back), the others go beside the view they enlarge (ADR 0261, rules V4 and V6)
-      doc = this.dropEmptyDetails(doc, pi);
-      doc = this.placeDetails(doc, pi);
-      doc = this.tidyFitted(doc, { ...o, sheet: hasDetails ? 'A3' : 'auto' }, pi);
+      const layOut = (sheet: CreateOptions['sheet']): DrawingDoc => {
+        let d = this.fitWithRoom(doc, { ...o, sheet }, pi);
+        d = enlargeDetails(d, pi);
+        // a detail with nothing in it is not made (its dimensions go back), the others go beside the view they enlarge (ADR 0261, rules V4 and V6)
+        d = this.dropEmptyDetails(d, pi);
+        d = this.placeDetails(d, pi);
+        return this.tidyFitted(d, { ...o, sheet }, pi);
+      };
+      if (!hasDetails) doc = layOut('auto');
+      else {
+        // A page of detail views takes the smallest sheet, from A3, on which none is crowded: the views clear of each other, every detail beside its parent with
+        // nothing between them, everything inside the area. When no sheet is clean, the one with the fewest faults (the smaller on a tie).
+        let pick: { doc: DrawingDoc; faults: number } | null = null;
+        for (const sheet of ['A3', 'A2', 'A1'] as const) {
+          const trial = layOut(sheet);
+          const faults = this.layoutFaults(trial, pi);
+          if (!pick || faults < pick.faults) pick = { doc: trial, faults };
+          if (faults === 0) break;
+        }
+        doc = pick!.doc;
+      }
       // Remove any detail views whose dimensions were all pruned by tidy
       const pgAfter = page(doc, pi);
       const emptyDetails = pgAfter.views
@@ -968,6 +983,16 @@ export class DrawingSession {
       }
     }
     return doc;
+  }
+
+  /**
+   * How many things are wrong with the layout of a page (ADR 0261): the nearest two views closer than `minViewClearance`, each detail with a view between it and its
+   * parent or further from it than `maxDistance`, a page drawn beyond its area. 0 is a clean page.
+   */
+  private layoutFaults(doc: DrawingDoc, pageIndex: number): number {
+    const m = this.layout(doc, pageIndex);
+    const need = minViewClearance(resolveDimStyle(baseDimStyle(page(doc, pageIndex).sheet)).text);
+    return (m.minClearance !== null && m.minClearance < need - 1e-6 ? 1 : 0) + m.details.filter((d) => d.blocked || d.distance > d.maxDistance + 1e-6).length + (m.fillW > 1 + 1e-9 || m.fillH > 1 + 1e-9 ? 1 : 0);
   }
 
   /**
