@@ -108,3 +108,30 @@ it('every page is on the same sheet, and a section or detail letter is used once
   expect(letters.length).toBeGreaterThan(0);
   expect(new Set(letters).size, letters.join(' ')).toBe(letters.length);
 });
+
+it('drawing_inspect reports the layout metrics and whether each rule passes (rule 2-9)', async () => {
+  const r = await callTool(s, 'drawing_inspect', {});
+  expect(r.isError).toBeFalsy();
+  const inspect = JSON.parse((r.content[0] as { text: string }).text);
+  expect(inspect.layout).toBeDefined();
+  expect(inspect.layout.pages).toHaveLength(2);
+  expect(inspect.layout.multiPage).toEqual({ sameSheet: true, uniqueLetters: true, referenceMarked: true, pass: true });
+  expect(inspect.layout.mainView).toMatchObject({ revolved: false, axis: null, pass: true });
+  for (const p of inspect.layout.pages) {
+    expect(p.checks.clearance).toBe(true);
+    expect(p.checks.detailPlacement).toBe(true);
+    expect(p.checks.detailContent).toBe(true);
+    expect(p.checks.standardScales).toBe(true);
+    expect(p.checks.captionsClear).toBe(true);
+  }
+  expect(inspect.layout.pass).toBe(true);
+
+  // A page whose sheet size is changed so the two pages disagree fails multiPage.sameSheet and layout.pass
+  const d = drawingOf(s);
+  const doc = d.doc!;
+  const diffSheet = { ...doc, pages: doc.pages.map((p, i) => (i === 1 ? { ...p, sheet: { ...p.sheet, size: 'A1' as const } } : p)) };
+  const bad = d.checks(diffSheet).layout;
+  expect(bad.multiPage.sameSheet).toBe(false);
+  expect(bad.multiPage.pass).toBe(false);
+  expect(bad.pass).toBe(false);
+});

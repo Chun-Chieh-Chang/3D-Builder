@@ -54,6 +54,8 @@ export interface ScenePolyline {
   owner?: string;
   /** The dimension (by id) this line is drawn for: a DXF writes it into the dimension's block, the other outputs draw it as it is. */
   group?: string;
+  /** Optional `#RRGGBB` ink color; absent draws black (`#000000`). */
+  color?: string;
   /** x, y, x, y … */
   points: number[];
   style: LineStyle;
@@ -79,9 +81,12 @@ export interface SceneImage {
 
 export interface SceneText {
   viewCaption?: Id;
+  detailLabel?: Id;
   kind: 'text';
   /** As a polyline's `owner`. */
   owner?: string;
+  /** Optional `#RRGGBB` ink color; absent draws black (`#000000`). */
+  color?: string;
   /** The dimension (by id) this text is drawn for. */
   group?: string;
   /** The left end of the text's baseline (or its middle or right end, by `anchor`). */
@@ -329,9 +334,10 @@ function detailItems(v: DetailDrawingView, parent: PlacedView): SceneItem[] {
   const centre = toSheet(parent, v.centre[0], v.centre[1]);
   const r = v.radius * parent.scale;
   const ring = circlePolyline(centre, r);
+  const offset = v.labelOffset ?? [0, 0];
   return [
     { kind: 'polyline', points: ring, style: 'thin', closed: true },
-    { kind: 'text', at: [centre[0] + r * 0.72 + 1, centre[1] + r * 0.72 + 1], text: v.label, height: 5 },
+    { kind: 'text', detailLabel: v.id, owner: `detailLabel:${v.id}`, at: [centre[0] + r * 0.72 + 1 + offset[0], centre[1] + r * 0.72 + 1 + offset[1]], text: v.label, height: 5 },
   ];
 }
 
@@ -391,7 +397,8 @@ function buildSceneIn(
       const anchor = a.kind === 'fcf' || a.kind === 'note' ? (a.leader ?? a.at) : a.kind === 'datum' ? a.at : null;
       const own_k = a.kind === 'note' && a.height !== undefined ? 1 : k;
       const drawn = annotationItems([a], own, lookup, pg.sheet.unit ?? 'mm');
-      items.push(...(anchor ? scaleAbout(drawn, toSheet(own, anchor[0], anchor[1]), own_k) : drawn).map((i) => ({ ...i, owner: a.id })));
+      const annColor = a.color && a.color.toLowerCase() !== '#000000' ? a.color : undefined;
+      items.push(...(anchor ? scaleAbout(drawn, toSheet(own, anchor[0], anchor[1]), own_k) : drawn).map((i) => ({ ...i, owner: a.id, ...(annColor ? { color: annColor } : {}) })));
     }
     const parent = v.kind === 'section' || v.kind === 'sectionLocal' || v.kind === 'detail' || v.kind === 'crop' || v.kind === 'auxiliary' ? placed.get(v.parent) : undefined;
     if ((v.kind === 'section' || v.kind === 'auxiliary') && parent) items.push(...sectionItems(v, parent));
@@ -410,7 +417,9 @@ function buildSceneIn(
     const outcome = evaluateDimension(effective, elements.get(d.id), axes, own, pg.sheet.unit ?? 'mm', resolveDimStyle(baseDimStyle(pg.sheet), d.style), projectionReferenceLines(resolved.get(d.view), own));
     dimensions.set(d.id, outcome);
     if (!('error' in outcome)) {
-      items.push(...outcome.items.map((i) => ({ ...i, group: d.id })));
+      const dimColor = d.style?.color ?? pg.sheet.dimStyle?.color;
+      const ink = dimColor && dimColor.toLowerCase() !== '#000000' ? dimColor : undefined;
+      items.push(...outcome.items.map((i) => ({ ...i, group: d.id, ...(ink ? { color: ink } : {}) })));
       if (outcome.dxf) sceneDimensions.push({ id: d.id, text: outcome.text, ...(outcome.parts ? { parts: outcome.parts } : {}), textAt: outcome.dxf.textAt, geometry: outcome.dxf.geometry });
     }
   }

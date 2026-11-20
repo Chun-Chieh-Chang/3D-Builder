@@ -1,4 +1,4 @@
-import type { DrawingView, Id } from '@3db/model';
+import type { DrawingView, Id, SheetSize } from '@3db/model';
 import { itemsBounds } from './fit';
 import { STANDARD_SCALES, ratio, type PlacedView } from './layout';
 import type { SceneItem } from './scene';
@@ -70,6 +70,60 @@ export interface DetailMetrics {
   ink: number;
   perimeter: number;
   inkRatio: number;
+}
+
+/** The range the larger of a page's width fill and height fill should fall in on a single-page drawing or the page that determines the sheet size (ADR 0261 rule 2-2). */
+export const FILL_RANGE = [0.6, 0.95] as const;
+
+export interface PageLayoutInspection {
+  page: number;
+  sheet: SheetSize;
+  scale: string;
+  fillW: number;
+  fillH: number;
+  maxFill: number;
+  viewAreaFill: number;
+  minClearance: number | null;
+  needClearance: number;
+  clearances: Clearance[];
+  details: (DetailMetrics & { pass: boolean })[];
+  nonStandardScales: { id: Id; scale: number }[];
+  captionClutter: string[];
+  checks: {
+    /** Rule 2-1: minClearance is null (< 2 views) or >= needClearance. */
+    clearance: boolean;
+    /** Rule 2-2: max(fillW, fillH) <= 1 and (for the dominant/single page) >= 0.60 and <= 0.95. */
+    fill: boolean;
+    /** Rule 2-3: no detail is blocked by another view or further from its parent than maxDistance. */
+    detailPlacement: boolean;
+    /** Rule 2-4: every detail on the page has inkRatio >= MIN_DETAIL_INK. */
+    detailContent: boolean;
+    /** Rule 2-5: every view on the page uses a standard ISO 5455 scale. */
+    standardScales: boolean;
+    /** Rule 2-7: no view caption is in the clutter list. */
+    captionsClear: boolean;
+  };
+  pass: boolean;
+}
+
+export interface DrawingLayoutInspection {
+  pages: PageLayoutInspection[];
+  /** Rule 2-6: all pages use the same sheet size, section/detail letters are unique across the drawing, and any repeated model view on page 2+ is marked as a reference. */
+  multiPage: {
+    sameSheet: boolean;
+    uniqueLetters: boolean;
+    referenceMarked: boolean;
+    pass: boolean;
+  };
+  /** Rule 2-8: whether the part is a turned/revolved part (>= 50% coaxial surface of revolution), its axis, and whether the main view shows that axis side-on. */
+  mainView: {
+    revolved: boolean;
+    axis: [number, number, number] | null;
+    direction: string | null;
+    sideOn: boolean;
+    pass: boolean;
+  };
+  pass: boolean;
 }
 
 export interface LayoutMetrics {

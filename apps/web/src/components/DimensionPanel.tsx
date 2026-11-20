@@ -2,7 +2,7 @@ import { t } from '@3db/i18n';
 import { formatNumber, overlappingDimensions, toView } from '@3db/drawing';
 import { MM_PER_INCH, axesOf, baseDimStyle, normalizedViewAxes, rightOf, sheetUp, page, resolveDimStyle } from '@3db/model';
 import type { DimStyle, Dimension, DimensionOrientation, DimensionTolerance, DrawingSketchCircle, ViewFeature } from '@3db/model';
-import { DimStyleFields } from './DimStyleFields';
+import { ColorRow, DimStyleFields } from './DimStyleFields';
 import { useEffect, useState } from 'react';
 import { store, useStore } from '../state/store';
 
@@ -340,6 +340,17 @@ export function DimensionPanel() {
           {batch && <BatchDimensions dims={chosenDims} perUnit={perUnit} />}
           {current && (
             <>
+              <ColorRow
+                field="dimColor"
+                value={current.style?.color ?? baseDimStyle(curPage.sheet)?.color ?? '#000000'}
+                canReset={current.style?.color !== undefined}
+                onChange={(color) => d.setDimension(current.id, { style: { ...current.style, color } })}
+                onReset={() => {
+                  const rest: DimStyle = { ...current.style };
+                  delete rest.color;
+                  d.setDimension(current.id, { style: Object.keys(rest).length > 0 ? rest : null });
+                }}
+              />
               <label className="pm-row checkbox">
                 <input type="checkbox" data-field="dimReference" checked={!!current.reference} onChange={(e) => d.setDimension(current.id, { reference: e.target.checked })} />
                 <span>{t('drawingUi.dimReference')}</span>
@@ -615,6 +626,13 @@ function BatchDimensions({ dims, perUnit }: { dims: readonly Dimension[]; perUni
       <p className="muted" data-field="dimBatch">
         {t('drawingUi.dimBatch', { n: dims.length })}
       </p>
+      <ColorRow
+        field="dimBatchColor"
+        value={common(dims.map((x) => x.style?.color ?? '#000000')) ?? '#000000'}
+        canReset={dims.some((x) => x.style?.color !== undefined)}
+        onChange={(color) => set({ style: { color } })}
+        onReset={() => set({ style: null })}
+      />
       <label className="pm-row checkbox">
         <input
           type="checkbox"

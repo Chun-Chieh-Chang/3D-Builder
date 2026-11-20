@@ -13,8 +13,12 @@ export interface FreeSpotInput {
   items: readonly SceneItem[];
   /** Boxes that are taken whole, each kept `gap` clear: the boxes of the views (a view has empty space inside its box where no line is). */
   occupied: readonly Box[];
-  /** The view the detail is of. */
+  /** Boxes that block the line of sight between the spot's centre and the parent's centre (absent: `occupied` minus `parent` and `parentBox`). */
+  sightObstacles?: readonly Box[];
+  /** The view the detail is of (its drawn box, including its dimensions, which the footprint stays outside of). */
   parent: Box;
+  /** The parent view's own box, whose centre the line of sight is tested to (absent: `parent`). */
+  parentBox?: Box;
   /** Where the detail may go: the sheet's area. */
   area: Rect;
   /** The room the detail needs: its circle and what is drawn for it. */
@@ -108,8 +112,9 @@ export function nearestFreeSpot(input: FreeSpotInput): FreeSpot | null {
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) sat[(j + 1) * w1 + i + 1] = used[j * nx + i]! + sat[j * w1 + i + 1]! + sat[(j + 1) * w1 + i]! - sat[j * w1 + i]!;
   const held = (i: number, j: number) => sat[(j + fh) * w1 + i + fw]! - sat[j * w1 + i + fw]! - sat[(j + fh) * w1 + i]! + sat[j * w1 + i]!;
 
-  const obstacles = occupied.filter((o) => !same(o, parent));
-  const pc: [number, number] = [(parent.x0 + parent.x1) / 2, (parent.y0 + parent.y1) / 2];
+  const pBox = input.parentBox ?? parent;
+  const obstacles = input.sightObstacles ?? occupied.filter((o) => !same(o, parent) && !same(o, pBox));
+  const pc: [number, number] = [(pBox.x0 + pBox.x1) / 2, (pBox.y0 + pBox.y1) / 2];
   let best: (FreeSpot & { score: number }) | null = null;
   for (let j = 0; j + fh <= ny; j++)
     for (let i = 0; i + fw <= nx; i++) {

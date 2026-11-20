@@ -1,5 +1,26 @@
 # 交接與接續工作
 
+## 2026-11-20（下午）— ADR 0261 第二期（視圖配置）規則 2-1～2-9 全數完成，正在執行全量關門測試
+
+- **使用者裁示（2026-11-20）**：
+  1. `Q1=A`：切換至 `wip/adr-0261-phase2` 並整合 `main` 最新提交 `dcc52c9a`（已完成合併）。
+  2. `Q2=A`：核准 `MIN_DETAIL_INK = 0.25` 作為規則 `2-4` 放大詳圖最低內容門檻。
+  3. `Q3=A`：核准多頁共用最大圖紙時，單頁或決定圖紙大小的主導頁受限方向填滿率須在 `0.60–0.95`，配合同圖紙放大的從屬頁只要求不超出可繪區（`≤ 1.00`）。
+  4. `Q4=A`：實測 5 個基準零件（4 個黃金零件＋`out/R1-8032-Rev08-剖面修訂/R1-8032_Rev08_2D_完整修訂.3dbx`）的同軸回轉面面積佔比，訂定 `REVOLVED_PART_SHARE = 0.50`（回轉件 `54.7%–65.3%`、非回轉件 `1.5%–2.5%`），完成規則 `2-8`（回轉件以軸線側面視圖為主視圖）。
+  5. `Q5=A`：完成規則 `2-9`，在 `DrawingSession.checks` 與 `drawing_inspect` 新增結構化 `layout: DrawingLayoutInspection` 報告。
+  6. `Q6=A`：第二期完成並合入 `main` 後，下一步接續「工程圖第三期（標註的佈置與內容）」。
+- **本輪已完成（`wip/adr-0261-phase2`）**：
+  - `packages/drawing/src/autoDrawing.ts`：新增 `REVOLVED_PART_SHARE = 0.5`、`revolutionAxis`、`rankMainViews(stats, axis)`（規則 `2-8`）。
+  - `packages/drawing/src/layoutMetrics.ts`：新增 `FILL_RANGE = [0.6, 0.95]`、`PageLayoutInspection`、`DrawingLayoutInspection`。
+  - `packages/drawing/src/detailPlacement.ts` 與 `apps/mcp/src/drawingSession.ts`：修正 `placeDetails` 未擺放詳圖在預設座標 `[280, 150]` 的幽靈佔位，並將 `nearestFreeSpot` 視線遮擋障礙物與 `layoutMetrics` 對齊為非詳圖視圖本體框 `box`，嘗試 `30, 20, 10, 0` mm 留白使詳圖距離落在 `maxDistance` 內；`checks()` 與 `inspect()` 回報完整 `layout` 檢驗結果（規則 `2-9`）。
+  - **5 個基準零件共 7 頁實測全數通過（`layout.pass: true`）**：
+    - `diamond-pin`（回轉面 `61.4%`，主視 `right`）：A3 2:1、填滿 `0.727`、淨空 `8.00 mm`、PASS。
+    - `locating-plate`（回轉面 `2.5%`，主視 `top`）：A3 1:1、填滿 `0.798`、淨空 `9.66 mm`、PASS。
+    - `v-block`（回轉面 `1.5%`，主視 `right`）：A4 1:1、填滿 `0.823`、淨空 `7.53 mm`、PASS。
+    - `sds-plus-bit`（回轉面 `54.7%`，主視 `front`）：兩頁同為 A2（1:1／1:2）、填滿 `0.831／0.675`、淨空 `14.53／7.46 mm`、PASS。
+    - `R1-8032`（回轉面 `65.3%`，主視由 `bottom` 改為 `right`）：兩頁同為 A0（20:1／2:1）、填滿 `0.608／0.549`、淨空 `198.23／7.545 mm`、第 2 頁 5 個詳圖無遮擋且距離 `12.4–38.6 mm` 全在上限 `56–81.2 mm` 內、PASS。
+  - 文件與測試：新增 [ADR 0261](docs/adr/0261-drawing-view-layout.md)、更新 `docs/drawing-improvement-plan.md`、`packages/i18n/src/{zh-TW,en}/help.ts`、`DEV_LOG.md`；新增 `2-8`、`2-9` 單元測試與 4 項突變測試全紅；`typecheck`、`docs:sync`、四項 lint、`help.test.ts` 全過。
+
 ## 2026-11-20 — ADR 0260 第二期（視圖配置）進行中，因每週額度 97% 提前交接（給別台電腦的 agent）
 
 **先做這三件事**：`git fetch`；`git switch wip/adr-0261-phase2`（第二期的程式與測試在這個分支，**尚未合併進 main**）；讀完本節與 `docs/drawing-improvement-plan.md`。main 只有本交接文件與規則文件，因為全量單元測試與完整 `verify:ui` 還沒跑，不能把未驗證的程式放進 main。

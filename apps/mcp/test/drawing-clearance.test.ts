@@ -53,4 +53,8 @@ it.each(parts)('%s: every page keeps its views apart by at least twice the dimen
     const hit = clutterOf(items, -0.6, new Map(pg.dimensions.map((x) => [x.id, x.view]))).texts.filter((t) => captions.has(t));
     expect(hit, `page ${pi + 1}: captions in the way of something`).toEqual([]);
   }
+  const inspect = d.inspect() as { layout: { pass: boolean; mainView: { pass: boolean }; multiPage: { pass: boolean } } };
+  expect(inspect.layout.mainView.pass, `${part}: rule 2-8 main view`).toBe(true);
+  expect(inspect.layout.multiPage.pass, `${part}: rule 2-6 multiPage`).toBe(true);
+  expect(inspect.layout.pass, `${part}: layout pass`).toBe(true);
 }, 600_000);

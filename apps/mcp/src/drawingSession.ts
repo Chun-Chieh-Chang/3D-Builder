@@ -52,6 +52,7 @@ import {
   clutterOf,
   dimensionCoverage,
   encodeShade,
+  FILL_RANGE,
   fitViews,
   itemsBounds,
   layoutMetrics,
@@ -63,6 +64,7 @@ import {
   rankMainViews,
   rasterizeSheet,
   ratio,
+  revolutionAxis,
   STANDARD_SCALES,
   readTrueType,
   sheetItems,
@@ -74,8 +76,10 @@ import {
   type CoverageReport,
   type DimensionLike,
   type DirectionStats,
+  type DrawingLayoutInspection,
   type ElementsResult,
   type MainViewCandidate,
+  type PageLayoutInspection,
   type PlacedView,
   type Scene,
   type SceneItem,
@@ -89,7 +93,7 @@ import {
   type SectionAdvice,
 } from '@3db/drawing';
 import { readAnyDocumentFile, writeDrawingFile } from '@3db/io';
-import { elementFacts, holeFeatures, projectDrawingView, viewFeatures } from '@3db/regen';
+import { drawingSketchFacts, elementFacts, holeFeatures, projectDrawingView, viewFeatures } from '@3db/regen';
 import { isTrap } from '@3db/kernel';
 import { AgentError, messageOf, type CadSession } from './session';
 import { renderView } from './render';
@@ -158,6 +162,8 @@ export interface Checks {
   /** Dimensions the program could not draw, with why. */
   failed: { id: Id; error: string }[];
   coverage: CoverageReport;
+  /** Phase 2 view layout rules (ADR 0261, rules 2-1 to 2-9). */
+  layout: DrawingLayoutInspection;
 }
 
 /** A TrueType font for the pictures and the PDF: `DRAWING_FONT` first, then a CJK-capable system font, then a Latin fallback. */
@@ -279,7 +285,8 @@ export class DrawingSession {
 
   /** The plan the agent puts to the user (ADR 0256): the main views ranked, with the numbers, and the views, the section and the sheet for the best. */
   plan(projection: 'first' | 'third' = 'third'): DrawingPlan {
-    const ranked = rankMainViews(ORTHO.map((d) => this.stats(d)));
+    const axis = revolutionAxis(this.source().body.topology.faces);
+    const ranked = rankMainViews(ORTHO.map((d) => this.stats(d)), axis);
     if (ranked.length === 0) throw new AgentError('the part shows nothing from any direction');
     const main = ranked[0]!.direction;
     const rec = this.recommend(main, projection);
@@ -305,7 +312,8 @@ export class DrawingSession {
     const s = this.source();
     if (!s.path) throw new AgentError('save the part first (part_save with a .3dbx path): the drawing refers to the part file');
     const projection = o.projection ?? 'third';
-    const ranked = rankMainViews(ORTHO.map((d) => this.stats(d)));
+    const axis = revolutionAxis(s.body.topology.faces);
+    const ranked = rankMainViews(ORTHO.map((d) => this.stats(d)), axis);
     const main = o.main ?? ranked[0]?.direction;
     if (!main || !ORTHO.includes(main)) throw new AgentError(`main must be one of ${ORTHO.join(', ')}`);
     if (o.views) for (const v of o.views) if (!SIDES.includes(v)) throw new AgentError(`views are sides of the main view: ${SIDES.join(', ')}, not ${JSON.stringify(v)}`);
@@ -837,7 +845,7 @@ export class DrawingSession {
     const getFacts = (r: Parameters<typeof elementFacts>[2]) => {
       const key = JSON.stringify(r);
       if (this.elementCache.has(key)) return this.elementCache.get(key)!;
-      const f = elementFacts(s.body.topology, s.body.names, r, holeFeatures(s.doc), s.built.cosmeticThreads);
+      const f = r.kind === 'sketch' ? drawingSketchFacts(s.built.sketches, r) : elementFacts(s.body.topology, s.body.names, r, holeFeatures(s.doc), s.built.cosmeticThreads);
       const val = 'error' in f ? null : f;
       this.elementCache.set(key, val);
       return val;
@@ -1051,27 +1059,43 @@ export class DrawingSession {
    * less where the page is crowded (30 mm each side, then 20, 10, none).
    */
   private placeDetails(doc: DrawingDoc, pageIndex: number): DrawingDoc {
-    for (const dv of page(doc, pageIndex).views.filter((v) => v.kind === 'detail')) {
+    const details = page(doc, pageIndex).views.filter((v) => v.kind === 'detail');
+    const placedIds = new Set<Id>();
+    for (const dv of details) {
       const pg = page(doc, pageIndex);
       const single: DrawingDoc = { ...doc, pages: [pg] };
       const b = this.build(doc, pageIndex);
       const m = this.layout(doc, pageIndex, b);
-      const own = new Set(pg.dimensions.filter((d) => d.view === dv.id).map((d) => d.id));
-      const items = b.scene.items.slice(sheetItems(single).length).filter((i) => i.owner !== `view:${dv.id}` && i.owner !== `caption:${dv.id}` && !(i.group !== undefined && own.has(i.group)));
+      const unplaced = new Set(details.filter((v) => !placedIds.has(v.id)).map((v) => v.id));
+      const unplacedDims = new Set(pg.dimensions.filter((d) => unplaced.has(d.view)).map((d) => d.id));
+      const items = b.scene.items
+        .slice(sheetItems(single).length)
+        .filter((i) => !([...unplaced].some((id) => i.owner === `view:${id}` || i.owner === `caption:${id}`)) && !(i.group !== undefined && unplacedDims.has(i.group)));
       const parent = m.views.find((v) => v.id === dv.parent);
       const placed = b.placed.get(dv.id);
       if (!parent || !placed) continue;
       const area = sheetMetrics(pg.sheet).area;
-      const occupied = m.views.filter((v) => v.id !== dv.id).map((v) => v.drawn);
+      const occupied = m.views.filter((v) => !unplaced.has(v.id)).map((v) => v.drawn);
+      const sightObstacles = m.views.filter((v) => v.id !== dv.id && v.id !== parent.id && v.kind !== 'detail').map((v) => v.box);
+      const diagonal = Math.hypot(parent.box.x1 - parent.box.x0, parent.box.y1 - parent.box.y0);
+      const maxDist = Math.max(diagonal, 2 * placed.w);
       let spot = null as ReturnType<typeof nearestFreeSpot>;
       for (const margin of [30, 20, 10, 0]) {
         const side = placed.w + 2 * margin;
-        spot = nearestFreeSpot({ items, occupied, parent: parent.drawn, area, footprint: { w: side, h: side }, gap: 8 });
-        if (spot) break;
+        const cand = nearestFreeSpot({ items, occupied, sightObstacles, parent: parent.drawn, parentBox: parent.box, area, footprint: { w: side, h: side }, gap: 8 });
+        if (cand) {
+          spot ??= cand;
+          const boxDist = Math.max(0, cand.distance - margin * Math.SQRT2);
+          if (!cand.blocked && boxDist <= maxDist + 1e-6) {
+            spot = cand;
+            break;
+          }
+        }
       }
       if (!spot) continue;
       const at: [number, number] = [Math.round(spot.at[0] * 10) / 10, Math.round(spot.at[1] * 10) / 10];
       doc = onPage(doc, pageIndex, (st) => applyDrawingCommand(st, { type: 'setView', viewId: dv.id, patch: { at } }));
+      placedIds.add(dv.id);
     }
     return doc;
   }
@@ -1100,7 +1124,7 @@ export class DrawingSession {
     const getFacts = (r: Parameters<typeof elementFacts>[2]): Exclude<ReturnType<typeof elementFacts>, { error: string }> | null => {
       const key = JSON.stringify(r);
       if (this.elementCache.has(key)) return this.elementCache.get(key)!;
-      const f = elementFacts(s.body.topology, s.body.names, r, holes, s.built.cosmeticThreads);
+      const f = r.kind === 'sketch' ? drawingSketchFacts(s.built.sketches, r) : elementFacts(s.body.topology, s.body.names, r, holes, s.built.cosmeticThreads);
       const val = 'error' in f ? null : f;
       this.elementCache.set(key, val);
       return val;
@@ -1146,6 +1170,7 @@ export class DrawingSession {
     const missingSet = new Set<string>();
     const allDims: DimensionLike[] = [];
 
+    const pageLayouts: PageLayoutInspection[] = [];
     for (let pi = 0; pi < doc.pages.length; pi++) {
       const pg = page(doc, pi);
       const single: DrawingDoc = pi === 0 && doc.pages.length === 1 ? doc : { ...doc, pages: [pg] };
@@ -1165,7 +1190,85 @@ export class DrawingSession {
       overlaps += overlappingDimensions(slice, ids);
       for (const w of toPdf(built.scene, { ...(f ? { font: f } : {}) }).warnings) missingSet.add(w);
       for (const i of slice) if (i.kind === 'text' && i.text.trim()) heights.push({ text: i.text, h: Math.round(i.height * 100) / 100, caption: i.owner?.startsWith('caption:') === true });
+
+      const m = this.layout(doc, pi, built);
+      const needClearance = minViewClearance(resolveDimStyle(baseDimStyle(pg.sheet)).text);
+      const captions = new Set(built.scene.items.flatMap((i) => (i.kind === 'text' && i.viewCaption ? [i.text] : [])));
+      const captionClutter = cl.texts.filter((txt) => captions.has(txt));
+      const maxFill = Math.round(Math.max(m.fillW, m.fillH) * 1000) / 1000;
+      const clearanceOk = m.minClearance === null || m.minClearance >= needClearance - 1e-6;
+      const detailPlacementOk = m.details.every((d) => !d.blocked && d.distance <= d.maxDistance + 1e-6);
+      const detailContentOk = m.details.every((d) => d.inkRatio >= MIN_DETAIL_INK - 1e-9);
+      const standardScalesOk = m.nonStandardScales.length === 0;
+      const captionsClearOk = captionClutter.length === 0;
+      pageLayouts.push({
+        page: pi,
+        sheet: pg.sheet.size,
+        scale: `${pg.sheet.scale[0]}:${pg.sheet.scale[1]}`,
+        fillW: m.fillW,
+        fillH: m.fillH,
+        maxFill,
+        viewAreaFill: m.viewAreaFill,
+        minClearance: m.minClearance,
+        needClearance,
+        clearances: m.clearances,
+        details: m.details.map((d) => ({ ...d, pass: !d.blocked && d.distance <= d.maxDistance + 1e-6 && d.inkRatio >= MIN_DETAIL_INK - 1e-9 })),
+        nonStandardScales: m.nonStandardScales,
+        captionClutter,
+        checks: {
+          clearance: clearanceOk,
+          fill: maxFill <= 1 + 1e-9,
+          detailPlacement: detailPlacementOk,
+          detailContent: detailContentOk,
+          standardScales: standardScalesOk,
+          captionsClear: captionsClearOk,
+        },
+        pass: true,
+      });
     }
+    // Rule 2-2: the page that sets the sheet size (or a single page) has maxFill in FILL_RANGE [0.60, 0.95], and no page exceeds 1.00
+    const greatestFill = pageLayouts.length ? Math.max(...pageLayouts.map((p) => p.maxFill)) : 0;
+    const dominantFillOk = pageLayouts.length === 0 || (greatestFill >= FILL_RANGE[0] - 1e-9 && greatestFill <= FILL_RANGE[1] + 1e-9);
+    for (const p of pageLayouts) {
+      if (p.maxFill === greatestFill) p.checks.fill = p.maxFill >= FILL_RANGE[0] - 1e-9 && p.maxFill <= FILL_RANGE[1] + 1e-9;
+      p.pass = p.checks.clearance && p.checks.fill && p.checks.detailPlacement && p.checks.detailContent && p.checks.standardScales && p.checks.captionsClear;
+    }
+
+    // Rule 2-6: multi-page consistency
+    const sameSheet = new Set(doc.pages.map((p) => p.sheet.size)).size <= 1;
+    const letters = doc.pages.flatMap((p) => p.views.flatMap((v) => (v.kind === 'section' || v.kind === 'detail' ? [v.label] : [])));
+    const uniqueLetters = new Set(letters).size === letters.length;
+    const main0 = page(doc, 0).views.find((v): v is Extract<DrawingView, { kind?: 'model' }> => !isDerived(v) && v.direction !== 'isometric');
+    const refViews = doc.pages.slice(1).flatMap((p) => p.views.filter((v): v is Extract<DrawingView, { kind?: 'model' }> => !isDerived(v) && main0 !== undefined && v.direction === main0.direction));
+    const referenceMarked = refViews.every((v) => main0 !== undefined && v.name !== main0.name && (/參考|reference/i.test(v.name) || v.name === t('drawing.view.reference', { name: main0.name })));
+    const multiPage = { sameSheet, uniqueLetters, referenceMarked, pass: sameSheet && uniqueLetters && referenceMarked };
+
+    // Rule 2-8: turned part main view shows axis side-on
+    const revAxis = revolutionAxis(this.source().body.topology.faces);
+    const mainDir = main0 ? main0.direction : null;
+    const mainSideOn = !revAxis || !main0
+      ? true
+      : (() => {
+          const ax = axesOf(page(doc, 0).views, page(doc, 0).sheet.projection, main0);
+          if (!ax) return false;
+          const d = ax.dir;
+          const dLen = Math.hypot(d[0], d[1], d[2]) || 1;
+          const aLen = Math.hypot(revAxis[0], revAxis[1], revAxis[2]) || 1;
+          return Math.abs((d[0] * revAxis[0] + d[1] * revAxis[1] + d[2] * revAxis[2]) / (dLen * aLen)) < 1e-3;
+        })();
+    const mainView = {
+      revolved: revAxis !== null,
+      axis: revAxis ? (revAxis.map((x) => Math.round(x * 1000) / 1000) as [number, number, number]) : null,
+      direction: mainDir,
+      sideOn: mainSideOn,
+      pass: mainSideOn,
+    };
+    const layout: DrawingLayoutInspection = {
+      pages: pageLayouts,
+      multiPage,
+      mainView,
+      pass: pageLayouts.every((p) => p.pass) && dominantFillOk && multiPage.pass && mainView.pass,
+    };
     const coverage = dimensionCoverage(this.dimensionViews(doc, true), allDims);
     const odd = heights.filter((x) => { const [lo, hi] = x.caption ? TEXT_RANGE.caption : TEXT_RANGE.text; return x.h < lo - 1e-9 || x.h > hi + 1e-9; });
     return {
@@ -1176,6 +1279,7 @@ export class DrawingSession {
       outside: Math.round(outside * 10) / 10,
       failed,
       coverage,
+      layout,
     };
   }
 
@@ -1214,8 +1318,10 @@ export class DrawingSession {
   inspect(): unknown {
     const doc = this.need();
     const pages = doc.pages.map((_, pi) => this.inspectPage(doc, pi));
+    const report = this.report();
     return {
-      report: this.report(),
+      report,
+      layout: report.checks.layout,
       dimensions: pages.flatMap((p) => p.dimensions),
       annotations: pages.flatMap((p) => p.annotations),
       surfaceFinishes: pages.flatMap((p) => p.surfaceFinishes),

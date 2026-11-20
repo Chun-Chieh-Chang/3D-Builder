@@ -54,17 +54,74 @@ const planeCount = (s: DirectionStats) => new Set(s.features.flatMap((f) => (f.t
 const hiddenRatio = (s: DirectionStats) => (s.visible + s.hidden > 0 ? s.hidden / (s.visible + s.hidden) : 0);
 
 /**
+ * The share of a part's surface area that coaxial surfaces of revolution (cylinders, cones, tori on the same axis line) must reach for the part to be treated
+ * as a turned / revolved part when choosing its main view (ISO 128-30, ADR 0261 rule 2-8). Measured on the five reference parts: turned parts are 0.547 to
+ * 0.653 (sds-plus-bit 0.547, diamond-pin 0.614, R1-8032 0.653) and prismatic parts with holes/fillets are 0.015 to 0.025 (v-block 0.015, locating-plate 0.025).
+ */
+export const REVOLVED_PART_SHARE = 0.5;
+
+/**
+ * The axis of revolution of a part when coaxial cylinders, cones and tori make up at least `REVOLVED_PART_SHARE` of its surface area (ISO 128-30, ADR 0261
+ * rule 2-8), as a unit vector; null when the part is not a turned part or has no surface area.
+ */
+export function revolutionAxis(
+  faces: readonly { area: number; geometry?: { type: string; axis?: readonly [number, number, number]; origin?: readonly [number, number, number]; apex?: readonly [number, number, number]; center?: readonly [number, number, number] } }[],
+  minShare = REVOLVED_PART_SHARE,
+): [number, number, number] | null {
+  const total = faces.reduce((s, f) => s + (Number.isFinite(f.area) && f.area > 0 ? f.area : 0), 0);
+  if (!(total > 0)) return null;
+  const groups: { axis: [number, number, number]; origin: [number, number, number]; area: number }[] = [];
+  for (const f of faces) {
+    if (!(Number.isFinite(f.area) && f.area > 0)) continue;
+    const g = f.geometry;
+    if (!g || (g.type !== 'cylinder' && g.type !== 'cone' && g.type !== 'torus') || !g.axis) continue;
+    const pt = g.origin ?? g.apex ?? g.center;
+    if (!pt) continue;
+    const len = Math.hypot(g.axis[0], g.axis[1], g.axis[2]);
+    if (!(len > 1e-9)) continue;
+    const ax: [number, number, number] = [g.axis[0] / len, g.axis[1] / len, g.axis[2] / len];
+    let hit = groups.find((grp) => {
+      const dot = grp.axis[0] * ax[0] + grp.axis[1] * ax[1] + grp.axis[2] * ax[2];
+      if (Math.abs(dot) < 1 - 1e-4) return false;
+      const dx = pt[0] - grp.origin[0];
+      const dy = pt[1] - grp.origin[1];
+      const dz = pt[2] - grp.origin[2];
+      const cx = dy * grp.axis[2] - dz * grp.axis[1];
+      const cy = dz * grp.axis[0] - dx * grp.axis[2];
+      const cz = dx * grp.axis[1] - dy * grp.axis[0];
+      return Math.hypot(cx, cy, cz) <= 1e-2;
+    });
+    if (!hit) {
+      hit = { axis: ax, origin: [pt[0], pt[1], pt[2]], area: 0 };
+      groups.push(hit);
+    }
+    hit.area += f.area;
+  }
+  groups.sort((a, b) => b.area - a.area);
+  const best = groups[0];
+  return best && best.area / total >= minShare ? best.axis : null;
+}
+
+/**
  * The directions ranked for the main view. ISO 128-30 and ISO 5456-2 ask for the view that shows the most of the part's shape (here: the visible detail, the
- * round elements seen true, the steps seen edge-on), with the fewest hidden lines, and its long side along the sheet. Opposite directions see the same
- * outline, so it is the hidden lines that tell them apart; on a tie the conventional order (front, top, right, …) decides, so that the ranking never
+ * round elements seen true, the steps seen edge-on), with the fewest hidden lines, and its long side along the sheet. For a turned part (`axis` from
+ * `revolutionAxis`, ADR 0261 rule 2-8), ISO 128-30 puts the side views (the axis across the view, not end-on) ahead of the end views. Opposite directions see
+ * the same outline, so it is the hidden lines that tell them apart; on a tie the conventional order (front, top, right, …) decides, so that the ranking never
  * depends on the order the stats came in.
  */
-export function rankMainViews(stats: readonly DirectionStats[]): MainViewCandidate[] {
+export function rankMainViews(stats: readonly DirectionStats[], axis: readonly [number, number, number] | null = null): MainViewCandidate[] {
   const own = stats.filter((s) => MAIN_CANDIDATES.includes(s.direction) && s.visible > 0);
   if (own.length === 0) return [];
   const maxVisible = Math.max(...own.map((s) => s.visible));
   const maxShapes = Math.max(1, ...own.map(trueShapes));
   const maxPlanes = Math.max(1, ...own.map(planeCount));
+  const axLen = axis ? Math.hypot(axis[0], axis[1], axis[2]) : 0;
+  const sideOn = (s: DirectionStats): boolean => {
+    if (!axis || !(axLen > 1e-9)) return false;
+    const d = normalizedViewAxes(s.axes).dir;
+    return Math.abs((d[0] * axis[0] + d[1] * axis[1] + d[2] * axis[2]) / axLen) < 1e-3;
+  };
+  const anySideOn = axLen > 1e-9 && own.some(sideOn);
   const out = own.map((s): MainViewCandidate => {
     const detail = s.visible / maxVisible;
     const hr = hiddenRatio(s);
@@ -76,7 +133,13 @@ export function rankMainViews(stats: readonly DirectionStats[]): MainViewCandida
     const score = 0.35 * detail + 0.25 * (shapes / maxShapes) + 0.15 * (planes / maxPlanes) + 0.2 * (1 - hr) + (landscape ? 0.05 : 0.05 * Math.min(1, s.width / Math.max(s.height, 1e-9)));
     return { direction: s.direction, score: r3(score), metrics: { hiddenRatio: r3(hr), trueShapes: shapes, planes, detail: r3(detail), landscape } };
   });
-  return out.sort((a, b) => b.score - a.score || MAIN_CANDIDATES.indexOf(a.direction) - MAIN_CANDIDATES.indexOf(b.direction));
+  const byDirection = new Map(own.map((s) => [s.direction, s]));
+  return out.sort(
+    (a, b) =>
+      (anySideOn ? Number(sideOn(byDirection.get(b.direction)!)) - Number(sideOn(byDirection.get(a.direction)!)) : 0) ||
+      b.score - a.score ||
+      MAIN_CANDIDATES.indexOf(a.direction) - MAIN_CANDIDATES.indexOf(b.direction),
+  );
 }
 
 /** A view that could be projected off the main view, measured. */

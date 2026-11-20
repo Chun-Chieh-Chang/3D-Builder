@@ -1,5 +1,21 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-20 — 自動出圖改善計畫・第二期（視圖配置 V1–V8 / P1–P4）完成（ADR 0261）
+
+- **範圍與決策**：見 [ADR 0261](docs/adr/0261-drawing-view-layout.md) 與 [自動出圖改善計畫](docs/drawing-improvement-plan.md)。完成規則 `2-1`～`2-9`：
+  1. **2-1 視圖淨空**：`layoutMetrics`（`packages/drawing/src/layoutMetrics.ts`）直接由繪製場景圖元量測各視圖外框連同其標註與標題的 `drawn` 包圍盒及四側延伸量 `reach`；`clearViews`／`slideApart` 依實測淨空沿 `DrawingView.slide` 拉開視圖至 `≥ 2 × 字高`（7 mm），`fitWithRoom` 與 `tidyFitted` 於拉開後重新貼合圖紙與比例；編輯路徑（`drawing_text_size`、`drawing_complete`）使用 `'keep'` 不改動既有圖紙與比例。
+  2. **2-2 受限方向填滿**：單頁或決定圖紙大小的主導頁受限方向 `max(fillW, fillH)` 落在 `FILL_RANGE = [0.60, 0.95]`，配合同圖紙的從屬頁不設下限，全頁 `≤ 1.00` 不超出可繪區；`create()` 階梯選紙時在選定圖紙上重新獨立排版，消除經小圖紙拉開留下的路徑相依位移。
+  3. **2-3／2-4／2-5 放大詳圖**：`DETAIL_SCALES` 僅用 ISO 5455 標準比例（`20, 10, 5, 2, 1:1`）；依實測將 `MIN_DETAIL_INK` 定為 `0.25`（板件轉角圓角 `0.39`、直線橫過圓 `0.32`、空詳圖 `0`），低於門檻者由 `dropEmptyDetails` 移除並將尺寸歸還原視圖、代號重新連號；`nearestFreeSpot`（`packages/drawing/src/detailPlacement.ts`）以 2 mm 總和表搜尋母視圖旁最近、視線不被其他視圖本體框遮擋的空位，`placeDetails` 排除本輪尚未擺放的詳圖幽靈佔位，並依序嘗試 `30, 20, 10, 0` mm 留白使距離 `≤ max(母視圖對角線, 2 × 詳圖直徑)`。
+  4. **2-6 多頁一致性**：`A-A` 剖面有 `≥ 2` 個微圓角移往第 2 頁時，連同尺寸整組搬移至第 2 頁（不複製），使剖面與詳圖代號整份圖唯一；各頁統一使用最大圖紙重排；第 2 頁作為母視圖重畫的主視圖以 `drawing.view.reference` 標明「`{name}（參考，同第 1 頁）`」。
+  5. **2-7 視圖標題比例與零重疊**：`viewCaptionItem` 對比例與圖紙不同的視圖自動在預設標題加上 ` (<SCALE>)`（自訂文字與詳圖不重複加）；實測 5 個基準零件共 7 頁標題重疊皆為 `0`。
+  6. **2-8 回轉件主視圖**：實測 5 個基準零件的同軸回轉面（共享同一 3D 軸線之圓柱、圓錐、環面）佔總表面積比例：回轉件為 `54.7%`（`sds-plus-bit`）、`61.4%`（`diamond-pin`）、`65.3%`（`R1-8032`），非回轉件為 `1.5%`（`v-block`）、`2.5%`（`locating-plate`）。據此訂定 `REVOLVED_PART_SHARE = 0.50`（`revolutionAxis`），當零件為回轉件時，`rankMainViews` 將軸線側面視圖（視線垂直於回轉軸）排在端視圖之前，`R1-8032` 主視圖由 `bottom` 改為 `right`。
+  7. **2-9 自檢回報**：`DrawingSession.checks` 與 `drawing_inspect` 新增結構化 `layout: DrawingLayoutInspection`，逐頁回報 `2-1`～`2-8` 各項數值與 `pass` 布林值。
+- **紅隊四問（Self-Red-Teaming）**：
+  1. **輸入破壞**：空圖頁、單視圖圖頁、0 面積或退化軸向量（`len <= 1e-9`）在 `layoutMetrics` 與 `revolutionAxis` 安全回傳 `null`／`0`，不產生 `NaN`；非平行或平行但不同軸（軸距 `> 1e-2` mm）的圓柱孔不會被累加誤判為回轉件。
+  2. **幾何干涉**：詳圖擺放同時避開所有已繪線條／文字與視圖 `drawn` 外框（留 `8` mm 間隙），並以視圖本體 `box` 檢查中心連線遮擋；排除了未擺放詳圖在預設座標 `[280, 150]` 造成的幽靈遮擋。
+  3. **依賴鏈**：`@3db/drawing` 導出 `layoutMetrics`、`nearestFreeSpot`、`revolutionAxis`、`REVOLVED_PART_SHARE`、`FILL_RANGE` 與檢驗型別 → `@3db/mcp` `DrawingSession`（`plan`、`create`、`checks`、`inspect`）→ `help.conceptDrawingDimensions.body`（中英）完整對齊。
+  4. **真值與突變測試**：5 個基準零件共 7 頁全數實測通過（`layout.pass: true`）。突變測試：`layoutMetrics` 7 種、`nearestFreeSpot` 6 種、`viewCaptionItem` 3 種、`drawing-details` 5 種（含 `layout.pass` 恆真突變）、`auto-drawing-plan` 3 種（`revolutionAxis` 回 `null`、略過同軸軸距檢查、`rankMainViews` 忽略 `axis`）全數轉紅。
+
 ## 2026-11-19（午）— 工程圖審查的其餘發現：頁名語言、放大圖比例、B-B 防呆、App 多頁 DXF／SVG、ADR 補記
 
 - 頁名「剖面與放大詳圖」與「詳圖 C」改經 `t()`（新鍵 `drawing.page.sectionsAndDetails`，詳圖沿用 App 的 `drawing.view.detail`）：英文工程圖不再出現寫死的中文。
@@ -6733,3 +6749,14 @@ Schema 93 記錄來源本體、基準面或模型平面、帶符號的平面偏�
   13. 2-6 階段 B：使用者決定把 A-A 整個搬到第 2 頁（不是複製），第 1 頁不再畫它，剖面代號整份圖唯一。改 `offloadMicroDetails`：插入 secA2、尺寸一併搬過去並從第 1 頁刪除、第 1 頁的 secA 刪除、詳圖母視圖候選改為 `onPage0: false`。後果：R1-8032 第 1 頁只剩主視圖與等角圖，自己縮成 A4 5:1，與第 2 頁 A2 不同；→ 在 `create()` 最後取各頁最大圖紙，第 1 頁（先刪等角圖）用 `layOutPage` 重排一次，結果兩頁 A2。一個小失誤：新增的 `const ranked` 與同函式已有的 `ranked`（主視圖排名）同名，typecheck 才抓到，改名 `bySize`。新增回歸測試（同圖紙、代號唯一）；91 檔 894 項通過。階段 C（同一視圖不在兩頁重畫）未解決：主視圖因為要當 B-B、A-A 的母視圖而在第 2 頁再畫一次，待與使用者討論。
   14. 2-6 階段 C：使用者決定把第 2 頁重畫的主視圖標為「參考」（不是保持現狀）。改視圖名稱（標題取自名稱）而不是另加文字圖元，所以 `drawing_inspect`、DXF、PDF 都一致；新增 i18n 鍵 `drawing.view.reference`（中英）。測試加一項，突變轉紅。91 檔 895 項通過。一個小失誤：測試標題裡的 `\'` 被 Python 寫成單引號，語法錯誤，typecheck 抓到，改用雙引號標題。
   15. 2-7：標題比例。`viewCaptionItem(v, own, scale, sheetScale?)`；三個突變（永遠加、覆蓋使用者文字、詳圖重複加）全紅。量「標題有沒有被壓到」時，`checks()` 的雜亂文字只列前 12 個，不能直接拿來判斷標題，所以自己用 `clutterOf` 取完整清單再與標題集合比對（4 個零件 7 頁皆空）。教訓：自檢的摘要欄位被截斷時，要自己取完整資料再下結論。`apps/mcp/test`＋`tests/phase5` 92 檔 901 項通過。
+
+- **2026-11-20 開啟 `.3dbd` 工程圖無聲卡死 & MCP 參考草圖圓標註（RSI 自進化）**：
+  1. **事件一（前端開啟舊檔／`.3dbd` 無聲卡死）**：
+     - 現象：點擊「檔案 → 開啟舊檔」選擇 `.3dbd` 後，頁面無錯誤提示、無 Console 紅字、亦不彈出「選擇專案資料夾」對話框，直接停在空畫面。
+     - 根因（RCA）：透過執行期追蹤定位，瀏覽器 IndexedDB 留有舊的 `remembered` 專案資料夾 handle（`hasRemembered: true`），`openDrawing()` 呼叫 `rememberedWithAccess()` → `folderAccess(folder, false)`（`queryPermission`）與 `pathIn(folder, picked.handle)`（`folder.resolve(file)`）時，在 Windows Chrome 對失效／停滯的 `FileSystemDirectoryHandle` 呼叫 `queryPermission` 或 `resolve` 會回傳**永不 settle 的 Promise**，導致整個非同步開啟流程永久懸置，既不進 `catch` 也不會觸發 `askForFolder()`。同源脆弱點亦存在於 `pick()` 呼叫 `showOpenFilePicker` 前的 `lastOpenedFile()`／`browserProjectName()` 與未處置的 `indexedDB.open().onblocked`。
+     - 矯正與預防措施（CAPA）：在共用底層 `apps/web/src/files.ts` 新增 `withTimeout` 防卡死保護，為非互動的 `folderAccess(folder, false)`（1 s）、`pathIn()`（1 s）、`lastOpenedFile()`／`browserProjectName()`／`LAST_OPEN` 寫入（400 ms）加上界限；`database()` 補上 `onblocked` 拒絕處理；`pick()` 於 `startIn` 失效時自動清除 `LAST_OPEN` 並重試無 `startIn`。水平展開自動涵蓋 `.3dbd`、`.3dba`、另存新檔與封裝。
+     - 物理硬化（Layer 1）：新增單元測試 `tests/phase5/files-handle-timeout.test.ts`，以永不 settle 的 mock Promise 驗證 `folderAccess(folder, false)` 與 `pathIn()` 必於逾時內安全回傳 `false`／`null`。
+  2. **事件二（MCP 工程圖引擎缺少 `kind: 'sketch'` 參考草圖圓解析）**：
+     - 現象：在 3D 模型建立檢具量測基準面與量測圓草圖，並於工程圖局部放大視圖直接以 `kind: 'sketch'`（`sketchPositive`／`sketchNegative`）標註高度與直徑時，Web 端 `kernel.worker.ts` 支援，但 MCP `apps/mcp/src/drawingSession.ts` 回傳「正在讀取尺寸指的元素…」。
+     - 根因（RCA）：`apps/mcp/src/drawingSession.ts` 的兩處 `getFacts` 僅呼叫 `elementFacts(...)`，未比照 `apps/web/src/worker/kernel.worker.ts:743` 將 `r.kind === 'sketch'` 分派給 `drawingSketchFacts(s.built.sketches, r)`。
+     - 矯正措施（CAPA）：補齊 `apps/mcp/src/drawingSession.ts` 兩處 `r.kind === 'sketch' ? drawingSketchFacts(...) : elementFacts(...)` 分派並重建 `@3db/mcp`，使局部放大圖 `B (6:1)` 的 6 個量測基準尺寸全部由真實幾何計算通過（`failed: []`）。

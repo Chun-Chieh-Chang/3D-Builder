@@ -163,10 +163,12 @@ export interface DimStyle {
   arrow?: number;
   arrowStyle?: ArrowStyle;
   line?: number;
+  /** Stroke and text color as `#RRGGBB`. Absent: `#000000`. */
+  color?: string;
 }
 
 /** ISO 129-1 and 128-20 as this program has always drawn them: 3.5 mm text, 3 mm filled arrows, 0.25 mm thin lines. */
-export const DIM_STYLE_DEFAULT: Required<DimStyle> = { text: 3.5, arrow: 3, arrowStyle: 'filled', line: 0.25 };
+export const DIM_STYLE_DEFAULT: Required<DimStyle> = { text: 3.5, arrow: 3, arrowStyle: 'filled', line: 0.25, color: '#000000' };
 
 /** What each size of a dimension style may be (mm): ISO 3098's text heights run 1.8 to 20, ISO 128-20's line widths 0.13 to 2. */
 export const DIM_STYLE_LIMITS = { text: [1, 20], arrow: [0.5, 20], line: [0.13, 2] } as const;
@@ -184,9 +186,11 @@ export function baseDimStyle(sheet: Pick<DrawingSheet, 'size' | 'standard' | 'di
 }
 
 /** Checks a dimension style: each size a finite number within its limits, the arrow one of the styles. Nothing is rounded or put in range: what is wrong is refused. */
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
 function checkDimStyle(s: unknown): void {
   if (typeof s !== 'object' || s === null || Array.isArray(s)) throw new CommandError(t('drawing.badDimStyle'));
-  for (const k of Object.keys(s)) if (!['text', 'arrow', 'arrowStyle', 'line'].includes(k)) throw new CommandError(t('drawing.badDimStyle'));
+  for (const k of Object.keys(s)) if (!['text', 'arrow', 'arrowStyle', 'line', 'color'].includes(k)) throw new CommandError(t('drawing.badDimStyle'));
   const st = s as DimStyle;
   for (const k of ['text', 'arrow', 'line'] as const) {
     const v = st[k];
@@ -195,6 +199,7 @@ function checkDimStyle(s: unknown): void {
     if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) throw new CommandError(t('drawing.dimStyleRange', { field: t(`drawing.dimStyleField.${k}`), min: String(lo), max: String(hi) }));
   }
   if (st.arrowStyle !== undefined && !ARROW_STYLES.includes(st.arrowStyle)) throw new CommandError(t('drawing.badArrowStyle', { style: String(st.arrowStyle) }));
+  if (st.color !== undefined && (typeof st.color !== 'string' || !HEX_COLOR.test(st.color))) throw new CommandError(t('drawing.badDimStyle'));
 }
 
 /**
@@ -369,12 +374,49 @@ interface ViewCommon {
   break?: ViewBreak;
 }
 
+/** Custom 3D viewing angles (degrees) for a model or corner-projected view: azimuth around Y (0° = front +Z, 45° = standard iso), elevation above XZ (-89.9° to 89.9°, 35.264° = standard iso), and optional in-plane roll. */
+export interface ViewOrientation {
+  azimuth: number;
+  elevation: number;
+  roll?: number;
+}
+
+export function checkViewOrientation(value: unknown): asserts value is ViewOrientation {
+  const o = value as ViewOrientation | null;
+  if (
+    !o ||
+    typeof o !== 'object' ||
+    Array.isArray(o) ||
+    typeof o.azimuth !== 'number' ||
+    !Number.isFinite(o.azimuth) ||
+    typeof o.elevation !== 'number' ||
+    !Number.isFinite(o.elevation) ||
+    o.elevation < -89.9 ||
+    o.elevation > 89.9 ||
+    (o.roll !== undefined && (typeof o.roll !== 'number' || !Number.isFinite(o.roll)))
+  ) {
+    throw new CommandError(t('drawing.badViewOrientation'));
+  }
+}
+
+/** Standard SolidWorks-style 3D view orientation presets (degrees). */
+export const VIEW_ORIENTATION_PRESETS: Record<'isoFR' | 'isoFL' | 'isoBR' | 'isoBL' | 'dimetric' | 'trimetric', ViewOrientation> = {
+  isoFR: { azimuth: 45, elevation: 35.264, roll: 0 },
+  isoFL: { azimuth: -45, elevation: 35.264, roll: 0 },
+  isoBR: { azimuth: 135, elevation: 35.264, roll: 0 },
+  isoBL: { azimuth: -135, elevation: 35.264, roll: 0 },
+  dimetric: { azimuth: 20.7, elevation: 19.471, roll: 0 },
+  trimetric: { azimuth: 30, elevation: 25, roll: 0 },
+};
+
 /** A view of a model from one of the named directions (C16.2). */
 export interface ModelDrawingView extends ViewCommon {
   kind?: 'model';
   /** The part (.3dbx) or the STEP file the view shows, relative to the drawing file. */
   source: string;
   direction: ViewName;
+  /** Custom 3D viewing angles overriding `direction` (not valid when `direction === 'flat'`). */
+  orientation?: ViewOrientation;
 }
 
 /**
@@ -385,6 +427,8 @@ export interface ProjectedDrawingView extends ViewCommon {
   kind: 'projected';
   parent: Id;
   side: ViewSide | ViewCorner;
+  /** Custom 3D viewing angles overriding the default corner isometric direction (only valid when `isCorner(side)`). */
+  orientation?: ViewOrientation;
 }
 
 /**
@@ -417,6 +461,8 @@ export interface DetailDrawingView extends ViewCommon {
   centre: [number, number];
   radius: number;
   label: string;
+  /** Paper-mm offset from the default circle-edge label position, dragged freely by the user. */
+  labelOffset?: [number, number];
 }
 
 /**
@@ -1012,6 +1058,10 @@ export type DimensionPatch = {
 
 /** What `setView` may change: the fields every view has, and those of its kind; a field that does not belong to the view's kind is refused. */
 export type ViewPatch = {
+  /** `null` resets the detail circle's label back to its default corner. */
+  labelOffset?: [number, number] | null;
+  /** `null` resets custom 3D viewing angles back to the view's default direction/corner. */
+  orientation?: ViewOrientation | null;
   caption?: ViewCaption | null;
   flatBends?: FlatBendStyle | null;
   hatch?: HatchStyle | null;
@@ -1104,6 +1154,10 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
   if (!isDerived(v)) {
     if (!isFilePath(v.source)) throw new CommandError(t('drawing.badSource', { path: v.source }));
     if (!VIEW_NAMES.includes(v.direction)) throw new CommandError(t('drawing.badDirection', { direction: String(v.direction) }));
+    if (v.orientation !== undefined) {
+      if (v.direction === 'flat') throw new CommandError(t('drawing.notForKind', { field: 'orientation', kind: 'flat' }));
+      checkViewOrientation(v.orientation);
+    }
     return;
   }
   if (!viewById(views, v.parent) || v.parent === v.id) throw new CommandError(t('drawing.noParent', { id: v.parent }));
@@ -1111,6 +1165,10 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
     if (!SIDES.includes(v.side as ViewSide) && !isCorner(v.side)) throw new CommandError(t('drawing.badSide', { side: String(v.side) }));
     // in line with nothing, a view off a corner is where it was put
     if (isCorner(v.side) && !v.at) throw new CommandError(t('drawing.cornerNeedsPlace'));
+    if (v.orientation !== undefined) {
+      if (!isCorner(v.side)) throw new CommandError(t('drawing.notForKind', { field: 'orientation', kind: 'projected' }));
+      checkViewOrientation(v.orientation);
+    }
   }
   if (v.kind === 'section') {
     checkSectionLine(v);
@@ -1119,6 +1177,9 @@ function checkView(v: DrawingView, views: readonly DrawingView[]): void {
   if (v.kind === 'detail') {
     if (!v.centre.every(Number.isFinite) || !(v.radius > 0) || !Number.isFinite(v.radius)) throw new CommandError(t('drawing.badDetail'));
     if (!v.label.trim()) throw new CommandError(t('drawing.labelEmpty'));
+    if (v.labelOffset !== undefined && (!Array.isArray(v.labelOffset) || v.labelOffset.length !== 2 || !v.labelOffset.every(Number.isFinite))) {
+      throw new CommandError(t('drawing.badDetail'));
+    }
   }
   if (v.kind === 'sectionLocal') {
     if (!v.label.trim()) throw new CommandError(t('drawing.labelEmpty'));
@@ -1404,12 +1465,14 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       const { page: vPage, view: v } = pageOfView(draft, cmd.viewId);
       // a locked view (B2.1) keeps its place and its scale: moving or rescaling it is refused, however it is asked for
       if (v.locked && (cmd.patch.at !== undefined || cmd.patch.scale !== undefined || cmd.patch.slide !== undefined)) throw new CommandError(t('drawing.viewLocked'));
-      const { at, scale, slide, flip, aligned, centreMarks, display, locked, hiddenEdges, showTangentEdges, hatch, flatBends, caption, break: brk, ...rest } = cmd.patch;
+      const { at, scale, slide, flip, aligned, centreMarks, display, locked, hiddenEdges, showTangentEdges, hatch, flatBends, caption, labelOffset, orientation, break: brk, ...rest } = cmd.patch;
       const kind = v.kind ?? 'model';
       const belongs: Record<string, string[]> = { model: ['source', 'direction'], projected: ['side'], section: ['line', 'label'], detail: ['centre', 'radius', 'label'], sectionLocal: ['outline', 'depth', 'label'], crop: ['outline'], auxiliary: ['line', 'label'] };
       for (const k of Object.keys(rest)) if (k !== 'name' && !belongs[kind]!.includes(k)) throw new CommandError(t('drawing.notForKind', { field: k, kind }));
       if (flip !== undefined && kind !== 'section' && kind !== 'auxiliary') throw new CommandError(t('drawing.notForKind', { field: 'flip', kind }));
       if (aligned !== undefined && kind !== 'section') throw new CommandError(t('drawing.notForKind', { field: 'aligned', kind }));
+      if (labelOffset !== undefined && kind !== 'detail') throw new CommandError(t('drawing.notForKind', { field: 'labelOffset', kind }));
+      if (orientation !== undefined && kind !== 'model' && kind !== 'projected') throw new CommandError(t('drawing.notForKind', { field: 'orientation', kind }));
       const next = { ...(JSON.parse(JSON.stringify(v)) as DrawingView), ...rest } as DrawingView & { flip?: boolean; aligned?: boolean; at?: [number, number]; scale?: Scale; slide?: number };
       if (!isDerived(v) && !isDerived(next) && (v.direction === 'flat') !== (next.direction === 'flat')) {
         const reaches = (id: Id): boolean => {
@@ -1448,6 +1511,10 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       else if (flatBends !== undefined) next.flatBends = flatBends;
       if (caption === null) delete next.caption;
       else if (caption !== undefined) next.caption = caption;
+      if (labelOffset === null) delete (next as DetailDrawingView).labelOffset;
+      else if (labelOffset !== undefined) (next as DetailDrawingView).labelOffset = labelOffset;
+      if (orientation === null) delete (next as ModelDrawingView | ProjectedDrawingView).orientation;
+      else if (orientation !== undefined) (next as ModelDrawingView | ProjectedDrawingView).orientation = orientation;
       if (hatch === null) delete next.hatch;
       else if (hatch !== undefined) next.hatch = hatch;
       if (brk === null) delete next.break;
@@ -2100,14 +2167,51 @@ export function sourceOf(views: readonly DrawingView[], view: DrawingView, depth
 }
 
 /** Where a view looks from (resolved through its parents); null when its chain is broken. Detail views look as their parent does. */
+/** Converts custom spherical viewing angles (degrees) into orthonormal `ViewAxes` (Y up, +Z front). */
+export function orientationAxes(o: ViewOrientation): ViewAxes {
+  const az = (o.azimuth * Math.PI) / 180;
+  const el = (o.elevation * Math.PI) / 180;
+  const cosEl = Math.cos(el);
+  // Viewer sits at eye = [sin(az)*cos(el), sin(el), cos(az)*cos(el)] looking toward the origin.
+  const dir = unit([-Math.sin(az) * cosEl, -Math.sin(el), -Math.cos(az) * cosEl]);
+  const r0 = unit(cross(dir, [0, 1, 0]));
+  const s0 = unit(cross(neg(dir), r0));
+  const roll = ((o.roll ?? 0) * Math.PI) / 180;
+  const c = Math.cos(roll);
+  const s = Math.sin(roll);
+  const up = unit([s0[0] * c + r0[0] * s, s0[1] * c + r0[1] * s, s0[2] * c + r0[2] * s]);
+  return { dir, up };
+}
+
+/** Extracts spherical viewing angles (degrees) from `ViewAxes` for initializing UI controls. */
+export function axesToOrientation(axes: ViewAxes): ViewOrientation {
+  const d = unit(axes.dir);
+  const eye = neg(d);
+  const elRad = Math.asin(Math.max(-1, Math.min(1, eye[1])));
+  const elevation = Math.max(-89.9, Math.min(89.9, (elRad * 180) / Math.PI));
+  const horiz = Math.hypot(eye[0], eye[2]);
+  const azimuth = horiz > 1e-9 ? (Math.atan2(eye[0], eye[2]) * 180) / Math.PI : 0;
+  let roll = 0;
+  if (horiz > 1e-6) {
+    const r0 = unit(cross(d, [0, 1, 0]));
+    const s0 = unit(cross(neg(d), r0));
+    const su = sheetUp(axes);
+    const dotS = su[0] * s0[0] + su[1] * s0[1] + su[2] * s0[2];
+    const dotR = su[0] * r0[0] + su[1] * r0[1] + su[2] * r0[2];
+    roll = (Math.atan2(dotR, dotS) * 180) / Math.PI;
+  }
+  const round1 = (n: number) => Math.round(n * 10) / 10 + 0;
+  return { azimuth: round1(azimuth), elevation: round1(elevation), roll: round1(roll) };
+}
+
 export function axesOf(views: readonly DrawingView[], projection: DrawingSheet['projection'], view: DrawingView, depth = 0): ViewAxes | null {
-  if (!isDerived(view)) return viewVectors(view.direction);
+  if (!isDerived(view)) return view.orientation ? orientationAxes(view.orientation) : viewVectors(view.direction);
   const parent = viewById(views, view.parent);
   const base = parent && depth < 64 ? axesOf(views, projection, parent, depth + 1) : null;
   if (!base) return null;
   switch (view.kind) {
     case 'projected':
-      return projectedAxes(base, view.side, projection);
+      return isCorner(view.side) && view.orientation ? orientationAxes(view.orientation) : projectedAxes(base, view.side, projection);
     case 'section':
       return sectionLookAxes(base, view);
     case 'detail':

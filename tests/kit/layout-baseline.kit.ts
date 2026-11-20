@@ -38,6 +38,7 @@ it('measures the layout of every part', async () => {
       }
       const d = drawingOf(s);
       const doc = d.doc!;
+      const rep = d.report();
       for (let pi = 0; pi < doc.pages.length; pi++) {
         const pg = page(doc, pi);
         const single = pi === 0 && doc.pages.length === 1 ? doc : { ...doc, pages: [pg] };
@@ -64,6 +65,11 @@ it('measures the layout of every part', async () => {
           })(),
           captions: b.scene.items.filter((i) => i.kind === 'text' && i.viewCaption).map((i) => (i.kind === 'text' ? i.text : '')),
           reach: m.views.map((v) => `${v.id} L${Math.round(v.reach.left)} R${Math.round(v.reach.right)} B${Math.round(v.reach.below)} T${Math.round(v.reach.above)}`),
+          pageLayoutPass: rep.checks.layout.pages[pi]?.pass,
+          pageChecks: rep.checks.layout.pages[pi]?.checks,
+          multiPage: rep.checks.layout.multiPage,
+          mainView: rep.checks.layout.mainView,
+          overallLayoutPass: rep.checks.layout.pass,
           seconds: Math.round((Date.now() - t0) / 100) / 10,
         });
       }

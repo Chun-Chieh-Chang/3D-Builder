@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { viewVectors, type ViewFeature, type ViewName } from '@3db/model';
-import { adviseSection, chooseProjections, clutterOf, dimensionCoverage, planDrawingDimensions, rankMainViews, type DimensionLike, type DirectionStats, type SceneItem, type ViewToDimension } from '@3db/drawing';
+import { adviseSection, chooseProjections, clutterOf, dimensionCoverage, planDrawingDimensions, rankMainViews, revolutionAxis, type DimensionLike, type DirectionStats, type SceneItem, type ViewToDimension } from '@3db/drawing';
 
 /** A deterministic random generator, so that a failing part can be built again from its seed. */
 function rng(seed: number): () => number {
@@ -127,6 +127,38 @@ describe('the main view, the projections and the section', () => {
     expect(advice.orientation).toBe('vertical');
     expect(advice.at).toBe(20);
     expect(adviseSection(stats('front', {}))).toBeNull();
+  });
+
+  it('a turned part (>= 50% coaxial surfaces of revolution) puts side-on views ahead of end views (rule 2-8)', () => {
+    const circle = (n: string): ViewFeature => ({ type: 'circle', ref: { kind: 'face', name: n }, centre: [0, 0], radius: 5, convex: true, full: true, outward: 0 });
+    // coaxial cylinder + cone + torus along Y make up 600 of 1000 mm² (60% >= 50%)
+    const axis = revolutionAxis([
+      { area: 350, geometry: { type: 'cylinder', axis: [0, 1, 0], origin: [0, 0, 0] } },
+      { area: 150, geometry: { type: 'cone', axis: [0, -1, 0], apex: [0, 10, 0] } },
+      { area: 100, geometry: { type: 'torus', axis: [0, 1, 0], center: [0, 5, 0] } },
+      { area: 400, geometry: { type: 'plane' } },
+    ]);
+    expect(axis).toEqual([0, 1, 0]);
+    // non-coaxial cylinders (parallel along Y, but 20 mm apart) do not add together to make a turned part
+    expect(
+      revolutionAxis([
+        { area: 300, geometry: { type: 'cylinder', axis: [0, 1, 0], origin: [0, 0, 0] } },
+        { area: 300, geometry: { type: 'cylinder', axis: [0, 1, 0], origin: [20, 0, 0] } },
+        { area: 400, geometry: { type: 'plane' } },
+      ]),
+    ).toBeNull();
+    // even when the end view (top/bottom, looking along Y) has more true circles and a higher raw score, rankMainViews with axis puts side-on views first
+    const candidates = [
+      stats('bottom', { width: 20, height: 20, visible: 250, features: [circle('c1'), circle('c2'), circle('c3')] }),
+      stats('right', { width: 20, height: 40, visible: 200, hidden: 10 }),
+      stats('front', { width: 20, height: 40, visible: 180, hidden: 20 }),
+      stats('top', { width: 20, height: 20, visible: 240, features: [circle('c1'), circle('c2')] }),
+    ];
+    expect(rankMainViews(candidates)[0]!.direction).toBe('bottom');
+    const rankedTurned = rankMainViews(candidates, axis);
+    expect(rankedTurned[0]!.direction).toBe('right');
+    expect(rankedTurned[1]!.direction).toBe('front');
+    expect(rankedTurned.slice(2).map((c) => c.direction)).toEqual(['bottom', 'top']);
   });
 });
 
