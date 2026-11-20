@@ -90,3 +90,12 @@ it('a detail with nothing in it is not kept, and the details left are lettered w
   expect(left.map((v) => (v.kind === 'detail' ? v.label : ''))).toEqual(['C', 'D', 'E', 'F', 'G', 'H'].slice(0, left.length));
   expect(left.map((v) => v.name)).toEqual(left.map((v) => `Detail ${v.kind === 'detail' ? v.label : ''}`));
 }, 300_000);
+
+it('every page is on the same sheet, and a section or detail letter is used once in the whole drawing (rule 2-6)', async () => {
+  const doc = drawingOf(s).doc!;
+  expect(doc.pages.length).toBeGreaterThan(1);
+  expect(new Set(doc.pages.map((p) => p.sheet.size)).size, doc.pages.map((p) => p.sheet.size).join(' ')).toBe(1);
+  const letters = doc.pages.flatMap((p) => p.views.flatMap((v) => (v.kind === 'section' || v.kind === 'detail' ? [v.label] : [])));
+  expect(letters.length).toBeGreaterThan(0);
+  expect(new Set(letters).size, letters.join(' ')).toBe(letters.length);
+});

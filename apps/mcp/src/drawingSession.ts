@@ -469,6 +469,16 @@ export class DrawingSession {
       }
     }
 
+    // Every page on the largest sheet any page took (rule 2-6, ADR 0261). The pages after the first start from its size, so only the first can be the smaller one: when
+    // a section was moved to page 2 it is left with the main view and the isometric. It is laid out again on that sheet, its isometric put in place again.
+    const bySize: SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
+    const biggest = bySize[Math.max(...doc.pages.map((_, i) => bySize.indexOf(page(doc, i).sheet.size)))]!;
+    if (page(doc, 0).sheet.size !== biggest) {
+      const iso = page(doc, 0).views.filter((v) => isDerived(v) && v.display === 'shadedEdges').map((v) => v.id);
+      const bare = iso.length ? onPage(doc, 0, (st) => applyDrawingCommand(st, { type: 'deleteViews', viewIds: iso })) : doc;
+      doc = layOutPage(bare, 0, biggest);
+    }
+
     this.undoStack.length = 0;
     this.doc = doc;
     this.path = full;
@@ -865,7 +875,7 @@ export class DrawingSession {
       doc = onPage(doc, 0, (st) => applyDrawingCommand(st, { type: 'deleteViews', viewIds: [secB.id] }));
     }
 
-    // Also create a reference copy of A-A on Page 2 if A-A has >= 2 micro-radii so its Detail Views can live on Page 2
+    // Move A-A to Page 2 too (not a copy: a section letter is used once in a drawing, ADR 0261 rule 2-6) if A-A has >= 2 micro-radii, so its Detail Views live beside it
     const secA = pg0.views.find((v) => v.kind === 'section' && v.label === 'A');
     const secAMicroCount = secA ? pg0.dimensions.filter((d) => {
       if (d.view !== secA.id || (d.kind !== 'radius' && d.kind !== 'diameter')) return false;
@@ -876,14 +886,20 @@ export class DrawingSession {
     if (secA && secA.kind === 'section' && secAMicroCount >= 2) {
       secA2Id = alloc.take('view');
       const secA2: DrawingView = { ...secA, id: secA2Id, parent: base2Id };
+      const secADims = pg0.dimensions.filter((d) => d.view === secA.id);
       doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertViews', views: [secA2] }));
+      if (secADims.length) {
+        doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertDimensions', dimensions: secADims.map((d) => ({ ...d, view: secA2Id! })) }));
+        doc = onPage(doc, 0, (st) => applyDrawingCommand(st, { type: 'deleteDimensions', dimensionIds: secADims.map((d) => d.id) }));
+      }
+      doc = onPage(doc, 0, (st) => applyDrawingCommand(st, { type: 'deleteViews', viewIds: [secA.id] }));
     }
 
     // Create enlarged Detail Views on Page 2 for spatial clusters of micro-radius features on secA2Id, secB2Id and base2Id.
     // Keep dimensions of the same feature together in one view (feature cohesion).
     const pg1After = page(doc, 1);
     const parentCandidates = [
-      ...(secA2Id && secA ? [{ id: secA2Id, srcViewId: secA.id, onPage0: true }] : []),
+      ...(secA2Id && secA ? [{ id: secA2Id, srcViewId: secA2Id, onPage0: false }] : []),
       ...(secB2Id ? [{ id: secB2Id, srcViewId: secB2Id, onPage0: false }] : []),
       { id: base2Id, srcViewId: mainId, onPage0: true },
     ];
