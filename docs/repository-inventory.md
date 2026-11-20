@@ -655,6 +655,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 - [AI 組合件 MCP 實施計畫](<design/ai-cad-control/assembly-mcp-plan.md>)
 - [Agent 照片建模接入](<design/ai-cad-control/multi-agent-plan.md>)
+- [工程圖標註與配置通則](<design/drawing-rules-cns.md>)
 - [自由曲面特徵化通則：調查結果與推進計畫](<design/feature-recognition/freeform-generalization.md>)
 - [STEP 特徵辨識與重建（藍圖 F2.4）](<design/feature-recognition/plan.md>)
 - [`D:\3DB實機確認` 全量 STEP → `.3dbx` 100% 原生特徵樹轉換推進計畫與驗證規格書](<design/feature-recognition/step-100-plan.md>)
@@ -683,6 +684,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 - [組合件：爆炸線與動畫、多組爆炸、形成新次組合件（計畫）](<assembly-explode-plan.md>)
 - [工程圖：螺紋孔與錐形沉孔的標註、DXF 的 DIMENSION 圖元（計畫）](<drawing-callouts-plan.md>)
+- [自動出圖改善計畫（依《工程圖標註與配置通則》）](<drawing-improvement-plan.md>)
 - [工程圖交互邏輯：與 SolidWorks / FreeCAD TechDraw 的差距分析與改進規劃（草案）](<drawing-interaction-gap-plan.md>)
 - [圓角與導角可選面的計畫（含面圓角、完整圓角）](<fillet-by-face-plan.md>)
 - [鞏固計畫（Phase 3a–7 之後）](<hardening-plan.md>)
