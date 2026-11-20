@@ -1,5 +1,17 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-20 — 自動出圖改善計畫・第四期（品質閘門 Q1 / Q2 / C5 / C7 / Q3）完成（ADR 0263）
+
+- **範圍與決策**：見 [ADR 0263](docs/adr/0263-drawing-quality-gate.md) 與 [自動出圖改善計畫](docs/drawing-improvement-plan.md)。四期改善計畫至此全數完成：
+  1. **純函式品質閘門（`packages/drawing/src/qualityGate.ts`）**：導出 `evaluateQualityGate`、`hasModelAuthorityNote`、`stampPreliminary`，涵蓋 16 項規則（`V1`, `P1_P2`, `V4`, `V6`, `P4`, `P3_V7`, `V5`, `V2`, `D5`, `D2`, `P6`, `P1`, `C4`, `C5`, `C7`, `Q3`）。唯獨全部 0 違反才回傳 `status: 'release'`，否則一律為 `'draft'`（符合 `Q2`：`coverage.complete` 單獨不構成合格）。
+  2. **C5 / C7 規則**：標題欄 `generalTolerance` 空白時 `C5` 不通過（工具絕不自行填入公差值）；尺寸未完全定義時須同時具備「依 3D 模型」（或 `per 3D model` / `ASME Y14.41` / `ISO 16792`）註記與 `generalTolerance` 方通過 `C7`。
+  3. **Q1 草稿與正式匯出分流（`apps/mcp/src/drawingSession.ts`、`drawingTools.ts`）**：`Checks.quality` 與 `drawing_inspect.quality` 完整回報每項規則結果；`drawing_export` 新增 `release?: boolean`——正式匯出在草稿狀態直接拒絕對外寫檔並列出未通過項目，預設草稿匯出則在 PDF／SVG／DXF 全頁自動加蓋 `PRELIMINARY` 浮水印並回報 `status: 'draft', preliminary: true, failed`。
+- **紅隊四問（Self-Red-Teaming）**：
+  1. **輸入破壞**：空白或純空白字串 `generalTolerance: '   '` 視同未填（`C5` 攔截）；`release: true` 被拒時確認不產生殘留輸出檔。
+  2. **跨頁一致性**：多頁混用 CNS／ISO 標準時由 `Q3` 攔截；任一頁缺 `generalTolerance` 由 `C5` 逐頁指明頁碼。
+  3. **依賴鏈**：`@3db/drawing` (`qualityGate.ts`) → `@3db/mcp` (`drawingSession.ts`, `drawingTools.ts`) 分層清晰，`lint:deps` 通過。
+  4. **真值與突變測試**：新增 `tests/phase5/drawing-quality-gate.test.ts`（5 項，覆蓋全部 16 項規則逐一違規攔截）與 `apps/mcp/test/drawing-quality-gate.test.ts`（MCP 端到端）；**4/4 突變測試全紅**（永遠通過、繞過 C5、繞過 C7、移除 `PRELIMINARY` 浮水印）。
+
 ## 2026-11-20 — 自動出圖改善計畫・第三期（標註的佈置與內容 D1–D10 / C1–C4 / L1–L2）完成（ADR 0262）
 
 - **範圍與決策**：見 [ADR 0262](docs/adr/0262-drawing-dimension-placement-and-content.md) 與 [自動出圖改善計畫](docs/drawing-improvement-plan.md)。完成規則 `3-1`～`3-11`：

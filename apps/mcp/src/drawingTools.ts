@@ -69,7 +69,11 @@ const schemas = {
   drawing_undo: z.strictObject({ picture }),
   drawing_picture: z.strictObject({ view: z.string().optional().describe('Only this view, enlarged.'), px: z.number().min(1).max(16).optional().describe('Pixels per mm of the sheet.'), pageIndex: z.number().int().min(0).optional().describe('0-based page index.') }),
   drawing_save: z.strictObject({ path: z.string().min(1).optional() }),
-  drawing_export: z.strictObject({ path: z.string().min(1), format: z.enum(['pdf', 'dxf', 'svg']) }),
+  drawing_export: z.strictObject({
+    path: z.string().min(1),
+    format: z.enum(['pdf', 'dxf', 'svg']),
+    release: z.boolean().optional().describe('When true, refuses export unless every quality gate rule passes (status === "release"). Default false: draft drawings export stamped PRELIMINARY.'),
+  }),
   drawing_open: z.strictObject({ path: z.string().min(1) }),
 };
 
@@ -199,7 +203,7 @@ export async function callDrawingTool(session: CadSession, name: string, raw: un
     }
     case 'drawing_export': {
       const a = parse('drawing_export');
-      return { content: [{ type: 'text', text: JSON.stringify(await d.export(a.path, a.format)) }] };
+      return { content: [{ type: 'text', text: JSON.stringify(await d.export(a.path, a.format, a.release ? { release: true } : undefined)) }] };
     }
     case 'drawing_open': {
       const a = parse('drawing_open');

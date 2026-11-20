@@ -52,6 +52,7 @@ import {
   clutterOf,
   dimensionCoverage,
   encodeShade,
+  evaluateQualityGate,
   FILL_RANGE,
   fitViews,
   itemsBounds,
@@ -70,6 +71,7 @@ import {
   sheetItems,
   sheetMetrics,
   slideAxis,
+  stampPreliminary,
   toDxf,
   toPdf,
   toSvg,
@@ -77,10 +79,13 @@ import {
   type DimensionLike,
   type DirectionStats,
   type DrawingLayoutInspection,
+  type DrawingReleaseStatus,
   type ElementsResult,
   type MainViewCandidate,
   type PageLayoutInspection,
   type PlacedView,
+  type QualityGateReport,
+  type QualityRuleCheck,
   type Scene,
   type SceneItem,
   type DimensionOutcome,
@@ -164,6 +169,8 @@ export interface Checks {
   coverage: CoverageReport;
   /** Phase 2 view layout rules (ADR 0261, rules 2-1 to 2-9). */
   layout: DrawingLayoutInspection;
+  /** Phase 4 quality gate (ADR 0263, rules Q1, Q2, C5, C7, Q3). */
+  quality: QualityGateReport;
 }
 
 /** A TrueType font for the pictures and the PDF: `DRAWING_FONT` first, then a CJK-capable system font, then a Latin fallback. */
@@ -1385,15 +1392,30 @@ export class DrawingSession {
     };
     const coverage = dimensionCoverage(this.dimensionViews(doc, true), allDims);
     const odd = heights.filter((x) => { const [lo, hi] = x.caption ? TEXT_RANGE.caption : TEXT_RANGE.text; return x.h < lo - 1e-9 || x.h > hi + 1e-9; });
+    const textOutOfRange = odd.slice(0, 12).map((x) => `${x.text} (${x.h} mm)`);
+    const outsideRounded = Math.round(outside * 10) / 10;
+    const quality = evaluateQualityGate({
+      doc,
+      overlaps,
+      textOutOfRange,
+      clutterCount,
+      clutterTexts,
+      clutterCrossings,
+      outside: outsideRounded,
+      failedDims: failed,
+      coverage,
+      layout,
+    });
     return {
       overlaps,
-      text: { min: heights.length ? Math.min(...heights.map((x) => x.h)) : null, max: heights.length ? Math.max(...heights.map((x) => x.h)) : null, outOfRange: odd.slice(0, 12).map((x) => `${x.text} (${x.h} mm)`) },
+      text: { min: heights.length ? Math.min(...heights.map((x) => x.h)) : null, max: heights.length ? Math.max(...heights.map((x) => x.h)) : null, outOfRange: textOutOfRange },
       clutter: { count: clutterCount, texts: clutterTexts.slice(0, 12), ...(clutterCrossings.length ? { crossings: clutterCrossings.slice(0, 12) } : {}) },
       glyphs: { font: f?.name ?? null, cjk: f ? f.glyphOf(0x8cab) !== 0 : false, missing: [...missingSet] },
-      outside: Math.round(outside * 10) / 10,
+      outside: outsideRounded,
       failed,
       coverage,
       layout,
+      quality,
     };
   }
 
@@ -1436,6 +1458,7 @@ export class DrawingSession {
     return {
       report,
       layout: report.checks.layout,
+      quality: report.checks.quality,
       dimensions: pages.flatMap((p) => p.dimensions),
       annotations: pages.flatMap((p) => p.annotations),
       surfaceFinishes: pages.flatMap((p) => p.surfaceFinishes),
@@ -1803,14 +1826,35 @@ export class DrawingSession {
    * PDF: one file with every page. DXF and SVG hold one sheet each, so a drawing of several pages is written as one file per page: the first at `path`,
    * page n (n ≥ 2) beside it as 「name-n.dxf」. `files` lists them all; `path` and `bytes` are the first's.
    */
-  async export(path: string, format: 'pdf' | 'dxf' | 'svg'): Promise<{ path: string; bytes: number; warnings: string[]; files: { page: number; path: string; bytes: number }[] }> {
+  async export(
+    path: string,
+    format: 'pdf' | 'dxf' | 'svg',
+    options?: { release?: boolean },
+  ): Promise<{
+    path: string;
+    bytes: number;
+    warnings: string[];
+    files: { page: number; path: string; bytes: number }[];
+    status: DrawingReleaseStatus;
+    preliminary: boolean;
+    failed: QualityRuleCheck[];
+  }> {
     const doc = this.need();
     const full = await this.part.inside(path);
+    const quality = this.checks(doc).quality;
+    if (options?.release && !quality.pass) {
+      const reasons = quality.failed.map((r) => `${r.rule} (${r.name}${r.detail ? `: ${r.detail}` : ''})`).join('; ');
+      throw new AgentError(`drawing_export refused (release): drawing is draft — failed rules: ${reasons}`);
+    }
+    const preliminary = !quality.pass;
     const f = font();
     let warnings: string[] = [];
     const outputs: { page: number; full: string; data: Uint8Array | string }[] = [];
     if (format === 'pdf') {
-      const scenes = doc.pages.map((_, i) => this.build(doc, i).scene);
+      const scenes = doc.pages.map((_, i) => {
+        const sc = this.build(doc, i).scene;
+        return preliminary ? stampPreliminary(sc) : sc;
+      });
       const pdf = toPdf(scenes.length === 1 ? scenes[0]! : scenes, { ...(f ? { font: f } : {}), title: page(doc).title.drawingName ?? 'drawing' });
       outputs.push({ page: 0, full, data: pdf.bytes });
       warnings = pdf.warnings;
@@ -1818,7 +1862,8 @@ export class DrawingSession {
       const ext = extname(full);
       const stem = full.slice(0, full.length - ext.length);
       for (let pi = 0; pi < doc.pages.length; pi++) {
-        const scene = this.build(doc, pi).scene;
+        const rawScene = this.build(doc, pi).scene;
+        const scene = preliminary ? stampPreliminary(rawScene) : rawScene;
         const at = pi === 0 ? full : await this.part.inside(relative(this.part.root, `${stem}-${pi + 1}${ext}`));
         outputs.push({ page: pi, full: at, data: format === 'dxf' ? toDxf(scene) : toSvg(scene) });
       }
@@ -1829,7 +1874,7 @@ export class DrawingSession {
       await writeFile(o.full, o.data);
       files.push({ page: o.page, path: o.full, bytes: typeof o.data === 'string' ? Buffer.byteLength(o.data) : o.data.length });
     }
-    return { path: files[0]!.path, bytes: files[0]!.bytes, warnings, files };
+    return { path: files[0]!.path, bytes: files[0]!.bytes, warnings, files, status: quality.status, preliminary, failed: quality.failed };
   }
 
   /** A PNG of the sheet (or of one view and what is drawn on it), for the agent to look at. */

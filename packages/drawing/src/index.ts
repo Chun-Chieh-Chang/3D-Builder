@@ -32,3 +32,4 @@ export * from './fonts';
 
 export * from './projectionRefs';
 export * from './sheetRaster';
+export * from './qualityGate';
