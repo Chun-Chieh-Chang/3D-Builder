@@ -18,8 +18,8 @@
 
 ### 驗證狀況（誠實版）
 
-- 已過：`apps/mcp/test` 與 `tests/phase5` 共 89 檔 884 項（詳圖步驟之前的版本）；詳圖步驟之後只跑了 `drawing-details`、`drawing-pages`、`drawing-detail-placement`、`drawing-layout-metrics`、`drawing-clearance`、`drawing`，皆過；typecheck 過。
-- **還沒跑**：詳圖步驟之後的全套 `apps/mcp/test`＋`tests/phase5`；全量 `npm run check`（單元測試約 1 小時，用 `npx vitest run --reporter=verbose > scratch/test.log` 才看得到進度）；完整 `npm run verify:ui`（280 列，執行期間不得改原始碼）。
+- 已過（2026-11-20，含詳圖步驟的最終程式）：`apps/mcp/test` 與 `tests/phase5` 共 91 檔 892 項通過、1 略過；typecheck 過；`lint:repo` 過。
+- **還沒跑**：全量 `npm run check`（單元測試約 1 小時，用 `npx vitest run --reporter=verbose > scratch/test.log` 才看得到進度）；完整 `npm run verify:ui`（280 列，執行期間不得改原始碼）。
 - 量測（5 個零件，原電腦 `scratch/layout-step2d.json`）：淨空 7 頁中 6 頁 ≥ 7 mm（diamond-pin 8、R1-8032 p1 7.5、sds-plus-bit p2 7.45，其餘原本就 ≥ 9）；R1-8032 第 2 頁仍是 −42 mm（詳圖互相重疊，第三步要解的）。詳圖步驟後的量測（2026-11-20，原電腦）：R1-8032 第 2 頁 A3 5:1 → A3 2:1、受限方向填滿 1.161 → 0.833（不再超出可繪區）、淨空 −42 → −0.18 mm（仍差一點點）；詳圖 6 → 5 個（空的那個被拿掉，字母已重新連號）、非標準比例 4 → 0、被擋 5／6 → 1／5、線長比 0.81–7.8；其餘 4 個零件與第 1 頁沒有變。**2-3 還沒達標**：詳圖到母視圖的距離 46–86 mm 仍大於母視圖對角線（頁面降到 2:1，母視圖變小，對角線只有 31–47 mm，而詳圖圓周直徑就有 40–52 mm，這條「≤ 母視圖對角線」的標準可能本身太嚴，請與使用者討論要不要改成相對於詳圖大小），且 view10 仍被擋。**R1-8032 的 `.3dbx` 不在 repo**（原電腦 `D:\Self-developed_Apps\3DB實機確認\塑膠件\R1-8032-Rev08-剖面修訂\R1-8032_Rev08_2D_完整修訂.3dbx`），別台電腦只能量 4 個黃金零件。
 
 ### 我改過、尚未請使用者確認的事
