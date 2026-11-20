@@ -858,7 +858,8 @@ export class DrawingSession {
     doc = applyDrawingCommand(doc, { type: 'insertPage', page: { name: t('drawing.page.sectionsAndDetails') } });
     const alloc = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const base2Id = alloc.take('view');
-    const base2: DrawingView = { id: base2Id, name: mainView.name, source: mainView.source, direction: mainView.direction, ...(mainView.display ? { display: mainView.display } : {}) };
+    // the main view drawn again as the parent of what was moved here: its caption says it is the first page's view (ADR 0261, rule 2-6)
+    const base2: DrawingView = { id: base2Id, name: t('drawing.view.reference', { name: mainView.name }), source: mainView.source, direction: mainView.direction, ...(mainView.display ? { display: mainView.display } : {}) };
     doc = onPage(doc, 1, (st) => applyDrawingCommand(st, { type: 'insertViews', views: [base2] }));
 
     // Move B-B to Page 2 (re-parented to base2Id)

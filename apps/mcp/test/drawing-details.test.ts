@@ -91,6 +91,15 @@ it('a detail with nothing in it is not kept, and the details left are lettered w
   expect(left.map((v) => v.name)).toEqual(left.map((v) => `Detail ${v.kind === 'detail' ? v.label : ''}`));
 }, 300_000);
 
+it("the main view drawn again on page 2 says in its caption that it is the first page view", async () => {
+  const doc = drawingOf(s).doc!;
+  const first = page(doc, 0).views.find((v) => v.kind === undefined || v.kind === 'model')!;
+  const again = page(doc, 1).views.filter((v) => v.kind === undefined || v.kind === 'model');
+  expect(again.length).toBeGreaterThan(0);
+  for (const v of again) expect(v.name, v.id).toBe(`${first.name} (reference, as on page 1)`);
+  expect(first.name).not.toMatch(/reference/);
+});
+
 it('every page is on the same sheet, and a section or detail letter is used once in the whole drawing (rule 2-6)', async () => {
   const doc = drawingOf(s).doc!;
   expect(doc.pages.length).toBeGreaterThan(1);

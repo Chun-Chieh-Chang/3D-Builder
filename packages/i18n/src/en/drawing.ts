@@ -291,6 +291,7 @@ export const drawing: Translation = {
   'drawing.view.projected': 'Projected',
   'drawing.view.section': 'Section {label}-{label}',
   'drawing.view.detail': 'Detail {label}',
+  'drawing.view.reference': '{name} (reference, as on page 1)',
   'drawing.page.sectionsAndDetails': 'Sections and details',
   'drawing.view.crop': 'Cropped view',
   'drawing.view.auxiliary': 'Auxiliary {label}-{label}',

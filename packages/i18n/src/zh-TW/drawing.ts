@@ -289,6 +289,7 @@ export const drawing = {
   'drawing.view.projected': '投影視圖',
   'drawing.view.section': '剖面 {label}-{label}',
   'drawing.view.detail': '細部 {label}',
+  'drawing.view.reference': '{name}（參考，同第 1 頁）',
   'drawing.page.sectionsAndDetails': '剖面與放大詳圖',
   'drawing.view.crop': '裁剪視圖',
   'drawing.view.auxiliary': '輔助視圖 {label}-{label}',
