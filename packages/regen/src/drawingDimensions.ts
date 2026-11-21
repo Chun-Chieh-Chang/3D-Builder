@@ -676,6 +676,46 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
   return out;
 }
 
+/**
+ * Unit axes of cylindrical features (holes or bosses with >= 180° wrap) that are NOT aligned with any of the 3 principal world axes
+ * (`X`, `Y`, `Z`), deduplicated by axis direction. Used by auto-drawing to decide whether an auxiliary view is needed to show oblique holes true-shape.
+ */
+export function obliqueHoleAxes(topology: Topology): [number, number, number][] {
+  const out: [number, number, number][] = [];
+  for (let i = 0; i < topology.faces.length; i++) {
+    const f = topology.faces[i]!;
+    const g = f.geometry;
+    if (!g || g.type !== 'cylinder' || !(f.area >= MIN_DIMENSION_FACE_AREA) || g.radius <= 1e-6) continue;
+    const l = Math.hypot(g.axis[0], g.axis[1], g.axis[2]);
+    if (l < 1e-9) continue;
+    let ax: [number, number, number] = [g.axis[0] / l, g.axis[1] / l, g.axis[2] / l];
+    // Skip principal-axis cylinders (already seen true-shape in orthogonal views)
+    if (Math.abs(ax[0]) >= 0.999 || Math.abs(ax[1]) >= 0.999 || Math.abs(ax[2]) >= 0.999) continue;
+    // Require >= 180° angular wrap (real hole/boss, not a small blend fillet)
+    let tMin = Infinity, tMax = -Infinity;
+    for (const e of topology.edges) {
+      if (!e.faces.includes(i)) continue;
+      for (const vi of e.vertices) {
+        const vp = topology.vertices[vi]?.point;
+        if (!vp) continue;
+        const t = dot([vp[0] - g.origin[0], vp[1] - g.origin[1], vp[2] - g.origin[2]], ax);
+        if (t < tMin) tMin = t;
+        if (t > tMax) tMax = t;
+      }
+    }
+    const span = tMax - tMin;
+    if (!(span > 1e-3) || f.area / (g.radius * span) < Math.PI - 1e-2) continue;
+    for (const c of ax) {
+      if (Math.abs(c) > 1e-4) {
+        if (c < 0) ax = [-ax[0], -ax[1], -ax[2]];
+        break;
+      }
+    }
+    if (!out.some((u) => Math.abs(dot(u, ax)) >= 1 - 1e-3)) out.push(ax);
+  }
+  return out;
+}
+
 /** A reference to an element by its place in the topology (what a picked or listed element is made into). */
 export function refOf(topology: Topology, names: ElementNames, kind: 'face' | 'edge' | 'vertex', index: number): Ref {
   return kind === 'face'

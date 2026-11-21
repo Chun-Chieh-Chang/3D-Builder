@@ -6,8 +6,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { applyDrawingCommand, createEmptyDrawing, viewVectors, type Dimension, type DrawingView, type ElementFacts, type ViewFeature } from '@3db/model';
-import { buildScene, centreItems, clutterOf, dimensionCoverage, evaluateDimension, planDrawingDimensions, threadItems, type DimensionLike, type PlacedView, type ViewLines, type ViewToDimension } from '@3db/drawing';
-import { holeInfo, MIN_DIMENSION_FACE_AREA, sketchTextPrefixes, viewFeatures } from '@3db/regen';
+import { adviseAuxiliary, buildScene, centreItems, clutterOf, dimensionCoverage, evaluateDimension, planDrawingDimensions, threadItems, type DimensionLike, type PlacedView, type ViewLines, type ViewToDimension } from '@3db/drawing';
+import { holeInfo, MIN_DIMENSION_FACE_AREA, obliqueHoleAxes, sketchTextPrefixes, viewFeatures } from '@3db/regen';
 import type { Topology } from '@3db/kernel';
 
 const ref = (name: string) => ({ kind: 'face' as const, name });
@@ -403,5 +403,57 @@ describe('slanted face auto-dimensioning (coverage.slants)', () => {
     const coneFeats = viewFeatures(coneTopo, { faces: ['taperTip'], edges: ['e0'], vertices: ['v0', 'v1'] }, { dir: [0, 1, 0], up: [0, 0, 1] });
     expect(coneFeats.some((f) => f.type === 'axis' && f.cone && f.ref.name === 'taperTip')).toBe(true);
     expect(coneFeats.some((f) => f.type === 'slant' && f.cone !== undefined && f.ref.name === 'taperTip')).toBe(true);
+  });
+
+  it('covers bolt-circle PCD centrelines (#7), freeform envelope dimensions (#6), and oblique-hole auxiliary view advice (#5)', () => {
+    const placed: PlacedView = { id: 'v1', at: [100, 100], scale: 1, centre: [0, 0], w: 120, h: 120 };
+    const topView: DrawingView = { id: 'v1', name: '俯視', source: 'p.3dbx', direction: 'top' };
+
+    // #7a: 6-bolt circular pattern on R=30 draws 6*4=24 hole crosses + 1 PCD pitch-circle polyline = 25
+    const sixBolts: ViewFeature[] = Array.from({ length: 6 }, (_, i) => {
+      const a = (2 * Math.PI * i) / 6;
+      return { type: 'circle', ref: ref(`b${i}`), centre: [30 * Math.cos(a), 30 * Math.sin(a)], radius: 3, convex: false, full: true, outward: 45 };
+    });
+    const pcdItems = centreItems(topView, sixBolts, placed);
+    expect(pcdItems).toHaveLength(25);
+    expect(pcdItems.some((i) => i.kind === 'polyline' && i.style === 'center' && i.points.length === 146)).toBe(true);
+
+    // #7b: 4 holes on a rectangular grid (±50, ±30) must NOT trigger a bogus PCD circle (only 4*4=16 crosses)
+    const rectHoles: ViewFeature[] = [[-50, -30], [50, -30], [50, 30], [-50, 30]].map(([x, y], i) => ({
+      type: 'circle', ref: ref(`r${i}`), centre: [x!, y!], radius: 4, convex: false, full: true, outward: 45,
+    }));
+    expect(centreItems(topView, rectHoles, placed)).toHaveLength(16);
+
+    // #6: Freeform curved silhouette extending beyond analytic features receives projection overall length & height dimensions
+    const freeformLines: ViewLines = {
+      visible: [[-45, 0, -30, 18, 0, 22, 30, 18, 45, 0, 30, -18, 0, -22, -30, -18, -45, 0]],
+      hidden: [],
+      box: { min: [-45, -22], max: [45, 22] },
+    };
+    const freeformViews: ViewToDimension[] = [
+      { viewId: 'v1', axes: viewVectors('front'), features: [], lines: freeformLines },
+    ];
+    const envPlan = planDrawingDimensions(freeformViews, []);
+    const projDims = envPlan.filter((p) => p.draft.kind === 'linear' && p.draft.a.kind === 'projection' && p.draft.b.kind === 'projection');
+    expect(projDims).toHaveLength(2);
+    expect(projDims.map((p) => (p.draft.kind === 'linear' ? p.draft.orientation : '')).sort()).toEqual(['horizontal', 'vertical']);
+
+    // #5: Oblique 45° hole in XZ plane detected by obliqueHoleAxes and advised an auxiliary fold line on front view
+    const invSqrt2 = Math.SQRT1_2;
+    const obliqueTopo: Topology = {
+      faces: [
+        { surface: 'cylinder', area: 2 * Math.PI * 4 * 20, center: [0, 0, 0], normal: [0, 1, 0], geometry: { type: 'cylinder', origin: [0, 0, 0], axis: [invSqrt2, 0, invSqrt2], radius: 4, convex: false } },
+      ],
+      edges: [{ faces: [0], vertices: [0, 1], length: 20, mid: [0, 0, 0], dir: [invSqrt2, 0, invSqrt2], curve: 'line' }],
+      vertices: [{ point: [0, 0, 0], faces: [0] }, { point: [20 * invSqrt2, 0, 20 * invSqrt2], faces: [0] }],
+    };
+    const obliques = obliqueHoleAxes(obliqueTopo);
+    expect(obliques).toHaveLength(1);
+    const auxAdv = adviseAuxiliary(obliques, viewVectors('top'), { min: [-20, -20], max: [20, 20] });
+    expect(auxAdv).not.toBeNull();
+    // Fold line direction in top view (right=[1,0,0], up=[0,0,-1]) must be perpendicular to projected oblique axis [1/√2, -1/√2]
+    const fdx = auxAdv!.line[1][0] - auxAdv!.line[0][0];
+    const fdy = auxAdv!.line[1][1] - auxAdv!.line[0][1];
+    expect(Math.abs(fdx * invSqrt2 + fdy * (-invSqrt2))).toBeLessThan(1e-2);
   });
 });

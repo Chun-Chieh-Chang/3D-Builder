@@ -1,6 +1,8 @@
-import { normalizedViewAxes, rightOf, type ViewAxes, type ViewFeature, type ViewName, type ViewSide } from '@3db/model';
+import { normalizedViewAxes, rightOf, sheetUp, type ViewAxes, type ViewFeature, type ViewName, type ViewSide } from '@3db/model';
 import type { DimensionDraft } from './autoDimension';
 import { holeSignature, threadSignature } from './dimension';
+import type { ViewLines } from './layout';
+import { projectionExtrema } from './projectionRefs';
 
 /**
  * A drawing planned for any part (ADR 0256): which way the main view looks, which views go with it, whether one is better as a section, and the dimensions
@@ -239,6 +241,49 @@ export function adviseSection(main: DirectionStats, prefer?: 'vertical' | 'horiz
   return best(main.width >= main.height ? 'horizontal' : 'vertical');
 }
 
+export interface AuxiliaryAdvice {
+  /** Fold line on the parent view, perpendicular to the oblique hole's projected axis. */
+  line: [[number, number], [number, number]];
+  /** 3D unit axis of the oblique cylindrical feature shown true-shape in the auxiliary view. */
+  axis: [number, number, number];
+}
+
+/**
+ * Advises an auxiliary view folded off `parentAxes` when an oblique cylindrical hole/boss lies in the parent view's plane
+ * (`|axis · parentAxes.dir| < 1e-3`), so the auxiliary view looks directly down the oblique axis and shows it true-shape.
+ */
+export function adviseAuxiliary(
+  obliqueAxes: readonly [number, number, number][],
+  parentAxes: ViewAxes,
+  parentBox: { min: [number, number]; max: [number, number] },
+): AuxiliaryAdvice | null {
+  const norm = normalizedViewAxes(parentAxes);
+  const r = rightOf(norm);
+  const u = sheetUp(norm);
+  const d = norm.dir;
+  for (const ax of obliqueAxes) {
+    if (Math.abs(ax[0] * d[0] + ax[1] * d[1] + ax[2] * d[2]) > 1e-3) continue;
+    const dx = ax[0] * r[0] + ax[1] * r[1] + ax[2] * r[2];
+    const dy = ax[0] * u[0] + ax[1] * u[1] + ax[2] * u[2];
+    const l = Math.hypot(dx, dy);
+    if (l < 1e-6) continue;
+    // Fold line runs perpendicular to the oblique axis in the parent view, spanning across parentBox with 2 mm pad
+    const fx = -dy / l;
+    const fy = dx / l;
+    const cx = (parentBox.min[0] + parentBox.max[0]) / 2;
+    const cy = (parentBox.min[1] + parentBox.max[1]) / 2;
+    const halfSpan = Math.hypot(parentBox.max[0] - parentBox.min[0], parentBox.max[1] - parentBox.min[1]) / 2 + 2;
+    return {
+      line: [
+        [r3(cx - fx * halfSpan), r3(cy - fy * halfSpan)],
+        [r3(cx + fx * halfSpan), r3(cy + fy * halfSpan)],
+      ],
+      axis: ax,
+    };
+  }
+  return null;
+}
+
 function boxOf(s: DirectionStats): { x0: number; y0: number; x1: number; y1: number } {
   let x0 = Infinity;
   let y0 = Infinity;
@@ -291,6 +336,8 @@ export interface ViewToDimension {
   section?: boolean;
   /** The features (by ref name) the view draws only with hidden lines: a dimension is not put on them where another view shows them (ISO 129-1 §5.1). */
   hidden?: ReadonlySet<string>;
+  /** Projected lines of this view, used to detect freeform/B-spline contours extending beyond analytic features for overall envelope dimensions. */
+  lines?: ViewLines;
 }
 
 /** One way something can be pointed at for a place: a plane edge-on, the centre of a circle seen true, or the axis of a cylinder seen side-on. */
@@ -773,5 +820,45 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
     }
     }
   }
+
+  // Overall envelope dimensions for freeform/B-spline/curved silhouettes that extend beyond all analytic planes/circles/axes
+  const coveredEnvelopeWays = new Set<string>();
+  views.forEach((v, vi) => {
+    if (!v.lines) return;
+    const ext = projectionExtrema(v.lines);
+    if (!ext) return;
+    const srcs = sourcesOf(v, vi);
+    const m = mappers[vi]!;
+    for (const along of ['x', 'y'] as const) {
+      const wayKey = m.way(along);
+      if (coveredEnvelopeWays.has(wayKey)) continue;
+      const projMin = along === 'x' ? ext.minX : ext.minY;
+      const projMax = along === 'x' ? ext.maxX : ext.maxY;
+      if (projMax.coord - projMin.coord <= 1e-3) continue;
+      const anaCoords = srcs.filter((s) => s.along === along).map((s) => s.coord);
+      const anaMin = anaCoords.length ? Math.min(...anaCoords) : Infinity;
+      const anaMax = anaCoords.length ? Math.max(...anaCoords) : -Infinity;
+      const sticksOut = anaCoords.length === 0 || projMin.coord < anaMin - 0.5 || projMax.coord > anaMax + 0.5;
+      if (!sticksOut) continue;
+      const orientation = along === 'x' ? 'horizontal' : 'vertical';
+      const alreadyHas = existing.some(
+        (d) =>
+          d.view === v.viewId &&
+          d.kind === 'linear' &&
+          d.orientation === orientation &&
+          ((d.a.kind === 'projection' && d.b.kind === 'projection') || (d.a.name === projMin.ref.name && d.b.name === projMax.ref.name)),
+      );
+      if (alreadyHas) {
+        coveredEnvelopeWays.add(wayKey);
+        continue;
+      }
+      out.push({
+        view: v.viewId,
+        draft: { kind: 'linear', a: projMin.ref, b: projMax.ref, orientation, offset: along === 'x' ? -(FIRST + 2 * STEP) : FIRST + 2 * STEP },
+        role: 'place',
+      });
+      coveredEnvelopeWays.add(wayKey);
+    }
+  });
   return out;
 }

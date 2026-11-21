@@ -1,5 +1,15 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-21（17:48）— 3D→2D 中優先 3 項補齊（#7 孔陣列 PCD、#6 B-spline 外形包絡、#5 非正交斜孔輔助視圖）
+
+- **實作內容**：
+  1. **#7 孔陣列節圓中心線（PCD）**（`packages/drawing/src/annotation.ts`）：`centreItems()` 自動辨識 `≥ 3` 個等徑等角距（`2π/N`）的同心圓孔陣列並繪出封閉節圓中心線（`N = 4` 額外要求中心有同心圓特徵，避免矩形四孔板誤判），支援 `detail`/`crop`/`break` 裁切。
+  2. **#6 B-spline／曲面外形總長寬包絡標註**（`packages/drawing/src/projectionRefs.ts`、`packages/drawing/src/autoDrawing.ts`、`apps/mcp/src/drawingSession.ts`）：新增 `projectionExtrema()` 找出可見投影輪廓四向極值 `ProjectionRef`；當自由曲面／放樣輪廓超出既有解析特徵節點 `> 0.5 mm` 時，自動補標總長／總高包絡線性尺寸（純平面件零變動）。
+  3. **#5 非正交斜孔自動建立輔助視圖（`auxiliary`）**（`packages/regen/src/drawingDimensions.ts`、`packages/drawing/src/autoDrawing.ts`、`apps/mcp/src/drawingSession.ts`）：新增 `obliqueHoleAxes()` 偵測非主軸向之圓柱孔（包角 `≥ 180°`）與 `adviseAuxiliary()` 計算垂直投影軸的輔助折線；`DrawingSession.create()` 自動插入輔助視圖，並於 `dimensionViews()` 放行 `auxiliary` 視圖使斜孔自動取得真形 `Ø` 標註與中心記號。
+- **驗證結果**：
+  - 6 檔共 **67/67 通過**（`drawing-dimension-content` 19/19、`drawing-auxiliary-view` 18/18、`drawing-annotations` 14/14、`auto-drawing-plan` 8/8、`apps/mcp/test/drawing` 4/4、`drawing-clearance` 4/4）。
+  - `npm run typecheck`、`lint:rules`、`lint:deps`、`lint:repo` 全數通過。
+
 ## 2026-11-21（17:38）— 3D→2D 標註遺漏 5 項全部補齊並通過全套驗證
 
 - **實作項目（依核准順序完成 #1 → #2 → #8 → #4 → #3）**：

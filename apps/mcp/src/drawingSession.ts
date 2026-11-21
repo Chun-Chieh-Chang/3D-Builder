@@ -45,6 +45,7 @@ import {
   type ViewSide,
 } from '@3db/model';
 import {
+  adviseAuxiliary,
   adviseSection,
   arrangeDimensions,
   buildScene,
@@ -98,7 +99,7 @@ import {
   type SectionAdvice,
 } from '@3db/drawing';
 import { readAnyDocumentFile, writeDrawingFile } from '@3db/io';
-import { drawingSketchFacts, elementFacts, holeFeatures, projectDrawingView, sketchTextPrefixes, viewFeatures } from '@3db/regen';
+import { drawingSketchFacts, elementFacts, holeFeatures, obliqueHoleAxes, projectDrawingView, sketchTextPrefixes, viewFeatures } from '@3db/regen';
 import { isTrap } from '@3db/kernel';
 import { AgentError, messageOf, type CadSession } from './session';
 import { renderView } from './render';
@@ -390,6 +391,27 @@ export class DrawingSession {
       }
     }
 
+    // Auxiliary view: when an oblique cylindrical hole/boss lies in an orthogonal view's plane, fold an auxiliary view to show it true-shape (#5)
+    const obliques = obliqueHoleAxes(s.body.topology);
+    if (obliques.length > 0) {
+      const usedLabels = new Set(page(doc).views.flatMap((v) => ('label' in v && v.label ? [v.label] : [])));
+      const nextLabel = ['A', 'B', 'C', 'D', 'E', 'F'].find((l) => !usedLabels.has(l));
+      if (nextLabel) {
+        const candidates = page(doc).views.filter((v) => !isDerived(v) || v.kind === 'projected');
+        for (const parentView of candidates) {
+          const pAxes = axesOf(page(doc).views, projection, parentView);
+          const pBox = pAxes ? this.project(pAxes).box : null;
+          if (!pAxes || !pBox) continue;
+          const adv = adviseAuxiliary(obliques, pAxes, pBox);
+          if (!adv) continue;
+          const auxId = ids().take('view');
+          const aux: DrawingView = { id: auxId, name: t('drawing.view.section', { label: nextLabel }), kind: 'auxiliary', parent: parentView.id, line: adv.line, label: nextLabel, centreMarks: true };
+          doc = applyDrawingCommand(doc, { type: 'insertViews', views: [aux] });
+          break;
+        }
+      }
+    }
+
     // title
     const title: Partial<Record<TitleField, string>> = { drawingName: basename(s.path, extname(s.path)), date: new Date().toISOString().slice(0, 10), ...o.title };
     for (const [field, value] of Object.entries(title)) if (value) doc = applyDrawingCommand(doc, { type: 'setTitle', field: field as TitleField, value });
@@ -522,12 +544,12 @@ export class DrawingSession {
         const targetView = v.kind === 'detail' ? pg.views.find((x) => x.id === v.parent) : v;
         if (!targetView) continue;
         const axes = axesOf(pg.views, pg.sheet.projection, targetView);
-        if (!axes || !this.directionOf(axes)) continue;
+        if (!axes || (targetView.kind !== 'auxiliary' && !this.directionOf(axes))) continue;
         const features = this.featuresFor(axes);
         const lines = targetView.kind === 'section'
           ? this.project(axes, sectionPlane(axesOf(pg.views, pg.sheet.projection, pg.views.find((x) => x.id === targetView.parent)!)!, targetView))
           : this.project(axes);
-        out.push({ viewId: v.id, axes, features, hidden: hiddenFeatures(features, lines), ...(targetView.kind === 'section' ? { section: true } : {}) });
+        out.push({ viewId: v.id, axes, features, lines, hidden: hiddenFeatures(features, lines), ...(targetView.kind === 'section' ? { section: true } : {}) });
       }
     }
     const rank = (x: ViewToDimension) => (x === out[0] ? 0 : x.section ? 1 : 2);

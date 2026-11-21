@@ -127,3 +127,36 @@ export function projectionReferenceLines(lines: ViewLines | null | undefined, pl
   const clip = (polys: number[][] | undefined) => (polys ?? []).flatMap(p => clipToBand(p, b.axis, b.from, b.to));
   return { ...lines, visible: clip(lines.visible), hidden: clip(lines.hidden), tangent: clip(lines.tangent), tangentHidden: clip(lines.tangentHidden) };
 }
+
+export interface ProjectionExtrema {
+  minX: { coord: number; ref: ProjectionRef };
+  maxX: { coord: number; ref: ProjectionRef };
+  minY: { coord: number; ref: ProjectionRef };
+  maxY: { coord: number; ref: ProjectionRef };
+}
+
+/** Finds the 4 extreme points (minX, maxX, minY, maxY) on a view's visible projected contours as persistent `ProjectionRef`s. */
+export function projectionExtrema(lines: ViewLines | null | undefined): ProjectionExtrema | null {
+  if (!lines || lines.visible.length === 0) return null;
+  const entities = projectionEntities({ visible: lines.visible, hidden: [], box: lines.box });
+  let minX: { coord: number; ref: ProjectionRef } | null = null;
+  let maxX: { coord: number; ref: ProjectionRef } | null = null;
+  let minY: { coord: number; ref: ProjectionRef } | null = null;
+  let maxY: { coord: number; ref: ProjectionRef } | null = null;
+  for (const e of entities) {
+    const p = e.points;
+    let total = 0;
+    for (let i = 0; i + 3 < p.length; i += 2) total += Math.hypot(p[i + 2]! - p[i]!, p[i + 3]! - p[i + 1]!);
+    let dist = 0;
+    for (let i = 0; i + 1 < p.length; i += 2) {
+      if (i > 0) dist += Math.hypot(p[i]! - p[i - 2]!, p[i + 1]! - p[i - 1]!);
+      const x = p[i]!, y = p[i + 1]!;
+      const at = total > 1e-9 ? Math.max(0, Math.min(1, dist / total)) : 0;
+      if (!minX || x < minX.coord) minX = { coord: x, ref: { ...e.ref, at } };
+      if (!maxX || x > maxX.coord) maxX = { coord: x, ref: { ...e.ref, at } };
+      if (!minY || y < minY.coord) minY = { coord: y, ref: { ...e.ref, at } };
+      if (!maxY || y > maxY.coord) maxY = { coord: y, ref: { ...e.ref, at } };
+    }
+  }
+  return minX && maxX && minY && maxY ? { minX, maxX, minY, maxY } : null;
+}

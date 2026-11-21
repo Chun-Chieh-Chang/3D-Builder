@@ -100,6 +100,51 @@ export function centreItems(view: DrawingView, features: readonly ViewFeature[],
       out.push({ kind: 'polyline', points: pts, style: 'center' });
     }
   }
+  // Bolt circle (PCD) centreline: >= 3 equal-radius full holes equally spaced on a common circle (for N=4, also require a concentric circular feature to avoid plain square plates)
+  const holesByR = new Map<number, { cx: number; cy: number; radius: number }[]>();
+  for (const f of features) {
+    if (f.type !== 'circle' || !f.full || f.convex) continue;
+    const rk = Math.round(f.radius * 1e3);
+    const list = holesByR.get(rk) ?? [];
+    if (!list.some((h) => Math.hypot(h.cx - f.centre[0], h.cy - f.centre[1]) <= 1e-2)) {
+      list.push({ cx: f.centre[0], cy: f.centre[1], radius: f.radius });
+      holesByR.set(rk, list);
+    }
+  }
+  const drawnPcd = new Set<string>();
+  for (const group of holesByR.values()) {
+    const n = group.length;
+    if (n < 3) continue;
+    const cx = group.reduce((s, h) => s + h.cx, 0) / n;
+    const cy = group.reduce((s, h) => s + h.cy, 0) / n;
+    const dists = group.map((h) => Math.hypot(h.cx - cx, h.cy - cy));
+    const R = dists.reduce((s, d) => s + d, 0) / n;
+    if (R < 2 || dists.some((d) => Math.abs(d - R) > 1e-2 * Math.max(1, R))) continue;
+    const angles = group.map((h) => {
+      const a = Math.atan2(h.cy - cy, h.cx - cx);
+      return a < 0 ? a + 2 * Math.PI : a;
+    }).sort((a, b) => a - b);
+    const step = (2 * Math.PI) / n;
+    const equalGaps = angles.every((a, i) => {
+      const next = i + 1 < n ? angles[i + 1]! : angles[0]! + 2 * Math.PI;
+      return Math.abs(next - a - step) <= 0.01;
+    });
+    if (!equalGaps) continue;
+    if (n === 4 && !circlesByCentre.some((c) => Math.hypot(c.cx - cx, c.cy - cy) <= 1e-2)) continue;
+    const key = `${Math.round(cx * 100)},${Math.round(cy * 100)},${Math.round(R * 100)}`;
+    if (drawnPcd.has(key)) continue;
+    drawnPcd.add(key);
+    const ring: number[] = [];
+    for (let i = 0; i <= 72; i++) {
+      const a = (2 * Math.PI * i) / 72;
+      ring.push(cx + R * Math.cos(a), cy + R * Math.sin(a));
+    }
+    for (const piece of clipPiece(ring)) {
+      const pts: number[] = [];
+      for (let i = 0; i < piece.length; i += 2) pts.push(...toSheet(placed, piece[i]!, piece[i + 1]!));
+      out.push({ kind: 'polyline', points: pts, style: 'center' });
+    }
+  }
   return out;
 }
 
