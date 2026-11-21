@@ -924,15 +924,14 @@ export class DrawingSession {
         } else if (d.kind === 'angle') {
           const baseArc = d.arc || 12;
           const baseSupp = Boolean(d.supplementary);
-          outerAngle: for (const [supplementary, arc, slide] of [
-            [!baseSupp, baseArc, 0],
-            [baseSupp, 4, 0],
-            [baseSupp, 8, 0],
-            [baseSupp, 14, 0],
-            [baseSupp, baseArc, -6],
-            [baseSupp, baseArc, 6],
-          ] as const) {
-            if (try_({ supplementary, arc, ...(slide === 0 ? { slide: null } : { slide }) }, d.id, false) && !info.groups.has(d.id)) break outerAngle;
+          outerAngle: for (const supplementary of [baseSupp, !baseSupp]) {
+            for (const arc of [baseArc, 4, 8, 12]) {
+              const slides = slideNumbers ? [0, -6, 6] : [0];
+              for (const slide of slides) {
+                if (supplementary === baseSupp && arc === baseArc && slide === (d.slide ?? 0)) continue;
+                if (try_({ supplementary, arc, ...(slide === 0 ? { slide: null } : { slide }) }, d.id, false) && !info.groups.has(d.id)) break outerAngle;
+              }
+            }
           }
         } else if (d.kind === 'linear') {
           const baseOff = Math.abs(d.offset) || 10;
