@@ -1,5 +1,14 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-21 — 平面斜面基準面面積優先序與 `sds-plus-bit` 刻字斜邊分析
+
+- **改動內容**：
+  1. `packages/drawing/src/autoDrawing.ts`：`planDrawingDimensions()` 選取平面斜面 `angle` 基準面時，優先選取 `p.area >= f.area` 的結構基準面，避免錨定至鄰近更小的刻字筆劃細面。
+  2. `apps/mcp/src/drawingSession.ts`：`steerLeaders()` 的 `angle` 弧半徑展開為 `[baseArc, 4, 8, 14, 22]` mm（搭配補角與滑移）。
+- **實測與根因發現**：
+  - `sds-plus-bit` 雜亂數由 `44 → 41`，但剩餘 41 筆雜亂主要來自 `cuText:side:skText.tx#*` 的 **8 個刻字筆劃微斜邊**（各自產生 `angle` 弧標註而彼此重疊）。這屬於「文字雕刻筆劃是否應納入 `viewFeatures()` `slant` 強制標註、或改由 `C7` 依 3D 模型註記」的規格決策，須待使用者裁定，不可擅自過濾特徵。
+- **驗證**：`auto-drawing-plan.test.ts`（8/8）、`drawing-dimension-content.test.ts`（13/13）、`drawing-clearance.test.ts`（4/4）、`typecheck`、`lint:rules`、`lint:repo` 全數通過。
+
 ## 2026-11-20（夜・續）— 斜面（`coverage.slants`）自動標註與 `steerLeaders` 擴充（ADR 0262 後續）
 
 - **完成項目**：

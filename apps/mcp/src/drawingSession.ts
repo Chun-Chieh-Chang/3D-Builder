@@ -925,7 +925,7 @@ export class DrawingSession {
           const baseArc = d.arc || 12;
           const baseSupp = Boolean(d.supplementary);
           outerAngle: for (const supplementary of [baseSupp, !baseSupp]) {
-            for (const arc of [baseArc, 4, 8, 12]) {
+            for (const arc of [baseArc, 4, 8, 14, 22]) {
               const slides = slideNumbers ? [0, -6, 6] : [0];
               for (const slide of slides) {
                 if (supplementary === baseSupp && arc === baseArc && slide === (d.slide ?? 0)) continue;

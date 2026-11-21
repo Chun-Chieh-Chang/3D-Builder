@@ -676,6 +676,7 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
           const anchor = [...planes].sort(
             (a, b) =>
               Number(Boolean(v.hidden?.has(a.ref.name))) - Number(Boolean(v.hidden?.has(b.ref.name))) ||
+              Number(a.area < f.area) - Number(b.area < f.area) ||
               distToPlane(a) - distToPlane(b) ||
               b.area - a.area,
           )[0]!;
