@@ -778,8 +778,10 @@ export type ViewFeature =
   | { type: 'plane'; ref: Ref; axis: 'x' | 'y'; coord: number; area: number }
   /** A cylinder seen along its axis: a circle (a whole one, `full`, or an arc) with its middle in the view's coordinates and the direction (degrees) from there to the middle of the arc. `surface` names the coaxial cylindrical surface when a cylinder is cut into several faces. */
   | { type: 'circle'; ref: Ref; centre: [number, number]; radius: number; convex: boolean; full: boolean; outward: number; surface?: string; hole?: HoleInfo; thread?: ThreadCallout }
-  /** A whole cylinder seen from the side: its axis from one end to the other, in the view's coordinates. */
+  /** A whole cylinder (or cone) seen from the side: its axis from one end to the other, in the view's coordinates. */
   | { type: 'axis'; ref: Ref; from: [number, number]; to: [number, number]; radius: number; thread?: ThreadCallout; hole?: HoleInfo }
+  /** A conical or spherical feature's centre mark cross in the view's coordinates (not a cylindrical diameter for auto-dimensioning). */
+  | { type: 'centre'; ref: Ref; centre: [number, number]; radius: number }
   /**
    * A fillet or a round — a torus — seen in its true shape: its axis lies *in* the sheet, so the view cuts its tube and what is drawn is the arc of the cut. This is
    * the other way round from a cylinder, which shows a circle only when its axis runs *along* the view.

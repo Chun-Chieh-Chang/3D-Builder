@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { store, useStore } from '../state/store';
 
 /** The label of a thing a dimension can point at, as the list shows it. */
-type Pickable = Exclude<ViewFeature, { type: 'axis' }>;
+type Pickable = Exclude<ViewFeature, { type: 'axis' | 'centre' }>;
 
 /** The direction of a slanted face's line, degrees counter-clockwise from the view's x axis, in (-90, 90]. */
 const slantAngle = (f: Extract<ViewFeature, { type: 'slant' }>): number => {

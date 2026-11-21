@@ -5,8 +5,8 @@
  * ordinate numbers stay clear of their own extension lines; stepped internal bores ending in a narrowing cone/torus are not marked through.
  */
 import { describe, expect, it } from 'vitest';
-import { viewVectors, type Dimension, type ElementFacts, type ViewFeature } from '@3db/model';
-import { centreItems, clutterOf, dimensionCoverage, evaluateDimension, planDrawingDimensions, type DimensionLike, type PlacedView, type ViewLines, type ViewToDimension } from '@3db/drawing';
+import { applyDrawingCommand, createEmptyDrawing, viewVectors, type Dimension, type DrawingView, type ElementFacts, type ViewFeature } from '@3db/model';
+import { buildScene, centreItems, clutterOf, dimensionCoverage, evaluateDimension, planDrawingDimensions, type DimensionLike, type PlacedView, type ViewLines, type ViewToDimension } from '@3db/drawing';
 import { holeInfo, MIN_DIMENSION_FACE_AREA, sketchTextPrefixes, viewFeatures } from '@3db/regen';
 import type { Topology } from '@3db/kernel';
 
@@ -262,5 +262,81 @@ describe('slanted face auto-dimensioning (coverage.slants)', () => {
       plan.map((p) => ({ view: p.view, ...p.draft })),
     );
     expect(cov.slants).toEqual({ total: 5, determined: 5, missing: [] });
+  });
+
+  it('draws centre marks for end-on cones/spheres, inherits parent features in detail/crop views, and clips centrelines across broken views', () => {
+    const placed: PlacedView = { id: 'v1', at: [100, 100], scale: 1, centre: [0, 0], w: 80, h: 40 };
+    const model: DrawingView = { id: 'v1', name: '前視', source: 'p.3dbx', direction: 'front' };
+    // End-on cone/sphere centre mark merges with concentric circle taking the larger radius
+    const merged = centreItems(model, [
+      { type: 'circle', ref: { kind: 'face', name: 'cyl' }, centre: [10, 10], radius: 3, convex: true, full: true, outward: 45 },
+      { type: 'centre', ref: { kind: 'face', name: 'cone' }, centre: [10, 10], radius: 6 },
+      { type: 'centre', ref: { kind: 'face', name: 'sphere' }, centre: [30, 10], radius: 4 },
+    ], placed);
+    expect(merged).toHaveLength(8);
+    // Detail and crop views inherit parent features when only the parent view's features are supplied to buildScene
+    let doc = createEmptyDrawing('CNS');
+    doc = applyDrawingCommand(doc, {
+      type: 'insertViews',
+      views: [
+        model,
+        { id: 'v2', name: 'A', kind: 'detail', parent: 'v1', centre: [10, 10], radius: 10, label: 'A', at: [220, 120], scale: [2, 1] },
+        { id: 'v3', name: 'B', kind: 'sectionLocal', parent: 'v1', outline: { kind: 'rectangle', p0: [0, 0], p1: [20, 20] }, depth: 5, label: 'B', at: [300, 120] },
+        { id: 'v4', name: 'Crop', kind: 'crop', parent: 'v3', outline: { kind: 'rectangle', p0: [2, 2], p1: [18, 18] }, at: [360, 120] },
+      ],
+    });
+    const parentLines: ViewLines = { visible: [[-20, -20, 40, -20, 40, 20, -20, 20, -20, -20]], hidden: [], box: { min: [-20, -20], max: [40, 20] } };
+    const parentFeats: ViewFeature[] = [
+      { type: 'centre', ref: { kind: 'face', name: 'c1' }, centre: [10, 10], radius: 4 },
+      { type: 'centre', ref: { kind: 'face', name: 'c2' }, centre: [35, 10], radius: 4 },
+    ];
+    const { scene } = buildScene(doc, new Map([['v1', parentLines], ['v3', parentLines]]), new Map(), new Map([['v1', parentFeats]]));
+    const detailCentres = scene.items.filter((i) => i.kind === 'polyline' && i.style === 'center' && i.owner === 'view:v2');
+    const cropCentres = scene.items.filter((i) => i.kind === 'polyline' && i.style === 'center' && i.owner === 'view:v4');
+    expect(detailCentres).toHaveLength(4);
+    expect(cropCentres).toHaveLength(4);
+    // Broken view splits horizontal axis across the break band instead of drawing through the gap
+    const broken: PlacedView = { ...placed, break: { axis: 0, from: -10, to: 10, gap: 4 } };
+    const axisOnly: ViewFeature[] = [{ type: 'axis', ref: { kind: 'face', name: 'shaft' }, from: [-30, 0], to: [30, 0], radius: 5 }];
+    const brokenItems = centreItems(model, axisOnly, broken);
+    expect(brokenItems).toHaveLength(2);
+    // Every segment lies strictly outside the open gap on the sheet (gap spans x in [90, 94] with centre=0, at=100, from=-10, gap=4)
+    for (const item of brokenItems) {
+      if (item.kind !== 'polyline') continue;
+      const xs = [item.points[0]!, item.points[2]!];
+      expect(Math.max(...xs) <= 90 + 1e-6 || Math.min(...xs) >= 94 - 1e-6).toBe(true);
+    }
+  });
+
+  it('emits centrelines for trimmed cylinders, drafted cones, and spheres while excluding 90deg corner fillets', () => {
+    const topo: Topology = {
+      faces: [
+        // 1. Trimmed cylinder (360° wrap = 2π, only 1 end or oblique cut: no circle edge in topology.edges)
+        { surface: 'cylinder', area: 2 * Math.PI * 5 * 20, center: [5, 0, 10], normal: [1, 0, 0], geometry: { type: 'cylinder', origin: [0, 0, 0], axis: [0, 0, 1], radius: 5, convex: true } },
+        // 2. 90° corner fillet cylinder (wrap = π/2, must NOT get an axis)
+        { surface: 'cylinder', area: 0.5 * Math.PI * 5 * 20, center: [5, 0, 10], normal: [1, 0, 0], geometry: { type: 'cylinder', origin: [30, 0, 0], axis: [0, 0, 1], radius: 5, convex: true } },
+        // 3. Drafted circular boss (1° cone, wrap = 2π, no full circle edges)
+        { surface: 'cone', area: 2 * Math.PI * 5 * 10 / Math.cos(Math.PI / 180), center: [55, 0, 5], normal: [1, 0, 0], geometry: { type: 'cone', apex: [50, 0, 5 / Math.tan(Math.PI / 180) + 5], axis: [0, 0, -1], halfAngle: Math.PI / 180, convex: true } },
+        // 4. Hemisphere (area = 2πr², must get a centre mark)
+        { surface: 'sphere', area: 2 * Math.PI * 4 * 4, center: [80, 0, 4], normal: [0, 0, 1], geometry: { type: 'sphere', center: [80, 0, 0], radius: 4, convex: true } },
+      ],
+      edges: [
+        { faces: [0], vertices: [0, 1], length: 20, mid: [5, 0, 10], dir: [0, 0, 1], curve: 'line' },
+        { faces: [1], vertices: [2, 3], length: 20, mid: [35, 0, 10], dir: [0, 0, 1], curve: 'line' },
+        { faces: [2], vertices: [4, 5], length: 10, mid: [55, 0, 5], dir: [0, 0, 1], curve: 'line' },
+      ],
+      vertices: [
+        { point: [5, 0, 0], faces: [0] }, { point: [5, 0, 20], faces: [0] },
+        { point: [35, 0, 0], faces: [1] }, { point: [35, 0, 20], faces: [1] },
+        { point: [55, 0, 0], faces: [2] }, { point: [55, 0, 10], faces: [2] },
+      ],
+    };
+    const names = { faces: ['trimmedCyl', 'cornerFillet', 'draftedBoss', 'dome'], edges: ['e0', 'e1', 'e2'], vertices: ['v0', 'v1', 'v2', 'v3', 'v4', 'v5'] };
+    const sideFeats = viewFeatures(topo, names, { dir: [0, 1, 0], up: [0, 0, 1] });
+    expect(sideFeats.filter((f) => f.type === 'axis').map((f) => f.ref.name)).toEqual(['trimmedCyl', 'draftedBoss']);
+    expect(sideFeats.filter((f) => f.type === 'centre').map((f) => f.ref.name)).toEqual(['dome']);
+    const topFeats = viewFeatures(topo, names, { dir: [0, 0, 1], up: [0, 1, 0] });
+    expect(topFeats.filter((f) => f.type === 'circle' && f.full).map((f) => f.ref.name)).toEqual(['trimmedCyl']);
+    expect(topFeats.filter((f) => f.type === 'centre').map((f) => f.ref.name)).toEqual(['draftedBoss', 'dome']);
   });
 });

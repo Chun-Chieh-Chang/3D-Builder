@@ -35,24 +35,62 @@ export function overlappingDimensions(items: readonly SceneItem[], ids: Readonly
   return over.size;
 }
 
-/** Whether the segment from a to b passes through the inside of the box (x0, y0, x1, y1): Liang–Barsky clipping. */
-function crosses(a: readonly [number, number], b: readonly [number, number], box: readonly [number, number, number, number]): boolean {
+/** Whether the segment from (ax, ay) to (bx, by) passes through the inside of the box (bx0, by0, bx1, by1): Liang–Barsky clipping. */
+function crossesBox(ax: number, ay: number, bx: number, by: number, bx0: number, by0: number, bx1: number, by1: number): boolean {
+  if ((ax < bx0 && bx < bx0) || (ax > bx1 && bx > bx1) || (ay < by0 && by < by0) || (ay > by1 && by > by1)) return false;
   let t0 = 0;
   let t1 = 1;
-  const dx = b[0] - a[0];
-  const dy = b[1] - a[1];
-  const edges: [number, number][] = [[-dx, a[0] - box[0]], [dx, box[2] - a[0]], [-dy, a[1] - box[1]], [dy, box[3] - a[1]]];
-  for (const [p, q] of edges) {
-    if (Math.abs(p) < 1e-12) {
-      if (q < 0) return false;
-      continue;
-    }
-    const r = q / p;
-    if (p < 0) t0 = Math.max(t0, r);
-    else t1 = Math.min(t1, r);
+  const dx = bx - ax;
+  const dy = by - ay;
+  if (Math.abs(dx) < 1e-12) {
+    if (ax < bx0 || ax > bx1) return false;
+  } else {
+    let r = (ax - bx0) / -dx;
+    if (-dx < 0) { if (r > t0) t0 = r; } else { if (r < t1) t1 = r; }
+    r = (bx1 - ax) / dx;
+    if (dx < 0) { if (r > t0) t0 = r; } else { if (r < t1) t1 = r; }
+    if (t0 > t1) return false;
+  }
+  if (Math.abs(dy) < 1e-12) {
+    if (ay < by0 || ay > by1) return false;
+  } else {
+    let r = (ay - by0) / -dy;
+    if (-dy < 0) { if (r > t0) t0 = r; } else { if (r < t1) t1 = r; }
+    r = (by1 - ay) / dy;
+    if (dy < 0) { if (r > t0) t0 = r; } else { if (r < t1) t1 = r; }
     if (t0 > t1) return false;
   }
   return t1 - t0 > 1e-9;
+}
+
+interface LineInfo {
+  l: Extract<SceneItem, { kind: 'polyline' }>;
+  who: string | undefined;
+  arrow: boolean;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** Whether any segment of polyline `a` properly crosses any segment of polyline `b`. */
+function polylinesCross(a: LineInfo, b: LineInfo): boolean {
+  if (a.x1 < b.x0 || b.x1 < a.x0 || a.y1 < b.y0 || b.y1 < a.y0) return false;
+  const ap = a.l.points;
+  const bp = b.l.points;
+  for (let i = 0; i + 3 < ap.length; i += 2) {
+    const ax = ap[i]!, ay = ap[i + 1]!, bx = ap[i + 2]!, by = ap[i + 3]!;
+    const ax0 = ax < bx ? ax : bx;
+    const ax1 = ax > bx ? ax : bx;
+    if (ax1 < b.x0 || ax0 > b.x1) continue;
+    const ay0 = ay < by ? ay : by;
+    const ay1 = ay > by ? ay : by;
+    if (ay1 < b.y0 || ay0 > b.y1) continue;
+    for (let j = 0; j + 3 < bp.length; j += 2) {
+      if (properCrossRaw(ax, ay, bx, by, bp[j]!, bp[j + 1]!, bp[j + 2]!, bp[j + 3]!)) return true;
+    }
+  }
+  return false;
 }
 
 export interface Clutter {
@@ -85,38 +123,78 @@ export function clutterOf(items: readonly SceneItem[], slack = 0.3, viewOfGroup:
   });
   const lines = items.filter((i): i is Extract<SceneItem, { kind: 'polyline' }> => i.kind === 'polyline' && !i.filled);
   // a dimension line and a leader are the lines that end at an arrowhead of their own dimension; the others of a dimension are its extension lines
-  const tips = new Map<string, [number, number][]>();
-  for (const i of items)
-    if (i.kind === 'polyline' && i.filled && i.group !== undefined)
-      for (let k = 0; k + 1 < i.points.length; k += 2) tips.set(i.group, [...(tips.get(i.group) ?? []), [i.points[k]!, i.points[k + 1]!]]);
-  const endsAtArrow = (l: Extract<SceneItem, { kind: 'polyline' }>) => {
-    const t = tips.get(l.group!) ?? [];
-    const n = l.points.length;
-    const ends: [number, number][] = n >= 4 ? [[l.points[0]!, l.points[1]!], [l.points[n - 2]!, l.points[n - 1]!]] : [];
-    return ends.some(([x, y]) => t.some(([u, v]) => Math.hypot(x - u, y - v) < 0.3));
-  };
-  const arrowed = new Set(lines.filter((l) => l.group !== undefined && endsAtArrow(l)));
-  // the box of each view's own lines: a caption or a number inside another view's box is in that view, whether a line crosses it or not
-  const viewBoxes = new Map<string, [number, number, number, number]>();
-  for (const l of lines) {
-    if (!l.owner?.startsWith('view:')) continue;
-    const b = viewBoxes.get(l.owner) ?? [Infinity, Infinity, -Infinity, -Infinity];
-    for (let k = 0; k + 1 < l.points.length; k += 2) {
-      b[0] = Math.min(b[0], l.points[k]!);
-      b[1] = Math.min(b[1], l.points[k + 1]!);
-      b[2] = Math.max(b[2], l.points[k]!);
-      b[3] = Math.max(b[3], l.points[k + 1]!);
+  const tips = new Map<string, number[]>();
+  for (const i of items) {
+    if (i.kind === 'polyline' && i.filled && i.group !== undefined) {
+      let arr = tips.get(i.group);
+      if (!arr) {
+        arr = [];
+        tips.set(i.group, arr);
+      }
+      for (let k = 0; k + 1 < i.points.length; k += 2) arr.push(i.points[k]!, i.points[k + 1]!);
     }
-    viewBoxes.set(l.owner, b);
+  }
+  const endsAtArrow = (l: Extract<SceneItem, { kind: 'polyline' }>) => {
+    const t = tips.get(l.group!);
+    if (!t || t.length === 0) return false;
+    const p = l.points;
+    const n = p.length;
+    if (n < 4) return false;
+    const x0 = p[0]!, y0 = p[1]!, x1 = p[n - 2]!, y1 = p[n - 1]!;
+    for (let k = 0; k + 1 < t.length; k += 2) {
+      const u = t[k]!, v = t[k + 1]!;
+      if (Math.hypot(x0 - u, y0 - v) < 0.3 || Math.hypot(x1 - u, y1 - v) < 0.3) return true;
+    }
+    return false;
+  };
+  // precompute polyline AABBs, view boxes, dimLines and viewLinesByOwner in one pass
+  const viewBoxes = new Map<string, [number, number, number, number]>();
+  const viewLinesByOwner = new Map<string, LineInfo[]>();
+  const dimLines: LineInfo[] = [];
+  const ownedLines: LineInfo[] = [];
+  for (const l of lines) {
+    const p = l.points;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let k = 0; k + 1 < p.length; k += 2) {
+      const x = p[k]!, y = p[k + 1]!;
+      if (x < x0) x0 = x;
+      if (y < y0) y0 = y;
+      if (x > x1) x1 = x;
+      if (y > y1) y1 = y;
+    }
+    const who = whose(l);
+    const arrow = l.group !== undefined && endsAtArrow(l);
+    const info: LineInfo = { l, who, arrow, x0, y0, x1, y1 };
+    if (who !== undefined) ownedLines.push(info);
+    if (l.group !== undefined) dimLines.push(info);
+    if (l.owner?.startsWith('view:')) {
+      let vb = viewBoxes.get(l.owner);
+      if (!vb) {
+        vb = [x0, y0, x1, y1];
+        viewBoxes.set(l.owner, vb);
+      } else {
+        if (x0 < vb[0]) vb[0] = x0;
+        if (y0 < vb[1]) vb[1] = y0;
+        if (x1 > vb[2]) vb[2] = x1;
+        if (y1 > vb[3]) vb[3] = y1;
+      }
+      let vl = viewLinesByOwner.get(l.owner);
+      if (!vl) {
+        vl = [];
+        viewLinesByOwner.set(l.owner, vl);
+      }
+      vl.push(info);
+    }
   }
   const bad = new Set<number>();
   let count = 0;
   for (let i = 0; i < texts.length; i++) {
     const a = texts[i]!;
+    const [bx0, by0, bx1, by1] = a.box;
     for (let j = i + 1; j < texts.length; j++) {
       const b = texts[j]!;
       if (a.who !== undefined && a.who === b.who) continue;
-      if (a.box[0] < b.box[2] && b.box[0] < a.box[2] && a.box[1] < b.box[3] && b.box[1] < a.box[3]) {
+      if (bx0 < b.box[2] && b.box[0] < bx1 && by0 < b.box[3] && b.box[1] < by1) {
         count++;
         bad.add(i);
         bad.add(j);
@@ -127,22 +205,22 @@ export function clutterOf(items: readonly SceneItem[], slack = 0.3, viewOfGroup:
     if (a.who?.startsWith('caption:')) {
       const own = `view:${a.who.slice('caption:'.length)}`;
       for (const [owner, vb] of viewBoxes)
-        if (owner !== own && a.box[0] < vb[2] && vb[0] < a.box[2] && a.box[1] < vb[3] && vb[1] < a.box[3]) {
+        if (owner !== own && bx0 < vb[2] && vb[0] < bx1 && by0 < vb[3] && vb[1] < by1) {
           count++;
           bad.add(i);
         }
     }
-    for (const l of lines) {
-      const who = whose(l);
-      if (who === undefined) continue;
+    for (const li of ownedLines) {
+      if (li.x1 < bx0 || li.x0 > bx1 || li.y1 < by0 || li.y0 > by1) continue;
+      const who = li.who!;
       // its own dimension line carries the number; its own extension lines must not cross it (a number slid past them)
-      if (who === a.who && (a.t.group === undefined || arrowed.has(l))) continue;
+      if (who === a.who && (a.t.group === undefined || li.arrow)) continue;
       // an annotation or a caption may sit on the part; a dimension's number may not be crossed by anything
       if (!strict && who.startsWith('view:')) continue;
-      const p = l.points;
+      const p = li.l.points;
       let hit = false;
-      for (let k = 0; k + 3 < p.length && !hit; k += 2) hit = crosses([p[k]!, p[k + 1]!], [p[k + 2]!, p[k + 3]!], a.box);
-      if (!hit && l.closed && p.length >= 4) hit = crosses([p[p.length - 2]!, p[p.length - 1]!], [p[0]!, p[1]!], a.box);
+      for (let k = 0; k + 3 < p.length && !hit; k += 2) hit = crossesBox(p[k]!, p[k + 1]!, p[k + 2]!, p[k + 3]!, bx0, by0, bx1, by1);
+      if (!hit && li.l.closed && p.length >= 4) hit = crossesBox(p[p.length - 2]!, p[p.length - 1]!, p[0]!, p[1]!, bx0, by0, bx1, by1);
       if (hit) {
         count++;
         bad.add(i);
@@ -152,26 +230,21 @@ export function clutterOf(items: readonly SceneItem[], slack = 0.3, viewOfGroup:
   // a dimension line or a leader crossed by another dimension's line (ISO 129-1: extension lines may cross each other where it cannot be helped — the
   // places of a pattern of holes — but nothing should cross a dimension line or a leader). A dimension line and a leader are the lines that end at an
   // arrowhead of their own dimension; lines that only meet or run along each other (a shared datum's extension line) do not count.
-  const dimLines = lines.filter((l) => l.group !== undefined).map((l) => ({ group: l.group, points: l.points, arrow: arrowed.has(l) }));
-  const segs = (l: { points: number[] }) => {
-    const out: [number, number, number, number][] = [];
-    for (let k = 0; k + 3 < l.points.length; k += 2) out.push([l.points[k]!, l.points[k + 1]!, l.points[k + 2]!, l.points[k + 3]!]);
-    return out;
-  };
   const pairs = new Set<string>();
   for (let i = 0; i < dimLines.length; i++)
     for (let j = i + 1; j < dimLines.length; j++) {
       const a = dimLines[i]!;
       const b = dimLines[j]!;
-      if (a.group === b.group || (!a.arrow && !b.arrow)) continue;
-      const key = a.group! < b.group! ? `${a.group}|${b.group}` : `${b.group}|${a.group}`;
+      if (a.l.group === b.l.group || (!a.arrow && !b.arrow)) continue;
+      const ag = a.l.group!;
+      const bg = b.l.group!;
+      const key = ag < bg ? `${ag}|${bg}` : `${bg}|${ag}`;
       if (pairs.has(key)) continue;
-      if (segs(a).some((s) => segs(b).some((t) => properCross(s, t)))) pairs.add(key);
+      if (polylinesCross(a, b)) pairs.add(key);
     }
   count += pairs.size;
   // a dimension line or leader through the lines of a view: a row pushed into a neighbouring view. A leader runs into its own view to the hole it points
   // at, so only the views other than the dimension's own are counted, and a line counts once.
-  const viewLines = lines.filter((l) => l.owner?.startsWith('view:'));
   const badGroups = new Set<string>();
   for (const i of bad) {
     const g = texts[i]!.t.group;
@@ -184,21 +257,40 @@ export function clutterOf(items: readonly SceneItem[], slack = 0.3, viewOfGroup:
   }
   for (const d of dimLines) {
     if (!d.arrow) continue;
-    if (viewLines.some((v) => v.owner !== `view:${viewOfGroup.get(d.group!) ?? ''}` && segs(d).some((sg) => segs(v).some((t) => properCross(sg, t))))) {
+    const ownView = `view:${viewOfGroup.get(d.l.group!) ?? ''}`;
+    let hit = false;
+    for (const [owner, vLines] of viewLinesByOwner) {
+      if (owner === ownView) continue;
+      const vb = viewBoxes.get(owner);
+      if (vb && (d.x1 < vb[0] || vb[2] < d.x0 || d.y1 < vb[1] || vb[3] < d.y0)) continue;
+      for (const v of vLines) {
+        if (polylinesCross(d, v)) {
+          hit = true;
+          break;
+        }
+      }
+      if (hit) break;
+    }
+    if (hit) {
       count++;
-      if (d.group !== undefined) badGroups.add(d.group);
+      if (d.l.group !== undefined) badGroups.add(d.l.group);
     }
   }
   return { count, texts: [...bad].map((i) => texts[i]!.t.text), ...(pairs.size ? { crossings: [...pairs] } : {}), ...(badGroups.size ? { groups: [...badGroups] } : {}) };
 }
 
 /** Whether two segments cross each other at a point inside both (not at an end, not along each other). */
-function properCross(s: readonly [number, number, number, number], t: readonly [number, number, number, number]): boolean {
-  const o = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number) => (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+function properCrossRaw(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): boolean {
+  if ((ax < cx && ax < dx && bx < cx && bx < dx) || (ax > cx && ax > dx && bx > cx && bx > dx) || (ay < cy && ay < dy && by < cy && by < dy) || (ay > cy && ay > dy && by > cy && by > dy)) return false;
   const eps = 1e-6;
-  const d1 = o(s[0], s[1], s[2], s[3], t[0], t[1]);
-  const d2 = o(s[0], s[1], s[2], s[3], t[2], t[3]);
-  const d3 = o(t[0], t[1], t[2], t[3], s[0], s[1]);
-  const d4 = o(t[0], t[1], t[2], t[3], s[2], s[3]);
-  return ((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps)) && ((d3 > eps && d4 < -eps) || (d3 < -eps && d4 > eps));
+  const abx = bx - ax;
+  const aby = by - ay;
+  const d1 = abx * (cy - ay) - aby * (cx - ax);
+  const d2 = abx * (dy - ay) - aby * (dx - ax);
+  if (!((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps))) return false;
+  const cdx = dx - cx;
+  const cdy = dy - cy;
+  const d3 = cdx * (ay - cy) - cdy * (ax - cx);
+  const d4 = cdx * (by - cy) - cdy * (bx - cx);
+  return (d3 > eps && d4 < -eps) || (d3 < -eps && d4 > eps);
 }

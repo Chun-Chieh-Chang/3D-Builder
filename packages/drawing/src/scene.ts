@@ -387,12 +387,21 @@ function buildSceneIn(
     // Exactly one caption per view; section/detail markers remain attached to their parent geometry.
     items.push({ ...viewCaptionItem(v, own, scaleOf(doc, v), pg.sheet.scale), owner: `caption:${v.id}` });
     items.push(...bendTableItems(v, resolved.get(v.id), own));
-    items.push(...centreItems(v, features.get(v.id) ?? [], own).map((i) => ({ ...i, owner: ofView })));
+    let viewFeats = features.get(v.id);
+    if (!viewFeats && (v.kind === 'detail' || v.kind === 'crop' || v.kind === 'sectionLocal')) {
+      let cur: DrawingView | undefined = v;
+      while (cur && 'parent' in cur && !viewFeats) {
+        const pid: Id = cur.parent;
+        viewFeats = features.get(pid);
+        cur = pg.views.find((x) => x.id === pid);
+      }
+    }
+    items.push(...centreItems(v, viewFeats ?? [], own).map((i) => ({ ...i, owner: ofView })));
     // the symbols and notes follow the drawing's text height (ADR 0256): drawn at ISO's 3.5 mm and scaled about the point they mark, so that one setting
     // sizes the dimensions, the finishes, the frames, the datums and the notes together; a note with a height of its own keeps it
     const k = resolveDimStyle(pg.sheet.dimStyle).text / DIM_STYLE_DEFAULT.text;
     for (const f of pg.surfaceFinishes.filter((x) => x.view === v.id)) items.push(...scaleAbout(surfaceFinishItems([f], own), toSheet(own, f.at[0], f.at[1]), k).map((i) => ({ ...i, owner: f.id })));
-    items.push(...threadItems(v, features.get(v.id) ?? [], own).map((i) => ({ ...i, owner: ofView })));
+    items.push(...threadItems(v, viewFeats ?? [], own).map((i) => ({ ...i, owner: ofView })));
     for (const a of (pg.annotations ?? []).filter((x) => x.view === v.id)) {
       const anchor = a.kind === 'fcf' || a.kind === 'note' ? (a.leader ?? a.at) : a.kind === 'datum' ? a.at : null;
       const own_k = a.kind === 'note' && a.height !== undefined ? 1 : k;

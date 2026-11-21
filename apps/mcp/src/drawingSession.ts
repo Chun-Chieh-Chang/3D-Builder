@@ -841,19 +841,25 @@ export class DrawingSession {
     if (tips.length === 0) return false;
     if (polys.length === 0) return true;
     const rSheet = placed.w / 2;
+    const effTol2 = effTol * effTol;
     for (const [tx, ty] of tips) {
       if (v.kind === 'detail' && Math.hypot(tx - placed.at[0], ty - placed.at[1]) > rSheet + 0.5) return false;
-      let best = Infinity;
+      let hit = false;
       for (const poly of polys) {
         for (let k = 0; k + 3 < poly.length; k += 2) {
           const ax = poly[k]!, ay = poly[k + 1]!, bx = poly[k + 2]!, by = poly[k + 3]!;
+          if (tx < (ax < bx ? ax : bx) - effTol || tx > (ax > bx ? ax : bx) + effTol || ty < (ay < by ? ay : by) - effTol || ty > (ay > by ? ay : by) + effTol) continue;
           const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
           const t = l2 > 1e-18 ? Math.max(0, Math.min(1, ((tx - ax) * dx + (ty - ay) * dy) / l2)) : 0;
-          const d = Math.hypot(tx - (ax + t * dx), ty - (ay + t * dy));
-          if (d < best) best = d;
+          const ex = tx - (ax + t * dx), ey = ty - (ay + t * dy);
+          if (ex * ex + ey * ey <= effTol2) {
+            hit = true;
+            break;
+          }
         }
+        if (hit) break;
       }
-      if (best > effTol) return false;
+      if (!hit) return false;
     }
     return true;
   }
@@ -896,11 +902,14 @@ export class DrawingSession {
     let info = this.clutterInfo(doc, pageIndex, this.build(doc, pageIndex));
     if (info.score === 0) return doc;
     const baseFailed = info.failed;
-    const try_ = (patch: Extract<DrawingCommand, { type: 'setDimension' }>['patch'], id: Id, requireHit: boolean): boolean => {
+    const try_ = (patch: Extract<DrawingCommand, { type: 'setDimension' }>['patch'], id: Id, requireHit: boolean, onMiss?: () => void): boolean => {
       try {
         const trial = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setDimension', dimensionId: id, patch }));
         const bt = this.build(trial, pageIndex);
-        if (requireHit && !this.arrowHitsView(bt, page(trial, pageIndex), id)) return false;
+        if (requireHit && !this.arrowHitsView(bt, page(trial, pageIndex), id)) {
+          onMiss?.();
+          return false;
+        }
         const next = this.clutterInfo(trial, pageIndex, bt);
         if (next.failed > baseFailed) return false;
         if (next.score < info.score) {
@@ -924,9 +933,11 @@ export class DrawingSession {
           const hitsNow = this.arrowHitsView(this.build(doc, pageIndex), page(doc, pageIndex), d.id);
           // longer leaders last: at a large scale (or with large text) the part is wider on the sheet than the first four reach across (ADR 0261)
           const angles = hitsNow ? [d.angle, ...candidateAngles.filter((a) => Math.abs(a - d.angle) > 1e-3)] : [d.angle];
+          const missedAngles = new Set<number>();
           outer: for (const leader of [8, 14, 22, 32, 46, 64]) {
             for (const angle of angles) {
-              if (try_({ angle, leader }, d.id, hitsNow) && !info.groups.has(d.id)) break outer;
+              if (missedAngles.has(angle)) continue;
+              if (try_({ angle, leader }, d.id, hitsNow, () => missedAngles.add(angle)) && !info.groups.has(d.id)) break outer;
             }
           }
         } else if (d.kind === 'angle') {

@@ -3,7 +3,7 @@ import type { DrawingView, HoleTable, ViewFeature } from '@3db/model';
 import { datumPlanes } from './autoDimension';
 import type { LengthUnit, CalloutStyle } from '@3db/model';
 import { DIM_TEXT, cosmeticThreadText, formatNumber, holeNote, holeSignature, lengthNumber, threadedHoleText, threadSignature, toleranceText } from './dimension';
-import { clipToCircle } from './geometry';
+import { clipToBand, clipToCircle, clipToOutline } from './geometry';
 import { toSheet, type PlacedView } from './layout';
 import type { SceneItem } from './scene';
 import { sheetMetrics, type Rect } from './sheet';
@@ -29,10 +29,10 @@ export function centreItems(view: DrawingView, features: readonly ViewFeature[],
   if (!showsCentre(view)) return [];
   const ext = CENTRE_OVERSHOOT / placed.scale;
   const halves: [number, number, number, number][] = [];
-  // Concentric whole circles share one centre cross sized to the largest circle at that centre (ISO 128-24, ADR 0262 rule L2).
+  // Concentric whole circles, end-on cones and spheres share one centre cross sized to the largest radius at that centre (ISO 128-24, ADR 0262 rule L2).
   const circlesByCentre: { cx: number; cy: number; radius: number }[] = [];
   for (const f of features) {
-    if (f.type !== 'circle' || !f.full) continue;
+    if (!((f.type === 'circle' && f.full) || f.type === 'centre')) continue;
     const prev = circlesByCentre.find((c) => Math.hypot(c.cx - f.centre[0], c.cy - f.centre[1]) <= 1e-2);
     if (!prev) {
       circlesByCentre.push({ cx: f.centre[0], cy: f.centre[1], radius: f.radius });
@@ -87,10 +87,14 @@ export function centreItems(view: DrawingView, features: readonly ViewFeature[],
     const my = (fy + ty) / 2;
     halves.push([mx, my, tx + a.u[0] * ext, ty + a.u[1] * ext], [mx, my, fx - a.u[0] * ext, fy - a.u[1] * ext]);
   }
+  const brk = placed.break;
+  const clipPiece = (line: readonly number[]): readonly (readonly number[])[] => {
+    const first = view.kind === 'detail' ? clipToCircle(line, view.centre, view.radius) : view.kind === 'crop' ? clipToOutline(line, view.outline) : [line];
+    return brk ? first.flatMap((p) => clipToBand(p, brk.axis, brk.from, brk.to)) : first;
+  };
   const out: SceneItem[] = [];
   for (const h of halves) {
-    const pieces = view.kind === 'detail' ? clipToCircle(h, view.centre, view.radius) : [h];
-    for (const piece of pieces) {
+    for (const piece of clipPiece(h)) {
       const pts: number[] = [];
       for (let i = 0; i < piece.length; i += 2) pts.push(...toSheet(placed, piece[i]!, piece[i + 1]!));
       out.push({ kind: 'polyline', points: pts, style: 'center' });
@@ -126,7 +130,9 @@ export function threadItems(view: DrawingView, features: readonly ViewFeature[],
       const a = Math.PI / 2 + ((3 * Math.PI) / 2) * (i / 54);
       arc.push(f.centre[0] + r * Math.cos(a), f.centre[1] + r * Math.sin(a));
     }
-    const pieces = view.kind === 'detail' ? clipToCircle(arc, view.centre, view.radius) : [arc];
+    const brk = placed.break;
+    const first = view.kind === 'detail' ? clipToCircle(arc, view.centre, view.radius) : view.kind === 'crop' ? clipToOutline(arc, view.outline) : [arc];
+    const pieces = brk ? first.flatMap((p) => clipToBand(p, brk.axis, brk.from, brk.to)) : first;
     for (const piece of pieces) {
       const pts: number[] = [];
       for (let i = 0; i < piece.length; i += 2) pts.push(...toSheet(placed, piece[i]!, piece[i + 1]!));

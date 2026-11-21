@@ -20,7 +20,7 @@ export type P2 = [number, number];
  * view shows, by name.
  */
 type PickFeature = { [K in ViewFeature['type']]: Omit<Extract<ViewFeature, { type: K }>, 'ref'> & { ref: DrawingRef } }[ViewFeature['type']];
-export type Pickable = Exclude<PickFeature, { type: 'axis' }> | LinePick | EdgePick | VertexPick | OutlinePick | SnapPointPick;
+export type Pickable = Exclude<PickFeature, { type: 'axis' | 'centre' }> | LinePick | EdgePick | VertexPick | OutlinePick | SnapPointPick;
 export type SnapPointPick = VertexPick & { source: EdgePick | OutlinePick | Extract<PickFeature, { type: 'circle' }>; snap: 'midpoint' | 'quadrant' | 'endpoint' };
 export const sourceOfPick = (p: Pickable): Pickable => p.type === 'vertex' && 'source' in p ? (p as SnapPointPick).source : p;
 
@@ -188,7 +188,7 @@ export function featureAt(lines: ViewLines | null | undefined, features: readonl
     }
     if (v) return v.f;
   }
-  const pickable: Pickable[] = [...features.filter((f): f is Exclude<PickFeature, { type: 'axis' }> => f.type !== 'axis'), ...(seen?.circles ?? [])];
+  const pickable: Pickable[] = [...features.filter((f): f is Exclude<PickFeature, { type: 'axis' | 'centre' }> => f.type !== 'axis' && f.type !== 'centre'), ...(seen?.circles ?? [])];
   let best: { f: Pickable; d: number } | null = null;
   const offer = (f: Pickable, d: number) => {
     if (d > tol) return;

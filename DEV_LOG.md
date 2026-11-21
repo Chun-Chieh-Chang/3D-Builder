@@ -1,5 +1,24 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-21（晚間）— 3D→2D 自動出圖加速（`5.3×`）＋ 中心線與同類遺漏全面修復
+
+- **效能瓶頸剖析與加速（`sheet: 'auto'` `120.4s → 22.8s`、`A2` `33.4s → 9.53s`）**：
+  - **實測根因 (RCA)**：剖析 `R1-9035.3dbx` 執行 `drawing_create({ sheet: 'auto' })`（總耗時 `120.4 s`）發現 HLR 投影僅佔 `6.5 s`（5.4%，11 次 cache miss），真正瓶頸是 `steerLeaders()`（`105.5 s`，87.7%）重複呼叫 `clutterOf()`（無 AABB 預過濾、內層配置線段陣列）與 `arrowHitsView()`（未早停、重複測試未命中角度）。
+  - **優化**：
+    1. `packages/drawing/src/overlap.ts`：`clutterOf()` 單次預計算每條折線 AABB、`viewBoxes` 與 `viewLinesByOwner`，加入零配置 `crossesBox` / `properCrossRaw` / `polylinesCross` 與視圖框快速排斥（結果與原演算法完全等價）。
+    2. `apps/mcp/src/drawingSession.ts`：`arrowHitsView()` 改平方距離＋線段 AABB 過濾＋命中即 `break`；`steerLeaders()` 記錄已未命中之候選角度於後續 `leader` 長度直接跳過。
+- **3D→2D 中心線與同類遺漏全面盤點與修復（5 大類）**：
+  1. **截斷／斜切／交叉圓柱漏中心線**（`packages/regen/src/drawingDimensions.ts`）：單一圓柱面端面被切斷（`ends.length !== 2`，如 `diamond-pin` 主軸 `sketch1.l7`、`R1-9035` 主體 `skBody_l5`）或兩端皆非整圓邊但面有效包角 $\Delta\theta = \text{area}/(r\cdot L) \ge \pi$（排除 90° 轉角圓角）時，側視回退頂點軸向跨度輸出 `axis`；包角 $\ge 1.5\pi$ 時正視標為 `full` 整圓。
+  2. **圓錐面（拔模凸台／拔模孔／鑽尖錐／開槽拆分錐）漏中心線與中心記號**（`packages/regen/src/drawingDimensions.ts`、`packages/model/src/drawing.ts`、`packages/drawing/src/pick.ts`、`apps/web/src/components/DimensionPanel.tsx`）：比照圓柱新增 `coaxialConeKey`／`coneSpans`／`splitConeSurface`，側視輸出 `axis`（補齊 `sds-plus-bit` 拆分 45° 錐與 `R1-9035` 拔模圓管），正視新增 `ViewFeature` 型別 `type: 'centre'` 繪出中心十字且不干擾 `Ø` 自動標註與互動選取。
+  3. **球面（半球／球頭／球窩）漏中心記號**（`packages/regen/src/drawingDimensions.ts`）：面積 $\ge \pi r^2$（排除 1/8 球角圓角）輸出 `type: 'centre'`。
+  4. **局部放大圖（`detail`）與裁切視圖（`crop`）完全漏中心線與螺紋線**（`packages/drawing/src/scene.ts`、`packages/drawing/src/annotation.ts`）：`buildSceneIn()` 對 `detail`/`crop`/`sectionLocal` 向上回溯繼承母視圖 `features`；`centreItems()` 與 `threadItems()` 補齊 `crop` 視圖 `clipToOutline` 裁切。
+  5. **斷裂視圖（`placed.break`）中心線與螺紋線貫穿斷裂空白帶**（`packages/drawing/src/annotation.ts`）：補齊 `clipToBand` 裁切。
+- **驗證結果**：
+  - `tests/phase5/drawing-dimension-content.test.ts`：**17/17 通過**（新增 2 項覆蓋上述 5 類修復與 90° 轉角圓角不誤加）。
+  - `tests/phase5/drawing-annotations.test.ts`（14/14）、`drawing-dimension-modes.test.ts`（30/30）、`apps/mcp/test/drawing-clearance.test.ts`（4/4）、`drawing-details.test.ts`（5/5）、`drawing.test.ts`（4/4）：全數通過。
+  - 實機零件盤點：`diamond-pin` 與 `sds-plus-bit` 漏中心線歸 `0`；`R1-9035`（`A2`）耗時 **`33.4s → 9.53s`**、`clutter` **`8 → 7`**、`overlaps: 0`、`layout.pass: true`；`R1-9035`（`auto`）耗時 **`120.4s → 22.8s`**、`clutter: 0`、`layout.pass: true`。
+  - `npm run typecheck`、`lint:rules`、`lint:deps`、`lint:repo` 全數通過。
+
 ## 2026-11-21（傍晚）— 3D→2D 拔模斜角合併標註（`N×θ`，`R1-9035` 雜亂 `75 → 8`、耗時 `162.6s → 33.4s`）
 
 - **問題與根因 (RCA)**：射出／鑄造件含多組相同 `0.5°`–`5°` 拔模平面時，`planDrawingDimensions()` 為每一面各產出一組獨立 `angle` 弧標註，導致大量重複 `89.5°/90.5°` 擠壓重疊並拖慢 `steerLeaders()`。

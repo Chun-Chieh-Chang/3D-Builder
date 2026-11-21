@@ -274,7 +274,7 @@ describe('fuzz: 200 random picks, kinds and places (0 throws, each answer is a d
   it('holds', () => {
     let seed = 175;
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    const pool: Pickable[] = [...V.seen.vertices, ...V.seen.edges, ...V.features.filter((f): f is Exclude<ViewFeature, { type: 'axis' }> => f.type !== 'axis')];
+    const pool: Pickable[] = [...V.seen.vertices, ...V.seen.edges, ...V.features.filter((f): f is Exclude<ViewFeature, { type: 'axis' | 'centre' }> => f.type !== 'axis' && f.type !== 'centre')];
     expect(pool.length).toBeGreaterThan(10);
     let made = 0;
     for (let k = 0; k < 200; k++) {

@@ -341,6 +341,21 @@ function coaxialCylinderKey(g: Extract<NonNullable<Topology['faces'][number]['ge
   return `cyl|${g.convex ? 1 : 0}|${q(g.radius, 1e4)}|${ax.map((c) => q(c)).join(',')}|${foot.map((c) => q(c, 100)).join(',')}`;
 }
 
+function coaxialConeKey(g: Extract<NonNullable<Topology['faces'][number]['geometry']>, { type: 'cone' }>): string {
+  const len = Math.hypot(g.axis[0], g.axis[1], g.axis[2]) || 1;
+  let ax: V3 = [g.axis[0] / len, g.axis[1] / len, g.axis[2] / len];
+  for (const c of ax) {
+    if (Math.abs(c) > 1e-4) {
+      if (c < 0) ax = [-ax[0], -ax[1], -ax[2]];
+      break;
+    }
+  }
+  const t = dot(g.apex, ax);
+  const foot: V3 = [g.apex[0] - t * ax[0], g.apex[1] - t * ax[1], g.apex[2] - t * ax[2]];
+  const q = (v: number, s = 1e3) => Math.round(v * s);
+  return `cone|${g.convex ? 1 : 0}|${q(Math.abs(g.halfAngle), 1e4)}|${ax.map((c) => q(c)).join(',')}|${foot.map((c) => q(c, 100)).join(',')}`;
+}
+
 function coaxialTorusKey(g: Extract<NonNullable<Topology['faces'][number]['geometry']>, { type: 'torus' }>): string {
   const len = Math.hypot(g.axis[0], g.axis[1], g.axis[2]) || 1;
   let ax: V3 = [g.axis[0] / len, g.axis[1] / len, g.axis[2] / len];
@@ -392,6 +407,58 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
     const k = coaxialCylinderKey(g);
     cylGroups.set(k, [...(cylGroups.get(k) ?? []), { face: i, tMin, tMax }]);
   });
+  // Coaxial cones (e.g. drafted bosses/ports or chamfered shafts split by slots/ribs) share one surface key and axial extent.
+  const coneSpans = new Map<number, { tMin: number; tMax: number; rAvg: number; rMax: number; wrap: number }>();
+  const coneGroups = new Map<string, { face: number; tMin: number; tMax: number; wrap: number }[]>();
+  topology.faces.forEach((f, i) => {
+    const g = f.geometry;
+    if (!g || !faceAllowed(i) || !(f.area >= MIN_DIMENSION_FACE_AREA) || g.type !== 'cone') return;
+    let tMin = Infinity;
+    let tMax = -Infinity;
+    for (const e of topology.edges) {
+      if (!e.faces.includes(i)) continue;
+      for (const vi of e.vertices) {
+        const vp = topology.vertices[vi]?.point;
+        if (!vp) continue;
+        const t = dot([vp[0] - g.apex[0], vp[1] - g.apex[1], vp[2] - g.apex[2]], g.axis);
+        if (t < tMin) tMin = t;
+        if (t > tMax) tMax = t;
+      }
+    }
+    if (!(tMax > tMin)) {
+      const t = dot([f.center[0] - g.apex[0], f.center[1] - g.apex[1], f.center[2] - g.apex[2]], g.axis);
+      tMin = t;
+      tMax = t;
+    }
+    const tanA = Math.abs(Math.tan(g.halfAngle));
+    const cosA = Math.abs(Math.cos(g.halfAngle));
+    const r0 = Math.abs(tMin) * tanA;
+    const r1 = Math.abs(tMax) * tanA;
+    const rMax = Math.max(r0, r1);
+    const rAvg = (r0 + r1) / 2;
+    const axial = tMax - tMin;
+    const wrap = axial > 1e-6 && rAvg > 1e-6 ? (f.area * cosA) / (rAvg * axial) : 0;
+    coneSpans.set(i, { tMin, tMax, rAvg, rMax, wrap });
+    const k = coaxialConeKey(g);
+    coneGroups.set(k, [...(coneGroups.get(k) ?? []), { face: i, tMin, tMax, wrap }]);
+  });
+  const splitConeSurface = new Map<number, string>();
+  for (const [k, members] of coneGroups) {
+    if (members.length < 2) continue;
+    const clusters: { tMin: number; tMax: number; wrap: number; faces: number[] }[] = [];
+    for (const m of [...members].sort((a, b) => a.tMin - b.tMin)) {
+      const hit = clusters.find((c) => Math.min(c.tMax, m.tMax) > Math.max(c.tMin, m.tMin) + 1e-3);
+      if (hit) {
+        hit.tMin = Math.min(hit.tMin, m.tMin);
+        hit.tMax = Math.max(hit.tMax, m.tMax);
+        hit.wrap += m.wrap;
+        hit.faces.push(m.face);
+      } else clusters.push({ tMin: m.tMin, tMax: m.tMax, wrap: m.wrap, faces: [m.face] });
+    }
+    clusters.forEach((c, ci) => {
+      if (c.faces.length >= 2 && c.wrap >= Math.PI - 1e-2) for (const fi of c.faces) splitConeSurface.set(fi, `${k}#${ci}`);
+    });
+  }
   // Faces on the same torus ring (same convexity, minor/major radii, axis, and center within 1e-2 mm) share one surface key (rule C1).
   const torusSurface = new Map<number, string>();
   const torusClusters: { convex: boolean; minor: number; major: number; ax: V3; center: V3; key: string }[] = [];
@@ -456,7 +523,9 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
       const splitSurf = splitCylinderSurface.get(i);
       const singleFull = (longest.get(i) ?? 0) >= 2 * Math.PI * g.radius * (1 - 1e-3);
       const splitCylinder = splitSurf !== undefined;
-      const full = singleFull || splitCylinder;
+      const cSpan = cylSpans.get(i);
+      const cylWrap = cSpan && cSpan[1] - cSpan[0] > 1e-3 && g.radius > 1e-6 ? f.area / (g.radius * (cSpan[1] - cSpan[0])) : 0;
+      const full = singleFull || splitCylinder || cylWrap >= 1.5 * Math.PI;
       const hole = singleFull ? holeInfo(topology, i) : null;
       const faceName = names.faces[i];
       const ct = threadOnFace(topology, names, i, cosmeticThreads);
@@ -475,30 +544,20 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
         outward: singleFull ? 45 : arcAngle,
       });
     } else if (g.type === 'cylinder' && Math.abs(dot(g.axis, axes.dir)) < 1e-6) {
-      // a whole cylinder (or a cylinder split by slots into coaxial pieces) seen from the side: its axis from end to end (rule L1)
+      // a whole cylinder (including one with trimmed/oblique ends or split by slots into coaxial pieces) seen from the side: its axis from end to end (rule L1)
       const singleFull = (longest.get(i) ?? 0) >= 2 * Math.PI * g.radius * (1 - 1e-3);
       const splitCylinder = splitCylinderSurface.has(i);
-      if (singleFull || splitCylinder) {
+      const cSpan = cylSpans.get(i);
+      const cylWrap = cSpan && cSpan[1] - cSpan[0] > 1e-3 && g.radius > 1e-6 ? f.area / (g.radius * (cSpan[1] - cSpan[0])) : 0;
+      if (singleFull || splitCylinder || cylWrap >= Math.PI - 1e-2) {
         const ends = cylinderEnds(topology, i);
         const at = (p: readonly [number, number, number]): [number, number] => [dot(p, right), dot(p, up)];
         let span: [[number, number], [number, number]] | null = ends.length === 2 ? [at(ends[0]!.center), at(ends[1]!.center)] : null;
-        if (!span && splitCylinder) {
-          const ts: number[] = [];
-          for (const e of topology.edges) {
-            if (!e.faces.includes(i)) continue;
-            for (const vi of e.vertices) {
-              const vp = topology.vertices[vi]?.point;
-              if (vp) ts.push(dot([vp[0] - g.origin[0], vp[1] - g.origin[1], vp[2] - g.origin[2]], g.axis));
-            }
-          }
-          if (ts.length >= 2) {
-            const t0 = Math.min(...ts), t1 = Math.max(...ts);
-            if (t1 - t0 > 1e-3) {
-              const p0: V3 = [g.origin[0] + t0 * g.axis[0], g.origin[1] + t0 * g.axis[1], g.origin[2] + t0 * g.axis[2]];
-              const p1: V3 = [g.origin[0] + t1 * g.axis[0], g.origin[1] + t1 * g.axis[1], g.origin[2] + t1 * g.axis[2]];
-              span = [at(p0), at(p1)];
-            }
-          }
+        if (!span && cSpan && cSpan[1] - cSpan[0] > 1e-3) {
+          const [t0, t1] = cSpan;
+          const p0: V3 = [g.origin[0] + t0 * g.axis[0], g.origin[1] + t0 * g.axis[1], g.origin[2] + t0 * g.axis[2]];
+          const p1: V3 = [g.origin[0] + t1 * g.axis[0], g.origin[1] + t1 * g.axis[1], g.origin[2] + t1 * g.axis[2]];
+          span = [at(p0), at(p1)];
         }
         if (span) {
           const thread = threadOnFace(topology, names, i, cosmeticThreads);
@@ -522,7 +581,24 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
             out.push({ type: 'slant', ref: ref(), at: [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2], dir: [(to[0] - from[0]) / l, (to[1] - from[1]) / l], area: f.area, cone: { side, from, to, axial, radial, ...(setback !== undefined ? { setback } : {}) } });
           }
         }
+      } else {
+        // Pointed cones (drill tips), drafted bosses/ports, or coaxial cones split by slots/ribs still need their centreline (ISO 128-24)
+        const cs = coneSpans.get(i);
+        if (cs && cs.tMax - cs.tMin > 1e-3 && (ends.length === 1 || splitConeSurface.has(i) || cs.wrap >= Math.PI - 1e-2)) {
+          const at = (p: readonly [number, number, number]): [number, number] => [dot(p, right), dot(p, up)];
+          const p0: V3 = [g.apex[0] + cs.tMin * g.axis[0], g.apex[1] + cs.tMin * g.axis[1], g.apex[2] + cs.tMin * g.axis[2]];
+          const p1: V3 = [g.apex[0] + cs.tMax * g.axis[0], g.apex[1] + cs.tMax * g.axis[1], g.apex[2] + cs.tMax * g.axis[2]];
+          out.push({ type: 'axis', ref: ref(), from: at(p0), to: at(p1), radius: cs.rAvg });
+        }
       }
+    } else if (g.type === 'cone' && parallel(g.axis, axes.dir)) {
+      const cs = coneSpans.get(i);
+      const ends = coneEnds(topology, i);
+      if (cs && cs.rMax > 1e-3 && (ends.length >= 1 || splitConeSurface.has(i) || cs.wrap >= 1.5 * Math.PI)) {
+        out.push({ type: 'centre', ref: ref(), centre: [dot(g.apex, right), dot(g.apex, up)], radius: cs.rMax });
+      }
+    } else if (g.type === 'sphere' && g.radius > 1e-3 && f.area >= Math.PI * g.radius * g.radius) {
+      out.push({ type: 'centre', ref: ref(), centre: [dot(g.center, right), dot(g.center, up)], radius: g.radius });
     } else if (g.type === 'torus' && Math.abs(dot(g.axis, axes.dir)) < 1e-6 && g.major > 1e-9) {
       // a fillet or a round seen in its true shape (E1a): its axis lies in the sheet, so the view cuts its tube and the cut is the arc. The same condition
       // `circleCentre` uses to accept one — the two have to agree or a feature would be offered and then refused.
