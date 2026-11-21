@@ -1,5 +1,15 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-21（微調 2・3）— `steerLeaders` 放大比例容差／詳圖可達性剪枝與 CNS 3 規格核對
+
+- **`steerLeaders` 與 `arrowHitsView` 調整（`apps/mcp/src/drawingSession.ts`）**：
+  1. `arrowHitsView()` 預設容差改為依視圖比例線性放寬並設上限：`Math.max(0.2, Math.min(0.6, 0.03 * ratio(v.scale ?? pg.sheet.scale)))`（`1:1` 維持 `0.2 mm`，`20:1` 放寬至 `0.6 mm`，相當於 3D 空間 `0.03 mm` 以內，涵蓋環面/圓角 HLR 離散偏差）。
+  2. `steerLeaders()` 對 `detail` 視圖若圓形 handle 整圓皆在詳圖圓外或圓內（`Math.abs(dist - radius) > rSheet + 0.5`）直接跳過不可達角度迴圈，並將 `fineAngles` 去重（`a % 15 !== 0`）避免與 `candidateAngles` 重複運算。
+  3. 實測 `R1-8032_Rev08_2D_完整修訂.3dbd`：未命中箭頭由 **17 處降至 9 處**（第 1 頁 `11 → 4`、第 2 頁 `6 → 5`），剩餘 5 處皆為詳圖截圓外之半徑。
+- **CNS 3（B1001）線寬與最小字高核對**：
+  1. 線寬：`DRAWING_PROFILES.CNS` 之 `A0/A1`（`0.7 / 0.5 / 0.25 mm`）與 `A3/A4`（`0.5 / 0.35 / 0.18 mm`）與 CNS 3 吻合；`A2` 目前採 `0.5 / 0.35 / 0.18 mm`（CNS 3 建議 `0.5 / 0.35 / 0.25` 或窄級）。
+  2. 最小字高：CNS 3 規定 `A0` 標題 `7 mm`、一般註解中文 `5 mm` / 英文數字 `3.5 mm`；`A1–A4` 標題 `5 mm`、一般註解中文 `3.5 mm` / 英文數字 `2.5 mm`。目前系統尺度最小字高 `3.5 mm` 符合 `A1–A4` 中英文與 `A0` 英文數字下限。
+
 ## 2026-11-21（主線 A）— 打通 `push_turn` 夾具 4 件交叉孔與曲面交界圓柱孔（`P03`/`P05`/`P07`/`P09`）
 
 - **問題現象與根因 (RCA)**：

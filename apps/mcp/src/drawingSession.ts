@@ -822,7 +822,7 @@ export class DrawingSession {
    * Whether every arrowhead of dimension `dimId` on page `pageIndex` lands within `tol` mm of its view's drawn geometry (and inside the detail circle when the view
    * is a detail view, ADR 0262 rules D6 and D7).
    */
-  private arrowHitsView(built: Built, pg: DrawingPage, dimId: Id, tol = 0.2, allowHidden = false): boolean {
+  private arrowHitsView(built: Built, pg: DrawingPage, dimId: Id, tol?: number, allowHidden = false): boolean {
     const dim = pg.dimensions.find((x) => x.id === dimId);
     if (!dim) return false;
     const outcome = built.outcomes.get(dimId);
@@ -830,6 +830,7 @@ export class DrawingSession {
     const v = pg.views.find((x) => x.id === dim.view);
     const placed = built.placed.get(dim.view);
     if (!v || !placed) return false;
+    const effTol = tol ?? Math.max(0.2, Math.min(0.6, 0.03 * ratio(v.scale ?? pg.sheet.scale)));
     const tips: [number, number][] = [];
     const polys: number[][] = [];
     for (const item of built.scene.items) {
@@ -852,7 +853,7 @@ export class DrawingSession {
           if (d < best) best = d;
         }
       }
-      if (best > tol) return false;
+      if (best > effTol) return false;
     }
     return true;
   }
@@ -867,10 +868,17 @@ export class DrawingSession {
     const b0 = this.build(doc, pageIndex);
     const pg0 = page(doc, pageIndex);
     const candidateAngles = [45, 135, 225, 315, 30, 60, 120, 150, 210, 240, 300, 330, 15, 75, 105, 165, 195, 255, 285, 345, 0, 90, 180, 270];
-    const fineAngles = Array.from({ length: 72 }, (_, i) => i * 5);
+    const fineAngles = Array.from({ length: 72 }, (_, i) => i * 5).filter((a) => a % 15 !== 0);
     for (const d of pg0.dimensions) {
       if (d.kind !== 'diameter' && d.kind !== 'radius' && d.kind !== 'chamfer') continue;
       if (this.arrowHitsView(b0, pg0, d.id)) continue;
+      const v0 = pg0.views.find((x) => x.id === d.view);
+      const placed0 = b0.placed.get(d.view);
+      const out0 = b0.outcomes.get(d.id);
+      if (v0?.kind === 'detail' && placed0 && out0 && !('error' in out0) && out0.handle?.kind === 'round') {
+        const dist = Math.hypot(out0.handle.centre[0] - placed0.at[0], out0.handle.centre[1] - placed0.at[1]);
+        if (Math.abs(dist - out0.handle.radius) > placed0.w / 2 + 0.5) continue;
+      }
       for (const angle of [d.angle, ...candidateAngles, ...fineAngles]) {
         try {
           const trial = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setDimension', dimensionId: d.id, patch: { angle } }));
