@@ -1,7 +1,7 @@
 import { projectionReferenceLines } from './projectionRefs';
 import { bendTableItems } from './bendTable';
 import { getLocale, t, withLocale } from '@3db/i18n';
-import { axesOf, baseDimStyle, DIM_STYLE_DEFAULT, hatchStyleOf, displayOf, isShaded, lineGroupOf, page, profileOf, DRAWING_PROFILES, type DrawingProfile, type LineGroup, resolveDimStyle, resolveTitleStyle, sectionEndDirections, standardOf, type HatchStyle, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
+import { axesOf, baseDimStyle, DIM_STYLE_DEFAULT, hatchStyleOf, displayOf, isCorner, isDerived, isShaded, lineGroupOf, page, profileOf, DRAWING_PROFILES, type DrawingProfile, type LineGroup, resolveDimStyle, resolveTitleStyle, sectionEndDirections, standardOf, type HatchStyle, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
 import type { ShadeImage } from './shade';
 import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
 import { annotationItems } from './gdt';
@@ -314,9 +314,10 @@ function sectionItems(v: Pick<SectionDrawingView, 'line' | 'label' | 'flip'>, pa
 export const viewCaptionTemplate = (v: DrawingView): string => v.kind === 'detail' ? '<LABEL> (<SCALE>)' : v.kind === 'section' || v.kind === 'sectionLocal' || v.kind === 'auxiliary' ? '<LABEL>-<LABEL>' : '<NAME>';
 export function viewCaptionItem(v: DrawingView, own: PlacedView, scale: Scale, sheetScale?: Scale): SceneText {
   const tokens: Record<string, string> = { NAME: v.name, LABEL: 'label' in v ? v.label : v.name, SCALE: scaleText(scale) };
-  // a view drawn at a scale other than the sheet's says so (ISO 5455, ADR 0261 rule V5); a caption the user wrote is left as written
+  // Isometric captions omit the automatic scale suffix. Custom captions can still use <SCALE>.
+  const isometric = v.kind === 'projected' ? isCorner(v.side) : !isDerived(v) && v.direction === 'isometric';
   let template = v.caption?.text ?? viewCaptionTemplate(v);
-  if (v.caption?.text === undefined && sheetScale && Math.abs(ratio(scale) - ratio(sheetScale)) > 1e-9 && !template.includes('<SCALE>')) template += ' (<SCALE>)';
+  if (!isometric && v.caption?.text === undefined && sheetScale && Math.abs(ratio(scale) - ratio(sheetScale)) > 1e-9 && !template.includes('<SCALE>')) template += ' (<SCALE>)';
   const text = template.replace(/<(NAME|LABEL|SCALE)>/g, (_, token: string) => tokens[token]!);
   const offset = v.caption?.offset ?? [0, 0];
   return { kind: 'text', viewCaption: v.id, at: [own.at[0] + offset[0], own.at[1] - own.h / 2 - 8 + offset[1]], text, height: v.caption?.height ?? 5, anchor: 'center' };

@@ -21,6 +21,15 @@ describe('the scale in a view caption', () => {
     expect(caption(model(), [1, 2], [1, 1])).toBe('Front (1:2)');
   });
 
+  it('omits the automatic scale for model and corner-projected isometric views', () => {
+    const iso = model({ direction: 'isometric', name: 'Isometric' });
+    const projected: DrawingView = { id: 'p', kind: 'projected', parent: 'f', side: 'upRight', name: 'Corner', at: [100, 100] };
+    expect(caption(iso, [29, 10], [1, 1])).toBe('Isometric');
+    expect(caption(projected, [29, 10], [1, 1])).toBe('Corner');
+    expect(caption({ ...projected, side: 'right' as const }, [29, 10], [1, 1])).toBe('Corner (29:10)');
+    expect(caption({ ...iso, caption: { text: '<NAME> (<SCALE>)' } }, [29, 10], [1, 1])).toBe('Isometric (29:10)');
+  });
+
   it('a section at another scale: A-A (5:1)', () => {
     const section = model({ kind: 'section', parent: 'p', line: [[0, 0], [1, 0]], label: 'A' });
     expect(caption(section, [5, 1], [1, 1])).toBe('A-A (5:1)');

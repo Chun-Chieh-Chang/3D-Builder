@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { normalizedViewAxes, rightOf, sheetUp, type DrawingView, type HoleTable, type ViewAxes, type ViewFeature } from '@3db/model';
+import { displayOf, isShaded, normalizedViewAxes, rightOf, sheetUp, type DrawingView, type HoleTable, type ViewAxes, type ViewFeature } from '@3db/model';
 import { datumPlanes } from './autoDimension';
 import type { LengthUnit, CalloutStyle } from '@3db/model';
 import { DIM_TEXT, cosmeticThreadText, formatNumber, holeNote, holeSignature, lengthNumber, threadedHoleText, threadSignature, toleranceText } from './dimension';
@@ -172,6 +172,7 @@ export function threadItems(view: DrawingView, features: readonly ViewFeature[],
       out.push({ kind: 'polyline', points: pts, style });
     }
   };
+  const showSideThreads = !isShaded(displayOf(view));
   const normAxes = axes ? normalizedViewAxes(axes) : null;
   const right = normAxes ? rightOf(normAxes) : null;
   const up = normAxes ? sheetUp(normAxes) : null;
@@ -191,7 +192,7 @@ export function threadItems(view: DrawingView, features: readonly ViewFeature[],
         arc.push(f.centre[0] + r * Math.cos(a), f.centre[1] + r * Math.sin(a));
       }
       emit(arc, 'thin');
-    } else if (f.type === 'axis' && (f.thread || f.hole?.thread)) {
+    } else if (showSideThreads && f.type === 'axis' && (f.thread || f.hole?.thread)) {
       let r = 0;
       if (f.thread) {
         r = f.thread.threadType === 'external' ? f.thread.minorDiameter / 2 : f.thread.majorDiameter / 2;

@@ -110,6 +110,24 @@ it('carries tapped-hole classes to side views and keeps different classes separa
   const rows = holeRows(features, {}, 'mm', 'symbols');
   expect(rows.map(row => row.size).sort()).toEqual(['M6×1 - 5H ↧ 12 (TAP DRILL Ø5)', 'M6×1 - 6H ↧ 12 (TAP DRILL Ø5)']);
   expect(viewFeatures(body.topology, body.names, viewVectors('top'), undefined, holeFeatures(part)).filter(f => f.type === 'axis' && f.hole?.thread)).toHaveLength(2);
+  const doc = applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [
+    { id: 'v', name: 'Side', source: 'part.3dbx', direction: 'top', at: [100, 130], centreMarks: true },
+  ] });
+  const axes = axesOf(page(doc).views, page(doc).sheet.projection, page(doc).views[0]!)!;
+  const sideFeatures = viewFeatures(body.topology, body.names, axes, undefined, holeFeatures(part));
+  const plainFeatures = sideFeatures.map(f => f.type === 'axis' && f.hole?.thread ? { ...f, hole: { ...f.hole, thread: undefined } } : f);
+  const projection = projectDrawingView(kernel, [{ shape: body.shape, pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] }, mirrored: false }], axes);
+  const lines = new Map([['v', projection]]);
+  for (const display of ['hiddenRemoved', 'shadedEdges', 'shaded'] as const) {
+    const drawing = applyDrawingCommand(doc, { type: 'setView', viewId: 'v', patch: { display } });
+    const items = buildScene(drawing, lines, undefined, new Map([['v', sideFeatures]])).scene.items;
+    const plainItems = buildScene(drawing, lines, undefined, new Map([['v', plainFeatures]])).scene.items;
+    if (display === 'hiddenRemoved') {
+      expect(items).toHaveLength(plainItems.length + 4);
+    } else {
+      expect(items).toEqual(plainItems);
+    }
+  }
   const h = part.features.find(f => f.id === 'h1')!;
   if (h.type !== 'hole') throw new Error('hole missing');
   expect(() => applyCommand(part, { type: 'setHole', featureId: 'h1', hole: { ...h, toleranceClass: '6g' } })).toThrow();
