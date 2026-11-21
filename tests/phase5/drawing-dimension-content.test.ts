@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { viewVectors, type Dimension, type ElementFacts, type ViewFeature } from '@3db/model';
 import { centreItems, clutterOf, dimensionCoverage, evaluateDimension, planDrawingDimensions, type DimensionLike, type PlacedView, type ViewLines, type ViewToDimension } from '@3db/drawing';
-import { holeInfo, MIN_DIMENSION_FACE_AREA, viewFeatures } from '@3db/regen';
+import { holeInfo, MIN_DIMENSION_FACE_AREA, sketchTextPrefixes, viewFeatures } from '@3db/regen';
 import type { Topology } from '@3db/kernel';
 
 const ref = (name: string) => ({ kind: 'face' as const, name });
@@ -213,5 +213,26 @@ describe('slanted face auto-dimensioning (coverage.slants)', () => {
     const cov = dimensionCoverage(views, planned.map((p) => ({ view: p.view, ...p.draft })));
     expect(cov.slants).toEqual({ total: 1, determined: 1, missing: [] });
     expect(cov.complete).toBe(true);
+  });
+
+  it('excludes engraved sketch text stroke walls from slant features while keeping real slants', () => {
+    const doc = {
+      features: [
+        { id: 'skText', type: 'sketch' as const, name: 'skText', plane: 'xy', entities: [{ id: 'tx', type: 'text' as const, at: [0, 0] as [number, number], text: 'A', height: 3 }] },
+      ],
+    };
+    const prefixes = sketchTextPrefixes(doc as unknown as Parameters<typeof sketchTextPrefixes>[0]);
+    expect([...prefixes]).toEqual(['skText.tx#']);
+    const topo: Topology = {
+      faces: [
+        { surface: 'plane', area: 1.5, center: [0, 0, 0], normal: [1, 1, 0], geometry: { type: 'plane', origin: [0, 0, 0], normal: [0.70710678, 0.70710678, 0] } },
+        { surface: 'plane', area: 12, center: [10, 0, 0], normal: [1, 1, 0], geometry: { type: 'plane', origin: [10, 0, 0], normal: [0.70710678, 0.70710678, 0] } },
+      ],
+      edges: [],
+      vertices: [],
+    };
+    const names = { faces: ['cuText:side:skText.tx#17', 'exPlate:side:skPlate.m3'], edges: [], vertices: [] };
+    const feats = viewFeatures(topo, names, { dir: [0, 0, 1], up: [0, 1, 0] }, undefined, undefined, undefined, prefixes);
+    expect(feats.map((f) => f.ref.name)).toEqual(['exPlate:side:skPlate.m3']);
   });
 });

@@ -218,6 +218,39 @@ export function holeFeatures(doc: Pick<PartDoc, 'features'>, sources?: SourcePro
 }
 
 /**
+ * Persistent name prefixes (`<sketchId>.<textEntityId>#`) of sketch text entities in `doc` (and derived master models).
+ * Side walls extruded/cut from font strokes are engraved text geometry, not functional slanted surfaces to auto-dimension.
+ */
+export function sketchTextPrefixes(doc: Pick<PartDoc, 'features'>, sources?: SourceProvider): Set<string> {
+  const out = new Set<string>();
+  for (const f of doc.features) {
+    if (f.type === 'derivedBody') {
+      const master = sources?.get(f.source);
+      if (master) for (const p of sketchTextPrefixes(master.doc, master.sources)) out.add(p);
+    } else if (f.type === 'sketch') {
+      for (const e of f.entities) if (e.type === 'text') out.add(`${f.id}.${e.id}#`);
+    }
+  }
+  return out;
+}
+
+export function sketchesTextPrefixes(sketches: RebuildResult['sketches']): Set<string> {
+  const out = new Set<string>();
+  for (const [id, value] of sketches) {
+    for (const e of value.sketch.entities) if (e.type === 'text') out.add(`${id}.${e.id}#`);
+  }
+  return out;
+}
+
+function isSketchTextFace(name: string, textPrefixes: ReadonlySet<string> | undefined): boolean {
+  if (!textPrefixes || textPrefixes.size === 0) return false;
+  const m = /:side:(.+)$/.exec(name);
+  if (!m) return false;
+  for (const p of textPrefixes) if (m[1]!.startsWith(p)) return true;
+  return false;
+}
+
+/**
  * What the feature that made a hole adds to what the shape says (`<feature>:side:<sketch>.<point>.wall` is the wall of one of its holes): the thread of a tapped
  * hole, and no countersink for the cone of anything but a countersunk hole (it is the chamfer of a dowel hole).
  */
@@ -325,7 +358,7 @@ function coaxialTorusKey(g: Extract<NonNullable<Topology['faces'][number]['geome
  * The elements of the part that a view looking from `axes` sees edge-on or as a circle, in the view's coordinates (x to its right, y up): the planes square to the
  * view's x or y, and the cylinders along its direction. `faceAllowed` leaves out faces (those of a workpiece that is only there for reference).
  */
-export function viewFeatures(topology: Topology, names: ElementNames, axes: ViewAxes, faceAllowed: (face: number) => boolean = () => true, features?: HoleFeatures, cosmeticThreads?: readonly CosmeticThreadInfo[]): ViewFeature[] {
+export function viewFeatures(topology: Topology, names: ElementNames, axes: ViewAxes, faceAllowed: (face: number) => boolean = () => true, features?: HoleFeatures, cosmeticThreads?: readonly CosmeticThreadInfo[], textPrefixes?: ReadonlySet<string>): ViewFeature[] {
   axes = normalizedViewAxes(axes);
   const right = rightOf(axes);
   const up = sheetUp(axes);
@@ -411,7 +444,7 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
     if (g.type === 'plane' && Math.abs(dot(g.normal, axes.dir)) < 1e-6) {
       if (parallel(g.normal, right)) out.push({ type: 'plane', ref: ref(), axis: 'x', coord: dot(g.origin, right), area: f.area });
       else if (parallel(g.normal, up)) out.push({ type: 'plane', ref: ref(), axis: 'y', coord: dot(g.origin, up), area: f.area });
-      else {
+      else if (!isSketchTextFace(names.faces[i]!, textPrefixes)) {
         // edge-on but slanted: the line it is seen as runs square to its normal as seen in the view
         const n: [number, number] = [dot(g.normal, right), dot(g.normal, up)];
         const l = Math.hypot(n[0], n[1]);

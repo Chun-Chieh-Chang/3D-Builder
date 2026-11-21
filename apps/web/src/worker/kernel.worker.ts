@@ -7,7 +7,7 @@ import { bodyKey, combineMass, DATUM_PLANES, isDatumPlaneName, isShown, mirrorKe
 import { findProfiles, PlaneGcsSolver } from '@3db/sketch';
 import { COMPONENT_MESH, Kernel, isTrap, rethrowTrap, type ThicknessReport, type UndercutReport, type DraftReport, type GeometryReport, type MassProps, type MeshData, type MeshOptions, type ShapeId } from '@3db/kernel';
 import { encodeShade, flatViewLines, rasterizeShade, withoutHiddenEdges, type ShadeImage, type ViewLines } from '@3db/drawing';
-import { findEntrance, silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, drawingSketchCircles, drawingSketchFacts, placedViewFeatures, viewFeatures, viewEdges, findClearance, findInterference, flatDrawingGeometry, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
+import { findEntrance, silhouetteProjector, silhouetteItems, drawingAnchors, holeFeatures, projectDrawingView, elementFacts, drawingSketchCircles, drawingSketchFacts, placedViewFeatures, sketchesTextPrefixes, viewFeatures, viewEdges, findClearance, findInterference, flatDrawingGeometry, flatPattern, FlatError, sheetChecks, sweepClearance, measureTargets, convertEdges, intersectFaces, modelSnapItems, edgeMateGeometry, exportFaces, faceColors, intoFrame, faceEdges, faceMateGeometry, followReferences, NO_NAMES, NO_TOPOLOGY, sketchEntityRefs, ReferenceProblem, Regenerator, type ReferenceScope, solveAssemblyTree, type AssemblyResult, type AssemblySolveOptions, type BodyInfo, type FlatReport, type HoleFeatures, type RebuildResult, type SheetCheck, type SheetCheckLimits } from '@3db/regen';
 import { edgeFingerprint, faceFingerprint, vertexFingerprint } from '@3db/naming';
 import { exportAssemblyStep, placedParts, placeMesh, writeStl, type StlSource, exportPartIges, exportPartStep, portableShape, readComponentFile, stepAssemblyPlan, type StepAssemblyPlan } from '@3db/io';
 import type { SnapItem, SourcePart, SourceProvider } from '@3db/regen';
@@ -687,7 +687,7 @@ const api: KernelApi = {
           mesh = kernel.mesh(body.shape, { tolerance: 0.01, angular: 0.1 });
           edgeMeshes.set(built, mesh);
         }
-        out.push({ features: viewFeatures(body.topology, body.names, r.axes, allowed, built.holes, built.result.cosmeticThreads), edges: viewEdges(kernel, body.shape, body.topology, body.names, r.axes, allowed, mesh), sketchCircles: drawingSketchCircles(built.result.sketches) });
+        out.push({ features: viewFeatures(body.topology, body.names, r.axes, allowed, built.holes, built.result.cosmeticThreads, sketchesTextPrefixes(built.result.sketches)), edges: viewEdges(kernel, body.shape, body.topology, body.names, r.axes, allowed, mesh), sketchCircles: drawingSketchCircles(built.result.sketches) });
       } catch (e) {
         rethrowTrap(e);
         out.push({ error: e instanceof Error ? e.message : String(e) });

@@ -9,9 +9,9 @@
   4. **第四期（ADR 0263）**：品質閘門 `Q1`, `Q2`, `C5`, `C7`, `Q3`（`packages/drawing/src/qualityGate.ts`、`apps/mcp/src/drawingSession.ts`、`drawingTools.ts`）。`drawing_inspect`／`drawing_create` 回報 16 項規則之 `quality` 閘門；草稿匯出自動加蓋 `PRELIMINARY`（PDF／SVG／DXF 一致）；`drawing_export({ release: true })` 阻擋未達標圖面並列出未通過規則；單元測試＋MCP 端到端＋4/4 突變測試全紅。
 - **本輪後續已推進（待使用者核准提交與推送）**：
   - 完整 `npm run verify:ui -- --checkpoint out/ui.jsonl`：**280 / 280 PASS**（已推送 `87cc838d`）；修復 GitHub Actions `Repository integrity #309` `stepText.ts:46` `crash-no-swallow` 失敗（已推送 `b094c20d`）。
-  - **斜面（`coverage.slants`）自動標註與 `angle` 搜尋優化完成**：`autoDrawing.ts` 支援圓錐 `chamfer` 與最近結構基準面（`p.area >= f.area`）`angle` 規劃及覆蓋讀取，`drawingSession.ts` `steerLeaders` 支援 `chamfer`/`angle`（`4/8/14/22` 弧半徑）；4 黃金零件 `slants` 覆蓋率達 **100%**（`locating-plate`、`v-block` 維持 `clutter = 0`）。
+  - **斜面（`coverage.slants`）自動標註與刻字斜邊排除完成**：`autoDrawing.ts` 支援圓錐 `chamfer` 與最近結構基準面（`p.area >= f.area`）`angle` 規劃及覆蓋讀取；`drawingDimensions.ts` 新增 `sketchTextPrefixes` / `sketchesTextPrefixes` 於 `viewFeatures()` 排除草圖文字實體（`entity.type === 'text'`）之刻字筆劃斜邊（全鏈路接線至 `drawingSession.ts` 與 `kernel.worker.ts`）；4 黃金零件 `slants` 覆蓋率達 **100%**（`locating-plate`、`v-block` 維持 `clutter = 0`）。
 - **下次接手可選後續項目**：
-  1. **待使用者裁定**：`sds-plus-bit` 刻字筆劃（`cuText:side:skText.tx#*`）產生的 8 個微斜邊目前在 `view1` 造成 `41` 筆高密度雜亂——確認是否將文字雕刻特徵排除於 `viewFeatures` `slant` 覆蓋之外，或改以 `C7`「依 3D 模型」註記涵蓋；另於有 `R1-8032` `.3dbx` 的機器重測局部環面圓角 3 處引線（`3-4 = 3`）。
+  1. 於有 `R1-8032` `.3dbx` 的機器重測局部環面圓角 3 處引線（`3-4 = 3`）與高密度視圖剩餘雜亂（`R1-8032` `10/2`）。
   2. 取得 CNS 3 原文後核對第一期（ADR 0260）之線寬與最小字高表。
 
 ## 2026-11-20（傍晚）— ADR 0262 第三期（標註的佈置與內容）完成，準備進入第四期（品質閘門）

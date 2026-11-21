@@ -1,5 +1,13 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-21（續）— 排除草圖刻字筆劃斜邊（`sketchTextPrefixes` / `sketchesTextPrefixes`）
+
+- **使用者裁定**：選擇於自動出圖特徵萃取層略過草圖文字實體產生的刻字筆劃斜邊（不為文字筆劃標註角度）。
+- **實作**：
+  1. `packages/regen/src/drawingDimensions.ts`：新增 `sketchTextPrefixes(doc, sources)` 與 `sketchesTextPrefixes(sketches)`，由草圖 `entity.type === 'text'` 推出前綴 `<sketchId>.<entityId>#`；`viewFeatures()` 新增可選參數 `textPrefixes`，於 `slant` 平面分支透過 `isSketchTextFace()` 略過刻字筆劃側壁（保留真實斜面與倒角）。
+  2. 全鏈路接線：`apps/mcp/src/drawingSession.ts`（`sketchTextPrefixes(s.doc)`）與 `apps/web/src/worker/kernel.worker.ts`（`sketchesTextPrefixes(built.result.sketches)`）。
+- **驗證**：`tests/phase5/drawing-dimension-content.test.ts`（新增刻字斜邊排除單元測試，14/14 通過）、`auto-drawing-plan.test.ts`（8/8）、`drawing-clearance.test.ts`（4/4）、`typecheck`、`lint:rules`、`lint:deps`、`lint:repo` 全數通過。
+
 ## 2026-11-21 — 平面斜面基準面面積優先序與 `sds-plus-bit` 刻字斜邊分析
 
 - **改動內容**：

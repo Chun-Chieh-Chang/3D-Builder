@@ -98,7 +98,7 @@ import {
   type SectionAdvice,
 } from '@3db/drawing';
 import { readAnyDocumentFile, writeDrawingFile } from '@3db/io';
-import { drawingSketchFacts, elementFacts, holeFeatures, projectDrawingView, viewFeatures } from '@3db/regen';
+import { drawingSketchFacts, elementFacts, holeFeatures, projectDrawingView, sketchTextPrefixes, viewFeatures } from '@3db/regen';
 import { isTrap } from '@3db/kernel';
 import { AgentError, messageOf, type CadSession } from './session';
 import { renderView } from './render';
@@ -262,7 +262,7 @@ export class DrawingSession {
     const key = JSON.stringify(axes);
     const hit = this.featureCache.get(key);
     if (hit) return hit;
-    const f = viewFeatures(s.body.topology, s.body.names, axes, undefined, holeFeatures(s.doc), s.built.cosmeticThreads);
+    const f = viewFeatures(s.body.topology, s.body.names, axes, undefined, holeFeatures(s.doc), s.built.cosmeticThreads, sketchTextPrefixes(s.doc));
     this.featureCache.set(key, f);
     return f;
   }
