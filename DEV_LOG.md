@@ -1,5 +1,17 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-21（傍晚）— 3D→2D 拔模斜角合併標註（`N×θ`，`R1-9035` 雜亂 `75 → 8`、耗時 `162.6s → 33.4s`）
+
+- **問題與根因 (RCA)**：射出／鑄造件含多組相同 `0.5°`–`5°` 拔模平面時，`planDrawingDimensions()` 為每一面各產出一組獨立 `angle` 弧標註，導致大量重複 `89.5°/90.5°` 擠壓重疊並拖慢 `steerLeaders()`。
+- **實作**：
+  1. `packages/model/src/drawing.ts`：`AngleDimension` 新增可選欄位 `count?: number`。
+  2. `packages/drawing/src/dimension.ts`：`angle` 支路支援 `${count}${value}°`（如 `8×89.5°`）。
+  3. `packages/drawing/src/autoDrawing.ts`：新增 `slantAngleKey()`（限定 `≤ 5°` 拔模斜角，保留 `45°` V 槽等結構斜面各自標註）；`planDrawingDimensions()` 依同視圖同拔模角分組合併為單一 `N×θ`，`dimensionCoverage()` 同步認列 `slants` 100% 覆蓋。
+  4. `tests/phase5/drawing-dimension-content.test.ts`：新增拔模斜角分組與 `45°` 結構斜面不合併之單元測試（15/15 通過）。
+- **實測驗證**：
+  - `R1-9035.3dbx`（`A2`）：雜亂數 **`75 → 8`**（`-89.3%`，收斂為單一 `8×89.5°`）、耗時 **`162.6 s → 33.4 s`**（快 `4.9×`）、比例自動提升為 **`A2 2:1`**（`layout.pass: true`、`minClearance: 7.504 mm`）。
+  - `drawing-dimension-content.test.ts`（15/15）、`drawing-clearance.test.ts`（4/4，含 `v-block`/`diamond-pin`/`locating-plate`）、`typecheck`、`lint:rules`、`lint:deps`、`lint:repo` 全數通過。
+
 ## 2026-11-21（下午）— `part-4`（`R1-9035`）feasibility 探針突破與正向參數化建模＋自動 2D 出圖閉環
 
 - **雙階段實測**：

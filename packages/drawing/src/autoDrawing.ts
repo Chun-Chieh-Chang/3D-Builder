@@ -445,6 +445,12 @@ export interface CoverageReport {
   complete: boolean;
 }
 
+const slantAngleKey = (f: Extract<ViewFeature, { type: 'slant' }>): string | null => {
+  if (f.cone) return null;
+  const deg = Math.round((Math.asin(Math.min(1, Math.min(Math.abs(f.dir[0]), Math.abs(f.dir[1])))) * 180 / Math.PI) * 10) / 10;
+  return deg > 0 && deg <= 5 ? `a:${deg.toFixed(1)}` : null;
+};
+
 /** How far a drawing's dimensions determine the part its views see (ADR 0256): the self-check the agent reports, and what the planner closes. */
 export function dimensionCoverage(views: readonly ViewToDimension[], dimensions: readonly DimensionLike[], callouts = true): CoverageReport {
   const { nodes, mappers } = graphOf(views);
@@ -487,8 +493,21 @@ export function dimensionCoverage(views: readonly ViewToDimension[], dimensions:
       if (had) had.ok ||= ok;
       else rounds.set(f.ref.name, { name: f.ref.name, radius: r3(f.radius), kind: f.type === 'torus' ? 'fillet' : f.full ? 'hole' : 'arc', ok });
     }
+  const slantKeysGiven = new Set<string>();
+  for (const d of dimensions) {
+    if (d.kind !== 'angle' || (d.count ?? 1) <= 1) continue;
+    const f = views.find((v) => v.viewId === d.view)?.features.find((x) => x.type === 'slant' && (x.ref.name === d.a.name || x.ref.name === d.b.name));
+    const key = f?.type === 'slant' ? slantAngleKey(f) : null;
+    if (key) slantKeysGiven.add(`${d.view}|${key}`);
+  }
   const slants = new Map<string, boolean>();
-  for (const v of views) for (const f of v.features) if (f.type === 'slant') slants.set(f.ref.name, (slants.get(f.ref.name) ?? false) || sized.has(f.ref.name));
+  for (const v of views)
+    for (const f of v.features) {
+      if (f.type !== 'slant') continue;
+      const key = slantAngleKey(f);
+      const ok = sized.has(f.ref.name) || (key !== null && slantKeysGiven.has(`${v.viewId}|${key}`));
+      slants.set(f.ref.name, (slants.get(f.ref.name) ?? false) || ok);
+    }
   const roundList = [...rounds.values()];
   const report: CoverageReport = {
     ways,
@@ -650,13 +669,15 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
   }
   placeVisibleRoundSizes(false);
 
-  // slants: every slanted plane or conical chamfer not yet sized gets one chamfer (for cones) or angle (against a datum plane in the same view)
+  // slants: every slanted plane or conical chamfer not yet sized gets one chamfer (for cones) or angle (against a datum plane in the same view).
+  // Equal-tilt planar slants in the same view (e.g. uniform 0.5° draft walls) are grouped into one counted angle callout (N×θ), like equal rounds.
   for (const allowHiddenSlant of [false, true]) {
     for (const v of views) {
       const box = boxOf({ features: v.features, width: 0, height: 0 } as unknown as DirectionStats);
       const midX = (box.x0 + box.x1) / 2;
       const midY = (box.y0 + box.y1) / 2;
       const planes = v.features.filter((x): x is Extract<ViewFeature, { type: 'plane' }> => x.type === 'plane');
+      const planarByKey = new Map<string, Extract<ViewFeature, { type: 'slant' }>[]>();
       for (const f of v.features) {
         if (f.type !== 'slant' || sized.has(f.ref.name)) continue;
         if (!allowHiddenSlant && v.hidden?.has(f.ref.name)) continue;
@@ -671,18 +692,27 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
           });
           sized.add(f.ref.name);
         } else if (planes.length > 0) {
-          const distToPlane = (p: Extract<ViewFeature, { type: 'plane' }>) =>
-            Math.abs(p.coord - (p.axis === 'x' ? f.at[0] : f.at[1]));
-          const anchor = [...planes].sort(
-            (a, b) =>
-              Number(Boolean(v.hidden?.has(a.ref.name))) - Number(Boolean(v.hidden?.has(b.ref.name))) ||
-              Number(a.area < f.area) - Number(b.area < f.area) ||
-              distToPlane(a) - distToPlane(b) ||
-              b.area - a.area,
-          )[0]!;
-          out.push({ view: v.viewId, draft: { kind: 'angle', a: f.ref, b: anchor.ref, arc: 6 }, role: 'size' });
-          sized.add(f.ref.name);
+          const k = slantAngleKey(f) ?? `u:${f.ref.name}`;
+          planarByKey.set(k, [...(planarByKey.get(k) ?? []), f]);
         }
+      }
+      for (const group of planarByKey.values()) {
+        const rep = [...group].sort((a, b) => b.area - a.area)[0]!;
+        const distToPlane = (p: Extract<ViewFeature, { type: 'plane' }>) =>
+          Math.abs(p.coord - (p.axis === 'x' ? rep.at[0] : rep.at[1]));
+        const anchor = [...planes].sort(
+          (a, b) =>
+            Number(Boolean(v.hidden?.has(a.ref.name))) - Number(Boolean(v.hidden?.has(b.ref.name))) ||
+            Number(a.area < rep.area) - Number(b.area < rep.area) ||
+            distToPlane(a) - distToPlane(b) ||
+            b.area - a.area,
+        )[0]!;
+        out.push({
+          view: v.viewId,
+          draft: { kind: 'angle', a: rep.ref, b: anchor.ref, arc: 6, ...(group.length > 1 ? { count: group.length } : {}) },
+          role: 'size',
+        });
+        for (const f of group) sized.add(f.ref.name);
       }
     }
   }

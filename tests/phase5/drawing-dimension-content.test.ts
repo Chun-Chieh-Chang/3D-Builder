@@ -235,4 +235,32 @@ describe('slanted face auto-dimensioning (coverage.slants)', () => {
     const feats = viewFeatures(topo, names, { dir: [0, 0, 1], up: [0, 1, 0] }, undefined, undefined, undefined, prefixes);
     expect(feats.map((f) => f.ref.name)).toEqual(['exPlate:side:skPlate.m3']);
   });
+
+  it('groups repeated <=5deg draft slants into one counted angle callout while keeping 45deg slants individual', () => {
+    const rad = (deg: number) => (deg * Math.PI) / 180;
+    const views: ViewToDimension[] = [
+      {
+        viewId: 'view1',
+        axes: { dir: [0, 0, 1], up: [0, 1, 0] },
+        features: [
+          { type: 'plane', ref: { kind: 'face', name: 'base' }, axis: 'y', coord: 0, area: 100 },
+          { type: 'slant', ref: { kind: 'face', name: 'draft1' }, at: [10, 5], dir: [Math.sin(rad(0.5)), Math.cos(rad(0.5))], area: 20 },
+          { type: 'slant', ref: { kind: 'face', name: 'draft2' }, at: [20, 5], dir: [-Math.sin(rad(0.5)), Math.cos(rad(0.5))], area: 15 },
+          { type: 'slant', ref: { kind: 'face', name: 'draft3' }, at: [30, 5], dir: [Math.sin(rad(0.5)), Math.cos(rad(0.5))], area: 10 },
+          { type: 'slant', ref: { kind: 'face', name: 'vgroove1' }, at: [40, 5], dir: [Math.SQRT1_2, Math.SQRT1_2], area: 18 },
+          { type: 'slant', ref: { kind: 'face', name: 'vgroove2' }, at: [50, 5], dir: [-Math.SQRT1_2, Math.SQRT1_2], area: 18 },
+        ],
+      },
+    ];
+    const plan = planDrawingDimensions(views, []);
+    const angles = plan.filter((p) => p.draft.kind === 'angle');
+    expect(angles).toHaveLength(3);
+    const grouped = angles.find((p) => p.draft.kind === 'angle' && p.draft.count === 3);
+    expect(grouped).toBeTruthy();
+    const cov = dimensionCoverage(
+      views,
+      plan.map((p) => ({ view: p.view, ...p.draft })),
+    );
+    expect(cov.slants).toEqual({ total: 5, determined: 5, missing: [] });
+  });
 });

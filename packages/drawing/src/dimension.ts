@@ -188,9 +188,10 @@ function toleranceAfter(tol: DimensionTolerance | undefined, nominal: number, un
 function base(d: Dimension, value: number, facts: ElementFacts | undefined, unit: LengthUnit): string {
   if (d.kind === 'angle') {
     // a one-sided limit is a word, so no degree sign follows it (「45° MAX」, not 「45° MAX°」); stacked deviations carry their own
+    const count = d.count ? `${d.count}×` : '';
     const tol = d.tolerance;
     const tolerance = !tol ? '' : tol.type === 'bilateral' && !symmetric(tol) ? ` ${stacked(deviationTexts(tol.upper, tol.lower, 'mm', true))}` : ` ${toleranceText(tol, value)}${tol.type === 'max' || tol.type === 'min' ? '' : '°'}`;
-    const angle = `${formatNumber(value, d.precision ?? 2)}°${tolerance}`;
+    const angle = `${count}${formatNumber(value, d.precision ?? 2)}°${tolerance}`;
     return d.reference ? `(${angle})` : angle;
   }
   if (d.kind === 'chamfer') {

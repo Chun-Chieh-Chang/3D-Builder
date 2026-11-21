@@ -647,6 +647,7 @@ export interface AngleDimension extends DimensionCommon {
   b: DrawingRef;
   arc: number;
   supplementary?: boolean;
+  count?: number;
 }
 
 /**
