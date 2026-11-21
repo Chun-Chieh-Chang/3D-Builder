@@ -72,7 +72,7 @@ export function revolutionAxis(
 ): [number, number, number] | null {
   const total = faces.reduce((s, f) => s + (Number.isFinite(f.area) && f.area > 0 ? f.area : 0), 0);
   if (!(total > 0)) return null;
-  const groups: { axis: [number, number, number]; origin: [number, number, number]; area: number }[] = [];
+  const groups: { axis: [number, number, number]; origin: [number, number, number]; area: number; faces: number }[] = [];
   for (const f of faces) {
     if (!(Number.isFinite(f.area) && f.area > 0)) continue;
     const g = f.geometry;
@@ -91,17 +91,22 @@ export function revolutionAxis(
       const cx = dy * grp.axis[2] - dz * grp.axis[1];
       const cy = dz * grp.axis[0] - dx * grp.axis[2];
       const cz = dx * grp.axis[1] - dy * grp.axis[0];
-      return Math.hypot(cx, cy, cz) <= 1e-2;
+      return Math.hypot(cx, cy, cz) <= 0.5;
     });
     if (!hit) {
-      hit = { axis: ax, origin: [pt[0], pt[1], pt[2]], area: 0 };
+      hit = { axis: ax, origin: [pt[0], pt[1], pt[2]], area: 0, faces: 0 };
       groups.push(hit);
     }
     hit.area += f.area;
+    hit.faces += 1;
   }
   groups.sort((a, b) => b.area - a.area);
   const best = groups[0];
-  return best && best.area / total >= minShare ? best.axis : null;
+  if (!best) return null;
+  if (best.area / total >= minShare) return best.axis;
+  // Turned/axial parts that also carry a flat mounting flange or gripping arms (e.g. Luer/spike connectors with >= 6 coaxial/near-coaxial turned steps)
+  if (minShare === REVOLVED_PART_SHARE && best.faces >= 6 && best.area / total >= 0.2) return best.axis;
+  return null;
 }
 
 /**
@@ -492,6 +497,12 @@ export interface CoverageReport {
   complete: boolean;
 }
 
+function isAutoChamferCone(f: Extract<ViewFeature, { type: 'slant' }>): boolean {
+  if (!f.cone) return true;
+  const degrees = (Math.atan2(f.cone.radial, f.cone.axial) * 180) / Math.PI;
+  return f.cone.axial <= 2 + 1e-6 && degrees >= 15 - 1e-6 && degrees <= 75 + 1e-6;
+}
+
 const slantAngleKey = (f: Extract<ViewFeature, { type: 'slant' }>): string | null => {
   if (f.cone) return null;
   const deg = Math.round((Math.asin(Math.min(1, Math.min(Math.abs(f.dir[0]), Math.abs(f.dir[1])))) * 180 / Math.PI) * 10) / 10;
@@ -503,7 +514,8 @@ export function dimensionCoverage(views: readonly ViewToDimension[], dimensions:
   const { nodes, mappers } = graphOf(views);
   const u = new Union();
   const sized = new Set<string>();
-  for (const d of dimensions) {
+  const controlling = dimensions.filter((d) => !d.reference);
+  for (const d of controlling) {
     const r = readDimension(d, views, mappers);
     for (let k = 1; k < r.ties.length; k++) u.join(r.ties[0]!, r.ties[k]!);
     for (const s of r.sizes) sized.add(s);
@@ -525,7 +537,7 @@ export function dimensionCoverage(views: readonly ViewToDimension[], dimensions:
       else if (x.type === 'axis' && !x.cone && sized.has(x.ref.name)) surfacesSized.add(x.surface ?? x.ref.name);
     }
   }
-  for (const d of dimensions) {
+  for (const d of controlling) {
     if (d.kind !== 'diameter' && d.kind !== 'radius') continue;
     const f = views.find((v) => v.viewId === d.view)?.features.find((x) => x.ref.name === d.ref.name);
     const key = f && roundKey(f, callouts);
@@ -550,7 +562,7 @@ export function dimensionCoverage(views: readonly ViewToDimension[], dimensions:
       rounds.set(f.ref.name, { name: f.ref.name, radius: r3(f.radius), kind: 'hole', ok });
     }
   const slantKeysGiven = new Set<string>();
-  for (const d of dimensions) {
+  for (const d of controlling) {
     if (d.kind !== 'angle' || (d.count ?? 1) <= 1) continue;
     const f = views.find((v) => v.viewId === d.view)?.features.find((x) => x.type === 'slant' && (x.ref.name === d.a.name || x.ref.name === d.b.name));
     const key = f?.type === 'slant' ? slantAngleKey(f) : null;
@@ -559,7 +571,7 @@ export function dimensionCoverage(views: readonly ViewToDimension[], dimensions:
   const slants = new Map<string, boolean>();
   for (const v of views)
     for (const f of v.features) {
-      if (f.type !== 'slant') continue;
+      if (f.type !== 'slant' || !isAutoChamferCone(f)) continue;
       const key = slantAngleKey(f);
       const ok = sized.has(f.ref.name) || (key !== null && slantKeysGiven.has(`${v.viewId}|${key}`));
       slants.set(f.ref.name, (slants.get(f.ref.name) ?? false) || ok);
@@ -585,7 +597,7 @@ export interface PlannedDimension {
 export interface PlanDimensionOptions {
   /** Hole callouts (through, depth, counterbore, thread) after a hole's diameter. Absent: true. */
   callouts?: boolean;
-  /** More places than this along one way of one view are written as one ordinate dimension from the datum (AutoCAD's QDIM Ordinate). Absent: 6. */
+  /** More places than this along one way of one view are written as one ordinate dimension from the datum (AutoCAD's QDIM Ordinate). By default, 6 with a visible plane as the datum. */
   ordinateAbove?: number;
 }
 
@@ -604,6 +616,7 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
   const u = new Union();
   const sized = new Set<string>();
   for (const d of existing) {
+    if (d.reference) continue;
     const r = readDimension(d, views, mappers);
     for (let k = 1; k < r.ties.length; k++) u.join(r.ties[0]!, r.ties[k]!);
     for (const s of r.sizes) sized.add(s);
@@ -737,7 +750,7 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
       const planes = v.features.filter((x): x is Extract<ViewFeature, { type: 'plane' }> => x.type === 'plane');
       const planarByKey = new Map<string, Extract<ViewFeature, { type: 'slant' }>[]>();
       for (const f of v.features) {
-        if (f.type !== 'slant' || sized.has(f.ref.name)) continue;
+        if (f.type !== 'slant' || sized.has(f.ref.name) || !isAutoChamferCone(f)) continue;
         if (!allowHiddenSlant && v.hidden?.has(f.ref.name)) continue;
         if (f.cone) {
           const dx = f.at[0] - midX;
@@ -758,9 +771,12 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
         const rep = [...group].sort((a, b) => b.area - a.area)[0]!;
         const distToPlane = (p: Extract<ViewFeature, { type: 'plane' }>) =>
           Math.abs(p.coord - (p.axis === 'x' ? rep.at[0] : rep.at[1]));
+        // Prefer a datum plane aligned with the slant's primary direction so near-vertical draft walls measure their acute draft angle against a vertical plane (not 89.5° against a horizontal plane)
+        const preferAxis = Math.abs(Math.abs(rep.dir[0]) - Math.abs(rep.dir[1])) > 0.1 ? (Math.abs(rep.dir[0]) > Math.abs(rep.dir[1]) ? 'y' : 'x') : null;
         const anchor = [...planes].sort(
           (a, b) =>
             Number(Boolean(v.hidden?.has(a.ref.name))) - Number(Boolean(v.hidden?.has(b.ref.name))) ||
+            (preferAxis ? Number(a.axis !== preferAxis) - Number(b.axis !== preferAxis) : 0) ||
             Number(a.area < rep.area) - Number(b.area < rep.area) ||
             distToPlane(a) - distToPlane(b) ||
             b.area - a.area,
@@ -799,7 +815,9 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
     const linear: typeof row = [];
     let stacked = 0;
     for (const [, same] of fromSame) {
-      if (same.length > ordinateAbove) {
+      const { datum } = same[0]!;
+      const visiblePlane = datum.kind === 'plane' && !views[datum.view]!.hidden?.has(datum.ref.name);
+      if (same.length > ordinateAbove && (options.ordinateAbove !== undefined || visiblePlane)) {
         same.sort((a, b) => a.to.coord - b.to.coord);
         const uniqueRefs: ViewFeature['ref'][] = [];
         let lastCoord = -Infinity;
@@ -843,6 +861,7 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
       const orientation = along === 'x' ? 'horizontal' : 'vertical';
       const alreadyHas = existing.some(
         (d) =>
+          !d.reference &&
           d.view === v.viewId &&
           d.kind === 'linear' &&
           d.orientation === orientation &&

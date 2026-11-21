@@ -134,6 +134,15 @@ it('plans, makes a fully determined drawing of a plate with holes, and takes tol
   const again = text(ok(await callTool(s, 'drawing_complete', { picture: false })));
   expect(again.added).toBeGreaterThan(0);
   expect(again.drawing.checks.coverage.complete).toBe(true);
+
+  const controlled = text(ok(await callTool(s, 'drawing_inspect', {}))).dimensions.find((d: { text: string }) => d.text.startsWith('Ø10 H7'));
+  expect(controlled).toBeDefined();
+  const ref = text(ok(await callTool(s, 'drawing_tolerance', { dimension: controlled.id, reference: true, picture: false })));
+  expect(ref.drawing.checks.coverage.complete).toBe(false);
+  const note = text(ok(await callTool(s, 'drawing_annotate', { kind: 'note', target: controlled.id, text: 'FEATURE PRESENT', enclosure: 'rounded', picture: false })));
+  const inspected = text(ok(await callTool(s, 'drawing_inspect', {})));
+  expect(inspected.dimensions.find((d: { id: string }) => d.id === controlled.id)).toMatchObject({ reference: true, tolerance: { type: 'fit', fit: 'H7' } });
+  expect(inspected.annotations.find((a: { id: string }) => a.id === note.added)).toMatchObject({ kind: 'note', enclosure: 'rounded', text: 'FEATURE PRESENT' });
 }, 240_000);
 
 /** A closed rectangle sketch on the Top plane (x from x0 to x1, the sketch's y from y0 to y1), fixed where it is. */

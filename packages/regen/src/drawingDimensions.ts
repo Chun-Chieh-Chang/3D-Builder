@@ -677,7 +677,7 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
 }
 
 /**
- * Unit axes of cylindrical features (holes or bosses with >= 180° wrap) that are NOT aligned with any of the 3 principal world axes
+ * Unit axes of cylindrical holes with near-full wrap that are NOT aligned with any of the 3 principal world axes
  * (`X`, `Y`, `Z`), deduplicated by axis direction. Used by auto-drawing to decide whether an auxiliary view is needed to show oblique holes true-shape.
  */
 export function obliqueHoleAxes(topology: Topology): [number, number, number][] {
@@ -685,13 +685,14 @@ export function obliqueHoleAxes(topology: Topology): [number, number, number][] 
   for (let i = 0; i < topology.faces.length; i++) {
     const f = topology.faces[i]!;
     const g = f.geometry;
-    if (!g || g.type !== 'cylinder' || !(f.area >= MIN_DIMENSION_FACE_AREA) || g.radius <= 1e-6) continue;
+    if (!g || g.type !== 'cylinder' || g.convex || !(f.area >= MIN_DIMENSION_FACE_AREA) || g.radius <= 1e-6) continue;
     const l = Math.hypot(g.axis[0], g.axis[1], g.axis[2]);
     if (l < 1e-9) continue;
     let ax: [number, number, number] = [g.axis[0] / l, g.axis[1] / l, g.axis[2] / l];
-    // Skip principal-axis cylinders (already seen true-shape in orthogonal views)
-    if (Math.abs(ax[0]) >= 0.999 || Math.abs(ax[1]) >= 0.999 || Math.abs(ax[2]) >= 0.999) continue;
-    // Require >= 180° angular wrap (real hole/boss, not a small blend fillet)
+    // Skip principal-axis or slightly drafted cylinders (< 5° from X/Y/Z, already seen in orthogonal views)
+    const cos5 = Math.cos((5 * Math.PI) / 180);
+    if (Math.abs(ax[0]) >= cos5 || Math.abs(ax[1]) >= cos5 || Math.abs(ax[2]) >= cos5) continue;
+    // Require nearly full cylindrical wrap (>= 325°) so partial relief arcs or drafted blend fillets do not spawn auxiliary views
     let tMin = Infinity, tMax = -Infinity;
     for (const e of topology.edges) {
       if (!e.faces.includes(i)) continue;
@@ -704,7 +705,7 @@ export function obliqueHoleAxes(topology: Topology): [number, number, number][] 
       }
     }
     const span = tMax - tMin;
-    if (!(span > 1e-3) || f.area / (g.radius * span) < Math.PI - 1e-2) continue;
+    if (!(span > 1e-3) || f.area / (g.radius * span) < 1.8 * Math.PI) continue;
     for (const c of ax) {
       if (Math.abs(c) > 1e-4) {
         if (c < 0) ax = [-ax[0], -ax[1], -ax[2]];
