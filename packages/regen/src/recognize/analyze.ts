@@ -564,6 +564,98 @@ function removeBlends(
 
 // ------------------------------------------------------------------ holes
 
+function curvedRimHole(
+  topo: Topology,
+  adj: Map<number, number[]>[],
+  group: Set<number>,
+  faces: number[],
+  axis: { origin: Vec3; dir: Vec3 },
+  radius: number,
+  unremovedBlends?: Set<number>,
+): HoleRecord | null {
+  for (const k of faces) {
+    const fg = topo.faces[k]!.geometry;
+    if (fg?.type !== 'cylinder' || fg.convex || Math.abs(fg.radius - radius) > TOL) return null;
+  }
+  const pts: Vec3[] = [];
+  for (const e of topo.edges) {
+    if (!e.faces.some((fi) => group.has(fi))) continue;
+    if (e.faces.some((fi) => !group.has(fi)) && e.curve === 'line' && e.dir && parallel(e.dir, axis.dir)) return null;
+    pts.push(e.mid);
+    for (const vi of e.vertices) pts.push(topo.vertices[vi]!.point);
+  }
+  if (pts.length < 2) return null;
+  const zs = pts.map((p) => dot(sub(p, axis.origin), axis.dir));
+  const zMin = Math.min(...zs);
+  const zMax = Math.max(...zs);
+  if (zMax - zMin <= TOL) return null;
+
+  for (const k of faces) {
+    for (const [n, edges] of adj[k]!) {
+      if (group.has(n) || unremovedBlends?.has(n)) continue;
+      const nf = topo.faces[n]!.geometry;
+      if (nf?.type !== 'plane' || !parallel(nf.normal, axis.dir)) continue;
+      if (!edges.every((ei) => topo.edges[ei]!.geometry?.type === 'circle')) continue;
+      const zEnter = dot(sub(nf.origin, axis.origin), axis.dir);
+      const sign = Math.sign((zMin + zMax) / 2 - zEnter);
+      if (sign === 0) continue;
+      const down: Vec3 = [axis.dir[0] * sign, axis.dir[1] * sign, axis.dir[2] * sign];
+      if (dot(nf.normal, down) > -0.5) continue;
+      const otherFaces = [...new Set(faces.flatMap((fi) => [...adj[fi]!.keys()]).filter((fi) => !group.has(fi) && !unremovedBlends?.has(fi) && fi !== n))];
+      const exitsExterior = otherFaces.some((fi) => {
+        const og = topo.faces[fi]!.geometry;
+        if (!og) return false;
+        if (og.type === 'plane' && dot(og.normal, down) > 0.5) return true;
+        if ('convex' in og && og.convex) return true;
+        return false;
+      });
+      const entrance = addv(axis.origin, axis.dir, zEnter);
+      if (exitsExterior) return { kind: 'straight', entrance, down, radius, depth: null };
+      const farDepth = Math.max(...zs.map((zz) => (zz - zEnter) * sign));
+      const maxBodyDepth = Math.max(...topo.vertices.map((v) => dot(sub(v.point, entrance), down)));
+      if (farDepth > TOL && farDepth < maxBodyDepth - TOL) {
+        return { kind: 'straight', entrance, down, radius, depth: farDepth + Math.min(radius, (maxBodyDepth - farDepth) * 0.5) };
+      }
+    }
+  }
+
+  const zMid = (zMin + zMax) / 2;
+  const sideAdj = (loSide: boolean) => {
+    const faceSet = new Set<number>();
+    for (const k of faces) {
+      for (const [n, edges] of adj[k]!) {
+        if (group.has(n) || unremovedBlends?.has(n)) continue;
+        const onSide = edges.some((ei) => {
+          const e = topo.edges[ei]!;
+          const ez = dot(sub(e.mid, axis.origin), axis.dir);
+          return loSide ? ez <= zMid : ez >= zMid;
+        });
+        if (onSide) faceSet.add(n);
+      }
+    }
+    return [...faceSet];
+  };
+  const adjLo = sideAdj(true);
+  const adjHi = sideAdj(false);
+  const isExterior = (fi: number) => {
+    const og = topo.faces[fi]!.geometry;
+    return !!og && ((og.type === 'plane') || ('convex' in og && og.convex));
+  };
+  const loExt = adjLo.some(isExterior);
+  const hiExt = adjHi.some(isExterior);
+  if (loExt && !hiExt) {
+    const down: Vec3 = unit(axis.dir);
+    return { kind: 'straight', entrance: addv(axis.origin, axis.dir, zMin), down, radius, depth: (zMax - zMin) + radius };
+  }
+  if (hiExt && !loExt) {
+    const d = unit(axis.dir);
+    const down: Vec3 = [-d[0], -d[1], -d[2]];
+    return { kind: 'straight', entrance: addv(axis.origin, axis.dir, zMax), down, radius, depth: (zMax - zMin) + radius };
+  }
+
+  return { kind: 'straight', entrance: addv(axis.origin, axis.dir, zMin), down: unit(axis.dir), radius, depth: null };
+}
+
 function findHoles(topo: Topology, adj: Map<number, number[]>[], unremovedBlends?: Set<number>): { record: HoleRecord; faces: number[] }[] {
   const out: { record: HoleRecord; faces: number[] }[] = [];
   const taken = new Set<number>();
@@ -605,7 +697,14 @@ function findHoles(topo: Topology, adj: Map<number, number[]>[], unremovedBlends
       if (group.has(n) || unremovedBlends?.has(n)) continue;
       for (const e of edges) {
         const c = topo.edges[e]!.geometry;
-        if (c?.type !== 'circle') return;
+        if (c?.type !== 'circle') {
+          const rec = curvedRimHole(topo, adj, group, faces, axis, g.radius, unremovedBlends);
+          if (rec) {
+            for (const fi of faces) taken.add(fi);
+            out.push({ record: rec, faces });
+          }
+          return;
+        }
         const nGeom = topo.faces[n]!.geometry;
         const rimZ = nGeom?.type === 'plane' && parallel(nGeom.normal, axis.dir) ? z(nGeom.origin) : z(c.center);
         const rimCenter = nGeom?.type === 'plane' && parallel(nGeom.normal, axis.dir) ? addv(axis.origin, axis.dir, rimZ) : c.center;

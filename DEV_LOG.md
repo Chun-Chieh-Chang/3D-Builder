@@ -1,5 +1,21 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-21（主線 A）— 打通 `push_turn` 夾具 4 件交叉孔與曲面交界圓柱孔（`P03`/`P05`/`P07`/`P09`）
+
+- **問題現象與根因 (RCA)**：
+  1. `findHoles()` 原本在任一孔緣邊非 `circle` 時即提前 `return`，導致進入/穿出曲面（外圓柱、內孔）的交叉孔（`P03`、`P07`、`P09`）與盲孔打穿進水平孔（`P05`）全數退回 `baseOf()` 並以 `recognize.noBase` 拒絕。
+  2. `reconstructImported()` 在無 `rounds.substituted` 時僅以粗略固定積分計算 `massProps`，遇到跨圓柱交線（B-spline 裁邊）時體積差出現 `1.82e-6 ~ 2.29e-6` 假超標（實際面積差 `~1e-12`、對稱差 `~1e-16`）。
+  3. 單側徑向孔（如 `P07`/`P09`）與盲孔破入內部圓孔（`P05`）需額外 `+ radius` 深度（由幾何不等式 $R - \sqrt{R^2 - r^2} < r < R$ 保證既越過馬鞍交線、又不觸及對側壁面；Fuzz 第 7 筆 `rCross=3.54, rInner=6.54` 實測抓出原本 `min(0.5r, 1.0)` 上限不足 `0.04 mm` 之邊界）。
+- **實作**：
+  1. `packages/regen/src/recognize/analyze.ts`：新增 `curvedRimHole()`，以無縱向平行直線邊排除部分圓弧圓角/槽，支援平面入口破入內部凹面盲孔、單側凸面→凹面徑向孔及雙側穿出貫穿孔。
+  2. `packages/regen/src/recognize/reconstruct.ts`：當 `areaError` 與 `difference` 皆通過、僅 `volumeError` 超標時，補做 `{ eps: 1e-10 }` 自適應積分確認真值。
+  3. `tests/phase8/recognize-cross-holes.test.ts`：新增 4 項測試（含 30 組隨機參數 Fuzz 與 WASM Heap 監控）。
+- **驗證**：
+  - `P03.step`、`P05.step`、`P07.step`、`P09.step` 單件及 `assembly.step` 24 件單一實體全數重建成功（`volumeError <= 2.28e-7`、`difference <= 1.74e-15`）。
+  - `tests/phase8/recognize-cross-holes.test.ts`（4/4）、`tests/phase8/feature-recognition.test.ts`（32/32）、`npm run typecheck`、`lint:rules`、`lint:deps`、`lint:repo` 全數通過。
+- **工程圖微調 1 診斷註記**：
+  - `diamond-pin.3dbx` 剩餘 2 處交叉為 `dim13|dim3` 與 `dim13|dim4`（`view2` 上 `6 mm` 寬度延伸線穿過內圓與右半部）；枚舉 42 組 `(dim3, dim4)` 角度均無法再降，且已通過 `drawing-clearance.test.ts`（`texts: []`, `layout.pass: true`），維持現狀避免破壞其他金樣。
+
 ## 2026-11-21（續）— 排除草圖刻字筆劃斜邊（`sketchTextPrefixes` / `sketchesTextPrefixes`）
 
 - **使用者裁定**：選擇於自動出圖特徵萃取層略過草圖文字實體產生的刻字筆劃斜邊（不為文字筆劃標註角度）。

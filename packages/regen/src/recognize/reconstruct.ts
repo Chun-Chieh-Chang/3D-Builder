@@ -672,8 +672,8 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
       const allow = own.count > 0 ? own : null;
       const compare = (body: NonNullable<RebuildResult['body']>): ReconstructReport => {
         budget.check();
-        const m1 = kernel.massProps(body.shape, fine);
-        const volumeError = Math.abs(m1.volume - m0.volume) / m0.volume;
+        let m1 = kernel.massProps(body.shape, fine);
+        let volumeError = Math.abs(m1.volume - m0.volume) / m0.volume;
         // the area to a set precision: the fixed rule is off by more than the tolerance on faces with many B-spline holes (C1)
         const areaError = Math.abs(kernel.surfaceArea(body.shape) - area0) / area0;
         // the volume between the two, as each boundary's distance to the other integrated over it, the larger way (ADR 0248): a boolean of two near-equal
@@ -683,6 +683,11 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
         const ab = kernel.surfaceDeviation(whole, body.shape, undefined, allow ? { a: allow.faces } : undefined);
         const ba = kernel.surfaceDeviation(body.shape, whole, undefined, allow ? { b: allow.faces } : undefined);
         const difference = Math.max(ab.excess, ba.excess) / m0.volume;
+        if (!rounds.substituted && volumeError > RECOGNIZE_TOLERANCE + (allow ? allow.volume / m0.volume : 0) && areaError <= RECOGNIZE_TOLERANCE + (allow ? allow.area / area0 : 0) && difference <= RECOGNIZE_TOLERANCE) {
+          const m0Fine = kernel.massProps(whole, { eps: 1e-10 });
+          m1 = kernel.massProps(body.shape, { eps: 1e-10 });
+          volumeError = Math.abs(m1.volume - m0Fine.volume) / m0Fine.volume;
+        }
         const fileTolerance = allow
           ? { faces: allow.count, max: allow.max, volume: allow.volume / m0.volume, area: allow.area / area0, difference: Math.max(ab.integral, ba.integral) / m0.volume }
           : undefined;
