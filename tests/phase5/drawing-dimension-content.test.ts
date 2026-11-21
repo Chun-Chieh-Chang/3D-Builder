@@ -167,3 +167,51 @@ describe('stepped internal bore is not marked through (rule D9)', () => {
     expect(info!.through).toBe(false);
   });
 });
+
+describe('slanted face auto-dimensioning (coverage.slants)', () => {
+  it('plans one chamfer dimension for a conical slant and marks slants complete', () => {
+    const views: ViewToDimension[] = [
+      {
+        viewId: 'v1',
+        axes: { dir: [0, 0, 1], up: [0, 1, 0] },
+        features: [
+          { type: 'plane', ref: ref('x0'), axis: 'x', coord: 0, area: 100 },
+          { type: 'plane', ref: ref('x1'), axis: 'x', coord: 20, area: 100 },
+          { type: 'plane', ref: ref('y0'), axis: 'y', coord: 0, area: 100 },
+          { type: 'plane', ref: ref('y1'), axis: 'y', coord: 10, area: 100 },
+          { type: 'slant', ref: ref('coneChamfer'), at: [19, 9], dir: [0.707, -0.707], area: 15, cone: { side: 1, from: [18, 10], to: [20, 8], axial: 2, radial: 2, setback: 2 } },
+          { type: 'slant', ref: ref('coneChamfer'), at: [19, 1], dir: [0.707, 0.707], area: 15, cone: { side: -1, from: [18, 0], to: [20, 2], axial: 2, radial: 2, setback: 2 } },
+        ],
+      },
+    ];
+    const planned = planDrawingDimensions(views);
+    const chamfers = planned.filter((p) => p.draft.kind === 'chamfer');
+    expect(chamfers).toHaveLength(1);
+    expect(chamfers[0]!.draft).toMatchObject({ kind: 'chamfer', ref: { name: 'coneChamfer' }, size: 2, coneSide: 1 });
+    const cov = dimensionCoverage(views, planned.map((p) => ({ view: p.view, ...p.draft })));
+    expect(cov.slants).toEqual({ total: 1, determined: 1, missing: [] });
+    expect(cov.complete).toBe(true);
+  });
+
+  it('plans an angle dimension against the nearest visible plane for a planar slant', () => {
+    const views: ViewToDimension[] = [
+      {
+        viewId: 'v1',
+        axes: { dir: [0, 0, 1], up: [0, 1, 0] },
+        features: [
+          { type: 'plane', ref: ref('left'), axis: 'x', coord: 0, area: 500 },
+          { type: 'plane', ref: ref('nearTop'), axis: 'y', coord: 20, area: 100 },
+          { type: 'plane', ref: ref('bottom'), axis: 'y', coord: 0, area: 500 },
+          { type: 'slant', ref: ref('bevel'), at: [38, 18], dir: [0.707, -0.707], area: 10 },
+        ],
+      },
+    ];
+    const planned = planDrawingDimensions(views);
+    const angles = planned.filter((p) => p.draft.kind === 'angle');
+    expect(angles).toHaveLength(1);
+    expect(angles[0]!.draft).toMatchObject({ kind: 'angle', a: { name: 'bevel' }, b: { name: 'nearTop' }, arc: 6 });
+    const cov = dimensionCoverage(views, planned.map((p) => ({ view: p.view, ...p.draft })));
+    expect(cov.slants).toEqual({ total: 1, determined: 1, missing: [] });
+    expect(cov.complete).toBe(true);
+  });
+});

@@ -421,6 +421,7 @@ function readDimension(d: DimensionLike, views: readonly ViewToDimension[], mapp
   }
   if (d.kind === 'ordinate') return { ties: [place(d.origin.name, d.axis), ...d.refs.map((r) => place(r.name, d.axis))].filter((x): x is string => x !== null), sizes: [] };
   if (d.kind === 'diameter' || d.kind === 'radius' || d.kind === 'chamfer') return { ties: [], sizes: [d.ref.name] };
+  if (d.kind === 'angle') return { ties: [], sizes: [d.a.name, d.b.name] };
   return { ties: [], sizes: [] };
 }
 
@@ -648,6 +649,42 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
     }
   }
   placeVisibleRoundSizes(false);
+
+  // slants: every slanted plane or conical chamfer not yet sized gets one chamfer (for cones) or angle (against a datum plane in the same view)
+  for (const allowHiddenSlant of [false, true]) {
+    for (const v of views) {
+      const box = boxOf({ features: v.features, width: 0, height: 0 } as unknown as DirectionStats);
+      const midX = (box.x0 + box.x1) / 2;
+      const midY = (box.y0 + box.y1) / 2;
+      const planes = v.features.filter((x): x is Extract<ViewFeature, { type: 'plane' }> => x.type === 'plane');
+      for (const f of v.features) {
+        if (f.type !== 'slant' || sized.has(f.ref.name)) continue;
+        if (!allowHiddenSlant && v.hidden?.has(f.ref.name)) continue;
+        if (f.cone) {
+          const dx = f.at[0] - midX;
+          const dy = f.at[1] - midY;
+          const angle = Math.hypot(dx, dy) > 1e-6 ? Math.round((Math.atan2(dy, dx) * 180) / Math.PI) : 45;
+          out.push({
+            view: v.viewId,
+            draft: { kind: 'chamfer', ref: f.ref, angle, size: f.cone.setback ?? f.cone.axial, coneSide: f.cone.side },
+            role: 'size',
+          });
+          sized.add(f.ref.name);
+        } else if (planes.length > 0) {
+          const distToPlane = (p: Extract<ViewFeature, { type: 'plane' }>) =>
+            Math.abs(p.coord - (p.axis === 'x' ? f.at[0] : f.at[1]));
+          const anchor = [...planes].sort(
+            (a, b) =>
+              Number(Boolean(v.hidden?.has(a.ref.name))) - Number(Boolean(v.hidden?.has(b.ref.name))) ||
+              distToPlane(a) - distToPlane(b) ||
+              b.area - a.area,
+          )[0]!;
+          out.push({ view: v.viewId, draft: { kind: 'angle', a: f.ref, b: anchor.ref, arc: 6 }, role: 'size' });
+          sized.add(f.ref.name);
+        }
+      }
+    }
+  }
 
   // places: by view and way, a baseline row from each datum, the shortest nearest; many from one datum become an ordinate row
   const ordinateAbove = options.ordinateAbove ?? 6;

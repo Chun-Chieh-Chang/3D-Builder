@@ -7,10 +7,12 @@
   2. **第二期（ADR 0261）**：視圖淨空、受限方向填滿、放大詳圖配置、多頁一致性、回轉件主視圖與 `layout` 自檢（`6785fdca`，5 基準零件 7 頁全數 `layout.pass: true`）。
   3. **第三期（ADR 0262）**：標註的佈置與內容 `D1`–`D10` / `C1`–`C4` / `L1`–`L2`（`76007fcd`，5 零件 `3-1/3-2/3-5/3-6/3-7/3-8/3-9/3-10` 全數歸 0、`rounds` 覆蓋率 100%、7/7 突變測試全紅、99/99 測試檔通過）。
   4. **第四期（ADR 0263）**：品質閘門 `Q1`, `Q2`, `C5`, `C7`, `Q3`（`packages/drawing/src/qualityGate.ts`、`apps/mcp/src/drawingSession.ts`、`drawingTools.ts`）。`drawing_inspect`／`drawing_create` 回報 16 項規則之 `quality` 閘門；草稿匯出自動加蓋 `PRELIMINARY`（PDF／SVG／DXF 一致）；`drawing_export({ release: true })` 阻擋未達標圖面並列出未通過規則；單元測試＋MCP 端到端＋4/4 突變測試全紅。
+- **本輪後續已推進（待使用者核准提交與推送）**：
+  - 完整 `npm run verify:ui -- --checkpoint out/ui.jsonl`：**280 / 280 PASS**（已推送 `87cc838d`）；修復 GitHub Actions `Repository integrity #309` `stepText.ts:46` `crash-no-swallow` 失敗（已推送 `b094c20d`）。
+  - **斜面（`coverage.slants`）自動標註完成**：`autoDrawing.ts` 支援圓錐 `chamfer` 與最近基準面 `angle` 規劃及覆蓋讀取，`drawingSession.ts` `steerLeaders` 支援 `chamfer`/`angle`；4 黃金零件 `slants` 覆蓋率達 **100%**（`locating-plate`、`v-block` 維持 `clutter = 0`）。
 - **下次接手可選後續項目**：
-  1. 依 `docs/drawing-improvement-plan.md` 執行完整瀏覽器 UI 驗收 `npm run verify:ui`（280 列，執行期間不改原始碼），驗證工程圖 UI 層全數無回歸。
-  2. 針對第三期誠實註記的剩餘極端案例進一步收斂：`R1-8032` 局部環面圓角 3 處引線（`3-4 = 3`）與高密度視圖剩餘雜亂（`R1-8032` `10/2`、`sds-plus-bit` `7/2`），以及斜面（`coverage.slants`）自動標註。
-  3. 取得 CNS 3 原文後核對第一期（ADR 0260）之線寬與最小字高表。
+  1. 針對 `sds-plus-bit` 刻字微斜邊（`cuText:side:skText.tx#*`）於高密度視圖的群聚／忽略門檻收斂，以及於有 `R1-8032` `.3dbx` 的機器重測局部環面圓角 3 處引線（`3-4 = 3`）。
+  2. 取得 CNS 3 原文後核對第一期（ADR 0260）之線寬與最小字高表。
 
 ## 2026-11-20（傍晚）— ADR 0262 第三期（標註的佈置與內容）完成，準備進入第四期（品質閘門）
 

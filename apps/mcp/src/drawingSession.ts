@@ -869,7 +869,7 @@ export class DrawingSession {
     const candidateAngles = [45, 135, 225, 315, 30, 60, 120, 150, 210, 240, 300, 330, 15, 75, 105, 165, 195, 255, 285, 345, 0, 90, 180, 270];
     const fineAngles = Array.from({ length: 72 }, (_, i) => i * 5);
     for (const d of pg0.dimensions) {
-      if (d.kind !== 'diameter' && d.kind !== 'radius') continue;
+      if (d.kind !== 'diameter' && d.kind !== 'radius' && d.kind !== 'chamfer') continue;
       if (this.arrowHitsView(b0, pg0, d.id)) continue;
       for (const angle of [d.angle, ...candidateAngles, ...fineAngles]) {
         try {
@@ -912,7 +912,7 @@ export class DrawingSession {
       for (const d of page(doc, pageIndex).dimensions) {
         if (info.score === 0) break;
         if (!targets.has(d.id)) continue;
-        if (d.kind === 'diameter' || d.kind === 'radius') {
+        if (d.kind === 'diameter' || d.kind === 'radius' || d.kind === 'chamfer') {
           const hitsNow = this.arrowHitsView(this.build(doc, pageIndex), page(doc, pageIndex), d.id);
           // longer leaders last: at a large scale (or with large text) the part is wider on the sheet than the first four reach across (ADR 0261)
           const angles = hitsNow ? [d.angle, ...candidateAngles.filter((a) => Math.abs(a - d.angle) > 1e-3)] : [d.angle];
@@ -921,12 +921,24 @@ export class DrawingSession {
               if (try_({ angle, leader }, d.id, hitsNow) && !info.groups.has(d.id)) break outer;
             }
           }
+        } else if (d.kind === 'angle') {
+          const baseArc = d.arc || 12;
+          const baseSupp = Boolean(d.supplementary);
+          outerAngle: for (const supplementary of [baseSupp, !baseSupp]) {
+            for (const arc of [baseArc, 4, 8, 12, 18, 24]) {
+              const slides = slideNumbers ? [0, -6, 6, -12, 12] : [0];
+              for (const slide of slides) {
+                if (supplementary === baseSupp && arc === baseArc && slide === (d.slide ?? 0)) continue;
+                if (try_({ supplementary, arc, ...(slide === 0 ? { slide: null } : { slide }) }, d.id, false) && !info.groups.has(d.id)) break outerAngle;
+              }
+            }
+          }
         } else if (d.kind === 'linear') {
           const baseOff = Math.abs(d.offset) || 10;
           const curSign = Math.sign(d.offset) || 1;
           outerLinear: for (const sgn of [curSign, -curSign]) {
-            for (const off of [baseOff, baseOff + 7, baseOff + 14]) {
-              const slides = slideNumbers ? [0, -12, 12, -24, 24, -36, 36] : [0];
+            for (const off of [baseOff, baseOff + 7, baseOff + 14, baseOff + 21]) {
+              const slides = slideNumbers ? [0, -6, 6, -12, 12, -20, 20, -32, 32] : [0];
               for (const slide of slides) {
                 if (sgn === curSign && off === baseOff && slide === (d.slide ?? 0)) continue;
                 if (try_({ offset: sgn * off, ...(slide === 0 ? { slide: null } : { slide }) }, d.id, false) && !info.groups.has(d.id)) break outerLinear;

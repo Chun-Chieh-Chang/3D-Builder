@@ -1,5 +1,17 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-20（夜・續）— 斜面（`coverage.slants`）自動標註與 `steerLeaders` 擴充（ADR 0262 後續）
+
+- **完成項目**：
+  1. **斜面自動標註（`packages/drawing/src/autoDrawing.ts`）**：
+     - `readDimension()` 新增識別 `kind: 'angle'`（回傳 `sizes: [d.a.name, d.b.name]`），使手動與自動角度標註皆納入 `coverage.slants` 統計。
+     - `planDrawingDimensions()` 新增 `slant` 規劃：圓錐斜面（`f.cone`）產出單一 `chamfer`（帶 `coneSide` 與外向引線角度）；平面斜面選取同視圖中**距離最近的非隱藏基準面**產出 `angle`（`arc: 6`），避免基準面過遠導致交點落在視圖外而壓縮相鄰視圖淨空。
+  2. **`steerLeaders()` 擴充（`apps/mcp/src/drawingSession.ts`）**：納入 `chamfer` 引線避讓與 `angle`（`supplementary` / `arc` / `slide`）調整，並細化 `linear` 滑動步長。
+- **實測與驗證**：
+  - 4 個黃金零件實測 `slants` 覆蓋率全數達 **100%**（`diamond-pin` 1/1、`locating-plate` 4/4、`sds-plus-bit` 11/11、`v-block` 2/2）；`locating-plate` 與 `v-block` 維持 `clutter = 0` 與 `V1` 通過。
+  - 誠實註記：`sds-plus-bit` 因刻字特徵（`cuText:side:skText.tx#*`）產生 8 個微斜邊，自動補齊 `angle` 後於主視圖密度較高；`R1-8032` `.3dbx` 不在本機，其 `3-4 = 3` 局部環面引線尚未實機重測。
+  - 測試與守門：`tests/phase5/drawing-dimension-content.test.ts`（新增 2 項 `slants` 測試，13/13 通過）、`auto-drawing-plan.test.ts`（8/8）、`drawing-quality-gate.test.ts`（1/1）、`typecheck`、`lint:rules`、`lint:deps`、`lint:i18n`、`lint:repo` 全數通過。
+
 ## 2026-11-20（夜）— 修復 CI #309 `crash-no-swallow` 失敗（`stepText.ts`）
 
 - **問題現象**：GitHub Actions `Repository integrity #309`（`full-suite (1)`）於 `tests/phase3/crash-no-swallow.test.ts` 失敗，指出 `packages/kernel/src/stepText.ts:46` 存在未過濾例外型別的 `catch`。
