@@ -1,6 +1,6 @@
 import { sameDrawingRef, rightOf, sheetUp, type DrawingRef, type ElementFacts, type DrawingPoint, type ViewAxes, type ViewFeature } from '@3db/model';
 import { t } from '@3db/i18n';
-import { projectedAt } from './projectionRefs';
+import { projectedAt, projectionEntities, projectionPoint } from './projectionRefs';
 import type { DimensionDraft } from './autoDimension';
 import { arcAt, insideAt, leaderAt, offsetAt, type DimensionHandle } from './dimension';
 import { itemsBounds } from './fit';
@@ -706,13 +706,401 @@ export function snapCut(features: readonly PickFeature[], box: { min: [number, n
   const k = vertical ? 0 : 1;
   const candidates: number[] = [];
   for (const f of features) {
-    if (f.type === 'circle') candidates.push(f.centre[k]);
+    if (f.type === 'circle' || f.type === 'centre') candidates.push(f.centre[k]);
+    else if (f.type === 'axis' && (vertical ? Math.abs(f.to[0] - f.from[0]) < 1e-4 : Math.abs(f.to[1] - f.from[1]) < 1e-4)) candidates.push((f.from[k] + f.to[k]) / 2);
     else if (f.type === 'plane' && f.axis === (vertical ? 'x' : 'y')) candidates.push(f.coord);
   }
   if (box) candidates.push((box.min[k] + box.max[k]) / 2);
   let best: number | null = null;
   for (const c of candidates) if (Math.abs(c - coord) <= tol && (best === null || Math.abs(c - coord) < Math.abs(best - coord))) best = c;
   return best === null ? { coord, snapped: false } : { coord: best, snapped: true };
+}
+
+export type SnapKind = 'vertex' | 'midpoint' | 'centre' | 'quadrant' | 'axis' | 'edge';
+
+export interface DrawingSnap {
+  kind: SnapKind;
+  /** The snapped point in the view's own coordinates (full size). */
+  at: P2;
+  /** Optional persistent model attachment for annotations (datum, note, fcf, centreMark). */
+  attach?: { ref: DrawingRef; u: number };
+  /** Circle radius when snapped to a circle/centre. */
+  radius?: number;
+  /** Circle contour in view coordinates when snapped to a circle or its centre/quadrant/rim. */
+  circle?: { centre: P2; radius: number };
+  /** Straight segment [a, b] in view coordinates when snapped to a straight edge, outline, axis, or projected straight contour. */
+  edge?: [P2, P2];
+  /** Curved contour polyline in view coordinates when snapped to a freeform/curved contour line. */
+  contour?: readonly number[];
+  /** Orthogonal alignment direction when snapped to horizontal/vertical alignment with `orthoFrom`. */
+  ortho?: 'horizontal' | 'vertical';
+}
+
+export interface SnapOptions {
+  /** Project directly onto the closest visible outline, for symbols placed on a surface. */
+  contourOnly?: boolean;
+  /** Whether pointing near a circle's rim also snaps to its centre (true for centreLine and centreMark). */
+  circleRimToCentre?: boolean;
+  /** Only snap to circles (for centreMark). */
+  circleOnly?: boolean;
+  /** Optional origin point in view coordinates for horizontal/vertical orthogonal alignment. */
+  orthoFrom?: P2;
+  /** Capture radius for nearest contour line attraction (defaults to `2.5 * tol`). */
+  contourTol?: number;
+}
+
+/** Closest point on segment `[a, b]` to `p`, with parametric position `u in [0, 1]` and distance `d`. */
+function projectOnSegment(p: P2, a: P2, b: P2): { q: P2; u: number; d: number } {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const l2 = dx * dx + dy * dy;
+  const u = l2 <= 1e-18 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2));
+  const q: P2 = [a[0] + u * dx, a[1] + u * dy];
+  return { q, u, d: hyp(p[0] - q[0], p[1] - q[1]) };
+}
+
+/**
+ * Universal magnetic snap for drawing tools (centreLine, centreMark, note, datum, fcf, surfaceFinish, detail, section, auxiliary):
+ * acquires key geometric points (`centre`, `vertex`, `midpoint`, `quadrant`, `axis` endpoints/midpoints) within `tol`,
+ * or locks onto the single nearest visible contour line (`edge` / `contour` / `circle` / `axis`) within `contourTol`,
+ * plus optional horizontal/vertical orthogonal alignment with `orthoFrom`.
+ */
+export function snapAt(
+  lines: ViewLines | null | undefined,
+  features: readonly ViewFeature[],
+  seen: VisibleElements | undefined,
+  p: P2,
+  tol: number,
+  options: SnapOptions = {},
+): DrawingSnap | null {
+  if (!p.every(Number.isFinite) || !Number.isFinite(tol) || tol <= 0) return null;
+  const hasVisible = !!lines && lines.visible.length > 0;
+  const onDrawing = (q: P2) => {
+    if (!hasVisible) return true;
+    return lines!.visible.some((poly) => {
+      for (let i = 0; i + 3 < poly.length; i += 2) {
+        if (segmentDistance(q, [poly[i]!, poly[i + 1]!], [poly[i + 2]!, poly[i + 3]!]) <= EDGE_TOLERANCE) return true;
+      }
+      return false;
+    });
+  };
+  const isModelRef = (ref: DrawingRef) => (ref.kind as string) !== 'projection';
+  const allCircles = [...features, ...(seen?.circles ?? [])].filter((f): f is Extract<ViewFeature, { type: 'circle' }> => f.type === 'circle');
+  if (options.circleOnly) {
+    let bestC: { snap: DrawingSnap; d: number } | null = null;
+    for (const f of allCircles) {
+      const toC = hyp(p[0] - f.centre[0], p[1] - f.centre[1]);
+      const d = Math.min(toC, Math.abs(toC - f.radius));
+      if (d <= tol && (!bestC || d < bestC.d)) {
+        bestC = {
+          d,
+          snap: {
+            kind: 'centre',
+            at: [f.centre[0], f.centre[1]],
+            radius: f.radius,
+            circle: { centre: [f.centre[0], f.centre[1]], radius: f.radius },
+            ...(isModelRef(f.ref) ? { attach: { ref: f.ref, u: 0 } } : {}),
+          },
+        };
+      }
+    }
+    return bestC ? bestC.snap : null;
+  }
+
+  if (!options.contourOnly) {
+    // Find the nearest contour segment to associate with a point snap if the point itself doesn't carry one
+    const nearestEdgeNear = (q: P2, maxD: number): [P2, P2] | undefined => {
+      let best: { seg: [P2, P2]; d: number } | null = null;
+      for (const e of seen?.edges ?? []) {
+        const d = segmentDistance(q, e.a, e.b);
+        if (d <= maxD && (!best || d < best.d)) best = { seg: [e.a, e.b], d };
+      }
+      if (hasVisible) {
+        for (const poly of lines!.visible) {
+          for (let i = 0; i + 3 < poly.length; i += 2) {
+            const a: P2 = [poly[i]!, poly[i + 1]!];
+            const b: P2 = [poly[i + 2]!, poly[i + 3]!];
+            const d = segmentDistance(q, a, b);
+            if (d <= maxD && (!best || d < best.d)) best = { seg: [a, b], d };
+          }
+        }
+      }
+      return best?.seg;
+    };
+
+    // Tier 1: Discrete key points (centre, vertex, midpoint, axis endpoint/midpoint, quadrant) within `tol`
+    let bestPoint: { snap: DrawingSnap; d: number; prio: number } | null = null;
+    const offerPoint = (snap: DrawingSnap, d: number, prio: number) => {
+      if (d > tol) return;
+      if (!bestPoint || d < bestPoint.d - 1e-6 || (Math.abs(d - bestPoint.d) <= 1e-6 && prio < bestPoint.prio)) {
+        bestPoint = { snap, d, prio };
+      }
+    };
+
+    for (const f of features) {
+      if (f.type === 'circle' || f.type === 'centre') {
+        const d = hyp(p[0] - f.centre[0], p[1] - f.centre[1]);
+        offerPoint(
+          {
+            kind: 'centre',
+            at: [f.centre[0], f.centre[1]],
+            radius: f.radius,
+            circle: { centre: [f.centre[0], f.centre[1]], radius: f.radius },
+            ...(f.type === 'circle' && isModelRef(f.ref) ? { attach: { ref: f.ref, u: 0 } } : {}),
+          },
+          d,
+          0,
+        );
+      } else if (f.type === 'axis') {
+        const seg: [P2, P2] = [[f.from[0], f.from[1]], [f.to[0], f.to[1]]];
+        offerPoint({ kind: 'axis', at: [f.from[0], f.from[1]], edge: nearestEdgeNear(f.from, EDGE_TOLERANCE * 2) ?? seg }, hyp(p[0] - f.from[0], p[1] - f.from[1]), 2);
+        offerPoint({ kind: 'axis', at: [f.to[0], f.to[1]], edge: nearestEdgeNear(f.to, EDGE_TOLERANCE * 2) ?? seg }, hyp(p[0] - f.to[0], p[1] - f.to[1]), 2);
+        const mid: P2 = [(f.from[0] + f.to[0]) / 2, (f.from[1] + f.to[1]) / 2];
+        offerPoint({ kind: 'axis', at: mid, edge: seg }, hyp(p[0] - mid[0], p[1] - mid[1]), 3);
+      }
+    }
+    for (const c of seen?.circles ?? []) {
+      const d = hyp(p[0] - c.centre[0], p[1] - c.centre[1]);
+      offerPoint(
+        {
+          kind: 'centre',
+          at: [c.centre[0], c.centre[1]],
+          radius: c.radius,
+          circle: { centre: [c.centre[0], c.centre[1]], radius: c.radius },
+          ...(isModelRef(c.ref) ? { attach: { ref: c.ref, u: 0 } } : {}),
+        },
+        d,
+        0,
+      );
+    }
+    for (const v of seen?.vertices ?? []) {
+      const d = hyp(p[0] - v.at[0], p[1] - v.at[1]);
+      if (d <= tol) {
+        offerPoint(
+          {
+            kind: 'vertex',
+            at: [v.at[0], v.at[1]],
+            edge: nearestEdgeNear(v.at, EDGE_TOLERANCE * 2),
+            ...(isModelRef(v.ref) ? { attach: { ref: v.ref, u: 0 } } : {}),
+          },
+          d,
+          1,
+        );
+      }
+    }
+    for (const e of seen?.edges ?? []) {
+      const mid: P2 = [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2];
+      offerPoint(
+        {
+          kind: 'midpoint',
+          at: mid,
+          edge: [e.a, e.b],
+          ...(isModelRef(e.ref) ? { attach: { ref: e.ref, u: 0.5 } } : {}),
+        },
+        hyp(p[0] - mid[0], p[1] - mid[1]),
+        1,
+      );
+    }
+    for (const o of outlinesOf(features as PickFeature[])) {
+      const seg: [P2, P2] = [o.from, o.to];
+      if (onDrawing(o.from)) offerPoint({ kind: 'vertex', at: o.from, edge: seg }, hyp(p[0] - o.from[0], p[1] - o.from[1]), 2);
+      if (onDrawing(o.to)) offerPoint({ kind: 'vertex', at: o.to, edge: seg }, hyp(p[0] - o.to[0], p[1] - o.to[1]), 2);
+      const mid: P2 = [(o.from[0] + o.to[0]) / 2, (o.from[1] + o.to[1]) / 2];
+      if (onDrawing(mid)) offerPoint({ kind: 'midpoint', at: mid, edge: seg }, hyp(p[0] - mid[0], p[1] - mid[1]), 2);
+    }
+    for (const f of allCircles) {
+      for (let q = 0; q < 4; q++) {
+        const at: P2 = [f.centre[0] + (q === 0 ? f.radius : q === 2 ? -f.radius : 0), f.centre[1] + (q === 1 ? f.radius : q === 3 ? -f.radius : 0)];
+        if (onDrawing(at)) {
+          offerPoint(
+            {
+              kind: 'quadrant',
+              at,
+              radius: f.radius,
+              circle: { centre: [f.centre[0], f.centre[1]], radius: f.radius },
+              ...(isModelRef(f.ref) ? { attach: { ref: f.ref, u: 0 } } : {}),
+            },
+            hyp(p[0] - at[0], p[1] - at[1]),
+            2,
+          );
+        }
+      }
+    }
+    if (hasVisible) {
+      for (const entity of projectionEntities({ visible: lines!.visible, hidden: [], box: lines!.box })) {
+        const p0 = projectionPoint(entity, 0);
+        const p1 = projectionPoint(entity, 1);
+        const seg: [P2, P2] | undefined = entity.straight ? [p0, p1] : undefined;
+        offerPoint({ kind: 'vertex', at: p0, ...(seg ? { edge: seg } : { contour: entity.points }) }, hyp(p[0] - p0[0], p[1] - p0[1]), 3);
+        offerPoint({ kind: 'vertex', at: p1, ...(seg ? { edge: seg } : { contour: entity.points }) }, hyp(p[0] - p1[0], p[1] - p1[1]), 3);
+        if (entity.straight) {
+          const pm = projectionPoint(entity, 0.5);
+          offerPoint({ kind: 'midpoint', at: pm, edge: [p0, p1] }, hyp(p[0] - pm[0], p[1] - pm[1]), 2);
+        }
+      }
+    }
+    if (bestPoint) return (bestPoint as { snap: DrawingSnap }).snap;
+
+    // Tier 2: Circle rim -> centre snap when requested (centreLine, centreMark)
+    if (options.circleRimToCentre) {
+      let bestRim: { snap: DrawingSnap; d: number } | null = null;
+      for (const f of allCircles) {
+        const dRim = Math.abs(hyp(p[0] - f.centre[0], p[1] - f.centre[1]) - f.radius);
+        if (dRim <= tol && (!bestRim || dRim < bestRim.d)) {
+          bestRim = {
+            d: dRim,
+            snap: {
+              kind: 'centre',
+              at: [f.centre[0], f.centre[1]],
+              radius: f.radius,
+              circle: { centre: [f.centre[0], f.centre[1]], radius: f.radius },
+              ...(isModelRef(f.ref) ? { attach: { ref: f.ref, u: 0 } } : {}),
+            },
+          };
+        }
+      }
+      if (bestRim) return bestRim.snap;
+    }
+  }
+
+  // Tier 3: Nearest visible contour line / edge / outline / circle rim / axis within `contourTol`
+  const contourTol = options.contourTol ?? 2.5 * tol;
+  let bestLine: { snap: DrawingSnap; d: number; prio: number } | null = null;
+  const offerLine = (snap: DrawingSnap, d: number, prio: number) => {
+    if (d > contourTol) return;
+    if (!bestLine || d < bestLine.d - 1e-6 || (Math.abs(d - bestLine.d) <= 1e-6 && prio < bestLine.prio)) {
+      bestLine = { snap, d, prio };
+    }
+  };
+
+  for (const e of seen?.edges ?? []) {
+    const { q, u, d } = projectOnSegment(p, e.a, e.b);
+    if (options.contourOnly && !onDrawing(q)) continue;
+    offerLine(
+      {
+        kind: 'edge',
+        at: q,
+        edge: [e.a, e.b],
+        ...(isModelRef(e.ref) ? { attach: { ref: e.ref, u: Math.round(u * 1e4) / 1e4 } } : {}),
+      },
+      d,
+      0,
+    );
+  }
+  for (const o of outlinesOf(features as PickFeature[])) {
+    const { q, d } = projectOnSegment(p, o.from, o.to);
+    if (onDrawing(q)) offerLine({ kind: 'edge', at: q, edge: [o.from, o.to] }, d, 1);
+  }
+  if (hasVisible) {
+    for (const entity of projectionEntities({ visible: lines!.visible, hidden: [], box: lines!.box })) {
+      if (entity.straight) {
+        const a = projectionPoint(entity, 0);
+        const b = projectionPoint(entity, 1);
+        const { q, d } = projectOnSegment(p, a, b);
+        offerLine({ kind: 'edge', at: q, edge: [a, b] }, d, 2);
+      } else {
+        const poly = entity.points;
+        let bestSeg: { q: P2; d: number } | null = null;
+        for (let i = 0; i + 3 < poly.length; i += 2) {
+          const s = projectOnSegment(p, [poly[i]!, poly[i + 1]!], [poly[i + 2]!, poly[i + 3]!]);
+          if (!bestSeg || s.d < bestSeg.d) bestSeg = { q: s.q, d: s.d };
+        }
+        if (bestSeg) offerLine({ kind: 'edge', at: bestSeg.q, contour: poly }, bestSeg.d, 2);
+      }
+    }
+  }
+  for (const f of allCircles) {
+    const rDist = hyp(p[0] - f.centre[0], p[1] - f.centre[1]);
+    const d = Math.abs(rDist - f.radius);
+    if (d <= contourTol && rDist > 1e-9) {
+      const q: P2 = [f.centre[0] + ((p[0] - f.centre[0]) / rDist) * f.radius, f.centre[1] + ((p[1] - f.centre[1]) / rDist) * f.radius];
+      if (onDrawing(q)) {
+        offerLine(
+          {
+            kind: 'edge',
+            at: q,
+            radius: f.radius,
+            circle: { centre: [f.centre[0], f.centre[1]], radius: f.radius },
+            ...(isModelRef(f.ref) ? { attach: { ref: f.ref, u: 0 } } : {}),
+          },
+          d,
+          1,
+        );
+      }
+    }
+  }
+  for (const f of options.contourOnly ? [] : features) {
+    if (f.type === 'axis') {
+      const { q, d } = projectOnSegment(p, f.from, f.to);
+      if (d <= tol) offerLine({ kind: 'axis', at: q, edge: [f.from, f.to] }, d, 3);
+    }
+  }
+
+  // Tier 4: Horizontal / vertical orthogonal alignment (`options.orthoFrom`)
+  if (options.orthoFrom) {
+    const [ox, oy] = options.orthoFrom;
+    const dx = Math.abs(p[0] - ox);
+    const dy = Math.abs(p[1] - oy);
+    if (bestLine) {
+      const found = (bestLine as { snap: DrawingSnap }).snap;
+      if (found.edge) {
+        const [a, b] = found.edge;
+        if (dx <= tol && Math.abs(b[0] - a[0]) > 1e-6) {
+          const t = (ox - a[0]) / (b[0] - a[0]);
+          if (t >= 0 && t <= 1) return { ...found, at: [ox, a[1] + t * (b[1] - a[1])], ortho: 'vertical' };
+        }
+        if (dy <= tol && Math.abs(b[1] - a[1]) > 1e-6) {
+          const t = (oy - a[1]) / (b[1] - a[1]);
+          if (t >= 0 && t <= 1) return { ...found, at: [a[0] + t * (b[0] - a[0]), oy], ortho: 'horizontal' };
+        }
+      }
+      return found;
+    }
+    if (hyp(p[0] - ox, p[1] - oy) > tol) {
+      if (dx <= tol && dx <= dy) return { kind: 'axis', at: [ox, p[1]], ortho: 'vertical' };
+      if (dy <= tol && dy < dx) return { kind: 'axis', at: [p[0], oy], ortho: 'horizontal' };
+    }
+  }
+
+  return bestLine ? (bestLine as { snap: DrawingSnap }).snap : null;
+}
+
+/**
+ * Given two straight segments in view coordinates, returns the endpoints `[from, to]` of their symmetric bisector centreline
+ * when the two segments are parallel (within 1°) and distinct (perpendicular separation > 1e-3 mm) with overlapping
+ * longitudinal spans; returns null otherwise.
+ */
+export function bisectorCentreLine(edgeA: readonly [P2, P2], edgeB: readonly [P2, P2]): [P2, P2] | null {
+  const [a0, a1] = edgeA;
+  const [b0, b1] = edgeB;
+  const dax = a1[0] - a0[0], day = a1[1] - a0[1];
+  const dbx = b1[0] - b0[0], dby = b1[1] - b0[1];
+  const la = hyp(dax, day), lb = hyp(dbx, dby);
+  if (!(la > 1e-6 && lb > 1e-6)) return null;
+  const ux = dax / la, uy = day / la;
+  const vx = dbx / lb, vy = dby / lb;
+  const dot = ux * vx + uy * vy;
+  if (Math.abs(dot) < Math.cos(Math.PI / 180)) return null;
+  const nx = -uy, ny = ux;
+  const dA = ((a0[0] + a1[0]) / 2) * nx + ((a0[1] + a1[1]) / 2) * ny;
+  const dB = ((b0[0] + b1[0]) / 2) * nx + ((b0[1] + b1[1]) / 2) * ny;
+  if (Math.abs(dA - dB) <= 1e-3) return null;
+  const dMid = (dA + dB) / 2;
+  const proj = (q: P2) => q[0] * ux + q[1] * uy;
+  const ta0 = proj(a0), ta1 = proj(a1);
+  const tb0 = proj(b0), tb1 = proj(b1);
+  const minA = Math.min(ta0, ta1), maxA = Math.max(ta0, ta1);
+  const minB = Math.min(tb0, tb1), maxB = Math.max(tb0, tb1);
+  const overlap = Math.min(maxA, maxB) - Math.max(minA, minB);
+  if (overlap <= 1e-3) return null;
+  const tMin = Math.min(minA, minB);
+  const tMax = Math.max(maxA, maxB);
+  if (tMax - tMin <= 1e-3) return null;
+  const atT = (t: number): P2 => [
+    Math.round((ux * t + nx * dMid) * 100) / 100,
+    Math.round((uy * t + ny * dMid) * 100) / 100,
+  ];
+  return [atT(tMin), atT(tMax)];
 }
 
 /**

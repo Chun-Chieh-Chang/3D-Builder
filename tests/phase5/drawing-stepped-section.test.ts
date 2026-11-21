@@ -131,8 +131,14 @@ describe('what a stepped or aligned line may be (D-I5)', () => {
     const pts = (centre[0] as { points: number[] }).points;
     expect(pts).toHaveLength(6); // three points
     // the two arrow shafts: 8 mm from each end, square to their own segment (down at the first, down-right at the last)
-    const shafts = scene.items.filter((i) => i.kind === 'polyline' && i.style === 'visible' && (i as { points: number[] }).points.length === 4).map((i) => (i as { points: number[] }).points);
-    const ways = shafts.slice(0, 2).map((s) => [(s[2]! - s[0]!) / 8, (s[3]! - s[1]!) / 8]);
+    const shafts = scene.items.flatMap((i) => {
+      if (i.kind !== 'polyline' || i.style !== 'visible' || i.points.length !== 4) return [];
+      const [x0, y0, x1, y1] = i.points;
+      const dx = x1! - x0!, dy = y1! - y0!;
+      return Math.abs(Math.hypot(dx, dy) - 8) < 1e-9 ? [[dx, dy]] : [];
+    });
+    expect(shafts).toHaveLength(2);
+    const ways = shafts.map(([dx, dy]) => [dx! / 8, dy! / 8]);
     ways[0]!.forEach((v, i) => expect(v).toBeCloseTo([0, -1][i]!, 9));
     ways[1]!.forEach((v, i) => expect(v).toBeCloseTo([Math.SQRT1_2, -Math.SQRT1_2][i]!, 9));
   });

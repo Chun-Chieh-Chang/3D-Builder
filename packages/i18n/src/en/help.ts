@@ -1384,7 +1384,7 @@ export const help: Translation = {
   'help.drwFcf.keywords': 'geometric tolerance feature control frame GD&T',
   'help.drwCentreMark.summary': 'Puts a centre mark at the centre of a circle or an arc.',
   'help.drwCentreMark.keywords': 'centre mark center',
-  'help.drwCentreLine.summary': 'Puts a centre line between two lines or on a cylinder.',
+  'help.drwCentreLine.summary': 'Click two points or drag on the sheet, or switch to Between parallel edges and pick two edges.',
   'help.drwCentreLine.keywords': 'centre line axis symmetry',
   'help.drwSurface.summary': 'Puts a surface finish symbol on a view.',
   'help.drwSurface.keywords': 'surface finish roughness Ra',

@@ -207,10 +207,10 @@ describe('the locating plate: centre marks, callouts and the hole table', () => 
     expect(mid).toBe(150);
   });
 
-  it('a section view has no centre marks unless it asks; a view can turn them off; a detail has only those inside its circle', () => {
+  it('a section view shows centre marks by default and can turn them off; a detail has only those inside its circle', () => {
     const f = features();
-    expect(centreItems({ id: 's', name: 'A', kind: 'section', parent: 'p', line: [[0, 0], [0, 1]], label: 'A' }, f, placed)).toEqual([]);
-    expect(centreItems({ id: 's', name: 'A', kind: 'section', parent: 'p', line: [[0, 0], [0, 1]], label: 'A', centreMarks: true }, f, placed)).toHaveLength(24);
+    expect(centreItems({ id: 's', name: 'A', kind: 'section', parent: 'p', line: [[0, 0], [0, 1]], label: 'A' }, f, placed)).toHaveLength(24);
+    expect(centreItems({ id: 's', name: 'A', kind: 'section', parent: 'p', line: [[0, 0], [0, 1]], label: 'A', centreMarks: false }, f, placed)).toEqual([]);
     expect(centreItems({ ...topView, centreMarks: false }, f, placed)).toEqual([]);
     // a detail about the hole at (−50, 30), radius 8: only its cross, and the arms cut at the circle (radius 8 from the centre)
     const items = centreItems({ id: 'd', name: 'B', kind: 'detail', parent: 'view1', centre: [-50, 30], radius: 8, label: 'B' }, f, { ...placed, w: 16, h: 16, scale: 2, centre: [-50, 30] });

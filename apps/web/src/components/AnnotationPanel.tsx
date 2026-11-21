@@ -10,6 +10,7 @@ import {
   type MaterialCondition,
   type SurfaceFinish,
   type SurfaceFinishKind,
+  type SurfaceFinishTriangles,
   type ToleranceFrameAnnotation,
   page,
 } from '@3db/model';
@@ -344,7 +345,7 @@ export function AnnotationPanel() {
   if (!view) return null;
   const features = drw.features.get(view.id) ?? [];
   const tables = curPage.tables.flatMap((x) => (x.view === view.id && x.kind === 'holes' ? [x] : []));
-  const centre = view.centreMarks ?? view.kind !== 'section';
+  const centre = view.centreMarks ?? true;
   const assembly = drw.boms.has(view.id);
   const boms = curPage.tables.flatMap((x) => (x.view === view.id && x.kind === 'bom' ? [x] : []));
   const sizes = [...new Set(holeRows(features).map((r) => formatNumber(2 * r.radius)))];
@@ -352,8 +353,12 @@ export function AnnotationPanel() {
   const annotations = d.annotationsOf(view.id);
   const currentAnnotation = drw.annotation ? annotations.find((a) => a.id === drw.annotation) : undefined;
   const currentFinish = drw.finish ? finishes.find((f) => f.id === drw.finish) : undefined;
-  /** What a symbol is called in the list: its roughness, or how it is made when it has no value. */
-  const finishLabel = (f: SurfaceFinish) => (f.ra !== undefined ? raText(f.ra) : t(`drawingUi.finishKind.${f.kind ?? 'machined'}`));
+  /** What a symbol is called in the list: its triangles and roughness, or how it is made when it has no value. */
+  const finishLabel = (f: SurfaceFinish) => {
+    const tri = f.triangles ? '▽'.repeat(f.triangles) : '';
+    const ra = f.ra !== undefined ? raText(f.ra) : '';
+    return [tri, ra].filter(Boolean).join(' ') || t(`drawingUi.finishKind.${f.kind ?? 'machined'}`);
+  };
   return (
     <>
       {assembly && (
@@ -486,15 +491,31 @@ export function AnnotationPanel() {
       {currentFinish && (
         <>
           <label className="pm-row">
-            <span>{t('drawingUi.finishKind')}</span>
-            <select data-field="finishKind" value={currentFinish.kind ?? 'machined'} onChange={(e) => d.setSurfaceFinish(currentFinish.id, { kind: e.target.value as SurfaceFinishKind })}>
-              {SURFACE_FINISH_KINDS.map((k) => (
-                <option key={k} value={k}>
-                  {t(`drawingUi.finishKind.${k}`)}
-                </option>
-              ))}
+            <span>{t('drawingUi.finishSymbol')}</span>
+            <select
+              data-field="finishSymbol"
+              value={currentFinish.triangles ? String(currentFinish.triangles) : 'iso'}
+              onChange={(e) => d.setSurfaceFinish(currentFinish.id, { triangles: e.target.value === 'iso' ? null : (Number(e.target.value) as SurfaceFinishTriangles) })}
+            >
+              <option value="iso">{t('drawingUi.finishSymbol.iso')}</option>
+              <option value="1">{t('drawingUi.finishSymbol.tri1')}</option>
+              <option value="2">{t('drawingUi.finishSymbol.tri2')}</option>
+              <option value="3">{t('drawingUi.finishSymbol.tri3')}</option>
+              <option value="4">{t('drawingUi.finishSymbol.tri4')}</option>
             </select>
           </label>
+          {!currentFinish.triangles && (
+            <label className="pm-row">
+              <span>{t('drawingUi.finishKind')}</span>
+              <select data-field="finishKind" value={currentFinish.kind ?? 'machined'} onChange={(e) => d.setSurfaceFinish(currentFinish.id, { kind: e.target.value as SurfaceFinishKind })}>
+                {SURFACE_FINISH_KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {t(`drawingUi.finishKind.${k}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="pm-row">
             <span>{t('drawingUi.finishRa')}</span>
             <NumberBox field="finishRa" value={currentFinish.ra ?? 0} onCommit={(v) => d.setSurfaceFinish(currentFinish.id, { ra: v > 0 ? v : null })} />
@@ -515,6 +536,13 @@ export function AnnotationPanel() {
             <span>{t('drawingUi.finishLeader')}</span>
             <NumberBox field="finishLeader" value={currentFinish.leader ?? 0} onCommit={(v) => d.setSurfaceFinish(currentFinish.id, { leader: v > 0 ? v : null })} />
           </label>
+          {currentFinish.textOffset && (
+            <div className="pm-row">
+              <button type="button" className="pm-button" data-action="finishTextReset" onClick={() => d.setSurfaceFinish(currentFinish.id, { textOffset: null })}>
+                {t('drawingUi.finishTextReset')}
+              </button>
+            </div>
+          )}
         </>
       )}
       </>

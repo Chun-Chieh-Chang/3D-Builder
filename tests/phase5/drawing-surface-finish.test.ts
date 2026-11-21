@@ -4,8 +4,8 @@
  * Ra over the bar and the note under it. Every number worked out by hand, not against the drawing itself.
  */
 import { describe, expect, it } from 'vitest';
-import { applyDrawingCommand, createEmptyDrawing, parseDrawing, serializeDrawing, type DrawingDoc, type SurfaceFinish, page } from '@3db/model';
-import { FINISH_HEIGHT, buildScene, raText, surfaceFinishBox, surfaceFinishItems, toSheet, type PlacedView, type SceneItem, type ScenePolyline, type ViewLines } from '@3db/drawing';
+import { applyDrawingCommand, createEmptyDrawing, parseDrawing, serializeDrawing, type DrawingDoc, type SurfaceFinish, type ViewFeature, page } from '@3db/model';
+import { FINISH_HEIGHT, bisectorCentreLine, buildScene, raText, snapAt, surfaceFinishBox, surfaceFinishItems, toSheet, type PlacedView, type SceneItem, type ScenePolyline, type ViewLines } from '@3db/drawing';
 
 const view = { id: 'view1', name: '前視', source: 'a.3dbx', direction: 'front' as const };
 const withViews = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [view] });
@@ -161,5 +161,106 @@ describe('the symbol of a surface finish (ISO 1302)', () => {
     expect(built.scene.items.some((i) => i.kind === 'text' && i.text === 'Ra 1.6')).toBe(true);
     // and nothing is drawn when the view has no lines yet
     expect(buildScene(doc, new Map()).scene.items.some((i) => i.kind === 'text' && i.text === 'Ra 1.6')).toBe(false);
+  });
+
+  it('supports traditional multiple-triangle symbols (1 to 4 triangles) and independent textOffset dragging', () => {
+    const insert = (f: SurfaceFinish) => applyDrawingCommand(withViews(), { type: 'insertSurfaceFinishes', finishes: [f] });
+    expect(() => insert(finish('fin1', { triangles: 0 as never }))).toThrow(/三角形/);
+    expect(() => insert(finish('fin1', { triangles: 5 as never }))).toThrow(/三角形/);
+    expect(() => insert(finish('fin1', { triangles: 1.5 as never }))).toThrow(/三角形/);
+    expect(() => insert(finish('fin1', { textOffset: [NaN, 0] }))).toThrow(/位置/);
+
+    for (const n of [1, 2, 3, 4] as const) {
+      const items = surfaceFinishItems([finish(`f${n}`, { triangles: n, ra: 0.08, method: 'G' })], placed);
+      const closedTris = polys(items).filter((l) => l.closed && l.points.length === 6);
+      expect(closedTris).toHaveLength(n);
+      // all n triangle tips lie at the same y (on the surface tangent)
+      for (const tri of closedTris) expect(at(tri, 0)[1]).toBeCloseTo(apex[1], 9);
+    }
+
+    const baseText = texts(surfaceFinishItems([finish('f1', { ra: 0.08, method: 'G', note: '鏡面' })], placed));
+    const movedItems = surfaceFinishItems([finish('f1', { ra: 0.08, method: 'G', note: '鏡面', textOffset: [-15, 6] })], placed);
+    const movedText = texts(movedItems);
+    expect(movedText[0]!.at[0]).toBeCloseTo(baseText[0]!.at[0] - 15, 9);
+    expect(movedText[0]!.at[1]).toBeCloseTo(baseText[0]!.at[1] + 6, 9);
+    expect(movedText[1]!.at[0]).toBeCloseTo(baseText[1]!.at[0] - 15, 9);
+    expect(movedText[1]!.at[1]).toBeCloseTo(baseText[1]!.at[1] + 6, 9);
+    // symbol legs remain anchored at apex even when text is dragged independently
+    const movedLegs = polys(movedItems).filter((l) => dist(at(l, 0), apex) < 1e-9);
+    expect(movedLegs).toHaveLength(2);
+
+    let d = insert(finish('fin1', { triangles: 3, ra: 0.8, textOffset: [-10, 4] }));
+    expect(page(d).surfaceFinishes[0]).toMatchObject({ triangles: 3, ra: 0.8, textOffset: [-10, 4] });
+    d = applyDrawingCommand(d, { type: 'setSurfaceFinish', finishId: 'fin1', patch: { triangles: null, textOffset: null } });
+    expect(page(d).surfaceFinishes[0]).toEqual({ id: 'fin1', view: 'view1', at: [10, 20], ra: 0.8 });
+  });
+});
+
+describe('universal drawing snap (snapAt & bisectorCentreLine)', () => {
+  const lines: ViewLines = {
+    visible: [
+      [-10, 0, 10, 0],
+      [-10, 20, 10, 20],
+      [-10, 0, -10, 20],
+      [10, 0, 10, 20],
+    ],
+    hidden: [],
+    box: { min: [-10, 0], max: [10, 20] },
+  };
+  const features: ViewFeature[] = [
+    { type: 'axis', ref: { kind: 'face', name: 'cyl1' }, from: [0, 0], to: [0, 20], radius: 10 },
+    { type: 'circle', ref: { kind: 'face', name: 'hole1' }, centre: [5, 10], radius: 2, convex: false, full: true, outward: 45 },
+  ];
+
+  it('snaps to midpoint, endpoint, circle centre, axis and the strictly nearest contour line', () => {
+    // Midpoint of top contour line [-10, 20] -> [10, 20]
+    const topMid = snapAt(lines, features, undefined, [0.3, 20.2], 1.5);
+    expect(topMid).not.toBeNull();
+    expect(topMid!.at).toEqual([0, 20]);
+    expect(topMid!.edge).toBeDefined();
+
+    // Endpoint [-10, 20]
+    const corner = snapAt(lines, features, undefined, [-9.8, 19.9], 1.5);
+    expect(corner).not.toBeNull();
+    expect(corner!.kind).toBe('vertex');
+    expect(corner!.at).toEqual([-10, 20]);
+
+    // Circle centre (including rim-to-centre mode for centreLine/centreMark)
+    const rim = snapAt(lines, features, undefined, [5 + 1.95, 10], 1.5, { circleRimToCentre: true });
+    expect(rim).not.toBeNull();
+    expect(rim!.kind).toBe('centre');
+    expect(rim!.at).toEqual([5, 10]);
+
+    // Nearest contour line: pointer at [-8.2, 12] is 1.8 mm from left wall (x = -10) and > 8 mm from others -> snaps to left contour line [-10, 12]
+    const leftWall = snapAt(lines, features, undefined, [-8.2, 12], 1.5);
+    expect(leftWall).not.toBeNull();
+    expect(leftWall!.kind).toBe('edge');
+    expect(leftWall!.at[0]).toBeCloseTo(-10, 9);
+    expect(leftWall!.at[1]).toBeCloseTo(12, 9);
+    expect(leftWall!.edge).toEqual([[-10, 0], [-10, 20]]);
+
+    // Orthogonal vertical snap to bottom contour line from orthoFrom = [3, 20]
+    const orthoHit = snapAt(lines, features, undefined, [3.2, 0.4], 1.5, { orthoFrom: [3, 20] });
+    expect(orthoHit).not.toBeNull();
+    expect(orthoHit!.ortho).toBe('vertical');
+    expect(orthoHit!.at).toEqual([3, 0]);
+  });
+
+  it('computes the exact symmetric bisector centreline between two parallel edges and rejects invalid pairs', () => {
+    const bis = bisectorCentreLine([[-10, 0], [-10, 20]], [[10, 20], [10, 0]]);
+    expect(bis).toEqual([[0, 0], [0, 20]]);
+
+    // Collinear lines -> null
+    expect(bisectorCentreLine([[0, 0], [0, 10]], [[0, 5], [0, 15]])).toBeNull();
+    // Non-parallel lines -> null
+    expect(bisectorCentreLine([[-10, 0], [-10, 20]], [[10, 0], [12, 20]])).toBeNull();
+    // Disjoint parallel segments that do not overlap along their direction -> null
+    expect(bisectorCentreLine([[-10, 0], [-10, 5]], [[10, 15], [10, 20]])).toBeNull();
+  });
+
+  it('places roughness on the closest visible contour even within reach of an axis or midpoint', () => {
+    const atMidpoint = snapAt(lines, features, undefined, [-9.8, 10.9], 1.5, { contourOnly: true });
+    expect(atMidpoint).toMatchObject({ at: [-10, 10.9], edge: [[-10, 0], [-10, 20]] });
+    expect(snapAt(lines, features, undefined, [0.2, 10], 1.5, { contourOnly: true })).toBeNull();
   });
 });

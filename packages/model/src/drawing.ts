@@ -871,6 +871,8 @@ export type DrawingTable = HoleTable | BomTable;
  */
 export type SurfaceFinishKind = 'basic' | 'machined' | 'unmachined';
 export const SURFACE_FINISH_KINDS: readonly SurfaceFinishKind[] = ['basic', 'machined', 'unmachined'];
+export type SurfaceFinishTriangles = 1 | 2 | 3 | 4;
+export const SURFACE_FINISH_TRIANGLES: readonly SurfaceFinishTriangles[] = [1, 2, 3, 4];
 
 /** The Ra values of ISO 1302 (µm) from 0.008 to 400; a drawing normally writes one of these. */
 export const RA_MIN = 0.008;
@@ -891,6 +893,8 @@ export interface SurfaceFinish {
   angle?: number;
   /** How the surface is made (ISO 1302). Absent: `machined` (the material is removed). */
   kind?: SurfaceFinishKind;
+  /** Traditional multiple-triangle notation (CNS 3 / JIS B 0601: ▽ to ▽▽▽▽, 1 to 4 triangles); absent: ISO 1302 symbol. */
+  triangles?: SurfaceFinishTriangles;
   /** The mean roughness Ra in micrometres (0.008 to 400); absent: the symbol alone, saying only how the surface is made. */
   ra?: number;
   /** The method the surface is made by, written over the bar after the Ra (「銑削」, 「磨削」). */
@@ -899,6 +903,8 @@ export interface SurfaceFinish {
   note?: string;
   /** How long the leader is from the point of the symbol to the surface it marks (mm on the sheet). Absent: 0 (the point is on the surface). */
   leader?: number;
+  /** Independent offset of the text (Ra, method, note) from its default place on the symbol, in sheet millimetres. */
+  textOffset?: [number, number];
 }
 
 /**
@@ -1011,10 +1017,12 @@ export type SurfaceFinishPatch = {
   at?: [number, number];
   angle?: number | null;
   kind?: SurfaceFinishKind | null;
+  triangles?: SurfaceFinishTriangles | null;
   ra?: number | null;
   method?: string | null;
   note?: string | null;
   leader?: number | null;
+  textOffset?: [number, number] | null;
 };
 
 export type DimensionPatch = {
@@ -1397,10 +1405,12 @@ function checkSurfaceFinish(f: SurfaceFinish, views: readonly DrawingView[]): vo
   if (!(Array.isArray(f.at) && f.at.length === 2 && f.at.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
   if (f.angle !== undefined && !Number.isFinite(f.angle)) throw new CommandError(t('drawing.badFinishAngle'));
   if (f.kind !== undefined && !SURFACE_FINISH_KINDS.includes(f.kind)) throw new CommandError(t('drawing.badFinishKind', { kind: String(f.kind) }));
+  if (f.triangles !== undefined && !SURFACE_FINISH_TRIANGLES.includes(f.triangles)) throw new CommandError(t('drawing.badFinishTriangles', { count: String(f.triangles) }));
   if (f.ra !== undefined && !(Number.isFinite(f.ra) && f.ra >= RA_MIN && f.ra <= RA_MAX)) throw new CommandError(t('drawing.badRa', { min: String(RA_MIN), max: String(RA_MAX) }));
   if (f.method !== undefined && (typeof f.method !== 'string' || f.method.length > 40)) throw new CommandError(t('drawing.badFinishText'));
   if (f.note !== undefined && (typeof f.note !== 'string' || f.note.length > 40)) throw new CommandError(t('drawing.badFinishText'));
   if (f.leader !== undefined && !(Number.isFinite(f.leader) && f.leader >= 0)) throw new CommandError(t('drawing.badFinishLeader'));
+  if (f.textOffset !== undefined && !(Array.isArray(f.textOffset) && f.textOffset.length === 2 && f.textOffset.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
 }
 
 /** Immer recipe: mutates the draft or throws CommandError, leaving the document untouched. */
@@ -1715,10 +1725,10 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     case 'setSurfaceFinish': {
       const f = pg.surfaceFinishes.find((x) => x.id === cmd.finishId);
       if (!f) throw new CommandError(t('drawing.noSurfaceFinish', { id: cmd.finishId }));
-      const { at, angle, kind, ra, method, note, leader } = cmd.patch;
+      const { at, angle, kind, triangles, ra, method, note, leader, textOffset } = cmd.patch;
       const next = { ...(JSON.parse(JSON.stringify(f)) as SurfaceFinish), ...(at !== undefined ? { at } : {}) } as SurfaceFinish;
       const loose = next as unknown as Record<string, unknown>;
-      for (const [k, v] of [['angle', angle], ['kind', kind], ['ra', ra], ['method', method], ['note', note], ['leader', leader]] as const) {
+      for (const [k, v] of [['angle', angle], ['kind', kind], ['triangles', triangles], ['ra', ra], ['method', method], ['note', note], ['leader', leader], ['textOffset', textOffset]] as const) {
         if (v === null) delete loose[k];
         else if (v !== undefined) loose[k] = v;
       }

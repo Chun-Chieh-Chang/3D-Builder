@@ -63,8 +63,8 @@ describe('centre marks (rules L1, L2)', () => {
     expect(Math.min(...xs)).toBeCloseTo(100 - 2, 6);
     expect(Math.max(...xs)).toBeCloseTo(100 + 25 + 2, 6);
     const section = { id: 's', name: 'A', kind: 'section' as const, parent: 'v1', line: [[0, 0], [0, 1]] as [[number, number], [number, number]], label: 'A' };
-    expect(centreItems(section, features, placed)).toEqual([]);
-    expect(centreItems({ ...section, centreMarks: true }, features, placed)).toHaveLength(2);
+    expect(centreItems(section, features, placed)).toHaveLength(2);
+    expect(centreItems({ ...section, centreMarks: false }, features, placed)).toEqual([]);
   });
 });
 

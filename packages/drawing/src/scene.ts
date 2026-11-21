@@ -417,7 +417,13 @@ function buildSceneIn(
     // the symbols and notes follow the drawing's text height (ADR 0256): drawn at ISO's 3.5 mm and scaled about the point they mark, so that one setting
     // sizes the dimensions, the finishes, the frames, the datums and the notes together; a note with a height of its own keeps it
     const k = resolveDimStyle(pg.sheet.dimStyle).text / DIM_STYLE_DEFAULT.text;
-    for (const f of pg.surfaceFinishes.filter((x) => x.view === v.id)) items.push(...scaleAbout(surfaceFinishItems([f], own), toSheet(own, f.at[0], f.at[1]), k).map((i) => ({ ...i, owner: f.id })));
+    for (const f of pg.surfaceFinishes.filter((x) => x.view === v.id)) {
+      const [dx, dy] = f.textOffset ?? [0, 0];
+      const symbol = surfaceFinishItems([{ ...f, textOffset: undefined }], own);
+      for (const i of scaleAbout(symbol, toSheet(own, f.at[0], f.at[1]), k)) {
+        items.push(i.kind === 'text' ? { ...i, at: [i.at[0] + dx, i.at[1] + dy], owner: f.id } : { ...i, owner: f.id });
+      }
+    }
     items.push(...threadItems(v, viewFeats ?? [], own, axesOf(pg.views, pg.sheet.projection, v) ?? undefined).map((i) => ({ ...i, owner: ofView })));
     for (const a of (pg.annotations ?? []).filter((x) => x.view === v.id)) {
       const anchor = a.kind === 'fcf' || a.kind === 'note' ? (a.leader ?? a.at) : a.kind === 'datum' ? a.at : null;

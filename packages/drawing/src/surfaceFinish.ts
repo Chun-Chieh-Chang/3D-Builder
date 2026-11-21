@@ -48,24 +48,44 @@ function symbol(f: SurfaceFinish, placed: PlacedView): SceneItem[] {
   const leader = f.leader ?? 0;
   const apex = at([0, leader]);
   if (leader > 0) items.push({ kind: 'polyline', points: [sx, sy, ...apex], style: 'thin' });
-  const left = at([-HALF, leader + TOP]);
-  const right = at([HALF, leader + TOP]);
-  const barEnd = at([HALF + BAR, leader + TOP]);
-  items.push({ kind: 'polyline', points: [...apex, ...right], style: 'thin' });
-  items.push({ kind: 'polyline', points: [...apex, ...left], style: 'thin' });
-  items.push({ kind: 'polyline', points: [...right, ...barEnd], style: 'thin' });
-  const kind = f.kind ?? 'machined';
-  if (kind === 'machined') items.push({ kind: 'polyline', points: [...left, ...right], style: 'thin' });
-  if (kind === 'unmachined') {
-    // the circle in the V: its middle halfway up, its radius keeping it clear of the legs
-    const r = 0.27 * TOP;
-    items.push({ kind: 'polyline', points: circlePolyline(at([0, leader + TOP / 2]), r), style: 'thin', closed: true });
+  let textBase: P;
+  if (f.triangles) {
+    const n = f.triangles;
+    if (leader > 0 && n > 1) {
+      const shelfL = at([-(n - 1) * HALF, leader]);
+      const shelfR = at([(n - 1) * HALF, leader]);
+      items.push({ kind: 'polyline', points: [...shelfL, ...shelfR], style: 'thin' });
+    }
+    for (let i = 0; i < n; i++) {
+      const cx = (i - (n - 1) / 2) * (2 * HALF);
+      const triApex = at([cx, leader]);
+      const triLeft = at([cx - HALF, leader + TOP]);
+      const triRight = at([cx + HALF, leader + TOP]);
+      items.push({ kind: 'polyline', points: [...triApex, ...triRight, ...triLeft], style: 'thin', closed: true });
+    }
+    textBase = at([-n * HALF, leader + TOP]);
+  } else {
+    const left = at([-HALF, leader + TOP]);
+    const right = at([HALF, leader + TOP]);
+    const barEnd = at([HALF + BAR, leader + TOP]);
+    items.push({ kind: 'polyline', points: [...apex, ...right], style: 'thin' });
+    items.push({ kind: 'polyline', points: [...apex, ...left], style: 'thin' });
+    items.push({ kind: 'polyline', points: [...right, ...barEnd], style: 'thin' });
+    const kind = f.kind ?? 'machined';
+    if (kind === 'machined') items.push({ kind: 'polyline', points: [...left, ...right], style: 'thin' });
+    if (kind === 'unmachined') {
+      // the circle in the V: its middle halfway up, its radius keeping it clear of the legs
+      const r = 0.27 * TOP;
+      items.push({ kind: 'polyline', points: circlePolyline(at([0, leader + TOP / 2]), r), style: 'thin', closed: true });
+    }
+    textBase = right;
   }
-  // what is written over the bar (the Ra and the method), and the note under it: the text stays upright whatever way the symbol leans
+  // what is written over the bar (the Ra and the method), and the note under it: the text stays upright whatever way the symbol leans, and can be offset independently
   const over = [f.ra !== undefined ? raText(f.ra) : '', f.method ?? ''].filter((s) => s !== '').join('  ');
   const under = f.note ?? '';
-  if (over !== '') items.push({ kind: 'text', at: [right[0], right[1] + TEXT_GAP], text: over, height: DIM_TEXT });
-  if (under !== '') items.push({ kind: 'text', at: [right[0], right[1] - TEXT_GAP - DIM_TEXT], text: under, height: DIM_TEXT });
+  const [ox, oy] = f.textOffset ?? [0, 0];
+  if (over !== '') items.push({ kind: 'text', at: [textBase[0] + ox, textBase[1] + TEXT_GAP + oy], text: over, height: DIM_TEXT });
+  if (under !== '') items.push({ kind: 'text', at: [textBase[0] + ox, textBase[1] - TEXT_GAP - DIM_TEXT + oy], text: under, height: DIM_TEXT });
   return items;
 }
 
@@ -78,6 +98,7 @@ export function surfaceFinishItems(finishes: readonly SurfaceFinish[], placed: P
 export function surfaceFinishBox(f: SurfaceFinish): { w: number; h: number } {
   const over = [f.ra !== undefined ? raText(f.ra) : '', f.method ?? ''].filter((s) => s !== '').join('  ');
   const under = f.note ?? '';
-  const w = Math.max(HALF + BAR, charWidth(over, DIM_TEXT), charWidth(under, DIM_TEXT));
+  const baseW = f.triangles ? 2 * f.triangles * HALF : HALF + BAR;
+  const w = Math.max(baseW, charWidth(over, DIM_TEXT), charWidth(under, DIM_TEXT));
   return { w, h: (f.leader ?? 0) + TOP + TEXT_GAP + DIM_TEXT * (1 + (under !== '' ? 1 : 0)) };
 }

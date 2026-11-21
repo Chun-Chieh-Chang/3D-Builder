@@ -175,7 +175,7 @@ export type DrawingTool =
    * An annotation (D-I3): a note, a frame or a datum takes two clicks (the feature it is about, then where it goes; for a note or a frame the same place twice
    * means no leader); a centre line two points; a centre mark one circle. `first` is the first click, in the view it was made on.
    */
-  | { kind: 'annotate'; what: AnnotateWhat; first?: { view: Id; at: [number, number] } };
+  | { kind: 'annotate'; what: AnnotateWhat; betweenEdges?: boolean; first?: { view: Id; at: [number, number]; attach?: { ref: DrawingRef; u: number }; edge?: [[number, number], [number, number]] } };
 
 /** The view directions the palette offers (the flat pattern is not one: only a sheet metal part has it, and it is added from the list). */
 export const PALETTE_DIRECTIONS: readonly ViewName[] = ['front', 'top', 'right', 'back', 'bottom', 'left', 'isometric'];

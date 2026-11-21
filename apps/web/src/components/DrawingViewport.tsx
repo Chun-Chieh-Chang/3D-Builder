@@ -28,6 +28,8 @@ import {
   sideAt,
   cornerAt,
   snapCut,
+  snapAt,
+  bisectorCentreLine,
   dimensionReferenceAt,
   lineAcrossBox,
   alignedTo,
@@ -40,7 +42,6 @@ import {
   sheetMetrics,
   slideAxis,
   surfaceFinishBox,
-  surfaceFinishItems,
   toSheet,
   toSvg,
   toView,
@@ -48,6 +49,7 @@ import {
   type DimensionHandle,
   type DimensionMode,
   type DimensionDraft,
+  type DrawingSnap,
   type PlacedView,
   type Pickable,
   type SceneItem,
@@ -86,7 +88,8 @@ type Drag =
   | { kind: 'sectionLine'; id: string; line: SectionDrawingView['line']; vertical: boolean; scale: number; from: P; delta: number }
   | { kind: 'table'; id: string; from: P; origin: P; delta: P }
   | { kind: 'balloon'; id: string; item: string; from: P; origin: P; delta: P }
-  | { kind: 'surface'; id: string; from: P; origin: P; delta: P }
+  | { kind: 'surface'; id: string; from: P; origin: P; delta: P; snappedAt?: P }
+  | { kind: 'surfaceText'; id: string; from: P; origin: P; delta: P }
   /** An annotation (D-I3) moved as a whole; its leader's point stays on the feature. `delta` is in sheet mm. */
   | { kind: 'annotation'; id: string; from: P; delta: P }
   | { kind: 'draw'; tool: 'section' | 'sectionLocal' | 'crop' | 'auxiliary' | 'detail'; vertical?: boolean; slant?: boolean; view: Id; from: P; to: P }
@@ -177,9 +180,10 @@ export function DrawingViewport() {
   const [panning, setPanning] = useState<{ x: number; y: number } | null>(null);
   /** The right-click menu of a view (D-I7): opened when the right button is let go where it was pressed (a drag with it pans). */
   const [menu, setMenu] = useState<DrawingMenuAt | null>(null);
+  const centreLinePress = useRef<{ point: P; pointerId: number } | null>(null);
   const rightFrom = useRef<{ x: number; y: number } | null>(null);
   /** Where the pointer is on the sheet, and what is under it: for the preview of a tool and the cursor. */
-  const [hover, setHover] = useState<{ p: P; feature: { view: Id; feature: Pickable } | null; dimension: string | null; ctrl?: boolean } | null>(null);
+  const [hover, setHover] = useState<{ p: P; feature: { view: Id; feature: Pickable } | null; snap?: { view: Id; snap: DrawingSnap; bisector?: [P, P] | null } | null; dimension: string | null; ctrl?: boolean } | null>(null);
   const activePageIndex = drw.activePageIndex ?? 0;
   const curPage = page(drw.doc, activePageIndex);
   const pageDoc = useMemo(() => drawingFromPage(curPage, drw.doc.properties), [curPage, drw.doc.properties]);
@@ -237,7 +241,23 @@ export function DrawingViewport() {
         }),
       };
     }
-    if (drag.kind === 'surface') return { ...pg, surfaceFinishes: pg.surfaceFinishes.map((f) => (f.id === drag.id ? { ...f, at: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P } : f)) };
+    if (drag.kind === 'surface') {
+      return {
+        ...pg,
+        surfaceFinishes: pg.surfaceFinishes.map((f) => {
+          const pl = basePlaced.get(f.view);
+          if (f.id !== drag.id || !pl) return f;
+          const at: P = drag.snappedAt ?? [round2(drag.origin[0] + drag.delta[0] / pl.scale), round2(drag.origin[1] + drag.delta[1] / pl.scale)];
+          return { ...f, at };
+        }),
+      };
+    }
+    if (drag.kind === 'surfaceText') {
+      return {
+        ...pg,
+        surfaceFinishes: pg.surfaceFinishes.map((f) => (f.id === drag.id ? { ...f, textOffset: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])] as P } : f)),
+      };
+    }
     if (drag.kind === 'scale') {
       const target = drag.target;
       return 'sheet' in target ? { ...pg, sheet: { ...pg.sheet, scale: drag.scale } } : { ...pg, views: pg.views.map((v) => (v.id === target.view ? { ...v, scale: drag.scale } : v)) };
@@ -248,7 +268,7 @@ export function DrawingViewport() {
     }
     if (drag.mode === 'slide') return { ...pg, views: pg.views.map((v) => (v.id === drag.id ? { ...v, slide: (v.slide ?? 0) + drag.delta[drag.axis!] } : v)) };
     return { ...pg, views: pg.views.map((v) => (v.id === drag.id ? { ...v, at: [drag.origin[0] + drag.delta[0], drag.origin[1] + drag.delta[1]] as P, slide: undefined } : v)) };
-  }, [curPage, drag, plan]);
+  }, [curPage, drag, plan, basePlaced]);
   const elements = useMemo(() => (plan ? new Map(drw.elements).set('preview', { elements: plan.facts }) : drw.elements), [drw.elements, plan]);
   // the annotations fastened to the model, where the model has their elements now (D-I2)
   const attached = useMemo(() => attachedAnnotations(shown.annotations ?? [], new Map(curPage.views.map((v) => [v.id, { seen: seenByView.get(v.id), features: drw.features.get(v.id) ?? [] }]))), [shown, seenByView, curPage.views, drw.features]);
@@ -267,6 +287,10 @@ export function DrawingViewport() {
       return pl ? annotationItems([a], pl, lookup, shown.sheet.unit ?? 'mm').map((i) => ({ ...i, group: a.id })) : [];
     });
   }, [shown, attached, built, drw.doc.properties]);
+  const surfaceHit = useMemo(() => {
+    const ids = new Set(shown.surfaceFinishes.map((f) => f.id));
+    return built.scene.items.flatMap((i) => i.owner && ids.has(i.owner) ? [{ ...i, group: i.owner }] : []);
+  }, [shown.surfaceFinishes, built.scene.items]);
   /** The lines of the sections on the sheet, where they are drawn on their parents (sheet mm). */
   const sectionLines = useMemo(
     () =>
@@ -381,6 +405,7 @@ export function DrawingViewport() {
   };
   /** How close the pointer has to be to take hold of something (mm on the sheet): the same few pixels whatever the zoom. */
   const reach = 6 / (pan.zoom * PX);
+  const betweenEdges = tool?.kind === 'annotate' && tool.what === 'centreLine' && tool.betweenEdges === true;
 
   /** The edges and vertices each view shows, by name (D-I2): worked out once per view from its lines and the worker's projected edges. */
   /** The element of a view under the point (the views in the order they are drawn, the last on top); when `only` is given, in that view only. */
@@ -389,11 +414,12 @@ export function DrawingViewport() {
       if (only && v.id !== only) continue;
       const placed = basePlaced.get(v.id);
       if (!placed || placed.w <= 0) continue;
-      const acquire = tool?.kind === 'dimension' && tool.mode === 'chamfer' ? chamferReferenceAt : referencePoints && (tool?.kind === 'dimension' || tool?.kind === 'ordinate') ? dimensionReferenceAt : featureAt;
-      const pointSnaps = tool?.kind === 'ordinate' || (tool?.kind === 'dimension' && (!tool.mode || ['smart', 'horizontal', 'vertical', 'aligned'].includes(tool.mode)));
+      const isDimTool = tool?.kind === 'dimension' || tool?.kind === 'ordinate' || tool?.kind === 'baseline';
+      const acquire = tool?.kind === 'dimension' && tool.mode === 'chamfer' ? chamferReferenceAt : referencePoints && isDimTool ? dimensionReferenceAt : featureAt;
+      const pointSnaps = tool?.kind === 'ordinate' || tool?.kind === 'baseline' || (tool?.kind === 'dimension' && (!tool.mode || ['smart', 'horizontal', 'vertical', 'aligned'].includes(tool.mode)));
       const q = toView(placed, p), tolerance = reach / placed.scale;
       const native = acquire(selectionLines.get(v.id), drw.features.get(v.id) ?? [], q, tolerance, seenByView.get(v.id), pointSnaps);
-      const f = !tool || tool.kind === 'dimension' || tool.kind === 'ordinate' || tool.kind === 'baseline' ? withProjectedReference(native, selectionLines.get(v.id), q, tolerance, referencePoints && pointSnaps) : native;
+      const f = !tool || isDimTool ? withProjectedReference(native, selectionLines.get(v.id), q, tolerance, referencePoints && pointSnaps) : native;
       if (f) return { view: v.id, feature: f };
     }
     return null;
@@ -405,8 +431,81 @@ export function DrawingViewport() {
       return placed && placed.w > 0 && Math.abs(p[0] - placed.at[0]) <= placed.w / 2 && Math.abs(p[1] - placed.at[1]) <= placed.h / 2;
     });
 
-  /** The surface finish whose symbol is under the point (sheet mm), the last in the document on top. */
+  /** Nearest view to `p` within `margin` mm on the sheet (the last drawn on top when inside multiple). */
+  const viewNear = (p: P, margin = 25): DrawingView | undefined =>
+    viewUnder(p) ??
+    [...curPage.views]
+      .reverse()
+      .map((v) => ({ v, pl: built.placed.get(v.id) }))
+      .filter((x) => x.pl && x.pl.w > 0)
+      .map(({ v, pl }) => ({ v, gap: Math.hypot(Math.max(0, Math.abs(p[0] - pl!.at[0]) - pl!.w / 2), Math.max(0, Math.abs(p[1] - pl!.at[1]) - pl!.h / 2)) }))
+      .filter((x) => x.gap <= margin)
+      .sort((a, b) => a.gap - b.gap)[0]?.v;
+
+  /** Magnetic geometric and nearest-contour snap for annotation, surface finish, detail, section and auxiliary tools. */
+  const snapUnder = (p: P, only?: Id, keyPointsOnly = false): { view: Id; snap: DrawingSnap; bisector?: [P, P] | null } | null => {
+    const viewId =
+      only ??
+      (tool?.kind === 'annotate' && tool.first ? tool.first.view : undefined) ??
+      pathDraw?.view ??
+      pendingDraw?.view ??
+      (drag?.kind === 'draw' ? drag.view : undefined) ??
+      (drag?.kind === 'surface' ? curPage.surfaceFinishes.find((f) => f.id === drag.id)?.view : undefined);
+    const contourOnly = tool?.kind === 'surface' || drag?.kind === 'surface';
+    if (contourOnly) {
+      let nearest: { view: Id; snap: DrawingSnap } | null = null;
+      let minGap = Infinity;
+      for (const v of [...curPage.views].reverse()) {
+        if (viewId && v.id !== viewId) continue;
+        const pl = basePlaced.get(v.id);
+        if (!pl || pl.w <= 0) continue;
+        const tolerance = 2.5 * reach;
+        if (Math.abs(p[0] - pl.at[0]) > pl.w / 2 + tolerance || Math.abs(p[1] - pl.at[1]) > pl.h / 2 + tolerance) continue;
+        const q = toView(pl, p);
+        const snap = snapAt(selectionLines.get(v.id), drw.features.get(v.id) ?? [], seenByView.get(v.id), q, reach / pl.scale, { contourOnly: true });
+        if (!snap) continue;
+        const gap = Math.hypot(snap.at[0] - q[0], snap.at[1] - q[1]) * pl.scale;
+        if (gap < minGap) {
+          minGap = gap;
+          nearest = { view: v.id, snap };
+        }
+      }
+      return nearest;
+    }
+    const view = viewId ? curPage.views.find((v) => v.id === viewId) : viewNear(p, Math.max(25, 2.5 * reach));
+    const placed = view && basePlaced.get(view.id);
+    if (!view || !placed || placed.w <= 0) return null;
+    const q = toView(placed, p);
+    const tol = reach / placed.scale;
+    const orthoFrom: P | undefined =
+      !betweenEdges && tool?.kind === 'annotate' && tool.what === 'centreLine' && tool.first && tool.first.view === view.id
+        ? tool.first.at
+        : ((tool?.kind === 'section' && tool.slant) || tool?.kind === 'auxiliary') && (drag?.kind === 'draw' || pendingDraw) && ((drag?.kind === 'draw' ? drag.view : pendingDraw?.view) === view.id)
+          ? toView(placed, (drag?.kind === 'draw' ? drag.from : pendingDraw!.from))
+          : undefined;
+    const s = snapAt(selectionLines.get(view.id), drw.features.get(view.id) ?? [], seenByView.get(view.id), q, tol, {
+      contourOnly: betweenEdges,
+      circleRimToCentre: tool?.kind === 'annotate' && (tool.what === 'centreLine' || tool.what === 'centreMark'),
+      circleOnly: tool?.kind === 'annotate' && tool.what === 'centreMark',
+      orthoFrom,
+      ...(keyPointsOnly ? { contourTol: 0 } : {}),
+    });
+    if (!s || (betweenEdges && !s.edge)) return null;
+    if (keyPointsOnly && s.kind === 'edge' && !s.ortho) return null;
+    const bisector =
+      betweenEdges && tool.first?.edge && s.edge
+        ? bisectorCentreLine(tool.first.edge, s.edge)
+        : null;
+    return { view: view.id, snap: s, bisector };
+  };
+
+  /** The surface finish whose symbol or text is under the point (sheet mm), the last in the document on top. */
   const finishUnder = (p: P): SurfaceFinish | null => {
+    const hit = dimensionAt(surfaceHit, p, reach);
+    if (hit) {
+      const found = shown.surfaceFinishes.find((f) => f.id === hit.id);
+      if (found) return found;
+    }
     const all = shown.surfaceFinishes;
     for (let i = all.length - 1; i >= 0; i--) {
       const f = all[i]!;
@@ -660,13 +759,31 @@ export function DrawingViewport() {
     if (tool?.kind === 'dimension') return dimensionDown(p);
     if (tool?.kind === 'ordinate') return ordinateDown(p);
     if (tool?.kind === 'baseline') return baselineDown(p);
-    if (tool?.kind === 'annotate') return annotateDown(p);
+    if (tool?.kind === 'annotate') {
+      if (tool.what === 'centreLine' && !betweenEdges && !tool.first) {
+        centreLinePress.current = { point: p, pointerId: e.pointerId };
+        capture(e);
+      }
+      return annotateDown(p, e.altKey);
+    }
     if (tool?.kind === 'surface') {
-      const view = viewUnder(p);
+      const finishHit = dimensionAt(surfaceHit, p, reach);
+      const existing = finishHit?.text ? shown.surfaceFinishes.find((x) => x.id === finishHit.id) : undefined;
+      if (existing) {
+        d.setTool(null);
+        d.selectDimension(null);
+        d.selectSurfaceFinish(existing.id);
+        capture(e);
+        const off = existing.textOffset ?? [0, 0];
+        setDrag({ kind: 'surfaceText', id: existing.id, from: p, origin: [off[0], off[1]], delta: [0, 0] });
+        return;
+      }
+      const hitSnap = e.altKey ? null : snapUnder(p);
+      const view = (hitSnap && curPage.views.find((v) => v.id === hitSnap.view)) ?? viewUnder(p);
       const placed = view && built.placed.get(view.id);
       if (!view || !placed) return d.notifyInfo(t('drawingUi.toolSurfaceFinish'));
-      const at = fromSheet(placed, p[0], p[1]);
-      d.addSurfaceFinish(view.id, [round2(at[0]), round2(at[1])]);
+      const at = hitSnap && hitSnap.view === view.id ? hitSnap.snap.at : fromSheet(placed, p[0], p[1]);
+      d.addSurfaceFinish(view.id, hitSnap ? at : [round2(at[0]), round2(at[1])]);
       return;
     }
     if (tool?.kind === 'hideEdge') {
@@ -689,7 +806,8 @@ export function DrawingViewport() {
         const id = pathDraw?.view ?? viewUnder(p)?.id;
         const placed = id ? basePlaced.get(id) : undefined;
         if (!id || !placed) return d.notifyInfo(hint);
-        const q = toView(placed, p);
+        const hitSnap = e.altKey ? null : snapUnder(p, id, true);
+        const q = hitSnap ? hitSnap.snap.at : toView(placed, p);
         if (!pathDraw) {
           d.select(id);
           setPathDraw({ view: id, mode: tool.path, points: [q] });
@@ -711,9 +829,12 @@ export function DrawingViewport() {
       if (!view) return d.notifyInfo(t(tool.kind === 'section' ? 'drawingUi.hint.section' : tool.kind === 'sectionLocal' ? 'drawingUi.hint.localSection' : tool.kind === 'crop' ? 'drawingUi.hint.crop' : tool.kind === 'auxiliary' ? 'drawingUi.hint.auxiliary' : 'drawingUi.hint.detail'));
       // a cropped view crops a local section (B2.7), so a drag anywhere else is not the start of one
       if (tool.kind === 'crop' && view.kind !== 'sectionLocal') return d.notifyInfo(t('drawingUi.hint.cropParent'));
+      const keySnap = !e.altKey && (tool.kind === 'detail' || tool.kind === 'auxiliary' || (tool.kind === 'section' && tool.slant)) ? snapUnder(p, view.id, true) : null;
+      const placed = basePlaced.get(view.id);
+      const snappedSheet: P = keySnap && placed ? toSheet(placed, keySnap.snap.at[0], keySnap.snap.at[1]) : p;
       if (pendingDraw?.tool === tool.kind) {
         if (view.id !== pendingDraw.view) return;
-        const placement = makeDrawPlacement({ ...pendingDraw, to: p });
+        const placement = makeDrawPlacement({ ...pendingDraw, to: tool.kind === 'detail' ? p : snappedSheet });
         setPendingDraw(null);
         if (placement) {
           setPendingPlacement(placement);
@@ -723,7 +844,7 @@ export function DrawingViewport() {
       }
       capture(e);
       d.select(view.id);
-      setDrag({ kind: 'draw', tool: tool.kind, ...(tool.kind === 'sectionLocal' ? { depth: tool.depth } : {}), ...(tool.kind === 'section' ? { vertical: tool.vertical ?? true, ...(tool.slant ? { slant: true } : {}) } : {}), view: view.id, from: p, to: p });
+      setDrag({ kind: 'draw', tool: tool.kind, ...(tool.kind === 'sectionLocal' ? { depth: tool.depth } : {}), ...(tool.kind === 'section' ? { vertical: tool.vertical ?? true, ...(tool.slant ? { slant: true } : {}) } : {}), view: view.id, from: snappedSheet, to: snappedSheet });
       return;
     }
     // Ctrl (⌘ on a Mac) and a click: what is under the pointer is added to what is chosen, or taken out of it; nothing is dragged
@@ -758,13 +879,19 @@ export function DrawingViewport() {
       setDrag({ kind: 'annotation', id: ann.id, from: p, delta: [0, 0] });
       return;
     }
-    // a surface finish: its symbol is taken and put where it is let go
-    const finish = finishUnder(p);
+    // a surface finish: its text can be dragged independently (textOffset), or its symbol moved and snapped to the nearest contour line
+    const finishHit = dimensionAt(surfaceHit, p, reach);
+    const finish = (finishHit && shown.surfaceFinishes.find((x) => x.id === finishHit.id)) ?? finishUnder(p);
     if (finish) {
       capture(e);
       d.selectDimension(null);
       d.selectSurfaceFinish(finish.id);
-      setDrag({ kind: 'surface', id: finish.id, from: p, origin: [finish.at[0], finish.at[1]], delta: [0, 0] });
+      if (finishHit?.text) {
+        const off = finish.textOffset ?? [0, 0];
+        setDrag({ kind: 'surfaceText', id: finish.id, from: p, origin: [off[0], off[1]], delta: [0, 0] });
+      } else {
+        setDrag({ kind: 'surface', id: finish.id, from: p, origin: [finish.at[0], finish.at[1]], delta: [0, 0] });
+      }
       return;
     }
     // the line of a section on its parent: it is moved across
@@ -842,8 +969,7 @@ export function DrawingViewport() {
     const picks: { kind: 'dimension' | 'finish' | 'table' | 'annotation'; id: Id }[] = dimensionsInBox(dimensionItems, rect, crossing).map((id) => ({ kind: 'dimension', id }));
     for (const id of dimensionsInBox(annotationHit, rect, crossing)) picks.push({ kind: 'annotation', id });
     for (const f of shown.surfaceFinishes) {
-      const placed = built.placed.get(f.view);
-      if (placed && itemsInBox(surfaceFinishItems([f], placed), rect, crossing)) picks.push({ kind: 'finish', id: f.id });
+      if (itemsInBox(surfaceHit.filter((i) => i.group === f.id), rect, crossing)) picks.push({ kind: 'finish', id: f.id });
     }
     for (const [tableId, box] of built.tableBoxes) if (rectInBox(box, rect, crossing)) picks.push({ kind: 'table', id: tableId });
     return picks;
@@ -884,21 +1010,52 @@ export function DrawingViewport() {
       const by = drag.vertical ? p[0] - drag.from[0] : p[1] - drag.from[1];
       setDrag({ ...drag, delta: by / drag.scale });
     } else if (drag?.kind === 'draw') {
-      setDrag({ ...drag, to: p });
+      const keySnap = !e.altKey && (drag.tool === 'auxiliary' || (drag.tool === 'section' && drag.slant)) ? snapUnder(p, drag.view, true) : null;
+      const pl = basePlaced.get(drag.view);
+      const to: P = keySnap && pl ? toSheet(pl, keySnap.snap.at[0], keySnap.snap.at[1]) : p;
+      setDrag({ ...drag, to });
+      setHover({ p, feature: null, snap: keySnap, dimension: null, ctrl: e.ctrlKey || e.metaKey });
     } else if (drag?.kind === 'placeDraw' || drag?.kind === 'box') {
       setDrag({ ...drag, to: p });
     } else if (pendingDraw || pendingPlacement || pathDraw) {
-      setDrawCursor(p);
-      setHover((h) => ({ p, feature: null, dimension: null, ctrl: e.ctrlKey || e.metaKey, ...(h && h.p === p ? {} : {}) }));
+      const keySnap =
+        !e.altKey && !pendingPlacement && (pathDraw || pendingDraw?.tool === 'auxiliary' || (pendingDraw?.tool === 'section' && pendingDraw.slant))
+          ? snapUnder(p, pathDraw?.view ?? pendingDraw?.view, true)
+          : null;
+      const pl = (pathDraw?.view ?? pendingDraw?.view) ? basePlaced.get((pathDraw?.view ?? pendingDraw?.view)!) : undefined;
+      const snappedCursor: P = keySnap && pl ? toSheet(pl, keySnap.snap.at[0], keySnap.snap.at[1]) : p;
+      setDrawCursor(snappedCursor);
+      setHover({ p, feature: null, snap: keySnap, dimension: null, ctrl: e.ctrlKey || e.metaKey });
+    } else if (drag?.kind === 'surface') {
+      const delta: P = [p[0] - drag.from[0], p[1] - drag.from[1]];
+      const f = curPage.surfaceFinishes.find((x) => x.id === drag.id);
+      const hitSnap = !e.altKey && f ? snapUnder(p, f.view) : null;
+      setDrag({ ...drag, delta, snappedAt: hitSnap?.snap.at });
+      setHover({ p, feature: null, snap: hitSnap, dimension: null, ctrl: e.ctrlKey || e.metaKey });
     } else if (drag) {
       setDrag({ ...drag, delta: [p[0] - drag.from[0], p[1] - drag.from[1]] } as Drag);
     } else if (panning) {
       setPan({ ...pan, x: e.clientX - panning.x, y: e.clientY - panning.y });
     } else {
       // what is under the pointer: for the tool's preview, and for the cursor (and hover highlight when no tool)
-      const feature = tool?.kind === 'dimension' || tool?.kind === 'ordinate' ? featureUnder(p, tool.picks[0]?.view) : tool?.kind === 'hideEdge' ? featureUnder(p) : !tool ? featureUnder(p) : null;
+      const feature =
+        tool?.kind === 'dimension' || tool?.kind === 'ordinate'
+          ? featureUnder(p, tool.picks[0]?.view)
+          : tool?.kind === 'baseline'
+            ? featureUnder(p, tool.view ?? tool.base?.view)
+            : tool?.kind === 'hideEdge'
+              ? featureUnder(p)
+              : !tool
+                ? featureUnder(p)
+                : null;
+      const snap =
+        !e.altKey && (tool?.kind === 'annotate' || tool?.kind === 'surface')
+          ? snapUnder(p)
+          : !e.altKey && (tool?.kind === 'detail' || tool?.kind === 'auxiliary' || (tool?.kind === 'section' && (tool.slant || tool.path)))
+            ? snapUnder(p, undefined, true)
+            : null;
       const dimension = tool ? null : (dimensionAt(dimensionItems, p, reach)?.id ?? dimensionAt(detailLabelItems, p, reach)?.id ?? dimensionAt(captionItems, p, reach)?.id ?? null);
-      setHover((h) => (tool || h?.dimension !== dimension || h?.feature || feature ? { p, feature, dimension, ctrl: e.ctrlKey || e.metaKey } : h));
+      setHover((h) => (tool || h?.dimension !== dimension || h?.feature || feature || h?.snap || snap ? { p, feature, snap, dimension, ctrl: e.ctrlKey || e.metaKey } : h));
     }
   };
   /** The scale the dragged view had before: the one of what the drag changes. */
@@ -945,6 +1102,15 @@ export function DrawingViewport() {
       // a view dragged from the palette and let go over the sheet: it is put there
       const p = onSheet(e);
       if (p[0] >= 0 && p[1] >= 0 && p[0] <= sheet.width && p[1] <= sheet.height) d.placeModelView(tool.source, tool.direction, [round2(p[0]), round2(p[1])]);
+    }
+    const press = centreLinePress.current;
+    if (press?.pointerId === e.pointerId) {
+      centreLinePress.current = null;
+      const p = onSheet(e);
+      if (tool?.kind === 'annotate' && tool.what === 'centreLine' && !betweenEdges && tool.first && Math.hypot(p[0] - press.point[0], p[1] - press.point[1]) > reach / 2) {
+        annotateDown(p, e.altKey);
+        return;
+      }
     }
     if (drag?.kind === 'box') {
       // a press and let go without a drag (a few pixels) is a click on the paper: everything is let go of, unless Ctrl was held
@@ -1020,7 +1186,18 @@ export function DrawingViewport() {
         d.setAnnotation(a.id, m.kind === 'centreLine' ? { from: m.from, to: m.to } : { at: (m as { at: P }).at });
       }
     } else if (drag?.kind === 'surface') {
-      if (Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) d.setSurfaceFinish(drag.id, { at: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])] });
+      if (Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) {
+        const f = curPage.surfaceFinishes.find((x) => x.id === drag.id);
+        const pl = f && basePlaced.get(f.view);
+        const scale = pl?.scale ?? 1;
+        const at: P = drag.snappedAt ?? [round2(drag.origin[0] + drag.delta[0] / scale), round2(drag.origin[1] + drag.delta[1] / scale)];
+        d.setSurfaceFinish(drag.id, { at });
+      }
+      setHover(null);
+    } else if (drag?.kind === 'surfaceText') {
+      if (Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) {
+        d.setSurfaceFinish(drag.id, { textOffset: [round2(drag.origin[0] + drag.delta[0]), round2(drag.origin[1] + drag.delta[1])] });
+      }
     } else if (drag && Math.hypot(drag.delta[0], drag.delta[1]) > 0.05) {
       // Drop target on sheet tab for cross-sheet move (Q5 Option A)
       const tabEl = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-sheet-tab-index]') as HTMLElement | null;
@@ -1057,10 +1234,12 @@ export function DrawingViewport() {
   };
 
   /** A press with an annotation tool (D-I3): the first click (the feature), or the second (where it goes), or a circle for a centre mark. */
-  const annotateDown = (p: P) => {
+  const annotateDown = (p: P, bypassSnap: boolean) => {
     if (tool?.kind !== 'annotate') return;
     const hintKey = { note: 'drawingUi.hint.note', datum: 'drawingUi.hint.datum', fcf: 'drawingUi.hint.fcf', centreLine: 'drawingUi.hint.centreLine', centreMark: 'drawingUi.hint.centreMark' } as const;
     const first = tool.first;
+    const hitSnap = bypassSnap ? null : snapUnder(p, first?.view);
+    if (betweenEdges && !hitSnap?.snap.edge) return d.notifyInfo(t('drawingUi.hint.centreLineEdges'));
     // a feature is most often pointed at on the view's outline, which is the edge of its box: a point just outside it, within reach, is on that view
     const near = (q: P) =>
       viewUnder(q) ??
@@ -1068,30 +1247,44 @@ export function DrawingViewport() {
         const pl = built.placed.get(v.id);
         return pl && pl.w > 0 && Math.abs(q[0] - pl.at[0]) <= pl.w / 2 + reach && Math.abs(q[1] - pl.at[1]) <= pl.h / 2 + reach;
       });
-    // a note may stand on the paper away from every view (a technical requirement): it belongs to the nearest view, and moves with it
+    // a note may stand on the paper away from every view (a technical requirement): it belongs to the nearest view, and moves with it; a centreline may also start slightly outside the view box
     const nearest = (q: P) =>
       [...curPage.views]
         .map((v) => ({ v, pl: built.placed.get(v.id) }))
         .filter((x) => x.pl && x.pl.w > 0)
         .map(({ v, pl }) => ({ v, gap: Math.hypot(Math.max(0, Math.abs(q[0] - pl!.at[0]) - pl!.w / 2), Math.max(0, Math.abs(q[1] - pl!.at[1]) - pl!.h / 2)) }))
         .sort((x, y) => x.gap - y.gap)[0]?.v;
-    const view = first ? curPage.views.find((v) => v.id === first.view) : (near(p) ?? (tool.what === 'note' ? nearest(p) : undefined));
+    const view = first
+      ? curPage.views.find((v) => v.id === first.view)
+      : (hitSnap ? curPage.views.find((v) => v.id === hitSnap.view) : undefined) ??
+        near(p) ??
+        (tool.what === 'note' ? nearest(p) : tool.what === 'centreLine' ? viewNear(p, 25) : undefined);
     const pl = view && basePlaced.get(view.id);
     if (!view || !pl) return d.notifyInfo(t(hintKey[tool.what]));
     const raw = fromSheet(pl, p[0], p[1]);
-    const pv: P = [round2(raw[0]), round2(raw[1])];
+    const snappedInView = hitSnap && hitSnap.view === view.id ? hitSnap.snap : null;
+    const pv: P = snappedInView ? [round2(snappedInView.at[0]), round2(snappedInView.at[1])] : [round2(raw[0]), round2(raw[1])];
     if (tool.what === 'centreMark') {
-      const c = circleNear(view.id, pv);
+      const c = snappedInView?.circle ?? circleNear(view.id, pv);
       if (!c) return d.notifyInfo(t('drawingUi.hint.centreMark'));
       const ring = (drw.features.get(view.id) ?? []).find((x) => x.type === 'circle' && Math.hypot(x.centre[0] - c.centre[0], x.centre[1] - c.centre[1]) < 1e-6 && Math.abs(x.radius - c.radius) < 1e-6);
-      d.addAnnotation({ kind: 'centreMark', view: view.id, at: [round2(c.centre[0]), round2(c.centre[1])], radius: round2(c.radius), ...(ring ? { attach: { ref: ring.ref, u: 0 } } : {}) });
+      const attach = snappedInView?.attach ?? (ring ? { ref: ring.ref, u: 0 } : undefined);
+      d.addAnnotation({ kind: 'centreMark', view: view.id, at: [round2(c.centre[0]), round2(c.centre[1])], radius: round2(c.radius), ...(attach ? { attach } : {}) });
       return;
     }
-    const snapped = (q: P): P => {
-      const c = tool.what === 'centreLine' ? circleNear(view.id, q) : null;
-      return c ? [round2(c.centre[0]), round2(c.centre[1])] : q;
-    };
-    if (!first) return d.setTool({ kind: 'annotate', what: tool.what, first: { view: view.id, at: snapped(pv) } });
+    if (!first) {
+      const edge = betweenEdges ? snappedInView?.edge : undefined;
+      const attach = snappedInView?.attach;
+      return d.setTool({
+        ...tool,
+        first: {
+          view: view.id,
+          at: pv,
+          ...(attach ? { attach } : {}),
+          ...(edge ? { edge } : {}),
+        },
+      });
+    }
     // what the first click is on, fastened to (D-I2): a vertex, else a straight edge at its place along it, else a circle — so the annotation follows the model
     const attachAt = (q: P): Attachment | undefined => {
       const seen = seenByView.get(view.id);
@@ -1112,13 +1305,20 @@ export function DrawingViewport() {
       const f = c && (drw.features.get(view.id) ?? []).find((x) => x.type === 'circle' && Math.hypot(x.centre[0] - c.centre[0], x.centre[1] - c.centre[1]) < 1e-6 && Math.abs(x.radius - c.radius) < 1e-6);
       return f ? { ref: f.ref, u: 0 } : undefined;
     };
-    const firstAttach = attachAt(first.at);
+    const firstAttach = first.attach ?? attachAt(first.at);
     const firstSheet = toSheet(pl, first.at[0], first.at[1]);
-    const same = Math.hypot(p[0] - firstSheet[0], p[1] - firstSheet[1]) < 1.5 * reach;
+    const targetSheet = toSheet(pl, pv[0], pv[1]);
+    const same = Math.hypot(targetSheet[0] - firstSheet[0], targetSheet[1] - firstSheet[1]) < 1.5 * reach && Math.hypot(pv[0] - first.at[0], pv[1] - first.at[1]) < 1e-3;
     switch (tool.what) {
       case 'centreLine':
-        if (same) return;
-        d.addAnnotation({ kind: 'centreLine', view: view.id, from: first.at, to: snapped(pv) });
+        if (betweenEdges) {
+          if (!hitSnap?.bisector) return d.notifyInfo(t('drawingUi.hint.centreLineEdges'));
+          d.addAnnotation({ kind: 'centreLine', view: view.id, from: hitSnap.bisector[0], to: hitSnap.bisector[1] });
+          d.setTool({ kind: 'annotate', what: 'centreLine', betweenEdges: true });
+          return;
+        }
+        if (same || Math.hypot(pv[0] - first.at[0], pv[1] - first.at[1]) < 1e-3) return;
+        d.addAnnotation({ kind: 'centreLine', view: view.id, from: first.at, to: pv });
         d.setTool({ kind: 'annotate', what: 'centreLine' });
         return;
       case 'note':
@@ -1133,8 +1333,8 @@ export function DrawingViewport() {
         return;
       case 'datum': {
         // the square goes where the second click is: its direction and distance from the triangle
-        const dx = p[0] - firstSheet[0];
-        const dy = p[1] - firstSheet[1];
+        const dx = targetSheet[0] - firstSheet[0];
+        const dy = targetSheet[1] - firstSheet[1];
         const angle = same ? 90 : Math.round(((Math.atan2(dy, dx) * 180) / Math.PI) * 10) / 10;
         const length = same ? 6 : round2(Math.max(0, Math.hypot(dx, dy) - DATUM_TRIANGLE - FRAME_HEIGHT / 2));
         d.addAnnotation({ kind: 'datum', view: view.id, at: first.at, label: d.nextDatumLabel(), angle, length, ...(firstAttach ? { attach: firstAttach } : {}) });
@@ -1336,7 +1536,7 @@ export function DrawingViewport() {
       : tool?.kind === 'ordinate'
       ? t(tool.picks.length === 0 ? 'drawingUi.hint.ordinate0' : 'drawingUi.hint.ordinate1')
       : tool?.kind === 'annotate'
-      ? t(({ note: 'drawingUi.hint.note', datum: 'drawingUi.hint.datum', fcf: 'drawingUi.hint.fcf', centreLine: 'drawingUi.hint.centreLine', centreMark: 'drawingUi.hint.centreMark' } as const)[tool.what])
+      ? t(betweenEdges ? 'drawingUi.hint.centreLineEdges' : ({ note: 'drawingUi.hint.note', datum: 'drawingUi.hint.datum', fcf: 'drawingUi.hint.fcf', centreLine: 'drawingUi.hint.centreLine', centreMark: 'drawingUi.hint.centreMark' } as const)[tool.what])
       : tool?.kind === 'dimension'
       ? dimensionHint(tool.mode, tool.picks.length)
       : tool?.kind === 'surface'
@@ -1348,7 +1548,7 @@ export function DrawingViewport() {
       : curPage.views.length === 0
       ? t('drawingUi.mainViewFirst')
       : null;
-  const cursor = tool ? 'crosshair' : hover?.dimension || drag?.kind === 'dimension' || drag?.kind === 'surface' || drag?.kind === 'annotation' || drag?.kind === 'caption' || drag?.kind === 'detailLabel' ? 'move' : undefined;
+  const cursor = tool ? 'crosshair' : hover?.dimension || drag?.kind === 'dimension' || drag?.kind === 'surface' || drag?.kind === 'surfaceText' || drag?.kind === 'annotation' || drag?.kind === 'caption' || drag?.kind === 'detailLabel' ? 'move' : undefined;
   // the symbol of the surface finish chosen, drawn over in its own colour so that it can be seen which one it is
   const chosenAnnotations = new Set(drw.selection.filter((x) => x.kind === 'annotation').map((x) => x.id));
   const chosenAnnotationItems = chosenAnnotations.size > 0 ? annotationHit.filter((i) => chosenAnnotations.has(i.group)) : [];
@@ -1357,11 +1557,20 @@ export function DrawingViewport() {
     const pl = basePlaced.get(tool.first.view);
     return pl ? toSheet(pl, tool.first.at[0], tool.first.at[1]) : null;
   })();
+  const annotateTo = (() => {
+    if (tool?.kind !== 'annotate' || !tool.first || !hover) return null;
+    const pl = basePlaced.get(tool.first.view);
+    if (hover.snap && hover.snap.view === tool.first.view && pl) return toSheet(pl, hover.snap.snap.at[0], hover.snap.snap.at[1]);
+    return hover.p;
+  })();
+  const annotateBisector = (() => {
+    if (tool?.kind !== 'annotate' || tool.what !== 'centreLine' || !tool.first || !hover?.snap?.bisector || hover.snap.view !== tool.first.view) return null;
+    const pl = basePlaced.get(tool.first.view);
+    if (!pl) return null;
+    return [toSheet(pl, hover.snap.bisector[0][0], hover.snap.bisector[0][1]), toSheet(pl, hover.snap.bisector[1][0], hover.snap.bisector[1][1])] as const;
+  })();
   const chosenFinishIds = new Set(drw.selection.filter((x) => x.kind === 'finish').map((x) => x.id));
-  const chosenFinishItems = shown.surfaceFinishes.flatMap((f) => {
-    const placed = chosenFinishIds.has(f.id) ? built.placed.get(f.view) : undefined;
-    return placed ? surfaceFinishItems([f], placed) : [];
-  });
+  const chosenFinishItems = surfaceHit.filter((i) => chosenFinishIds.has(i.group));
   // the geometry of the tool's preview on the sheet
   const drawn = drag?.kind === 'draw' ? drag : pendingDraw ? { ...pendingDraw, to: drawCursor ?? pendingDraw.from } : null;
   const placementCursor = drag?.kind === 'placeDraw' ? drag.to : pendingPlacement ? drawCursor : null;
@@ -1416,6 +1625,12 @@ export function DrawingViewport() {
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}
+      onPointerCancel={() => {
+        centreLinePress.current = null;
+        setDrag(null);
+        setPanning(null);
+        setHover(null);
+      }}
       onPointerLeave={() => setHover(null)}
       onContextMenu={(e) => e.preventDefault()}
       onDoubleClick={(e) => {
@@ -1440,12 +1655,83 @@ export function DrawingViewport() {
           {chosen.length > 0 && <Highlight pixel={pan.zoom * PX} items={chosen} height={sheet.height} color="var(--accent)" />}
           {chosenFinishItems.length > 0 && <Highlight pixel={pan.zoom * PX} items={chosenFinishItems} height={sheet.height} color="var(--accent)" />}
           {chosenAnnotationItems.length > 0 && <Highlight pixel={pan.zoom * PX} items={chosenAnnotationItems} height={sheet.height} color="var(--accent)" />}
+          {tool?.kind === 'annotate' && tool.first?.edge && (() => {
+            const pl = basePlaced.get(tool.first.view);
+            if (!pl) return null;
+            const a = toSheet(pl, tool.first.edge[0][0], tool.first.edge[0][1]);
+            const b = toSheet(pl, tool.first.edge[1][0], tool.first.edge[1][1]);
+            return <line data-snap-first-edge x1={a[0]} y1={sheet.height - a[1]} x2={b[0]} y2={sheet.height - b[1]} stroke="var(--accent)" strokeWidth={1.8 / (pan.zoom * PX)} />;
+          })()}
           {annotateFrom && (
             <g data-annotate-preview>
               <circle cx={annotateFrom[0]} cy={sheet.height - annotateFrom[1]} r={1} fill="var(--warn)" />
-              {hover && <line x1={annotateFrom[0]} y1={sheet.height - annotateFrom[1]} x2={hover.p[0]} y2={sheet.height - hover.p[1]} stroke="var(--warn)" strokeWidth={0.35} strokeDasharray="2 1" />}
+              {annotateBisector ? (
+                <line data-bisector-preview x1={annotateBisector[0][0]} y1={sheet.height - annotateBisector[0][1]} x2={annotateBisector[1][0]} y2={sheet.height - annotateBisector[1][1]} stroke="var(--accent)" strokeWidth={0.5} strokeDasharray="6 1.5 1 1.5" />
+              ) : (
+                !betweenEdges && annotateTo && <line x1={annotateFrom[0]} y1={sheet.height - annotateFrom[1]} x2={annotateTo[0]} y2={sheet.height - annotateTo[1]} stroke="var(--warn)" strokeWidth={0.35} strokeDasharray="2 1" />
+              )}
             </g>
           )}
+          {hover?.snap && (() => {
+            const { view, snap, bisector } = hover.snap;
+            const placed = basePlaced.get(view);
+            if (!placed) return null;
+            const at = toSheet(placed, snap.at[0], snap.at[1]);
+            const r = 5 / (pan.zoom * PX);
+            const sw = 1.6 / (pan.zoom * PX);
+            const labelKey = bisector
+              ? 'drawingUi.snapBisector'
+              : snap.ortho === 'horizontal'
+                ? 'drawingUi.snapOrthoH'
+                : snap.ortho === 'vertical'
+                  ? 'drawingUi.snapOrthoV'
+                  : snap.kind === 'vertex'
+                    ? 'drawingUi.snapVertex'
+                    : snap.kind === 'midpoint'
+                      ? 'drawingUi.snapMidpoint'
+                      : snap.kind === 'centre'
+                        ? 'drawingUi.snapCentre'
+                        : snap.kind === 'quadrant'
+                          ? 'drawingUi.snapQuadrant'
+                          : snap.kind === 'axis'
+                            ? 'drawingUi.snapAxis'
+                            : 'drawingUi.snapEdge';
+            return (
+              <g data-drawing-snap={bisector ? 'bisector' : snap.ortho ?? snap.kind}>
+                {snap.edge && (() => {
+                  const ea = toSheet(placed, snap.edge[0][0], snap.edge[0][1]);
+                  const eb = toSheet(placed, snap.edge[1][0], snap.edge[1][1]);
+                  return <line data-snap-contour="edge" x1={ea[0]} y1={sheet.height - ea[1]} x2={eb[0]} y2={sheet.height - eb[1]} stroke="var(--warn)" strokeWidth={sw} />;
+                })()}
+                {snap.contour && (
+                  <polyline
+                    data-snap-contour="curve"
+                    points={Array.from({ length: snap.contour.length / 2 }, (_, i) => {
+                      const q = toSheet(placed, snap.contour![2 * i]!, snap.contour![2 * i + 1]!);
+                      return `${q[0]},${sheet.height - q[1]}`;
+                    }).join(' ')}
+                    fill="none"
+                    stroke="var(--warn)"
+                    strokeWidth={sw}
+                  />
+                )}
+                {snap.circle && (() => {
+                  const cc = toSheet(placed, snap.circle.centre[0], snap.circle.centre[1]);
+                  return <circle data-snap-contour="circle" cx={cc[0]} cy={sheet.height - cc[1]} r={snap.circle.radius * placed.scale} fill="none" stroke="var(--warn)" strokeWidth={sw} />;
+                })()}
+                {Math.hypot(at[0] - hover.p[0], at[1] - hover.p[1]) > 0.15 && (
+                  <line data-snap-tether x1={hover.p[0]} y1={sheet.height - hover.p[1]} x2={at[0]} y2={sheet.height - at[1]} stroke="var(--accent)" strokeWidth={1 / (pan.zoom * PX)} strokeDasharray="1.2 1.2" />
+                )}
+                <g stroke="var(--accent)" strokeWidth={1.5 / (pan.zoom * PX)} fill="var(--card)">
+                  <rect x={at[0] - r} y={sheet.height - at[1] - r} width={2 * r} height={2 * r} />
+                  <path d={`M ${at[0] - r} ${sheet.height - at[1]} h ${2 * r} M ${at[0]} ${sheet.height - at[1] - r} v ${2 * r}`} />
+                  <text x={at[0] + 2 * r} y={sheet.height - at[1] - r} stroke="none" fill="var(--accent)" fontSize={11 / (pan.zoom * PX)}>
+                    {t(labelKey)}
+                  </text>
+                </g>
+              </g>
+            );
+          })()}
           {otherViews.map((v, k) => (
             <rect key={`v${k}`} data-chosen-view x={v.at[0] - v.w / 2 - 1} y={sheet.height - v.at[1] - v.h / 2 - 1} width={v.w + 2} height={v.h + 2} fill="none" stroke="var(--accent)" strokeWidth={0.4} strokeDasharray="3 1.5" />
           ))}
@@ -1465,7 +1751,7 @@ export function DrawingViewport() {
               strokeDasharray={boxing.crossing ? '2 1' : undefined}
             />
           )}
-          {(tool?.kind === 'dimension' || tool?.kind === 'ordinate') && hover?.feature && (() => {
+          {(tool?.kind === 'dimension' || tool?.kind === 'ordinate' || tool?.kind === 'baseline') && hover?.feature && (() => {
             const f = hover.feature.feature;
             const placed = basePlaced.get(hover.feature.view);
             if (!placed || (f.type !== 'vertex' && f.type !== 'circle')) return null;
@@ -1479,12 +1765,14 @@ export function DrawingViewport() {
               <text x={at[0] + 2 * r} y={sheet.height - at[1] - r} stroke="none" fill="var(--accent)" fontSize={11 / (pan.zoom * PX)}>{t(f.type === 'vertex' && f.ref.kind === 'projection' ? 'drawingUi.snapProjectedPoint' : f.type !== 'vertex' ? 'drawingUi.snapCentre' : 'snap' in f && f.snap === 'midpoint' ? 'drawingUi.snapMidpoint' : 'snap' in f && f.snap === 'quadrant' ? 'drawingUi.snapQuadrant' : 'drawingUi.snapVertex')}</text>
             </g>;
           })()}
-          {((tool?.kind === 'dimension' || tool?.kind === 'ordinate') || (!tool && !drag && hover?.feature)) &&
-            [...(tool ? tool.picks.map((x) => x.feature) : []), ...(hover?.feature && (!tool || tool.kind === 'ordinate' || tool.picks.length < 2) ? [hover.feature.feature] : [])].map((f, k) => {
-              const view = (tool?.picks[0]?.view ?? hover?.feature?.view)!;
+          {((tool?.kind === 'dimension' || tool?.kind === 'ordinate' || tool?.kind === 'baseline') || (!tool && !drag && hover?.feature)) && (() => {
+            const pickedSeeds = tool?.kind === 'dimension' || tool?.kind === 'ordinate' ? tool.picks : tool?.kind === 'baseline' ? [tool.base, tool.second].filter((x): x is NonNullable<typeof x> => !!x) : [];
+            const canAddHover = hover?.feature && (!tool || tool.kind === 'ordinate' || (tool.kind === 'baseline' ? tool.lastOffset !== undefined || pickedSeeds.length < 2 : pickedSeeds.length < 2));
+            return [...pickedSeeds.map((x) => x.feature), ...(canAddHover ? [hover!.feature!.feature] : [])].map((f, k) => {
+              const view = (pickedSeeds[0]?.view ?? hover?.feature?.view)!;
               const placed = basePlaced.get(view);
               if (!placed) return null;
-              const colour = tool && k < tool.picks.length ? 'var(--accent)' : 'var(--warn)';
+              const colour = tool && k < pickedSeeds.length ? 'var(--accent)' : 'var(--warn)';
               const box = viewLines.get(view)?.box;
               if (f.type === 'circle' || f.type === 'torus') {
                 // a circle is drawn about its own middle, a fillet's arc about `at` (which is `major` off the torus's centre), both of the radius written
@@ -1511,7 +1799,8 @@ export function DrawingViewport() {
               const sa = toSheet(placed, a![0]!, a![1]!);
               const sb = toSheet(placed, b![0]!, b![1]!);
               return <line key={k} data-pick={f.type} x1={sa[0]} y1={sheet.height - sa[1]} x2={sb[0]} y2={sheet.height - sb[1]} stroke={colour} strokeWidth={1.5 / (pan.zoom * PX)} />;
-            })}
+            });
+          })()}
           {plan && <Highlight pixel={pan.zoom * PX} items={built.scene.items.filter((i) => i.group === 'preview')} height={sheet.height} color="var(--accent)" />}
           {drawn && drawnPlaced && drawn.tool === 'detail' && <circle cx={drawn.from[0]} cy={sheet.height - drawn.from[1]} r={Math.hypot(drawn.to[0] - drawn.from[0], drawn.to[1] - drawn.from[1])} fill="none" stroke="var(--accent)" strokeWidth={0.5} strokeDasharray="2 1" />}
           {pathDraw && (() => {
@@ -1607,6 +1896,16 @@ export function DrawingViewport() {
           </button>
           <button className={tool.path === 'aligned' ? 'active' : ''} data-action="sectionAligned" title={t('drawingUi.hint.sectionAligned')} onClick={() => d.setTool({ kind: 'section', path: 'aligned' })}>
             {t('drawingUi.sectionAligned')}
+          </button>
+        </div>
+      )}
+      {tool?.kind === 'annotate' && tool.what === 'centreLine' && (
+        <div className="heads-up drawing-toolopts" style={{ top: 44 }}>
+          <button aria-pressed={!betweenEdges} className={!betweenEdges ? 'active' : ''} data-action="centreLinePoints" onClick={() => d.setTool({ kind: 'annotate', what: 'centreLine' })}>
+            {t('drawingUi.centreLinePoints')}
+          </button>
+          <button aria-pressed={betweenEdges} className={betweenEdges ? 'active' : ''} data-action="centreLineEdges" onClick={() => d.setTool({ kind: 'annotate', what: 'centreLine', betweenEdges: true })}>
+            {t('drawingUi.centreLineEdges')}
           </button>
         </div>
       )}

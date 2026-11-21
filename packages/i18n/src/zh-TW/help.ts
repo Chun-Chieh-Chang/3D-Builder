@@ -1392,7 +1392,7 @@ export const help = {
   'help.drwFcf.keywords': '幾何公差 公差框 GD&T ISO 1101',
   'help.drwCentreMark.summary': '在圓或圓弧的圓心放中心符號線。',
   'help.drwCentreMark.keywords': '中心符號 圓心 十字',
-  'help.drwCentreLine.summary': '在兩條線之間或圓柱上放中心線。',
+  'help.drwCentreLine.summary': '在圖紙上點兩點或拖曳畫中心線，也可切換到「平行邊中線」選取兩條邊。',
   'help.drwCentreLine.keywords': '中心線 軸線 對稱',
   'help.drwSurface.summary': '在視圖上放表面粗糙度符號。',
   'help.drwSurface.keywords': '表面粗糙度 Ra 加工符號',

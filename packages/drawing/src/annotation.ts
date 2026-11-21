@@ -17,8 +17,8 @@ import { sheetMetrics, type Rect } from './sheet';
 /** How far a centre line passes the edge of what it marks (mm on the sheet). */
 export const CENTRE_OVERSHOOT = 2;
 
-/** Whether a view draws its centre marks and lines: when it says so, and otherwise except in a section. */
-export const showsCentre = (v: DrawingView): boolean => v.centreMarks ?? v.kind !== 'section';
+/** Whether a view draws its centre marks and lines: by default on every view (including sections), unless turned off on the view. */
+export const showsCentre = (v: DrawingView): boolean => v.centreMarks ?? true;
 
 /**
  * The centre marks and centre lines of a view: for each whole circle a cross reaching `CENTRE_OVERSHOOT` past it, for each whole cylinder seen from the side its
