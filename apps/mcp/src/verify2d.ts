@@ -135,6 +135,12 @@ function diameterValues(features: readonly ViewFeature[]): number[] {
       if (seen.has(k)) continue;
       seen.add(k);
       out.push(2 * f.radius);
+    } else if (f.type === 'centre') {
+      // End-on drafted circular bosses/skirts/ports (cones) report their base/max diameter via `type: 'centre'`
+      const k = f.ref.name;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(2 * f.radius);
     }
   }
   return out;

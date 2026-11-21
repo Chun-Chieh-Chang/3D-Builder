@@ -1,5 +1,16 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-21（20:25）— 實機雙向閉環驗證：`R1-16148`（全新 2D→3D→2D）與 `R1-9035`（`part_verify_against_2d` 全過）
+
+- **工具實戰強化（`apps/mcp/src/verify2d.ts`）**：
+  - 實機驗算 `R1-16148` 帶 `1.5°` 拔模外裙（`Ø.562 in`）時發現 OCCT 拔模圓管於端視圖為 `type: 'centre'`（非 `circle`）；已將 `type: 'centre'` 納入 `diameterValues()`，使 `part_verify_against_2d` 原生支援拔模圓管／凸台外徑驗算。
+- **實機 1：`R1-16148`（`D:\Self-developed_Apps\3DB實機確認\R1-16148_02.pdf`，2 頁英制工程圖）**：
+  - **2D→3D 正向建模**（`out/R1-16148/R1-16148.3dbx`）：11/11 特徵 `ok`（420 ms、25 面、體積 `3182.14 mm³`、外框 `55.8292 × 17.78 × 34.29 mm` = `2.198 × .700 × 1.350 in`），含旋轉本體＋拔模外裙＋滴嘴＋法蘭＋貫穿流道＋上下 25° 針尖斜切。
+  - **2D 反比對驗算**（`part_verify_against_2d`）：**8/8 PASS，`maxAbsError = 0.0000`**（總長、法蘭高／寬／厚、拔模外裙 `Ø.562`、流道 `Ø.110`、雙向 25° 針尖斜角全數 0 誤差），並輸出正交 PNG（`out/R1-16148/verify-view-{1,2}.png`）。
+  - **3D→2D 自動出圖**（`out/R1-16148/R1-16148.3dbd`、`R1-16148.pdf`）：`drawing_create({ sheet: 'auto' })` 26.7 s、2 頁 `A0 10:1`、25 標註、`overlaps: 0`、`outside: 0`、`clutter: 3`、**`layout.pass: true`**。
+- **實機 2：`R1-9035`（`R1-9035-MC_05_mdx.pdf` 對照 `out/R1-9035/R1-9035.3dbx`）**：
+  - `part_verify_against_2d`：**5/5 PASS，`maxAbsError = 0.003`**（總寬 `46.732`、總高 `47.082`、總深 `24.130`、0.5° 拔模角誤差 `0.000`，6% 魯爾錐角 `1.713°` 誤差 `0.003°`）。
+
 ## 2026-11-21（20:02）— 280/280 真瀏覽器回歸全綠 ＋ 新增 2D→3D 投影反比對驗算 MCP 工具（`part_verify_against_2d`）
 
 - **收尾關門驗證**：
