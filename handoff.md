@@ -1,5 +1,22 @@
 # 交接與接續工作
 
+## 2026-11-21（12:05 交接）— 主線 A（`push_turn` 4 件交叉孔）與工程圖微調 1–3 全數完成並推送
+
+- **今日完成並已推送至 `origin/main`**：
+  1. **主線 A：`push_turn` 夾具 4 件交叉孔與曲面交界圓柱孔（`21cd594e`）**：
+     - `packages/regen/src/recognize/analyze.ts`：新增 `curvedRimHole()`，以無縱向平行直線邊排除部分圓弧圓角／槽，支援雙側貫穿（`P03`）、單側徑向孔（`P07`/`P09`）與平面入口破入內部圓孔盲孔（`P05`）。
+     - `packages/regen/src/recognize/reconstruct.ts`：當 `areaError` 與 `difference` 皆達標、僅 `volumeError` 超標時，補做 `{ eps: 1e-10 }` 自適應積分確認真值。
+     - `tests/phase8/recognize-cross-holes.test.ts`：新增 4 項測試（含 30 組隨機參數 Fuzz 與 WASM Heap 監控）；`P03`/`P05`/`P07`/`P09` 單件及 `assembly.step` **24/24 單一實體全數重建成功**（僅 `part-25(cords)` 為 8 實體依規範拒絕）。
+  2. **工程圖微調 1–3（`06f0d347`）**：
+     - **微調 1（`diamond-pin`）**：診斷剩餘 2 處交叉為 `dim13|dim3` 與 `dim13|dim4`（`view2` `6 mm` 寬度延伸線與內圓徑向引線受鄰近視圖幾何互斥），枚舉 42 組角度無法再降，維持現狀並通過 `drawing-clearance.test.ts`（4/4）。
+     - **微調 2（`R1-8032` 與 `steerLeaders`）**：`arrowHitsView()` 預設容差改為依視圖比例放寬 `Math.max(0.2, Math.min(0.6, 0.03 * ratio(scale)))`；`steerLeaders()` 對 `detail` 視圖不可達圓弧（`Math.abs(dist - radius) > rSheet + 0.5`）直接剪枝，並對 `fineAngles` 去重。實測 `out/R1-8032-Rev08-剖面修訂/R1-8032_Rev08_2D_完整修訂.3dbd` 未命中箭頭由 **17 處降至 9 處**。
+     - **微調 3（CNS 3 核對）**：網路查核 CNS 3（B1001）線寬與最小字高表，確認 `DRAWING_PROFILES.CNS` 之 `A0/A1`（`0.7/0.5/0.25 mm`）與 `A3/A4`（`0.5/0.35/0.18 mm`）及目前尺度最小字高 `3.5 mm` 皆符合規範。
+  3. **SVG 即時進度儀表板**：更新 `out/progress/index.html`、`state.js` 與 `out/pending-choices.html`（已於無頭 Chrome 驗證）。
+- **目前驗證狀況**：
+  - `tests/phase8/recognize-cross-holes.test.ts`（4/4）、`tests/phase8/feature-recognition.test.ts`（32/32）、`apps/mcp/test/drawing-clearance.test.ts`（4/4）、`npm run typecheck`、`lint:rules`、`lint:deps`、`lint:repo` 全數通過。
+- **既有擱置項目（使用者維持擱置）**：
+  - `E13-999-421.STEP`（缺錐形螺紋）、`MT17203`（80 個雙三次曲面片）、`CIV0000467治具_step.STEP`（512 MiB `BudgetError`）、`part-3(R1-10226)` / `part-4(R1-9035)`（`§6o-B` / 缺 2D 工程圖）。
+
 ## 2026-11-20（16:50 下班交接）— 自動出圖改善計畫四期全數完成並推送（ADR 0260～0263）
 
 - **今日完成並已推送至 `origin/main`**：
