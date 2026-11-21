@@ -129,7 +129,7 @@ export const DRAWING_PROFILES: Readonly<Record<DrawingStandard, DrawingProfile>>
     centerLinetype: 'CENTER',
   },
   CNS: {
-    lines: bySize((s) => (s === 'A0' || s === 'A1' ? { thick: 0.7, medium: 0.5, thin: 0.25 } : { thick: 0.5, medium: 0.35, thin: 0.18 })),
+    lines: bySize((s) => (s === 'A0' || s === 'A1' ? { thick: 0.7, medium: 0.5, thin: 0.25 } : s === 'A2' ? { thick: 0.5, medium: 0.35, thin: 0.25 } : { thick: 0.5, medium: 0.35, thin: 0.18 })),
     frameLine: 0.7,
     frame: bySize((s) => ({ left: 25, other: small(s) ? 10 : 15 })),
     hiddenDash: [3, 1],

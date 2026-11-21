@@ -35,7 +35,7 @@ const EXPECTED: Record<DrawingStandard, Record<SheetSize, { thick: number; mediu
   CNS: {
     A4: { thick: 0.5, medium: 0.35, thin: 0.18, left: 25, other: 10 },
     A3: { thick: 0.5, medium: 0.35, thin: 0.18, left: 25, other: 10 },
-    A2: { thick: 0.5, medium: 0.35, thin: 0.18, left: 25, other: 15 },
+    A2: { thick: 0.5, medium: 0.35, thin: 0.25, left: 25, other: 15 },
     A1: { thick: 0.7, medium: 0.5, thin: 0.25, left: 25, other: 15 },
     A0: { thick: 0.7, medium: 0.5, thin: 0.25, left: 25, other: 15 },
   },

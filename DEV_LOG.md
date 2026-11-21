@@ -1,5 +1,14 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-21（微調收斂）— `sds-plus-bit` 雜亂壓低（`7 → 1`）與 CNS 3 `A2` 細線寬調整
+
+- **`sds-plus-bit` 雜亂根因與收斂**：
+  - 根因：先前 `isSketchTextFace()` 僅於 `viewFeatures()`（`packages/regen/src/drawingDimensions.ts`）的 `slant` 分支過濾刻字筆劃，導致 `cuText:side:skText.tx#*` 之垂直/水平刻字筆劃細面（18 個面）仍進入 `plane` 座標標註（`dim11`/`dim12`），產生密集重疊刻度（`10.545`、`11.025`、`0`）並與 `dim1`/`dim8` 交叉。
+  - 修正：將 `isSketchTextFace(names.faces[i]!, textPrefixes)` 移至 `viewFeatures()` 面入口守門，排除所有草圖文字實體刻字壁面。
+  - 實測：`sds-plus-bit.3dbx` 第 1 頁雜亂數由 **`7 → 1`**（交叉歸 `0`，僅餘剖面字母 `A`）、第 2 頁維持 **`0`**。
+- **CNS 3 `A2` 細線寬調整**：
+  - `packages/model/src/drawing.ts`（`DRAWING_PROFILES.CNS`）與 `tests/phase5/drawing-standard.test.ts` 將 `A2` `thin` 線寬由 `0.18` 調為 `0.25 mm`（`0.5 / 0.35 / 0.25 mm`）。
+
 ## 2026-11-21（微調 2・3）— `steerLeaders` 放大比例容差／詳圖可達性剪枝與 CNS 3 規格核對
 
 - **`steerLeaders` 與 `arrowHitsView` 調整（`apps/mcp/src/drawingSession.ts`）**：

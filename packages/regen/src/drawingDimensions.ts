@@ -439,12 +439,12 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
   // Faces on the same torus ring (same convexity, minor/major radii, axis, and center within 1e-2 mm) share one surface key (rule C1).
   topology.faces.forEach((f, i) => {
     const g = f.geometry;
-    if (!g || !faceAllowed(i) || !(f.area >= MIN_DIMENSION_FACE_AREA)) return;
+    if (!g || !faceAllowed(i) || !(f.area >= MIN_DIMENSION_FACE_AREA) || isSketchTextFace(names.faces[i]!, textPrefixes)) return;
     const ref = (): Ref => ({ kind: 'face', name: names.faces[i]!, fingerprint: faceFingerprint(topology, i) });
     if (g.type === 'plane' && Math.abs(dot(g.normal, axes.dir)) < 1e-6) {
       if (parallel(g.normal, right)) out.push({ type: 'plane', ref: ref(), axis: 'x', coord: dot(g.origin, right), area: f.area });
       else if (parallel(g.normal, up)) out.push({ type: 'plane', ref: ref(), axis: 'y', coord: dot(g.origin, up), area: f.area });
-      else if (!isSketchTextFace(names.faces[i]!, textPrefixes)) {
+      else {
         // edge-on but slanted: the line it is seen as runs square to its normal as seen in the view
         const n: [number, number] = [dot(g.normal, right), dot(g.normal, up)];
         const l = Math.hypot(n[0], n[1]);
