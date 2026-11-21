@@ -427,7 +427,7 @@ function readDimension(d: DimensionLike, views: readonly ViewToDimension[], mapp
 
 /** What makes two round elements the same size callout: a counterbored Ø6 is not a plain Ø6, and a fillet is not a cylinder's arc. */
 function roundKey(f: ViewFeature, callouts: boolean): string | null {
-  if (f.type === 'circle') return `c|${f.full}|${f.convex}|${Math.round(f.radius * 1e4)}|${callouts && f.full ? `${holeSignature(f.hole)}|${threadSignature(f.thread)}` : ''}`;
+  if (f.type === 'circle') return `c|${f.sphere ? 's' : ''}|${f.full}|${f.convex}|${Math.round(f.radius * 1e4)}|${callouts && f.full ? `${holeSignature(f.hole)}|${threadSignature(f.thread)}` : ''}`;
   if (f.type === 'torus') return `t|${f.convex}|${Math.round(f.radius * 1e4)}`;
   return null;
 }
@@ -475,6 +475,7 @@ export function dimensionCoverage(views: readonly ViewToDimension[], dimensions:
   for (const v of views) {
     for (const x of v.features) {
       if ((x.type === 'circle' || x.type === 'torus') && sized.has(x.ref.name)) surfacesSized.add(roundSurface(x));
+      else if (x.type === 'axis' && !x.cone && sized.has(x.ref.name)) surfacesSized.add(x.surface ?? x.ref.name);
     }
   }
   for (const d of dimensions) {
@@ -492,6 +493,14 @@ export function dimensionCoverage(views: readonly ViewToDimension[], dimensions:
       const had = rounds.get(f.ref.name);
       if (had) had.ok ||= ok;
       else rounds.set(f.ref.name, { name: f.ref.name, radius: r3(f.radius), kind: f.type === 'torus' ? 'fillet' : f.full ? 'hole' : 'arc', ok });
+    }
+  // Cylindrical axes that have no end-on circle in any view still need a side-on Ø dimension
+  for (const v of views)
+    for (const f of v.features) {
+      if (f.type !== 'axis' || f.cone || rounds.has(f.ref.name)) continue;
+      const surf = f.surface ?? f.ref.name;
+      const ok = sized.has(f.ref.name) || surfacesSized.has(surf);
+      rounds.set(f.ref.name, { name: f.ref.name, radius: r3(f.radius), kind: 'hole', ok });
     }
   const slantKeysGiven = new Set<string>();
   for (const d of dimensions) {
@@ -648,11 +657,10 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
     for (const vSide of sideViews) {
       let sideIdx = 0;
       for (const f of vSide.features) {
-        if (f.type !== 'axis' || (!allowHiddenSide && vSide.hidden?.has(f.ref.name)) || sized.has(f.ref.name)) continue;
-        // Only use side-on Ø when another view had it as a circle (so it counts in rounds)
+        if (f.type !== 'axis' || f.cone || (!allowHiddenSide && vSide.hidden?.has(f.ref.name)) || sized.has(f.ref.name)) continue;
+        // Prefer matching circle's surface identity when an end-on view exists; also size cylinders that only appear side-on (no end view)
         const circleFeat = views.flatMap((vw) => vw.features).find((x): x is Extract<ViewFeature, { type: 'circle' }> => x.type === 'circle' && x.ref.name === f.ref.name);
-        if (!circleFeat) continue;
-        const surf = roundSurface(circleFeat);
+        const surf = circleFeat ? roundSurface(circleFeat) : (f.surface ?? f.ref.name);
         if (sizedSurfaces.has(surf)) continue;
         const runsX = Math.abs(f.to[0] - f.from[0]) >= Math.abs(f.to[1] - f.from[1]);
         out.push({
@@ -662,7 +670,10 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
         });
         sideIdx++;
         sizedSurfaces.add(surf);
-        for (const vw of views) for (const x of vw.features) if ((x.type === 'circle' || x.type === 'torus') && roundSurface(x) === surf) sized.add(x.ref.name);
+        for (const vw of views)
+          for (const x of vw.features)
+            if (((x.type === 'circle' || x.type === 'torus') && roundSurface(x) === surf) || (x.type === 'axis' && !x.cone && (x.surface ?? x.ref.name) === surf))
+              sized.add(x.ref.name);
         sized.add(f.ref.name);
       }
     }

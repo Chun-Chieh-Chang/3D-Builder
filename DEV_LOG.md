@@ -1,5 +1,17 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-21（17:38）— 3D→2D 標註遺漏 5 項全部補齊並通過全套驗證
+
+- **實作項目（依核准順序完成 #1 → #2 → #8 → #4 → #3）**：
+  1. **#1 側視／剖視螺紋細實線（ISO 6410-1）**：`packages/drawing/src/annotation.ts` `threadItems()` 補齊 `type === 'axis'` 之側視雙平行細實線（依 `origin`/`axis`/`depth` 精確投影盲孔／盲牙範圍）與盲牙終止粗實線；`packages/drawing/src/scene.ts` 傳入視圖 `axes`。
+  2. **#2 無端視圖圓柱補標側視 `Ø`**：`packages/model/src/drawing.ts` 於 `axis` 新增 `surface?`/`cone?`；`packages/drawing/src/autoDrawing.ts` Pass 2 與 `dimensionCoverage()` 納入無端視圖 `circle` 之獨立圓柱面（排除 `cone`）。
+  3. **#8 割面線兩端與轉折粗段（CNS 3 / ISO 128-30）**：`packages/drawing/src/scene.ts` `sectionItems()` 於割面線兩端（6 mm）與轉折處（4 mm）加繪粗實段（`visible`）。
+  4. **#4 球面尺寸自動標註（`SØ` / `SR`）**：`packages/drawing/src/dimension.ts` 支援球面 `SØ`/`SR` 前綴；`packages/regen/src/drawingDimensions.ts` 對面積 $\ge \pi r^2$ 球面輸出 `circle`（`sphere: true`，`≥ 87.5%` 整球標 `SØ`、半球／球頂標 `SR`）；`autoDrawing.ts` `roundKey` 獨立分組避免與圓柱合併。
+  5. **#3 圓錐／拔模圓柱解析與斜錐標註**：`packages/regen/src/drawingDimensions.ts` `elementFacts()` 支援單端／拆分／拔模圓錐頂點跨度解析；`viewFeatures()` 對半錐角 `> 5°` 之結構圓錐（鑽尖錐、開槽拆分錐）輸出 `slant`（依 `splitConeSurface` 去重）供自動標註。
+- **驗證結果**：
+  - 7 檔共 **79/79 通過**（`auto-drawing-plan` 8/8、`drawing-dimension-content` 18/18、`drawing-annotations` 14/14、`drawing-derived` 25/25、`drawing-thread-extensions` 6/6、`apps/mcp/test/drawing` 4/4、`drawing-clearance` 4/4）。
+  - `npm run typecheck`、`lint:rules`、`lint:deps`、`lint:repo` 全數通過。
+
 ## 2026-11-21（晚間）— 3D→2D 自動出圖加速（`5.3×`）＋ 中心線與同類遺漏全面修復
 
 - **效能瓶頸剖析與加速（`sheet: 'auto'` `120.4s → 22.8s`、`A2` `33.4s → 9.53s`）**：

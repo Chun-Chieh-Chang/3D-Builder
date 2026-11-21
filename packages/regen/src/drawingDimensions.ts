@@ -309,6 +309,24 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Drawi
         const chamferSetback = taperedChamferSetback(topology, r.index);
         return { kind: 'face', type: 'cone', point: f.center, dir: g.axis, ends: [ends[0]!.center, ends[1]!.center], endRadii: [ends[0]!.radius, ends[1]!.radius], ...(chamferSetback !== undefined ? { chamferSetback } : {}) };
       }
+      let tMin = Infinity;
+      let tMax = -Infinity;
+      for (const e of topology.edges) {
+        if (!e.faces.includes(r.index)) continue;
+        for (const vi of e.vertices) {
+          const vp = topology.vertices[vi]?.point;
+          if (!vp) continue;
+          const t = dot([vp[0] - g.apex[0], vp[1] - g.apex[1], vp[2] - g.apex[2]], g.axis);
+          if (t < tMin) tMin = t;
+          if (t > tMax) tMax = t;
+        }
+      }
+      if (tMax - tMin > 1e-6) {
+        const tanA = Math.abs(Math.tan(g.halfAngle));
+        const p0: V3 = [g.apex[0] + tMin * g.axis[0], g.apex[1] + tMin * g.axis[1], g.apex[2] + tMin * g.axis[2]];
+        const p1: V3 = [g.apex[0] + tMax * g.axis[0], g.apex[1] + tMax * g.axis[1], g.apex[2] + tMax * g.axis[2]];
+        return { kind: 'face', type: 'cone', point: f.center, dir: g.axis, ends: [p0, p1], endRadii: [Math.abs(tMin) * tanA, Math.abs(tMax) * tanA] };
+      }
     }
     if (g?.type === 'sphere') return { kind: 'face', type: 'sphere', point: g.center, radius: g.radius };
     // a fillet or a round: its radius is the tube's, and its axis and the circle the tube's middle runs on are what say where the arc is
@@ -504,6 +522,7 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
     });
   }
   // Faces on the same torus ring (same convexity, minor/major radii, axis, and center within 1e-2 mm) share one surface key (rule C1).
+  const emittedSplitConeSlant = new Set<string>();
   topology.faces.forEach((f, i) => {
     const g = f.geometry;
     if (!g || !faceAllowed(i) || !(f.area >= MIN_DIMENSION_FACE_AREA) || isSketchTextFace(names.faces[i]!, textPrefixes)) return;
@@ -562,7 +581,9 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
         if (span) {
           const thread = threadOnFace(topology, names, i, cosmeticThreads);
           const hole = singleFull ? holeInfo(topology, i) : null;
+          const splitSurf = splitCylinderSurface.get(i);
           out.push({ type: 'axis', ref: ref(), from: span[0], to: span[1], radius: g.radius,
+            ...(splitSurf ? { surface: splitSurf } : {}),
             ...(thread ? { thread } : {}), ...(hole ? { hole: withFeature(hole, names.faces[i]!, features) } : {}) });
         }
       }
@@ -573,7 +594,7 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
         const axial = Math.abs(ends[1]!.t - ends[0]!.t), radial = Math.abs(ends[1]!.radius - ends[0]!.radius);
         if (axial > 1e-9 && radial > 1e-9) {
           const atAxis = (e: (typeof ends)[number]): [number, number] => [dot(e.center, right), dot(e.center, up)];
-          out.push({ type: 'axis', ref: ref(), from: atAxis(ends[0]!), to: atAxis(ends[1]!), radius: (ends[0]!.radius + ends[1]!.radius) / 2 });
+          out.push({ type: 'axis', ref: ref(), from: atAxis(ends[0]!), to: atAxis(ends[1]!), radius: (ends[0]!.radius + ends[1]!.radius) / 2, cone: true });
           for (const side of [1, -1] as const) {
             const at = (e: (typeof ends)[number]): [number, number] => [dot(e.center, right) - side * e.radius * dy / len, dot(e.center, up) + side * e.radius * dx / len];
             const from = at(ends[0]!), to = at(ends[1]!), l = Math.hypot(to[0] - from[0], to[1] - from[1]);
@@ -584,11 +605,31 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
       } else {
         // Pointed cones (drill tips), drafted bosses/ports, or coaxial cones split by slots/ribs still need their centreline (ISO 128-24)
         const cs = coneSpans.get(i);
-        if (cs && cs.tMax - cs.tMin > 1e-3 && (ends.length === 1 || splitConeSurface.has(i) || cs.wrap >= Math.PI - 1e-2)) {
+        const splitConeKey = splitConeSurface.get(i);
+        if (cs && cs.tMax - cs.tMin > 1e-3 && (ends.length === 1 || splitConeKey !== undefined || cs.wrap >= Math.PI - 1e-2)) {
           const at = (p: readonly [number, number, number]): [number, number] => [dot(p, right), dot(p, up)];
           const p0: V3 = [g.apex[0] + cs.tMin * g.axis[0], g.apex[1] + cs.tMin * g.axis[1], g.apex[2] + cs.tMin * g.axis[2]];
           const p1: V3 = [g.apex[0] + cs.tMax * g.axis[0], g.apex[1] + cs.tMax * g.axis[1], g.apex[2] + cs.tMax * g.axis[2]];
-          out.push({ type: 'axis', ref: ref(), from: at(p0), to: at(p1), radius: cs.rAvg });
+          out.push({ type: 'axis', ref: ref(), from: at(p0), to: at(p1), radius: cs.rAvg, cone: true });
+          // Structural tapers (> 5° half-angle: drill tips, split chamfers, tapers) also emit a slant for auto-dimensioning, once per split cone surface
+          if (Math.abs(g.halfAngle) > (5 * Math.PI) / 180 && (!splitConeKey || !emittedSplitConeSlant.has(splitConeKey))) {
+            const dx = dot(g.axis, right), dy = dot(g.axis, up), len = Math.hypot(dx, dy);
+            const tanA = Math.abs(Math.tan(g.halfAngle));
+            const r0 = Math.abs(cs.tMin) * tanA, r1 = Math.abs(cs.tMax) * tanA;
+            const axial = cs.tMax - cs.tMin, radial = Math.abs(r1 - r0);
+            if (len > 1e-9 && axial > 1e-6 && radial > 1e-6) {
+              if (splitConeKey) emittedSplitConeSlant.add(splitConeKey);
+              const c0 = at(p0), c1 = at(p1);
+              for (const side of [1, -1] as const) {
+                const from: [number, number] = [c0[0] - side * r0 * dy / len, c0[1] + side * r0 * dx / len];
+                const to: [number, number] = [c1[0] - side * r1 * dy / len, c1[1] + side * r1 * dx / len];
+                const l = Math.hypot(to[0] - from[0], to[1] - from[1]);
+                if (l > 1e-6) {
+                  out.push({ type: 'slant', ref: ref(), at: [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2], dir: [(to[0] - from[0]) / l, (to[1] - from[1]) / l], area: f.area, cone: { side, from, to, axial, radial } });
+                }
+              }
+            }
+          }
         }
       }
     } else if (g.type === 'cone' && parallel(g.axis, axes.dir)) {
@@ -598,7 +639,10 @@ export function viewFeatures(topology: Topology, names: ElementNames, axes: View
         out.push({ type: 'centre', ref: ref(), centre: [dot(g.apex, right), dot(g.apex, up)], radius: cs.rMax });
       }
     } else if (g.type === 'sphere' && g.radius > 1e-3 && f.area >= Math.PI * g.radius * g.radius) {
-      out.push({ type: 'centre', ref: ref(), centre: [dot(g.center, right), dot(g.center, up)], radius: g.radius });
+      const centre: [number, number] = [dot(g.center, right), dot(g.center, up)];
+      const fullSphere = f.area >= 3.5 * Math.PI * g.radius * g.radius;
+      out.push({ type: 'circle', ref: ref(), centre, radius: g.radius, convex: g.convex, full: fullSphere, outward: 45, sphere: true });
+      if (!fullSphere) out.push({ type: 'centre', ref: ref(), centre, radius: g.radius });
     } else if (g.type === 'torus' && Math.abs(dot(g.axis, axes.dir)) < 1e-6 && g.major > 1e-9) {
       // a fillet or a round seen in its true shape (E1a): its axis lies in the sheet, so the view cuts its tube and the cut is the arc. The same condition
       // `circleCentre` uses to accept one — the two have to agree or a feature would be offered and then refused.

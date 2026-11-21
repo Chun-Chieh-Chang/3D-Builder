@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import type { DrawingView, HoleTable, ViewFeature } from '@3db/model';
+import { normalizedViewAxes, rightOf, sheetUp, type DrawingView, type HoleTable, type ViewAxes, type ViewFeature } from '@3db/model';
 import { datumPlanes } from './autoDimension';
 import type { LengthUnit, CalloutStyle } from '@3db/model';
 import { DIM_TEXT, cosmeticThreadText, formatNumber, holeNote, holeSignature, lengthNumber, threadedHoleText, threadSignature, toleranceText } from './dimension';
@@ -110,33 +110,85 @@ export function threadMajor(size: string | undefined): number | null {
 }
 
 /**
- * The thread of a tapped hole seen end on (ISO 6410-1, D-I3): a thin arc of about three quarters of a circle at the major diameter, outside the tap drill the
- * model has, open at the upper right. Only where the thread's label says its major diameter: a thread of a typed size has none to draw, and none is made up.
+ * The thread of a tapped hole or cosmetic thread (ISO 6410-1, D-I3):
+ * - Seen end on (`circle`): a thin arc of three quarters of a circle at the minor (external) or major (internal) diameter, open at the upper right.
+ * - Seen from the side / in section (`axis`): two parallel thin lines at ±thread radius along the threaded span, plus a thick thread-limit line across the
+ *   major diameter when the thread is blind and ends before the cylinder's end.
  */
-export function threadItems(view: DrawingView, features: readonly ViewFeature[], placed: PlacedView): SceneItem[] {
+export function threadItems(view: DrawingView, features: readonly ViewFeature[], placed: PlacedView, axes?: ViewAxes): SceneItem[] {
   const out: SceneItem[] = [];
-  for (const f of features) {
-    if (f.type !== 'circle' || !f.full) continue;
-    let r = 0;
-    if (f.thread) {
-      r = f.thread.threadType === 'external' ? f.thread.minorDiameter / 2 : f.thread.majorDiameter / 2;
-    } else if (f.hole?.thread) {
-      const major = threadMajor(f.hole.thread.size);
-      if (major !== null && major / 2 > f.radius) r = major / 2;
-    }
-    if (r <= 0) continue;
-    const arc: number[] = [];
-    for (let i = 0; i <= 54; i++) {
-      const a = Math.PI / 2 + ((3 * Math.PI) / 2) * (i / 54);
-      arc.push(f.centre[0] + r * Math.cos(a), f.centre[1] + r * Math.sin(a));
-    }
-    const brk = placed.break;
-    const first = view.kind === 'detail' ? clipToCircle(arc, view.centre, view.radius) : view.kind === 'crop' ? clipToOutline(arc, view.outline) : [arc];
+  const brk = placed.break;
+  const emit = (line: readonly number[], style: 'thin' | 'visible') => {
+    const first = view.kind === 'detail' ? clipToCircle(line, view.centre, view.radius) : view.kind === 'crop' ? clipToOutline(line, view.outline) : [line];
     const pieces = brk ? first.flatMap((p) => clipToBand(p, brk.axis, brk.from, brk.to)) : first;
     for (const piece of pieces) {
       const pts: number[] = [];
       for (let i = 0; i < piece.length; i += 2) pts.push(...toSheet(placed, piece[i]!, piece[i + 1]!));
-      out.push({ kind: 'polyline', points: pts, style: 'thin' });
+      out.push({ kind: 'polyline', points: pts, style });
+    }
+  };
+  const normAxes = axes ? normalizedViewAxes(axes) : null;
+  const right = normAxes ? rightOf(normAxes) : null;
+  const up = normAxes ? sheetUp(normAxes) : null;
+  for (const f of features) {
+    if (f.type === 'circle' && f.full) {
+      let r = 0;
+      if (f.thread) {
+        r = f.thread.threadType === 'external' ? f.thread.minorDiameter / 2 : f.thread.majorDiameter / 2;
+      } else if (f.hole?.thread) {
+        const major = threadMajor(f.hole.thread.size);
+        if (major !== null && major / 2 > f.radius) r = major / 2;
+      }
+      if (r <= 0) continue;
+      const arc: number[] = [];
+      for (let i = 0; i <= 54; i++) {
+        const a = Math.PI / 2 + ((3 * Math.PI) / 2) * (i / 54);
+        arc.push(f.centre[0] + r * Math.cos(a), f.centre[1] + r * Math.sin(a));
+      }
+      emit(arc, 'thin');
+    } else if (f.type === 'axis' && (f.thread || f.hole?.thread)) {
+      let r = 0;
+      if (f.thread) {
+        r = f.thread.threadType === 'external' ? f.thread.minorDiameter / 2 : f.thread.majorDiameter / 2;
+      } else if (f.hole?.thread) {
+        const major = threadMajor(f.hole.thread.size);
+        if (major !== null && major / 2 > f.radius) r = major / 2;
+      }
+      if (r <= 0) continue;
+      const [fx, fy] = f.from;
+      const [tx, ty] = f.to;
+      const len = Math.hypot(tx - fx, ty - fy);
+      if (len < 1e-6) continue;
+      let start: [number, number] = [fx, fy];
+      let end: [number, number] = [tx, ty];
+      let isBlindLimit = false;
+      if (f.thread?.endCondition === 'blind' && f.thread.depth > 1e-6 && f.thread.depth < len - 1e-3) {
+        if (right && up && f.thread.origin && f.thread.axis) {
+          const o = f.thread.origin;
+          const a = f.thread.axis;
+          const d = f.thread.depth;
+          start = [o[0] * right[0] + o[1] * right[1] + o[2] * right[2], o[0] * up[0] + o[1] * up[1] + o[2] * up[2]];
+          end = [
+            (o[0] + a[0] * d) * right[0] + (o[1] + a[1] * d) * right[1] + (o[2] + a[2] * d) * right[2],
+            (o[0] + a[0] * d) * up[0] + (o[1] + a[1] * d) * up[1] + (o[2] + a[2] * d) * up[2],
+          ];
+        } else {
+          const ux = (tx - fx) / len;
+          const uy = (ty - fy) / len;
+          end = [fx + ux * f.thread.depth, fy + uy * f.thread.depth];
+        }
+        isBlindLimit = true;
+      }
+      const segLen = Math.hypot(end[0] - start[0], end[1] - start[1]);
+      if (segLen < 1e-6) continue;
+      const nx = -(end[1] - start[1]) / segLen;
+      const ny = (end[0] - start[0]) / segLen;
+      emit([start[0] + nx * r, start[1] + ny * r, end[0] + nx * r, end[1] + ny * r], 'thin');
+      emit([start[0] - nx * r, start[1] - ny * r, end[0] - nx * r, end[1] - ny * r], 'thin');
+      if (isBlindLimit) {
+        const limitR = Math.max(f.radius, r);
+        emit([end[0] - nx * limitR, end[1] - ny * limitR, end[0] + nx * limitR, end[1] + ny * limitR], 'visible');
+      }
     }
   }
   return out;

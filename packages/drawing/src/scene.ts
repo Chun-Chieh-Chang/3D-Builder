@@ -282,6 +282,23 @@ function sectionItems(v: Pick<SectionDrawingView, 'line' | 'label' | 'flip'>, pa
   const shaft = 8;
   const head = 3;
   const items: SceneItem[] = [{ kind: 'polyline', points: pts.flat(), style: 'center' }];
+  // Thickened ends and bends along the cutting plane line (CNS 3 / ISO 128-30)
+  const addThick = (from: [number, number], toward: [number, number], maxLen: number) => {
+    const dx = toward[0] - from[0];
+    const dy = toward[1] - from[1];
+    const l = Math.hypot(dx, dy);
+    if (l < 1e-6) return;
+    const d = Math.min(maxLen, l * 0.45);
+    items.push({ kind: 'polyline', points: [from[0], from[1], from[0] + (dx / l) * d, from[1] + (dy / l) * d], style: 'visible' });
+  };
+  if (pts.length >= 2) {
+    addThick(pts[0]!, pts[1]!, 6);
+    addThick(pts[pts.length - 1]!, pts[pts.length - 2]!, 6);
+    for (let i = 1; i + 1 < pts.length; i++) {
+      addThick(pts[i]!, pts[i - 1]!, 4);
+      addThick(pts[i]!, pts[i + 1]!, 4);
+    }
+  }
   for (const [end, dir] of [[a, ends[0]], [b, ends[1]]] as const) {
     const tip: [number, number] = [end[0] + dir[0] * shaft, end[1] + dir[1] * shaft];
     // the arrow: a shaft from the end of the line, and a V head turned 20 degrees either way
@@ -401,7 +418,7 @@ function buildSceneIn(
     // sizes the dimensions, the finishes, the frames, the datums and the notes together; a note with a height of its own keeps it
     const k = resolveDimStyle(pg.sheet.dimStyle).text / DIM_STYLE_DEFAULT.text;
     for (const f of pg.surfaceFinishes.filter((x) => x.view === v.id)) items.push(...scaleAbout(surfaceFinishItems([f], own), toSheet(own, f.at[0], f.at[1]), k).map((i) => ({ ...i, owner: f.id })));
-    items.push(...threadItems(v, viewFeats ?? [], own).map((i) => ({ ...i, owner: ofView })));
+    items.push(...threadItems(v, viewFeats ?? [], own, axesOf(pg.views, pg.sheet.projection, v) ?? undefined).map((i) => ({ ...i, owner: ofView })));
     for (const a of (pg.annotations ?? []).filter((x) => x.view === v.id)) {
       const anchor = a.kind === 'fcf' || a.kind === 'note' ? (a.leader ?? a.at) : a.kind === 'datum' ? a.at : null;
       const own_k = a.kind === 'note' && a.height !== undefined ? 1 : k;

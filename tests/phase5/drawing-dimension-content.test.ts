@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { applyDrawingCommand, createEmptyDrawing, viewVectors, type Dimension, type DrawingView, type ElementFacts, type ViewFeature } from '@3db/model';
-import { buildScene, centreItems, clutterOf, dimensionCoverage, evaluateDimension, planDrawingDimensions, type DimensionLike, type PlacedView, type ViewLines, type ViewToDimension } from '@3db/drawing';
+import { buildScene, centreItems, clutterOf, dimensionCoverage, evaluateDimension, planDrawingDimensions, threadItems, type DimensionLike, type PlacedView, type ViewLines, type ViewToDimension } from '@3db/drawing';
 import { holeInfo, MIN_DIMENSION_FACE_AREA, sketchTextPrefixes, viewFeatures } from '@3db/regen';
 import type { Topology } from '@3db/kernel';
 
@@ -337,6 +337,71 @@ describe('slanted face auto-dimensioning (coverage.slants)', () => {
     expect(sideFeats.filter((f) => f.type === 'centre').map((f) => f.ref.name)).toEqual(['dome']);
     const topFeats = viewFeatures(topo, names, { dir: [0, 0, 1], up: [0, 1, 0] });
     expect(topFeats.filter((f) => f.type === 'circle' && f.full).map((f) => f.ref.name)).toEqual(['trimmedCyl']);
+    expect(topFeats.filter((f) => f.type === 'circle' && f.sphere).map((f) => f.ref.name)).toEqual(['dome']);
     expect(topFeats.filter((f) => f.type === 'centre').map((f) => f.ref.name)).toEqual(['draftedBoss', 'dome']);
+  });
+
+  it('covers side-view thread lines (#1), side-only cylinder Ø (#2), section thickened ends (#8), sphere SØ/SR (#4), and tapered cone slant (#3)', () => {
+    // #1: Side-view blind cosmetic thread draws 2 thin lines + 1 thick thread-limit line
+    const placed: PlacedView = { id: 'v1', at: [100, 100], scale: 1, centre: [0, 0], w: 60, h: 20 };
+    const sideView: DrawingView = { id: 'v1', name: '前視', source: 'p.3dbx', direction: 'front' };
+    const threadAxis: ViewFeature = {
+      type: 'axis',
+      ref: ref('shaft'),
+      from: [0, 0],
+      to: [30, 0],
+      radius: 4,
+      thread: { majorDiameter: 8, minorDiameter: 6.466, pitch: 1.25, depth: 12, threadType: 'external', endCondition: 'blind', origin: [0, 0, 0], axis: [1, 0, 0] },
+    };
+    const tItems = threadItems(sideView, [threadAxis], placed, viewVectors('front'));
+    expect(tItems.filter((i) => i.kind === 'polyline' && i.style === 'thin')).toHaveLength(2);
+    expect(tItems.filter((i) => i.kind === 'polyline' && i.style === 'visible')).toHaveLength(1);
+
+    // #2: Single-view cylinder (axis only, no end-on circle view) still receives a side-on Ø linear dimension
+    const singleView: ViewToDimension[] = [
+      {
+        viewId: 'v1',
+        axes: viewVectors('front'),
+        features: [{ type: 'axis', ref: ref('onlySideCyl'), from: [0, 0], to: [40, 0], radius: 5 }],
+      },
+    ];
+    const plan2 = planDrawingDimensions(singleView, []);
+    expect(plan2.some((p) => p.draft.kind === 'linear' && p.draft.prefix === 'Ø' && p.draft.a.name === 'onlySideCyl')).toBe(true);
+    const cov2 = dimensionCoverage(singleView, plan2.map((p) => ({ view: p.view, ...p.draft })));
+    expect(cov2.rounds.missing).toEqual([]);
+
+    // #4: Sphere diameter/radius formats as SØ / SR
+    const sphereFact: ElementFacts = { kind: 'face', type: 'sphere', point: [0, 0, 0], radius: 5 };
+    const sDia = evaluateDimension({ id: 'sd', view: 'v1', kind: 'diameter', ref: ref('ball'), angle: 45 }, { elements: [sphereFact] }, viewVectors('front'), placed);
+    const sRad = evaluateDimension({ id: 'sr', view: 'v1', kind: 'radius', ref: ref('dome'), angle: 45 }, { elements: [sphereFact] }, viewVectors('front'), placed);
+    expect('text' in sDia && sDia.text).toBe('SØ10');
+    expect('text' in sRad && sRad.text).toBe('SR5');
+
+    // #8: Section cutting-plane line includes thickened ends & bend segments (visible) alongside the centre chain line
+    let doc = createEmptyDrawing('CNS');
+    doc = applyDrawingCommand(doc, {
+      type: 'insertViews',
+      views: [
+        sideView,
+        { id: 's1', name: 'A', kind: 'section', parent: 'v1', line: [[0, -10], [0, 5], [15, 5], [15, 20]], label: 'A' },
+      ],
+    });
+    const vl: ViewLines = { visible: [[-20, -20, 40, -20, 40, 20, -20, 20, -20, -20]], hidden: [], box: { min: [-20, -20], max: [40, 20] } };
+    const built = buildScene(doc, new Map([['v1', vl], ['s1', vl]]));
+    const cuttingThick = built.scene.items.filter((i) => i.kind === 'polyline' && i.style === 'visible' && !i.owner);
+    // 2 end thick segments + 4 bend half-segments + 2 arrow shafts + 2 arrow V-heads = 10
+    expect(cuttingThick.length).toBeGreaterThanOrEqual(10);
+
+    // #3: Pointed taper cone (> 5° half-angle, no full circle end edges) emits both axis and cone slant
+    const coneTopo: Topology = {
+      faces: [
+        { surface: 'cone', area: Math.PI * 5 * Math.hypot(5, 10), center: [2.5, 0, 5], normal: [1, 0, 0], geometry: { type: 'cone', apex: [0, 0, 10], axis: [0, 0, -1], halfAngle: Math.atan2(5, 10), convex: true } },
+      ],
+      edges: [{ faces: [0], vertices: [0, 1], length: Math.hypot(5, 10), mid: [2.5, 0, 5], dir: [0, 0, 1], curve: 'line' }],
+      vertices: [{ point: [5, 0, 0], faces: [0] }, { point: [0, 0, 10], faces: [0] }],
+    };
+    const coneFeats = viewFeatures(coneTopo, { faces: ['taperTip'], edges: ['e0'], vertices: ['v0', 'v1'] }, { dir: [0, 1, 0], up: [0, 0, 1] });
+    expect(coneFeats.some((f) => f.type === 'axis' && f.cone && f.ref.name === 'taperTip')).toBe(true);
+    expect(coneFeats.some((f) => f.type === 'slant' && f.cone !== undefined && f.ref.name === 'taperTip')).toBe(true);
   });
 });

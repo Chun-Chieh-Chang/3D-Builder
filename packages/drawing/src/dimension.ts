@@ -211,7 +211,7 @@ function base(d: Dimension, value: number, facts: ElementFacts | undefined, unit
     ? facts?.thread ? `${cosmeticThreadText(facts.thread, unit, style, facts.hole)}${facts.hole ? t('drawing.threadDrill', { diameter: lengthNumber(value, 3, unit), note: holeNote(facts.hole, unit, style) }) : ''}` : facts?.hole ? threadedHoleText(facts.hole, value, unit, style) : null
     : null;
   if (threaded) return d.reference ? `(${count}${threaded})` : `${count}${threaded}`;
-  const prefix = d.kind === 'diameter' ? 'Ø' : d.kind === 'radius' ? 'R' : '';
+  const prefix = d.kind === 'diameter' ? (facts?.type === 'sphere' ? 'SØ' : 'Ø') : d.kind === 'radius' ? (facts?.type === 'sphere' ? 'SR' : 'R') : '';
   const tol = toleranceAfter(d.tolerance, value, unit);
   const note = d.kind === 'diameter' && d.callout && facts?.hole ? ` ${holeNote(facts.hole, unit, style)}` : '';
   // the decimals the user asked for are the decimals written, in either unit
