@@ -1,5 +1,17 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-21（20:02）— 280/280 真瀏覽器回歸全綠 ＋ 新增 2D→3D 投影反比對驗算 MCP 工具（`part_verify_against_2d`）
+
+- **收尾關門驗證**：
+  - `npm run mcp:build` 通過（293 ms）。
+  - 完整 `npm run verify:ui -- --checkpoint out/ui-20261121.jsonl`：**280 / 280 PASS（0 FAIL、0 ERROR、0 KNOWN）**。
+- **新能力：2D→3D 投影反比對驗算 MCP 工具（`part_verify_against_2d`）**：
+  - 新增 `apps/mcp/src/verify2d.ts` 並註冊至 `apps/mcp/src/server.ts`：AI 依 2D 工程圖正向建立 3D `.3dbx` 後，可一次傳入各視圖（`front`/`back`/`top`/`bottom`/`left`/`right`）之 2D 標註規格（`width`/`height`/`diameter`/`radius`/`angle`/`distance`、公差與預期件數 `count`），透過真實 OCCT 投影量測回報逐項 `pass/fail`、實測值、精確偏差、各視圖外框與可選正交渲染 PNG（`pictures: true`）。
+  - 嚴格輸入防呆（零靜默篡改）：空檢查清單、負數／零／`NaN` 名義值或公差、非整數 `count`、`distance` 缺 `axis`、`angle >= 180`、無實體零件皆顯式拒絕（`isError: true`）。
+- **驗證結果**：
+  - 新增 `apps/mcp/test/verify2d.test.ts`（3/3 通過：`locating-plate` 8 項全過＋2 張 PNG、`v-block` 45° V 槽＋刻意超差／件數錯誤精確抓錯、10 種非法輸入全數拒絕）。
+  - `apps/mcp/test/e2e.test.ts`（8/8 通過，含 stdio 工具清單驗證）、`npm run mcp:build`、`npm run typecheck`、`lint:rules`、`lint:deps`、`lint:repo` 全數通過。
+
 ## 2026-11-21（17:48）— 3D→2D 中優先 3 項補齊（#7 孔陣列 PCD、#6 B-spline 外形包絡、#5 非正交斜孔輔助視圖）
 
 - **實作內容**：

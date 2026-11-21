@@ -8,11 +8,9 @@
      - `overlap.ts` AABB 預過濾與零配置相交、`arrowHitsView` 早停、`steerLeaders` 跳過未命中角度：`R1-9035(auto)` `120.4s → 22.8s`、`R1-9035(A2)` `33.4s → 9.53s`。
      - 修復 5 類遺漏：截斷／斜切圓柱中心線、圓錐／拔模圓柱／拆分圓錐側視中心線與正視中心記號（`ViewFeature.centre`）、球面中心記號、`detail`/`crop`/`sectionLocal` 繼承母視圖 `features` 與 `crop` 輪廓裁切、斷裂視圖（`placed.break`）中心線與螺紋線斷裂帶裁切。
   3. **`c0cb3991` — 3D→2D 標註遺漏高優先 5 項補齊**：側視／剖視螺紋細實線（#1）、無端視圖圓柱補標側視 `Ø`（#2）、割面線兩端與轉折粗段（#8）、球面 `SØ`/`SR`（#4）、結構斜錐解析與標註（#3）。
+  4. **`c6db965c` — 3D→2D 中優先 3 項補齊**：孔陣列節圓中心線 PCD（#7）、B-spline 外形總長寬包絡（#6）、非正交斜孔自動建立輔助視圖（#5）；並於 `c6db965c` 上跑完完整 `verify:ui` **280 / 280 PASS**。
 - **本輪已完成（待使用者核准提交與推送）**：
-  - 3D→2D 中優先 3 項全部實作並通過 67/67 測試與四項靜態檢查：
-    1. **#7 孔陣列節圓中心線（PCD）**：`annotation.ts` `centreItems()` 辨識等角距圓孔陣列繪製節圓中心線（防矩形四孔板誤判）。
-    2. **#6 B-spline／曲面外形總長寬包絡**：`projectionRefs.ts` `projectionExtrema()` ＋ `autoDrawing.ts` 針對超出解析特徵之自由曲面補標總長／總高。
-    3. **#5 非正交斜孔輔助視圖（`auxiliary`）**：`drawingDimensions.ts` `obliqueHoleAxes()` ＋ `autoDrawing.ts` `adviseAuxiliary()` ＋ `drawingSession.ts` 自動建立輔助視圖並納入 `dimensionViews()` 真形標註。
+  - **2D→3D 投影反比對驗算 MCP 工具（`part_verify_against_2d`）**：新增 `apps/mcp/src/verify2d.ts`、`apps/mcp/test/verify2d.test.ts`，註冊至 `apps/mcp/src/server.ts` 並更新 `e2e.test.ts` 與 `apps/mcp/dist`（11/11 測試、`mcp:build`、`typecheck`、四項 lint 全綠）。
 
 ## 2026-11-21（16:38 交接）— `sds-plus-bit` 雜亂收斂（`7 → 1`）、CNS 3 `A2` 線寬與 `R1-9035` 正向建模＋2D 出圖閉環
 

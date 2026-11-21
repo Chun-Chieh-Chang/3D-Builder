@@ -13,6 +13,7 @@ import { isTrap } from '@3db/kernel';
 import type { LiveBridge } from './bridge';
 import { CAD_TOOLS, callCadTool } from './cadTools';
 import { DRAWING_TOOLS, callDrawingTool, isDrawingTool } from './drawingTools';
+import { parseVerify2dChecks, verifyPartAgainst2d } from './verify2d';
 
 const vec3 = { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 } as const;
 const path = { type: 'string', description: 'A file path relative to the workspace folder.' } as const;
@@ -26,6 +27,35 @@ export const TOOLS: Tool[] = [
   { name: 'part_open', description: 'Opens a .3dbx part file from the workspace folder and rebuilds it.', inputSchema: { type: 'object', properties: { path }, required: ['path'] } },
   { name: 'part_save', description: 'Saves the part as a .3dbx file (to its own file when no path is given).', inputSchema: { type: 'object', properties: { path } } },
   { name: 'part_summary', description: 'The part as built: every feature with its status, the bodies, the volume, area, center of mass and box.', inputSchema: { type: 'object', properties: {} } },
+  {
+    name: 'part_verify_against_2d',
+    description:
+      'Projects the open 3D part onto orthographic views using the native OCCT kernel and verifies 2D engineering drawing callouts (width, height, diameter, radius, angle, distance, and optional feature count) against the actual projected geometry. Returns pass/fail per callout, exact measured values and deviations, view bounding boxes, and optional rendered PNGs for visual comparison.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        checks: {
+          type: 'array',
+          minItems: 1,
+          items: {
+            type: 'object',
+            properties: {
+              label: { type: 'string', description: 'Callout description from the 2D drawing.' },
+              view: { type: 'string', enum: ['front', 'back', 'top', 'bottom', 'left', 'right'] },
+              kind: { type: 'string', enum: ['width', 'height', 'diameter', 'radius', 'angle', 'distance'] },
+              nominal: { type: 'number', description: 'Nominal target value (mm, or degrees for angle).' },
+              tolerance: { type: 'number', description: 'Allowed absolute tolerance (default 0.05 mm or 0.1 deg).' },
+              count: { type: 'integer', minimum: 1, description: 'Expected number of matching features (e.g. 4 for 4xØ9).' },
+              axis: { type: 'string', enum: ['x', 'y'], description: "Measurement axis (required for kind='distance')." },
+            },
+            required: ['label', 'view', 'kind', 'nominal'],
+          },
+        },
+        pictures: { type: 'boolean', description: 'Also return orthographic rendered PNGs of each checked view (default false).' },
+      },
+      required: ['checks'],
+    },
+  },
   {
     name: 'command_reference',
     description: "The TypeScript source of what commands take. topic 'commands': the Command union; 'types': the named types (Feature, SketchEntity, ExtrudeFeature, ...); 'example': a worked example.",
@@ -210,6 +240,19 @@ export async function callTool(session: CadSession, name: string, raw: unknown, 
         );
       case 'query_elements':
         return json(session.elements(a as unknown as ElementQuery));
+      case 'part_verify_against_2d': {
+        const checks = parseVerify2dChecks(a.checks);
+        const report = verifyPartAgainst2d(session, checks);
+        const content: CallToolResult['content'] = [{ type: 'text', text: JSON.stringify(report, null, 1) }];
+        if (a.pictures === true) {
+          const uniqueViews = [...new Set(checks.map((c) => c.view))];
+          for (const view of uniqueViews) {
+            const pic = await renderView(session, { view, hidden: true, size: 768 });
+            content.push({ type: 'image', data: Buffer.from(pic.png).toString('base64'), mimeType: 'image/png' });
+          }
+        }
+        return { content };
+      }
       case 'render_view': {
         const r = await renderView(session, a as RenderOptions);
         return {
