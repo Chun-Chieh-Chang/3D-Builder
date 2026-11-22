@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "3D-Builder",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "identifier": "app.3dbuilder.desktop",
   "build": {
     "frontendDist": "../../web/dist",
     "devUrl": "http://127.0.0.1:5391",
     "beforeDevCommand": "npm run dev -w @3db/web",
-    "beforeBuildCommand": "npm run build -w @3db/web"
+    "beforeBuildCommand": "npm run prepare-bundle -w @3db/desktop"
   },
   "app": {
     "windows": [
@@ -28,6 +28,10 @@
     "active": true,
     "useLocalToolsDir": true,
     "targets": ["nsis"],
+    "externalBin": ["binaries/3d-builder-mcp"],
+    "resources": {
+      "resources/mcp/": "mcp/"
+    },
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
     "windows": {
       "nsis": {

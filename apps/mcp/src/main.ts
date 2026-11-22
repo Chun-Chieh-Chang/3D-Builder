@@ -11,12 +11,23 @@ import { CadSession } from './session';
 import { createServer, serial } from './server';
 import { LiveBridge } from './bridge';
 
-const VERSION = '0.1.0';
+const VERSION = '0.7.0';
+
+function parseCliArgs(argv: readonly string[]): { workspace?: string; locale?: string } {
+  const out: { workspace?: string; locale?: string } = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if ((a === '--workspace' || a === '--root') && argv[i + 1]) out.workspace = argv[++i]!;
+    else if (a === '--locale' && argv[i + 1]) out.locale = argv[++i]!;
+  }
+  return out;
+}
 
 async function main(): Promise<void> {
-  const locale = process.env.THREEDB_LOCALE ?? 'zh-TW';
+  const cli = parseCliArgs(process.argv.slice(2));
+  const locale = cli.locale ?? process.env.THREEDB_LOCALE ?? 'zh-TW';
   if (locale !== 'zh-TW' && locale !== 'en') throw new Error(`THREEDB_LOCALE must be zh-TW or en, not ${locale}`);
-  const root = resolve(process.env.THREEDB_WORKSPACE ?? process.cwd());
+  const root = resolve(cli.workspace ?? process.env.THREEDB_WORKSPACE ?? process.cwd());
   await mkdir(root, { recursive: true });
   const began = Date.now();
   const session = await CadSession.create({ root, locale });

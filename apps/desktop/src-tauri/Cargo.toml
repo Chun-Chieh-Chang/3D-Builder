@@ -1,13 +1,15 @@
 [package]
 name = "desktop"
-version = "0.6.0"
+version = "0.7.0"
 description = "3D-Builder desktop shell: the web app in a native window"
 edition = "2021"
+default-run = "desktop"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }
 
 [profile.release]

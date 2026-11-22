@@ -6,6 +6,8 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
+    "stage-mcp": "node scripts/stage-mcp.mjs",
+    "prepare-bundle": "npm run build -w @3db/web && node scripts/stage-mcp.mjs",
     "build": "tauri build"
   },
   "devDependencies": {

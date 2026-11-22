@@ -8,7 +8,8 @@
 
 | 版本 | 首次建置 | 含到的提交 | 安裝檔大小 | 狀態 |
 |---|---|---|---|---|
-| 0.6.0 | 2026-11-15 16:16 | `0cd8b09f` | 13,177,478 B | **目前本機安裝包**；GitHub Release `v0.6.0`（Latest） |
+| 0.7.0 | 2026-11-22 17:00 | `b66b53d1`＋路線 A 與升版提交 | 49,350,112 B | **目前本機安裝包（內建 MCP Sidecar）**（待發佈 GitHub Release `v0.7.0`） |
+| 0.6.0 | 2026-11-15 16:16 | `0cd8b09f` | 13,177,478 B | GitHub Release `v0.6.0` |
 | 0.5.0 | 2026-11-14 21:31 | `b3771674`＋升版提交 `da072cd5` | 13,128,755 B | GitHub Release `v0.5.0`；本機舊安裝檔已移至資源回收筒（2026-11-15） |
 | 0.4.1 | 2026-11-14 20:10 | `5e4d1ad6`＋升版提交 `b3771674` | 13,129,684 B | 已刪除本機安裝檔（2026-11-14）；從未發佈成 Release（改發 0.5.0） |
 | 0.4.0 | 2026-11-14 16:38 | `ff6e2db6`＋升版提交 `8c18cb4e` | 13,042,489 B | GitHub Release `v0.4.0`；已刪除本機安裝檔（2026-11-14） |
@@ -32,6 +33,18 @@
 - 輸出方式：開啟有爆炸步驟的組合件，選「檔案 → 輸出互動拆解示意」，再用支援 WebGL 2 的瀏覽器開啟下載的 HTML。
 - 本機以正式 Web 建置與實際執行 NSIS 後的桌面程式，各從選單下載金樣夾具 HTML。兩份檔案共用 SHA-256 `0D956A92439C8F593155601E5F2C281DB847A11D73CB769A7C79D6C2E63DCC8E`，各 726,152 B。Chrome 斷網開啟兩份檔案，逐步位姿與 BOM 高亮測試通過，HTTP(S) 請求為 0。
 - x64 驗收安裝包為 13,129,167 B，SHA-256 `7588569A0C9A14F36CA3EB64136181F215C7EBF53A78EA532C5010175C70839E`。NSIS 以獨立目錄執行成功，驗收後還原原有安裝登錄並核對原程式雜湊。
+
+## 0.7.0（2026-11-22）
+
+- **升版提交**：同步 `tauri.conf.json`、`Cargo.toml`、`Cargo.lock` 至 `0.7.0`（`apps/web/vite.config.ts` 同步讀入 `__APP_VERSION__ = "0.7.0"`，命令列顯示 `v0.7.0`）。相較 `0.6.0`，新增：
+  - **內建獨立 MCP 伺服器（路線 A，免 clone 專案、免裝 Node.js）**：安裝檔內含 `3d-builder-mcp.exe` 啟動器與完整獨立執行環境（`mcp/node.exe`、`mcp/dist/server.mjs` 與精簡單執行緒 OCCT/PlaneGCS WASM），桌面版「工具 → AI 控制」對話框自動顯示本機啟動器路徑與一鍵複製 MCP 設定（支援 Claude Desktop／Claude Code／Codex／Antigravity／OpenCode 執行 2D↔3D 與照片建模）。
+  - 命令列版本顯示、工程圖自動出圖四期改善（ADR 0260–0263）、版次履歷表（Schema v40）、版次三角形變更標記（Schema v41）、表面粗糙度三角形大小與著色、圖頁格式標題欄列高與各欄位字體比例調整、孔標註與註記自動換行寬度、工程圖窄視口側欄抽屜、可選 `AC1021` UTF-8 DXF 匯出、2D 投影反比對驗算與網格完整性閘門，以及交叉孔特徵辨識強化。
+- **格式相容性**：工程圖升級至 Schema 41（相容舊版 `.3dbd` 自動升級）；存成 v41（含版次履歷／版次三角形）的工程圖須以支援 v41 的版本開啟。
+- **安裝檔**：`apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.7.0_x64-setup.exe`，**49,350,112 B**（47.06 MiB，未簽章；安裝後約 165.59 MiB），SHA-256 `509d5851986624a43dd70eaaf597da5847f4b6e93d3e0b11e75a089977da443d`。
+- **本機試裝、WebView2 與隔離 MCP 實機驗收**：
+  - Tauri 2 建置 exit 0，Rust 0 警告；以 `/S` 覆蓋安裝至 `%LOCALAPPDATA%\3D-Builder\`，確認 `desktop.exe`、`3d-builder-mcp.exe`、`mcp/node.exe`、`mcp/dist/server.mjs` 與 `opencascade_single.wasm` 皆完整就位，登錄與執行檔版本皆為 `0.7.0`。
+  - **桌面 GUI 驗收（WebView2 CDP）**：命令列正確顯示 `v0.7.0`、0 console error；「工具 → AI 控制」正確顯示內建 `3d-builder-mcp.exe` 設定區塊；成功開啟 `R1-16148-rev-triangle-acceptance.3dbd`（含來源 `.3dbx`）並渲染版次履歷表與 `03` 版次三角形；點擊「檔案 → 輸出 PDF」實際輸出有效 PDF（`189,851 B`，`%PDF-1.4`）。
+  - **完全隔離 MCP 驗收（無專案目錄、`PATH=""` 無系統 Node.js）**：於暫存目錄執行 `%LOCALAPPDATA%\3D-Builder\3d-builder-mcp.exe --workspace <temp>`，通過 JSON-RPC `initialize`（`0.7.0`）、`tools/list`（39 工具）、`part_open`、`part_verify_against_2d`（`pass: true`、`meshIntegrity: true`）、`drawing_create`、`drawing_export` PDF（`303,352 B`，`%PDF-1.4`）與 `AC1021` UTF-8 DXF（含原生中文 `圖名`）。
 
 ## 0.6.0（2026-11-15）
 
