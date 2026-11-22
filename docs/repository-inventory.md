@@ -320,6 +320,8 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 ### 封存歷史
 
 - [清理歷史：2026-10-07至2026-10-20](<archive/cleanup-through-2026-10-20.md>)
+- [接手指令：part-3 重建（STEP 特徵辨識）](<archive/handoff-part3-prompt.md>)
+- [接手指令：3D-Builder S3 收尾（使用者端 Claude Code 實測）](<archive/handoff-s3-prompt.md>)
 - [交接快照封存：截至2026-10-26](<archive/handoff-through-2026-10-26.md>)
 - [交接快照封存：截至2026-11-08](<archive/handoff-through-2026-11-08.md>)
 
@@ -336,11 +338,6 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 ### 授權
 
 - [第三方授權清單（THIRD_PARTY_NOTICES）](<../THIRD_PARTY_NOTICES.md>)
-
-### 接手指令
-
-- [接手指令：part-3 重建（STEP 特徵辨識）](<handoff-part3-prompt.md>)
-- [接手指令：3D-Builder S3 收尾（使用者端 Claude Code 實測）](<handoff-s3-prompt.md>)
 
 ### 文件導覽
 

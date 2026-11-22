@@ -136,7 +136,7 @@
 | --- | --- |
 | T1 本機升級 | 先在本機驗升級。0.3.0 安裝包已建置，打包的 exe 已通過 10 秒啟動與視窗標題驗證。0.2.5 已移至 `scratch/feature-recognition/installer-baselines/` 保留。實際覆蓋安裝與測試檔重開待驗。路徑與雜湊見[桌面版版本履歷](../desktop-release-history.md#0302026-11-08)。 |
 | T2 STEP 配合件 | 選一件真實 STEP，實走匯入、選平面與來源、設定間隙、產生配合件／組合件並核對實際配合。記錄來源與目標、指定間隙、操作步驟和耗時。 |
-| S3 Claude Code | 跑一次簡短實機試用。在空白零件以 Claude Code 連線、建立一個特徵、復原、斷線。依 [S3 接手指令](../handoff-s3-prompt.md)。 |
+| S3 Claude Code | 跑一次簡短實機試用。在空白零件以 Claude Code 連線、建立一個特徵、復原、斷線。依 [S3 接手指令](handoff-s3-prompt.md)。 |
 | 一鍵凹槽座 | 先用 T2 量操作次數、耗時及例外情境，再決定是否做獨立入口。 |
 | G09 自由曲線偏移 | 保留 [ADR 0228](../adr/0228-sketch-curve-offset-probe.md) 的探針與建議，本輪暫緩產品工具。 |
 | 工程圖直邊導角 | 先拿一張常用舊圖，確認欲標註的導角、視角及可編輯內容，再定實作範圍。 |
@@ -380,7 +380,7 @@ Claude Code 在使用者選定下列規格後中斷，最後一步是唯讀盤�
 | S3 使用者介面 | 工具選單「AI 控制」、狀態列連線狀態、`AiControlDialog.tsx`、中英說明與 `help.*` | 已完成，見 [ADR 0238](../adr/0238-ai-live-gui.md) |
 | GUI 整合驗證 | `scripts/verify-live.mjs`：真實 MCP stdio＋Vite＋headless Chrome | 圓柱建模、體積、單步復原、改名回傳、換文件、編輯中／組合件／工程圖拒絕、斷線 |
 
-換電腦接手可使用 [S3 接手指令](../handoff-s3-prompt.md)。該文件已改從最新 main 接續；原 claude/eager-ramanujan-n20v0i 的兩項交接提交隨本次合併保留，後續不再使用該分支。
+換電腦接手可使用 [S3 接手指令](handoff-s3-prompt.md)。該文件已改從最新 main 接續；原 claude/eager-ramanujan-n20v0i 的兩項交接提交隨本次合併保留，後續不再使用該分支。
 
 ### 下一步（本工作線）
 

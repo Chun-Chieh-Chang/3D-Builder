@@ -1,5 +1,7 @@
 # 接手指令：part-3 重建（STEP 特徵辨識）
 
+> 歷史快照。R1-10226 的精確自動辨識目前擱置。恢復前請查閱 [handoff](../../handoff.md) 與 [ADR 0259](../adr/0259-part-3-sharp-edge-windows.md)。
+
 把本檔整段貼給本機（Windows）的 Claude Code，作為第一則訊息。part-3 的探針與開發要在你的電腦跑：實件在 `D:\3DB實機確認`，單次辨識用 400～800 MiB 以上記憶體，稽核一輪要好幾分鐘。
 
 ---

@@ -1,5 +1,7 @@
 # 接手指令：3D-Builder S3 收尾（使用者端 Claude Code 實測）
 
+> 歷史快照。S3 使用者端實測已於 2026-11-18 結案。現行接續狀態見 [handoff](../../handoff.md)。
+
 把本檔整段貼給另一台電腦上的 Claude Code，作為第一則訊息。
 
 ---
