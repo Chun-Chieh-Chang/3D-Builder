@@ -253,7 +253,7 @@ function entityOf(rec: Pair[]): DxfPolyline | DxfSolid | DxfText | DxfLine | Dxf
  */
 export function checkDxf(doc: DxfDocument): string[] {
   const problems: string[] = [];
-  if (doc.version !== 'AC1015') problems.push(t('dxf.version', { version: doc.version }));
+  if (doc.version !== 'AC1015' && doc.version !== 'AC1021') problems.push(t('dxf.version', { version: doc.version }));
   const order = ['HEADER', 'CLASSES', 'TABLES', 'BLOCKS', 'ENTITIES', 'OBJECTS'];
   if (doc.sections.join() !== order.join()) problems.push(t('dxf.sectionOrder', { sections: doc.sections.join(' ') }));
   const handles = new Map<string, number>();

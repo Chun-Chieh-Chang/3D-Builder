@@ -197,4 +197,35 @@ describe('each kind, by hand', () => {
     expect(checkDxf(readDxf(text.replace('\r\n71\r\n5\r\n3\r\nSTANDARD\r\n', '\r\n71\r\n5\r\n3\r\nOTHER\r\n')))).toEqual([expect.stringContaining('OTHER')]);
     expect(checkDxf(readDxf(text.slice(0, text.indexOf('AcDbAlignedDimension')) + text.slice(text.indexOf('AcDbAlignedDimension')).replace('\r\n14\r\n', '\r\n17\r\n'))).some((p) => p.includes('定義點'))).toBe(true);
   });
+
+  it('keeps AC1015 ASCII as default and supports optional AC1021 UTF-8 with native Chinese and zero checkDxf errors', () => {
+    const base = sceneOf(
+      { id: 'd1', view: 'view1', kind: 'linear', orientation: 'horizontal', a: ref('a'), b: ref('b'), offset: 10, suffix: ' 貫穿' } as Dimension,
+      1,
+      plane([0, 0], [0, 1], [0, 5]),
+      plane([30, 0], [0, 1], [30, 5]),
+    ).scene;
+    const scene = {
+      ...base,
+      items: [
+        ...base.items,
+        { kind: 'text' as const, at: [10, 10] as [number, number], text: '圖名：法蘭\\A ↧10', height: 3.5 },
+      ],
+    };
+
+    const ascii = toDxf(scene);
+    expect(ascii).toContain('$ACADVER\r\n1\r\nAC1015\r\n');
+    expect(ascii).toContain('\\U+5716\\U+540D');
+    expect(ascii).not.toContain('圖名');
+    expect(checkDxf(readDxf(ascii))).toEqual([]);
+
+    const utf8 = toDxf(scene, { version: 'AC1021' });
+    expect(utf8).toContain('$ACADVER\r\n1\r\nAC1021\r\n');
+    expect(utf8).toContain('圖名：法蘭\\\\A DEPTH10');
+    expect(utf8).toContain('貫穿');
+    expect(utf8).not.toContain('\\U+5716');
+    const parsed = readDxf(utf8);
+    expect(parsed.version).toBe('AC1021');
+    expect(checkDxf(parsed)).toEqual([]);
+  });
 });

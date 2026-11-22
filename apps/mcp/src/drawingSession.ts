@@ -83,6 +83,7 @@ import {
   type CoverageReport,
   type DimensionLike,
   type DirectionStats,
+  type DxfVersion,
   type DrawingLayoutInspection,
   type DrawingReleaseStatus,
   type ElementsResult,
@@ -2008,7 +2009,7 @@ export class DrawingSession {
   async export(
     path: string,
     format: 'pdf' | 'dxf' | 'svg',
-    options?: { release?: boolean },
+    options?: { release?: boolean; dxfVersion?: DxfVersion },
   ): Promise<{
     path: string;
     bytes: number;
@@ -2045,7 +2046,11 @@ export class DrawingSession {
       for (let pi = 0; pi < doc.pages.length; pi++) {
         const scene = exportScene(pi);
         const at = pi === 0 ? full : await this.part.inside(relative(this.part.root, `${stem}-${pi + 1}${ext}`));
-        outputs.push({ page: pi, full: at, data: format === 'dxf' ? toDxf(scene) : toSvg(scene) });
+        outputs.push({
+          page: pi,
+          full: at,
+          data: format === 'dxf' ? toDxf(scene, options?.dxfVersion ? { version: options.dxfVersion } : undefined) : toSvg(scene),
+        });
       }
     }
     await mkdir(dirname(full), { recursive: true });

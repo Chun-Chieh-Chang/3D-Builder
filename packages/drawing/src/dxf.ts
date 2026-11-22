@@ -16,7 +16,9 @@ import { textWidthMm } from './sheet';
  * A shaded view's image (`scene.images`) is not written: a DXF of a drawing is its lines, as SolidWorks's is.
  */
 
-export const DXF_VERSION = 'AC1015';
+export type DxfVersion = 'AC1015' | 'AC1021';
+export const DXF_VERSION: DxfVersion = 'AC1015';
+export const DXF_VERSIONS: readonly DxfVersion[] = ['AC1015', 'AC1021'];
 /** The lineweights a DXF may give an entity (group 370), in 1/100 mm. */
 const LINEWEIGHTS = [0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200, 211];
 export const TEXT_LAYER = 'TEXT';
@@ -33,14 +35,17 @@ const num = (v: number) => {
   return s === '-0' || s === '' ? '0' : s;
 };
 
-/** Text for a DXF string: characters outside ASCII (and the backslash) written as \U+XXXX; a surrogate pair is two of them. */
-export function dxfEscape(text: string): string {
+/**
+ * Text for a DXF string: in AC1015 (R2000 ASCII), characters outside ASCII (and the backslash) are written as `\U+XXXX`;
+ * in AC1021 (R2007 UTF-8), printable Unicode characters are written directly in UTF-8 so readers such as FreeCAD display Chinese natively.
+ */
+export function dxfEscape(text: string, version: DxfVersion = DXF_VERSION): string {
   let out = '';
   // ASCII equivalents also cover old SHX fonts; both DIMENSION overrides and block TEXT use this path.
   for (const ch of text.replace(/[↧⌴⌵]/g, (ch) => CALLOUT_SYMBOL_FALLBACKS[ch]!)) {
     const cp = ch.codePointAt(0)!;
     if (cp === 0x5c) out += '\\\\';
-    else if (cp >= 0x20 && cp < 0x7f) out += ch;
+    else if (cp >= 0x20 && (version === 'AC1021' || cp < 0x7f)) out += ch;
     else if (cp > 0xffff) {
       const v = cp - 0x10000;
       out += `\\U+${(0xd800 + (v >> 10)).toString(16).toUpperCase().padStart(4, '0')}\\U+${(0xdc00 + (v & 0x3ff)).toString(16).toUpperCase().padStart(4, '0')}`;
@@ -53,11 +58,11 @@ export function dxfEscape(text: string): string {
  * The text a DIMENSION is written with over what it would measure: stacked deviations in MTEXT's tolerance stack 「\S+0^-0.01;」 (upper over lower, no bar between),
  * so a CAD program that draws the dimension again draws them stacked too.
  */
-export function dimensionOverride(d: Pick<SceneDimension, 'text' | 'parts'>): string {
-  const lines = (text: string) => text.split(/\r\n?|\n/).map(dxfEscape).join('\\P');
+export function dimensionOverride(d: Pick<SceneDimension, 'text' | 'parts'>, version: DxfVersion = DXF_VERSION): string {
+  const lines = (text: string) => text.split(/\r\n?|\n/).map((line) => dxfEscape(line, version)).join('\\P');
   if (!d.parts) return lines(d.text);
   // `^` and `;` end the halves of a stack; a deviation is a signed number with a degree sign, which has neither
-  return d.parts.map((p) => (typeof p === 'string' ? lines(p) : `\\S${dxfEscape(p.upper)}^${dxfEscape(p.lower)};`)).join('');
+  return d.parts.map((p) => (typeof p === 'string' ? lines(p) : `\\S${dxfEscape(p.upper, version)}^${dxfEscape(p.lower, version)};`)).join('');
 }
 
 class Out {
@@ -80,6 +85,8 @@ export interface DxfWrite {
 }
 
 export interface DxfExtras {
+  /** DXF format version: AC1015 (R2000 ASCII, default) or AC1021 (R2007 UTF-8). */
+  version?: DxfVersion;
   layers?: { name: string; linetype: string; weight: number }[];
   entities?: (out: {
     /** Starts an entity on a layer; the group codes of the entity follow through `g` and `int`. */
@@ -113,8 +120,9 @@ function splitByDimension(scene: Scene): { loose: SceneItem[]; blocks: SceneItem
   return { loose, blocks };
 }
 
-/** The scene as a DXF (AC1015). */
+/** The scene as a DXF (AC1015 by default; optional AC1021 UTF-8). */
 export function toDxf(scene: Scene, extras?: DxfExtras): string {
+  const version: DxfVersion = extras?.version ?? DXF_VERSION;
   let next = 0x30;
   const handle = () => (next++).toString(16).toUpperCase();
   const o = new Out();
@@ -149,7 +157,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
 
   // ---- header
   o.g(0, 'SECTION').g(2, 'HEADER');
-  o.g(9, '$ACADVER').g(1, DXF_VERSION);
+  o.g(9, '$ACADVER').g(1, version);
   o.g(9, '$HANDSEED').g(5, 'FFFFFF');
   o.g(9, '$INSBASE').g(10, 0).g(20, 0).g(30, 0);
   o.g(9, '$EXTMIN').g(10, minX).g(20, minY).g(30, 0);
@@ -253,7 +261,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
       // text starts its own width (Helvetica's, as laid out; the style's font is Arial, of the same widths) before the point, along its angle
       const back = anchor === 0 ? 0 : textWidthMm(item.text, item.height) * (anchor === 1 ? 0.5 : 1);
       const turn = ((item.angle ?? 0) * Math.PI) / 180;
-      o.g(10, item.at[0] - back * Math.cos(turn)).g(20, item.at[1] - back * Math.sin(turn)).g(30, 0).g(40, item.height).g(1, dxfEscape(item.text));
+      o.g(10, item.at[0] - back * Math.cos(turn)).g(20, item.at[1] - back * Math.sin(turn)).g(30, 0).g(40, item.height).g(1, dxfEscape(item.text, version));
       if (item.angle) o.g(50, item.angle);
       o.g(7, 'STANDARD');
       if (anchor !== 0) o.int(72, anchor).g(11, item.at[0]).g(21, item.at[1]).g(31, 0);
@@ -273,7 +281,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
     const kind = gm.kind === 'linear' ? (gm.rotation === undefined ? 1 : 0) : gm.kind === 'diameter' ? 3 : gm.kind === 'radius' ? 4 : 2;
     const def = gm.kind === 'linear' ? gm.line : gm.kind === 'diameter' ? gm.far : gm.kind === 'radius' ? gm.centre : gm.second[1];
     entity('DIMENSION', styles.dimension.layer, 'AcDbDimension');
-    o.g(2, block).g(10, def[0]).g(20, def[1]).g(30, 0).g(11, d.textAt[0]).g(21, d.textAt[1]).g(31, 0).int(70, kind + 32 + 128).int(71, 5).g(3, 'STANDARD').g(1, dimensionOverride(d));
+    o.g(2, block).g(10, def[0]).g(20, def[1]).g(30, 0).g(11, d.textAt[0]).g(21, d.textAt[1]).g(31, 0).int(70, kind + 32 + 128).int(71, 5).g(3, 'STANDARD').g(1, dimensionOverride(d, version));
     const point = (code: number, p: readonly [number, number]) => o.g(code, p[0]).g(code + 10, p[1]).g(code + 20, 0);
     if (gm.kind === 'linear') {
       o.g(100, 'AcDbAlignedDimension');
