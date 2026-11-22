@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import { countersFor } from './ids';
-import { checkViewCaption, dimensionRefs, validDrawingPointRef, validProjectionRef, DRAWING_SCHEMA_VERSION, DRAWING_STANDARDS, type Dimension, type DrawingDoc, type DrawingStandard } from './drawing';
+import { checkViewCaption, dimensionRefs, validTriangleSizePercent, validDrawingPointRef, validProjectionRef, DRAWING_SCHEMA_VERSION, DRAWING_STANDARDS, type Dimension, type DrawingDoc, type DrawingStandard } from './drawing';
 import { ASSEMBLY_SCHEMA_VERSION, SCHEMA_VERSION, type AssemblyDoc, type PartDoc } from './schema';
 
 /**
@@ -496,6 +496,9 @@ export function parseDrawing(text: string): DrawingDoc {
     p.dimensions ??= [];
     p.tables ??= [];
     p.surfaceFinishes ??= [];
+    for (const finish of p.surfaceFinishes as Json[]) {
+      if (finish?.triangleSizePercent !== undefined && !validTriangleSizePercent(finish.triangleSizePercent)) throw new FormatError(t('drawing.badFinishTriangleSize'));
+    }
     p.annotations ??= [];
     for (const v of p.views as Json[]) if (v.caption !== undefined) checkViewCaption(v.caption);
     for (const d of p.dimensions as unknown as Dimension[]) if (d.kind === 'chamfer' && d.coneSide !== undefined && (d.ref.kind !== 'face' || (d.coneSide !== 1 && d.coneSide !== -1))) throw new FormatError(t('drawing.dimBadRef'));

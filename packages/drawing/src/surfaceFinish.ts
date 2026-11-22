@@ -51,19 +51,22 @@ function symbol(f: SurfaceFinish, placed: PlacedView): SceneItem[] {
   let textBase: P;
   if (f.triangles) {
     const n = f.triangles;
+    const scale = (f.triangleSizePercent ?? 100) / 100;
+    const half = HALF * scale;
+    const top = TOP * scale;
     if (leader > 0 && n > 1) {
-      const shelfL = at([-(n - 1) * HALF, leader]);
-      const shelfR = at([(n - 1) * HALF, leader]);
+      const shelfL = at([-(n - 1) * half, leader]);
+      const shelfR = at([(n - 1) * half, leader]);
       items.push({ kind: 'polyline', points: [...shelfL, ...shelfR], style: 'thin' });
     }
     for (let i = 0; i < n; i++) {
-      const cx = (i - (n - 1) / 2) * (2 * HALF);
+      const cx = (i - (n - 1) / 2) * (2 * half);
       const triApex = at([cx, leader]);
-      const triLeft = at([cx - HALF, leader + TOP]);
-      const triRight = at([cx + HALF, leader + TOP]);
+      const triLeft = at([cx - half, leader + top]);
+      const triRight = at([cx + half, leader + top]);
       items.push({ kind: 'polyline', points: [...triApex, ...triRight, ...triLeft], style: 'thin', closed: true });
     }
-    textBase = at([-n * HALF, leader + TOP]);
+    textBase = at([-n * half, leader + top]);
   } else {
     const left = at([-HALF, leader + TOP]);
     const right = at([HALF, leader + TOP]);
@@ -98,7 +101,8 @@ export function surfaceFinishItems(finishes: readonly SurfaceFinish[], placed: P
 export function surfaceFinishBox(f: SurfaceFinish): { w: number; h: number } {
   const over = [f.ra !== undefined ? raText(f.ra) : '', f.method ?? ''].filter((s) => s !== '').join('  ');
   const under = f.note ?? '';
-  const baseW = f.triangles ? 2 * f.triangles * HALF : HALF + BAR;
+  const scale = f.triangles ? (f.triangleSizePercent ?? 100) / 100 : 1;
+  const baseW = f.triangles ? 2 * f.triangles * HALF * scale : HALF + BAR;
   const w = Math.max(baseW, charWidth(over, DIM_TEXT), charWidth(under, DIM_TEXT));
-  return { w, h: (f.leader ?? 0) + TOP + TEXT_GAP + DIM_TEXT * (1 + (under !== '' ? 1 : 0)) };
+  return { w, h: (f.leader ?? 0) + TOP * scale + TEXT_GAP + DIM_TEXT * (1 + (under !== '' ? 1 : 0)) };
 }

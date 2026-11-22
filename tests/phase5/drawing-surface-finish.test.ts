@@ -65,6 +65,33 @@ describe('the surface finish in the document', () => {
   });
 });
 
+it('scales and persists the triangles independently of the text and leader', () => {
+  const initial = applyDrawingCommand(withViews(), { type: 'insertSurfaceFinishes', finishes: [
+    finish('fin1', { triangles: 3, leader: 5, method: 'G', angle: 180 }),
+  ] });
+  const change = (triangleSizePercent: number | null) => applyDrawingCommand(initial, {
+    type: 'setSurfaceFinish', finishId: 'fin1', patch: { triangleSizePercent },
+  });
+  const read = parseDrawing(serializeDrawing(change(50)));
+  const original = page(initial).surfaceFinishes[0]!;
+  const smaller = page(read).surfaceFinishes[0]!;
+  expect(smaller.triangleSizePercent).toBe(50);
+  const before = surfaceFinishItems([original], placed);
+  const after = surfaceFinishItems([smaller], placed);
+  const triangles = (items: SceneItem[]) => polys(items).filter(line => line.closed);
+  expect(triangles(after)).toHaveLength(3);
+  expect(at(triangles(after)[1]!, 0)).toEqual(at(triangles(before)[1]!, 0));
+  expect(dist(at(triangles(after)[1]!, 0), at(triangles(after)[1]!, 1))).toBeCloseTo(
+    dist(at(triangles(before)[1]!, 0), at(triangles(before)[1]!, 1)) / 2, 9,
+  );
+  expect(after[0]).toEqual(before[0]);
+  expect(texts(after)[0]!.height).toBe(texts(before)[0]!.height);
+  expect(surfaceFinishBox(smaller).w).toBeLessThan(surfaceFinishBox(original).w);
+  expect(() => change(0)).toThrow();
+  expect(() => change(Infinity)).toThrow();
+  expect(page(change(null)).surfaceFinishes[0]).toEqual(original);
+});
+
 describe('the symbol of a surface finish (ISO 1302)', () => {
   it('is a V of two equal legs at 60°, 1.4 times the text height, with its point at the view\'s point', () => {
     expect(FINISH_HEIGHT).toBeCloseTo(1.4 * 3.5, 9);

@@ -4,6 +4,7 @@ import {
   CHARACTERISTIC_RULES,
   GEOMETRIC_CHARACTERISTICS,
   SURFACE_FINISH_KINDS,
+  validTriangleSizePercent,
   type Annotation,
   type DatumReference,
   type GeometricCharacteristic,
@@ -16,6 +17,7 @@ import {
 } from '@3db/model';
 import type { AnnotateWhat } from '../state/drawing';
 import { ColorRow } from './DimStyleFields';
+import { NumberBox as ValidatedNumberBox } from './DimensionPanel';
 import { useState } from 'react';
 import { store, useStore } from '../state/store';
 
@@ -504,6 +506,18 @@ export function AnnotationPanel() {
               <option value="4">{t('drawingUi.finishSymbol.tri4')}</option>
             </select>
           </label>
+          {currentFinish.triangles && (
+            <label className="pm-row finish-triangle-size">
+              <span>{t('drawingUi.finishTriangleSize')}</span>
+              <ValidatedNumberBox
+                key={currentFinish.id}
+                field="finishTriangleSize"
+                value={currentFinish.triangleSizePercent ?? 100}
+                validate={(v) => validTriangleSizePercent(v) ? null : t('drawing.badFinishTriangleSize')}
+                onCommit={(v) => d.setSurfaceFinish(currentFinish.id, { triangleSizePercent: v === 100 ? null : v })}
+              />
+            </label>
+          )}
           {!currentFinish.triangles && (
             <label className="pm-row">
               <span>{t('drawingUi.finishKind')}</span>

@@ -299,6 +299,10 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .pm-group h4 { margin: 0 0 6px; font-size: 12px; color: var(--accent); }
 .pm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; }
 .pm-row.checkbox { justify-content: flex-start; }
+@media (max-width: 768px), (pointer: coarse) {
+  .finish-triangle-size, .finish-triangle-size input { font-size: 14px; }
+  .finish-triangle-size input { min-height: 44px; }
+}
 /* the contour the cursor is over in the graphics area (G10): lit in the list too, so the two say the same thing */
 .pm-row.contour-hover { background: var(--accent-hover); border-radius: 3px; }
 .pm-row select { font: inherit; padding: 3px; min-width: 0; max-width: 62%; }
