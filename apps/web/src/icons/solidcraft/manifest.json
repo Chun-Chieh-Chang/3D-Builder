@@ -664,6 +664,7 @@
     "drw-ordinate": "dimension",
     "drw-arrange": "align",
     "drw-note": "text",
+    "drw-revision": "text",
     "drw-datum": "point_vertex",
     "drw-fcf": "c_perpendicular",
     "drw-centre-mark": "dots",

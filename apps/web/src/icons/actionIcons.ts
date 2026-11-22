@@ -18,6 +18,7 @@ const diagrams: Readonly<Record<string, string>> = {
   'drw-baseline': '<path d="M9 8v48M31 10v14M43 10v28M55 10v42"/><path d="M9 20h22M9 34h34M9 48h46" stroke="#236ead" stroke-width="4.25"/><path d="m14 16-5 4 5 4m12-8 5 4-5 4m-12 6-5 4 5 4m24-8 5 4-5 4m-24 6-5 4 5 4m36-8 5 4-5 4" stroke="#236ead"/>',
   'drw-ordinate': '<path d="M10 10v44h44"/><circle cx="10" cy="54" r="3" fill="#236ead"/><path d="M23 49v10m14-10v10m14-10v10M5 40h10M5 26h10M5 12h10" stroke="#236ead" stroke-width="4.25"/>',
   'drw-centre-mark': '<circle cx="32" cy="32" r="18"/><path d="M5 32h20m14 0h20M32 5v20m0 14v20" stroke="#236ead" stroke-width="3.5"/><circle cx="32" cy="32" r="2" fill="#236ead"/>',
+  'drw-revision': '<path d="M32 11L54 49H10Z" fill="#e2e8ef"/><path d="M25 43L32 25l7 18M27 38h10" stroke="#236ead" stroke-width="3.5"/>',
   'drw-datum': '<path d="M19 8h26v22H19Z" fill="#e2e8ef"/><path d="M32 30v13m0 0-8 11h16Z" fill="#236ead"/><path d="M10 55h44"/>',
   'drw-fcf': '<path d="M5 20h54v24H5Zm18 0v24m18-24v24" fill="#e2e8ef"/><circle cx="14" cy="32" r="5" stroke="#236ead"/><path d="M14 24v16M6 32h16m9-7v14m-4-7h8m13-6h5m-5 6h5m-5 6h5" stroke="#236ead"/>',
   'drw-surface': '<path d="m9 32 12 19L43 12m-17 31h29" stroke="#236ead" stroke-width="4.25"/><path d="M9 55h46"/>',

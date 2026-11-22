@@ -1,5 +1,20 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-22（17:54）— 修復 Nightly CI `full-suite (7)` 失敗：補齊 `drw-revision` 動作圖示並納入 push 守門
+
+- **問題現象**：
+  - GitHub Actions 排程執行 `Repository integrity #346`（run `45007730616`，commit `43e74d6e`）於 `full-suite (7)` 失敗（135 檔通過、1 檔失敗：`tests/phase8/action-icons.test.ts`）。
+  - 錯誤內容：`apps/web/src/actions.ts` 新增的 `drw-revision` 未在 `apps/web/src/icons/solidcraft/manifest.json` 的 `actions` 中登記對應圖示。
+- **根因分析（RCA）**：
+  1. `5189ee8d` 新增工程圖版次三角形動作 `drw-revision` 時，補齊了 i18n、說明手冊與模型／繪圖測試，但遺漏在 `apps/web/src/icons/solidcraft/manifest.json` 登記 `drw-revision` 與建立專屬向量圖示。
+  2. `.github/workflows/repository-integrity.yml` 的 `integrity`（push/PR 快速守門）未納入僅需 ~80 ms 的 `tests/phase8/action-icons.test.ts`，導致該遺漏在 push 時未攔截，直到夜間排程 `full-suite (7)` 才暴露。
+- **矯正與預防措施（CAPA）**：
+  1. 於 `apps/web/src/icons/solidcraft/manifest.json` 補上 `"drw-revision": "text"`，並於 `apps/web/src/icons/actionIcons.ts` 的 `diagrams` 新增符合 ISO 7200／ASME Y14.35／CNS 3 意象的朝上正三角形內含向量字元 `A` 的 3D-Builder 專屬向量圖示（自動套用淺色／深色主題色票）。
+  2. 於 `.github/workflows/repository-integrity.yml` 的 `integrity` 守門測試清單加入 `tests/phase8/action-icons.test.ts`（物理硬化 Layer 1），確保往後任何新增 `ACTIONS` 指令未補圖示皆在 push/PR 階段即刻攔截。
+- **驗證結果**：
+  - `npx vitest run tests/phase8/action-icons.test.ts tests/phase5/repository-maintenance.test.ts`（2 檔 10 項全過，83 ms）。
+  - `npm run typecheck`、`lint:rules`、`lint:deps`、`lint:i18n`、`lint:repo` 與 `npm run build -w @3db/web` 皆通過。
+
 ## 2026-11-22（17:42）— 桌面版 `v0.7.0`（內建 MCP Sidecar）正式發佈核對與交接文件同步
 
 - **需求與實作**：
