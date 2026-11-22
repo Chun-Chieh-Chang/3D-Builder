@@ -188,3 +188,81 @@ describe('the file keeps it', () => {
     expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION); // upgraded, with nothing to convert
   });
 });
+
+describe('custom row heights and per-field font percentages', () => {
+  it('adjusts the 4 row heights independently and updates sheetMetrics, cell geometry, and label top anchoring', () => {
+    const rowHeights: [number, number, number, number] = [14, 24, 15, 12];
+    const doc = titled(ALL, { rowHeights });
+    const m = sheetMetrics(page(doc).sheet);
+    expect(m.titleBlock.h).toBe(65);
+    expect(m.area.y).toBe(m.frame.y + 65 + 8);
+    expect(m.area.h).toBe(m.frame.h - 65 - 16);
+
+    const cells = titleCells(rowHeights);
+    expect(cells.find((c) => c.field === 'company')).toMatchObject({ y: 51, h: 14 });
+    expect(cells.find((c) => c.field === 'drawingName')).toMatchObject({ y: 27, h: 24 });
+    expect(cells.find((c) => c.field === 'material')).toMatchObject({ y: 12, h: 15 });
+    expect(cells.find((c) => c.field === 'scale')).toMatchObject({ y: 0, h: 12 });
+
+    // Every label stays 0.8 mm below its resized cell top
+    for (const c of cells) {
+      const name = nameAt(doc, m.titleBlock.x + c.x + 1, m.titleBlock.y + c.y, c.h, TITLE_STYLE_DEFAULT.label);
+      expect(name, `label for ${c.field}`).toBeDefined();
+    }
+  });
+
+  it('scales any of the 12 cells by arbitrary positive percentages with no upper cap and never grows sub-minimum shrunk text', () => {
+    const doc = titled(ALL, {
+      fit: false,
+      fieldScales: { company: 200, drawingName: 300, material: 40, scale: 180, projection: 250 },
+    });
+    expect(drawn(doc, 'ACME').height).toBeCloseTo(3.5 * 2, 12);
+    expect(drawn(doc, 'BRACKET').height).toBeCloseTo(6 * 3, 12);
+    expect(drawn(doc, 'AL').height).toBeCloseTo(3.5 * 0.4, 12);
+    expect(drawn(doc, '1:1').height).toBeCloseTo(3.5 * 1.8, 12);
+    expect(drawn(doc, 'DWG-1').height).toBeCloseTo(3.5, 12); // untouched cell stays at 100%
+
+    // With fit enabled and a small scale (< TITLE_FIT_MIN), long text must never be grown up to TITLE_FIT_MIN
+    const longDoc = titled({ ...ALL, material: 'M'.repeat(40) }, { fit: true, fieldScales: { material: 40 } });
+    expect(drawn(longDoc, 'M'.repeat(40)).height).toBeCloseTo(3.5 * 0.4, 12);
+    expect(fittedTitleHeight('M'.repeat(40), 1.4, 50, true)).toBeCloseTo(1.4, 12);
+
+    // SVG, DXF, and PDF outputs carry the scaled height (18 mm title)
+    const scene = sceneOf(doc);
+    const svg = toSvg(scene);
+    const fontSizes = [...svg.matchAll(/font-size="([\d.]+)"/g)].map((m) => Number(m[1]));
+    expect(fontSizes.some((f) => Math.abs(f - 18 * 1.4) < 0.01)).toBe(true);
+    const pdf = new TextDecoder('latin1').decode(toPdf(scene).bytes);
+    const sizes = [...pdf.matchAll(/\/F1 ([\d.]+) Tf/g)].map((m) => Number(m[1]));
+    expect(sizes.some((s) => Math.abs(s - (18 / 0.718) * (72 / 25.4)) < 0.01)).toBe(true);
+  });
+
+  it('round-trips rowHeights and fieldScales through serialize/parse', () => {
+    const style: TitleStyle = { rowHeights: [12, 20, 14, 10], fieldScales: { company: 125, drawingName: 150, scale: 80 } };
+    const doc = titled(ALL, style);
+    expect(page(parseDrawing(serializeDrawing(doc))).sheet.titleStyle).toEqual(style);
+  });
+
+  it('rejects malformed rowHeights and fieldScales explicitly without silent clamping', () => {
+    const doc = titled(ALL);
+    const bad: unknown[] = [
+      { rowHeights: [10, 16, 11] },
+      { rowHeights: [10, 16, 11, 11, 5] },
+      { rowHeights: [0, 16, 11, 11] },
+      { rowHeights: [-4, 16, 11, 11] },
+      { rowHeights: [10, Number.NaN, 11, 11] },
+      { rowHeights: [10, Number.POSITIVE_INFINITY, 11, 11] },
+      { rowHeights: '10,16,11,11' },
+      { fieldScales: { unknownField: 120 } },
+      { fieldScales: { company: 0 } },
+      { fieldScales: { company: -50 } },
+      { fieldScales: { drawingName: Number.NaN } },
+      { fieldScales: { drawingName: Number.POSITIVE_INFINITY } },
+      { fieldScales: { scale: '150' } },
+      { fieldScales: [100] },
+    ];
+    for (const s of bad) {
+      expect(() => applyDrawingCommand(doc, { type: 'setSheet', sheet: { titleStyle: s as TitleStyle } }), JSON.stringify(s)).toThrow();
+    }
+  });
+});

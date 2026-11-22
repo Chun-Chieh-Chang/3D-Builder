@@ -1,5 +1,18 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-22（15:54）— 圖頁格式標題欄列高獨立調整與各欄位字體百分比縮放
+
+- **需求與實作**：
+  1. `packages/model/src/drawing.ts`：新增 `TITLE_CELL_FIELDS`（12 格）、`TITLE_ROW_HEIGHTS_DEFAULT`（`[10, 16, 11, 11]`）、`TitleRowHeights`、`TitleFieldScales`，於 `TitleStyle` 擴充可選欄位 `rowHeights?: [number, number, number, number]` 與 `fieldScales?: Partial<Record<TitleCellField, number>>`；`titleStyleProblem` 嚴格檢核 4 列皆為有限正數且各欄位百分比為有限正數（不設高度上限，亦不靜默四捨五入或截斷）。
+  2. `packages/drawing/src/sheet.ts` 與 `packages/drawing/src/scene.ts`：新增 `titleRowHeightsOf`、`titleBlockHeight`；`sheetMetrics` 依實際列高總和計算 `titleBlock.h` 與 `area`；`titleCells(rowHeights)` 動態計算 4 列格高與 y 座標；`sheetItems` 依各欄位 `fieldScales[field]` 縮放內容字高（圖面、SVG、DXF、PDF 同步生效），並修正 `fittedTitleHeight` 避免低於 `TITLE_FIT_MIN` 的縮小文字被反向放大。
+  3. `apps/web/src/components/TitleStyleFields.tsx` 與 `packages/i18n/src/{zh-TW,en}/drawing.ts`：於「圖頁格式」樣式區新增可折疊的「欄位列高 (mm)」4 列設定與「各欄位字體比例 (%)」12 格設定，恢復預設按鈕可一鍵清除。
+- **自我紅隊檢核**：
+  - 輸入破壞：驗證 `rowHeights` 長度不符、`<= 0`、`NaN`、`Infinity` 及 `fieldScales` 未知欄位、`<= 0`、非數值皆顯式拋出 `CommandError`。
+  - 邊界修正：發現當欄位字體百分比調小（如 40%，字高 1.4 mm）且文字過寬時，`fittedTitleHeight` 原實作 `Math.max(TITLE_FIT_MIN, ...)` 會將字高反向撐大到 1.8 mm；改為 `Math.min(height, Math.max(TITLE_FIT_MIN, ...))` 根除。
+- **驗證結果**：
+  - `tests/phase5/drawing-title-style.test.ts`（15/15）與 `tests/phase5/drawing-layout.test.ts`（17/17）全數通過。
+  - `npm run typecheck`、`lint:i18n`、`lint:rules`、`lint:deps`、`lint:repo` 全數通過。
+
 ## 2026-11-22（15:28）— 表面粗糙度標註新增顏色選擇支援（`SurfaceFinish.color`）
 
 - **需求與實作**：

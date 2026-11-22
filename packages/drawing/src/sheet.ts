@@ -1,5 +1,5 @@
 import { HELVETICA_CAP_HEIGHT, helveticaCode, helveticaWidth } from './helvetica';
-import { frameMarginsOf, type DrawingSheet, type SheetSize, type TitleField } from '@3db/model';
+import { frameMarginsOf, TITLE_ROW_HEIGHTS_DEFAULT, type DrawingSheet, type SheetSize, type TitleCellField, type TitleRowHeights, type TitleStyle } from '@3db/model';
 
 /**
  * The sheet (C16.1, ISO 5457 and ISO 7200): its size, the frame, and the title block at the lower right, all in mm from the lower left corner of the sheet.
@@ -27,31 +27,41 @@ export interface SheetMetrics {
 
 export const TITLE_BLOCK = { width: 180, height: 48 } as const;
 
-export function sheetMetrics(sheet: Pick<DrawingSheet, 'size' | 'orientation' | 'standard'>): SheetMetrics {
+export function titleRowHeightsOf(titleStyle?: TitleStyle): TitleRowHeights {
+  return titleStyle?.rowHeights ? [...titleStyle.rowHeights] as TitleRowHeights : [...TITLE_ROW_HEIGHTS_DEFAULT] as TitleRowHeights;
+}
+
+export function titleBlockHeight(titleStyle?: TitleStyle): number {
+  const rows = titleRowHeightsOf(titleStyle);
+  return rows[0] + rows[1] + rows[2] + rows[3];
+}
+
+export function sheetMetrics(sheet: Pick<DrawingSheet, 'size' | 'orientation' | 'standard' | 'titleStyle'>): SheetMetrics {
   const [lw, lh] = SIZES[sheet.size];
   const [width, height] = sheet.orientation === 'landscape' ? [lw, lh] : [lh, lw];
   // the frame as far from the edges as the sheet's standard puts it (ADR 0260, `DRAWING_PROFILES`)
   const { left, other: margin } = frameMarginsOf(sheet);
   const frame: Rect = { x: left, y: margin, w: width - left - margin, h: height - 2 * margin };
-  const titleBlock: Rect = { x: frame.x + frame.w - TITLE_BLOCK.width, y: frame.y, w: TITLE_BLOCK.width, h: TITLE_BLOCK.height };
+  const tbHeight = titleBlockHeight(sheet.titleStyle);
+  const titleBlock: Rect = { x: frame.x + frame.w - TITLE_BLOCK.width, y: frame.y, w: TITLE_BLOCK.width, h: tbHeight };
   const pad = 8;
-  const area: Rect = { x: frame.x + pad, y: frame.y + TITLE_BLOCK.height + pad, w: frame.w - 2 * pad, h: frame.h - TITLE_BLOCK.height - 2 * pad };
+  const area: Rect = { x: frame.x + pad, y: frame.y + tbHeight + pad, w: frame.w - 2 * pad, h: frame.h - tbHeight - 2 * pad };
   return { width, height, frame, titleBlock, area };
 }
 
 /** One cell of the title block: where it is (from the block's lower left corner), what it is called, and what it holds. */
 export interface TitleCell extends Rect {
   /** A field of the document, or something worked out: the scale, the sheet, the projection. */
-  field: TitleField | 'scale' | 'sheet' | 'unit' | 'projection';
+  field: TitleCellField;
   /** The text is bigger (the title of the drawing). */
   large?: boolean;
 }
 
 /** The cells of the title block, in four rows from the top: company; title, number, revision; material, general tolerance, drafter, date; scale, sheet, unit, projection. */
-export function titleCells(): TitleCell[] {
+export function titleCells(rowHeights?: readonly [number, number, number, number]): TitleCell[] {
   const W = TITLE_BLOCK.width;
-  const rows = [10, 16, 11, 11];
-  const top = TITLE_BLOCK.height;
+  const rows = rowHeights ?? TITLE_ROW_HEIGHTS_DEFAULT;
+  const top = rows[0] + rows[1] + rows[2] + rows[3];
   const at = (row: number) => top - rows.slice(0, row + 1).reduce((a, b) => a + b, 0);
   const row = (i: number, parts: [TitleCell['field'], number, boolean?][]): TitleCell[] => {
     let x = 0;
@@ -120,5 +130,5 @@ export function fittedTitleHeight(text: string, height: number, cellWidth: numbe
   const avail = cellWidth - 3; // the text starts 2 mm inside the cell and leaves 1 mm at its far edge
   const w = textWidthMm(text, height);
   if (w <= avail) return height;
-  return Math.max(TITLE_FIT_MIN, (height * avail) / w);
+  return Math.min(height, Math.max(TITLE_FIT_MIN, (height * avail) / w));
 }

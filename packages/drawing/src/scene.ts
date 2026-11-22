@@ -166,7 +166,7 @@ export function sheetItems(doc: DrawingDoc): SceneItem[] {
     unit: pg.sheet.unit ?? 'mm',
     projection: t(`drawing.projection.${pg.sheet.projection}`),
   };
-  for (const c of titleCells()) {
+  for (const c of titleCells(style.rowHeights)) {
     const x = m.titleBlock.x + c.x;
     const y = m.titleBlock.y + c.y;
     // the lines between cells are the cells' own borders; the block's outer line is already there
@@ -177,7 +177,9 @@ export function sheetItems(doc: DrawingDoc): SceneItem[] {
     items.push({ kind: 'text', at: [x + 1, y + c.h - 0.8 - labelHeight], text: label, height: labelHeight });
     const text = values[c.field] ?? '';
     if (text) {
-      const height = fittedTitleHeight(text, c.large ? style.title : style.value, c.w, style.fit);
+      const scalePct = style.fieldScales[c.field] ?? 100;
+      const baseHeight = (c.large ? style.title : style.value) * (scalePct / 100);
+      const height = fittedTitleHeight(text, baseHeight, c.w, style.fit);
       items.push({ kind: 'text', at: [x + 2, y + (c.large ? 3.5 : 2.2)], text, height });
     }
   }

@@ -202,19 +202,45 @@ function checkDimStyle(s: unknown): void {
   if (st.color !== undefined && (typeof st.color !== 'string' || !HEX_COLOR.test(st.color))) throw new CommandError(t('drawing.badDimStyle'));
 }
 
+/** All 12 cells of the title block in row order (top to bottom, left to right). */
+export const TITLE_CELL_FIELDS = [
+  'company',
+  'drawingName', 'drawingNo', 'revision',
+  'material', 'generalTolerance', 'drafter', 'date',
+  'scale', 'sheet', 'unit', 'projection',
+] as const;
+export type TitleCellField = (typeof TITLE_CELL_FIELDS)[number];
+
+/** Heights (mm) of the 4 title block rows from top to bottom. */
+export type TitleRowHeights = [number, number, number, number];
+export const TITLE_ROW_HEIGHTS_DEFAULT: readonly [number, number, number, number] = [10, 16, 11, 11];
+
+/** Per-cell font size percentage (100 = 100% of base height). Unbounded above; must be finite and > 0. */
+export type TitleFieldScales = Partial<Record<TitleCellField, number>>;
+
 /**
  * How the title block is written (v20, ADR 0150), in sheet millimetres: the height of a cell's field name, of the text it holds, of the drawing's own title
- * (the big cell), and whether a text wider than its cell is drawn shrunk to fit (`fit`, shrink-only). The drawing has one style (`sheet.titleStyle`).
+ * (the big cell), whether a text wider than its cell is drawn shrunk to fit (`fit`, shrink-only), optional custom heights for the 4 rows (`rowHeights`),
+ * and optional per-cell font size percentages (`fieldScales`, unbounded above). The drawing has one style (`sheet.titleStyle`).
  */
 export interface TitleStyle {
   label?: number;
   value?: number;
   title?: number;
   fit?: boolean;
+  rowHeights?: TitleRowHeights;
+  fieldScales?: TitleFieldScales;
 }
 
 /** ISO 7200 as the title block has always been drawn here: 2.2 mm names, 3.5 mm values, a 6 mm title; a too-wide text is shrunk (ADR 0150). */
-export const TITLE_STYLE_DEFAULT: Required<TitleStyle> = { label: 2.2, value: 3.5, title: 6, fit: true };
+export const TITLE_STYLE_DEFAULT: Required<TitleStyle> = {
+  label: 2.2,
+  value: 3.5,
+  title: 6,
+  fit: true,
+  rowHeights: [10, 16, 11, 11],
+  fieldScales: {},
+};
 
 /** The outer box of each height (mm): what is still readable, and what the sums below leave room for. */
 export const TITLE_STYLE_LIMITS = { label: [2, 5], value: [2, 5], title: [3, 9.5] } as const;
@@ -226,16 +252,22 @@ export const TITLE_STYLE_LIMITS = { label: [2, 5], value: [2, 5], title: [3, 9.5
 export const TITLE_STYLE_SUM_LIMITS = { labelPlusValue: 7, labelPlusTitle: 11.7 } as const;
 
 /** The height each text of the title block is written at: the drawing's style over ISO 7200's. */
-export const resolveTitleStyle = (sheet: TitleStyle | undefined): Required<TitleStyle> => ({ ...TITLE_STYLE_DEFAULT, ...sheet });
+export const resolveTitleStyle = (sheet: TitleStyle | undefined): Required<TitleStyle> => ({
+  ...TITLE_STYLE_DEFAULT,
+  ...sheet,
+  rowHeights: sheet?.rowHeights ? [...sheet.rowHeights] as TitleRowHeights : [...TITLE_STYLE_DEFAULT.rowHeights] as TitleRowHeights,
+  fieldScales: sheet?.fieldScales ? { ...sheet.fieldScales } : {},
+});
 
 /**
- * Why a title style would be refused, in the user's language, or null when it is good: each height a finite number within its limits, `fit` a boolean, nothing
- * known outside them — and the name and the text under it summed small enough not to touch. Nothing is rounded or put in range. The panel asks this before sending
+ * Why a title style would be refused, in the user's language, or null when it is good: each height a finite number within its limits, `fit` a boolean,
+ * `rowHeights` 4 finite positive numbers, `fieldScales` a map of known cell fields to finite positive percentages (unbounded above), nothing unknown —
+ * and the base name and text under it summed small enough not to touch. Nothing is rounded or put in range. The panel asks this before sending
  * (ADR 0150) so a number that cannot be drawn never sits in the box looking as if it were.
  */
 export function titleStyleProblem(s: unknown): string | null {
   if (typeof s !== 'object' || s === null || Array.isArray(s)) return t('drawing.badTitleStyle');
-  for (const k of Object.keys(s)) if (!['label', 'value', 'title', 'fit'].includes(k)) return t('drawing.badTitleStyle');
+  for (const k of Object.keys(s)) if (!['label', 'value', 'title', 'fit', 'rowHeights', 'fieldScales'].includes(k)) return t('drawing.badTitleStyle');
   const st = s as TitleStyle;
   for (const k of ['label', 'value', 'title'] as const) {
     const v = st[k];
@@ -244,6 +276,19 @@ export function titleStyleProblem(s: unknown): string | null {
     if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) return t('drawing.titleStyleRange', { field: t(`drawing.titleStyleField.${k}`), min: String(lo), max: String(hi) });
   }
   if (st.fit !== undefined && typeof st.fit !== 'boolean') return t('drawing.badTitleFit');
+  if (st.rowHeights !== undefined) {
+    if (!Array.isArray(st.rowHeights) || st.rowHeights.length !== 4 || st.rowHeights.some((h) => typeof h !== 'number' || !Number.isFinite(h) || h <= 0)) {
+      return t('drawing.badTitleRowHeights');
+    }
+  }
+  if (st.fieldScales !== undefined) {
+    if (typeof st.fieldScales !== 'object' || st.fieldScales === null || Array.isArray(st.fieldScales)) return t('drawing.badTitleFieldScales');
+    for (const [k, v] of Object.entries(st.fieldScales)) {
+      if (!(TITLE_CELL_FIELDS as readonly string[]).includes(k)) return t('drawing.badTitleFieldScales');
+      if (v === undefined) continue;
+      if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return t('drawing.badTitleFieldScales');
+    }
+  }
   const eff = resolveTitleStyle(st);
   const sum = eff.label + eff.value;
   if (sum > TITLE_STYLE_SUM_LIMITS.labelPlusValue) return t('drawing.titleStyleOverlap', { first: t('drawing.titleStyleField.label'), fh: String(eff.label), second: t('drawing.titleStyleField.value'), sh: String(eff.value), sum: String(sum), max: String(TITLE_STYLE_SUM_LIMITS.labelPlusValue) });
@@ -1514,7 +1559,21 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (dimStyle === null || (dimStyle && Object.keys(dimStyle).length === 0)) delete pg.sheet.dimStyle;
       else if (dimStyle) pg.sheet.dimStyle = { ...dimStyle };
       if (titleStyle === null || (titleStyle && Object.keys(titleStyle).length === 0)) delete pg.sheet.titleStyle;
-      else if (titleStyle) pg.sheet.titleStyle = { ...titleStyle };
+      else if (titleStyle) {
+        const clean: TitleStyle = {};
+        if (titleStyle.label !== undefined) clean.label = titleStyle.label;
+        if (titleStyle.value !== undefined) clean.value = titleStyle.value;
+        if (titleStyle.title !== undefined) clean.title = titleStyle.title;
+        if (titleStyle.fit !== undefined) clean.fit = titleStyle.fit;
+        if (titleStyle.rowHeights !== undefined) clean.rowHeights = [...titleStyle.rowHeights] as TitleRowHeights;
+        if (titleStyle.fieldScales !== undefined) {
+          const scales: TitleFieldScales = {};
+          for (const [k, v] of Object.entries(titleStyle.fieldScales)) if (v !== undefined) scales[k as TitleCellField] = v;
+          if (Object.keys(scales).length > 0) clean.fieldScales = scales;
+        }
+        if (Object.keys(clean).length === 0) delete pg.sheet.titleStyle;
+        else pg.sheet.titleStyle = clean;
+      }
       if (pdfFont === null || pdfFont === '') delete pg.sheet.pdfFont;
       else if (pdfFont !== undefined) pg.sheet.pdfFont = pdfFont;
       Object.assign(pg.sheet, rest);
