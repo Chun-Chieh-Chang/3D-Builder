@@ -1,5 +1,25 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-22（16:07）— 工程圖版次三角形（Schema v41）、可選 `AC1021` UTF-8 DXF 與 R1-16148／R1-9035 下游驗收閉環
+
+- **需求與實作**：
+  1. **A3 審閱稿 v3 清理與下游驗收**：於不覆寫舊檔前提下清理兩份 A3 審閱稿剩餘標註重疊（`R1-16148` 雜亂 `14 → 10 → 6`、`R1-9035` 雜亂 `11 → 9 → 3` 並修正左下公差註記孤立換行 `in`，兩件第 2 頁均為 0）；以本機 FreeCAD 26.3.0 完成 `R1-16148` 雙頁 DXF 下游驗收，並依 `D:\Self-developed_Apps\3DB實機確認\ISO-128\ISO-128-24-2014.pdf` 原文表 1／表 2 補齊線寬對照，更新 `out/approved-20261122/review-evidence.md` 與 `cns3-comparison.md`。兩份 v3 審閱稿已獲使用者接受。
+  2. **缺面回歸提交（`c3da0afd`）**：驗證並推送 `apps/mcp/test/verify2d.test.ts` 真實定位板缺面負向回歸測試（4/4 通過）。
+  3. **工程圖版次三角形（`5189ee8d`、`1c1835cc`，Schema 41）**：
+     - `packages/model/src/{drawingAnnotations.ts,drawing.ts,serialize.ts}`：新增 `RevisionAnnotation`（`kind: 'revision'`，`at`、`revision`、`height`、`leader`、`attach`、`color`），嚴格檢核空值、換行、超長（> 16 字元）、非法字高與無引線附著，並支援 v40 舊檔無縫升級。
+     - `packages/drawing/src/{gdt.ts,scene.ts}`：實作朝上正三角形依文字寬高自動縮放包覆（四頂點嚴格在三角形內），並以精確射線－三邊交點計算引線起點；SVG／PDF／DXF 同步輸出。
+     - `apps/web/src/components/{AnnotationPanel.tsx,DrawingViewport.tsx}`、`apps/web/src/actions.ts`、`apps/mcp/src/{drawingTools.ts,drawingSession.ts}`、`packages/i18n/src/{zh-TW,en}/{drawing.ts,help.ts}`、`docs/{help-links.json,manual-verification.html}`：補齊工具列、屬性面板（可從版次履歷快選）、MCP `drawing_annotate({ kind: 'revision' })` 與中英文說明手冊同步。
+  4. **可選 `AC1021` UTF-8 DXF 匯出（`db408d2b`）**：
+     - `packages/drawing/src/{dxf.ts,dxfRead.ts}`、`apps/mcp/src/{drawingSession.ts,drawingTools.ts}`：預設維持 `AC1015`（R2000 ASCII）不破壞既有相容性；新增可選 `version / dxfVersion: 'AC1021'`，輸出原生 UTF-8 中文並通過 `checkDxf`。
+- **失敗嘗試與 RCA／CAPA**：
+  - 實作 `drw-revision` 動作時初版未同步 `packages/i18n/src/*/help.ts` 與 `docs/manual-verification.html`，遭 `tests/phase8/help.test.ts` 與 `help-manual.test.ts` 攔截；補齊雙語說明並以 `SYNC_MANUAL_HELP=1` 同步後全綠（42/42）。
+  - 初版 `drawing-revision-triangle.test.ts` 誤以 `DxfPolyline.points.length === 3` 檢核三角形（實際 `points` 為扁平 `[x0,y0,x1,y1,x2,y2]` 長度 6），修正後通過。
+  - FreeCAD 26.3.0 實機測試確認：`AC1021` 可 100% 根治中文 `\U+XXXX` 跳脫碼（52/28 個文字皆為 0 跳脫碼），但 FreeCAD C++ DXF 匯入器對 `DIMENSION` type 2/3/4（角度／直徑／半徑）仍不支援；且本機未安裝 `ezdxf`／AutoCAD 嚴格稽核器，故維持 `AC1015` 為預設、`AC1021` 為可選參數。
+- **驗證結果**：
+  - `tests/phase5/drawing-revision-triangle.test.ts`（3/3，含 100 組 Fuzz）、`apps/mcp/test/drawing-revision-triangle.test.ts`（1/1 端對端放置／編輯／復原／重開／PDF 與 DXF）、`tests/phase8/{help,help-manual}.test.ts`（42/42）、`tests/phase5/drawing-dxf-dimensions.test.ts`（12/12）與 `dxf-import*`／`flat-dxf` 全過。
+  - R1-16148 修訂圖副本（`out/R1-16148/R1-16148-rev-triangle-acceptance.{3dbd,pdf,dxf}`）實機目視驗收通過；FreeCAD 26.3.0 實機雙頁驗證 `R1-16148-A3-review-20261122-v3-ac1021{,-2}.dxf` 通過。
+  - `npm run typecheck`、`mcp:build`、`build -w @3db/web`、`lint:rules`、`lint:deps`、`lint:repo` 全部通過並已推送至 `origin/main`。
+
 ## 2026-11-22（15:54）— 圖頁格式標題欄列高獨立調整與各欄位字體百分比縮放
 
 - **需求與實作**：

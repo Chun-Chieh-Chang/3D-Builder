@@ -1,5 +1,19 @@
 # 交接與接續工作
 
+## 2026-11-22（16:07 交接）— A3 審閱稿 v3、缺面回歸、版次三角形與可選 AC1021 UTF-8 DXF 全部完成並推送（`db408d2b`）
+
+- **最新主線基準**：`main` 與 `origin/main` 同步於 `db408d2b`（工程圖 Schema 升至 **41**）。
+- **本輪已完成並推送至 `origin/main`**：
+  1. **缺面回歸測試（`c3da0afd`）**：`apps/mcp/test/verify2d.test.ts` 補齊真實定位板移除單面三角片的負向案例（投影尺寸仍通過、整份驗算判失敗），4/4 通過。
+  2. **工程圖版次三角形（`5189ee8d`、`1c1835cc`）**：新增 `RevisionAnnotation`（`kind: 'revision'`，Schema 41），實作朝上正三角形自動包覆版次代碼與精確邊界引線出口；補齊 Web UI 工具／屬性面板（可從版次履歷快選）、MCP `drawing_annotate({ kind: 'revision' })`、SVG／PDF／DXF 原生匯出與中英文說明／驗證手冊同步。完成單元與 100 組 Fuzz 測試（`tests/phase5/drawing-revision-triangle.test.ts`）、端對端放置／編輯／復原／重開／PDF 與 DXF 匯出測試（`apps/mcp/test/drawing-revision-triangle.test.ts`），以及 R1-16148 修訂圖副本實機目視驗收（`out/R1-16148/R1-16148-rev-triangle-acceptance.{3dbd,pdf,dxf}`）。
+  3. **可選 UTF-8 DXF `AC1021` 匯出（`db408d2b`）**：預設維持 `AC1015`（R2000 ASCII）以確保既有 AutoCAD／CAM 相容性；`toDxf` 與 MCP `drawing_export` 新增可選 `dxfVersion: 'AC1021'`，直接輸出 UTF-8 中文且通過 `checkDxf`（0 錯誤）。FreeCAD 26.3.0 實機雙頁匯入驗證 `R1-16148-A3-review-20261122-v3-ac1021{,-2}.dxf`：52／28 個文字皆為 0 個 `\U+XXXX` 跳脫碼、中文正常顯示（角度／直徑／半徑尺寸 type 2/3/4 仍屬 FreeCAD 匯入器限制）。
+- **本機驗收產物與決議**：
+  - **兩份 A3 審閱稿 v3 已由使用者接受**：`R1-16148` 雜亂降至 **6**、`R1-9035` 雜亂降至 **3**（第 2 頁均為 0），公差以原廠原圖為準。產物於 `out/R1-16148/R1-16148-A3-review-20261122-v3.{3dbd,pdf,dxf}` 與 `out/R1-9035/R1-9035-A3-review-20261122-v3.{3dbd,pdf,dxf}`。
+  - **下游驗收與標準對照已更新**：FreeCAD 26.3.0 正式驗收紀錄已更新至 `out/approved-20261122/review-evidence.md`；因本機無 CNS 3 正式原文，已改以 `D:\Self-developed_Apps\3DB實機確認\ISO-128\ISO-128-24-2014.pdf` 第 4 節表 1 與第 5 節表 2 原文完成線寬對照並寫入 `out/approved-20261122/cns3-comparison.md`。
+- **下一步待接續**：
+  - **下一次正式發行｜桌面安裝檔**：將近期工程圖改動（版次履歷、版次三角形、標題欄列高／字體比例、表面粗糙度著色、可選 `AC1021` DXF）與 UI 版本號納入候選安裝檔，試裝確認版本號、開啟既有工程圖與匯出 PDF 後正式發布。
+  - 其餘延後項目維持不變（三項慢測試、照片實拍閉環、Codex／OpenCode 等 MCP 客戶端完整操作證據、指定 STEP 精確辨識）。
+
 ## 2026-11-22 — 工程圖版次履歷與網格檢查交付
 
 - 版次在圖頁格式修改時自動累積履歷，並保留人工編輯與復原。工程圖 Schema 升至 40。孔標註與註記可調整最大文字寬度，編號續行對齊正文。窄視口可使用側欄抽屜。本次全套瀏覽器回歸 280／280 通過。網頁部署狀態以這批提交的 GitHub Actions 為準。
