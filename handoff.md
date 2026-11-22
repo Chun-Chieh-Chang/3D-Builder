@@ -1,5 +1,14 @@
 # 交接與接續工作
 
+## 2026-11-22（19:37 交接）— 多客戶端 MCP 組合件實測（`v0.7.0` Sidecar）完成 Codex／OpenCode／Kiro 端對端驗收
+
+- **本輪完成（不改產品碼，純驗收與文件同步）**：
+  1. 以 `v0.7.0` 安裝包內建 `3d-builder-mcp.exe` 與黃金夾具（`locating-plate.3dbx` + `diamond-pin.3dbx`），完成 **Codex（`0.167.0`）**、**OpenCode（`1.17.4`）**、**Kiro（`kiro-cli 2.21.1`）** 三個客戶端之完整端對端組合件實測（`assembly_new` → `query` → `dry_run` + 干涉 + 預覽 → `commit` → `inspect` → `save .3dba` → `export STEP/BOM CSV` → `assembly_open` 獨立重求解，全數寫出實檔並核對一致），連同既有 **Claude Code（`2.1.325`）** 共計 **4 個客戶端通過**。
+  2. 明確盤點其餘 11 個客戶端狀態：**DeepSeek Harness（`v0.8.16`）** 受阻於 API 餘額不足（HTTP 402）、**Qoder（`1.0.25`）** 受阻於未登入、**Antigravity（`agy 1.0.10`）** 待於 `mcp_config.json` 註冊 `3d-builder`、**Claude Code（`2.1.328`）** 本日重測受限於週額度；其餘 8 個 GUI／Web 客戶端（Agnes Code、KiroCrew、TRAE、WorkBuddy AI、Cline、ChatGPT Classic、Eigent、MiniMax Code）無獨立 CLI，待 GUI 互動驗收。完整矩陣見 [assembly-mcp-plan.md](docs/design/ai-cad-control/assembly-mcp-plan.md)。
+- **下一步建議**：
+  - 若要補齊 Antigravity／Qoder／DeepSeek，僅需註冊 `mcp_config.json`／登入 Qoder／儲值 DeepSeek 即可重跑 `out/mcp-client-qa/`；另建議順手將 `~/.codex/config.toml` 的舊路徑 `G3\3D-Builder` 更新為 `3d-builder-mcp.exe`。
+  - 產品開發可正式切入 **P1（工程圖實件複核與互動缺口，或草圖互動 P1 第二批）**。
+
 ## 2026-11-22（17:42 交接）— 桌面版 `v0.7.0`（內建 MCP Sidecar）正式發佈核對、清理完成與待辦同步（`bb77de56`）
 
 - **最新主線基準**：`main` 與 `origin/main` 同步於 `bb77de56`（本輪文件同步提交在此之上）。

@@ -1,5 +1,21 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-22（19:37）— 多客戶端 MCP 組合件實測（`v0.7.0` 內建 Sidecar）
+
+- **需求與實作**：
+  1. 以 `v0.7.0` 安裝包內建 `%LOCALAPPDATA%\3D-Builder\3d-builder-mcp.exe` 與黃金夾具（`locating-plate.3dbx` + `diamond-pin.3dbx`），在隔離目錄 `out/mcp-client-qa/<client>/` 針對 Claude Code、Codex、OpenCode、Kiro、DeepSeek Harness、Qoder、Antigravity 及截圖所列桌面客戶端進行組合件端對端實測與盤點。
+  2. **通過端對端全流程（含 `assembly_open` 獨立重求解與 STEP／BOM CSV 輸出）**：
+     - **Codex（`codex-cli 0.167.0`，`gpt-6.2-sol`）**：產出 `jig.3dba`（818 B）、`jig.step`（118,722 B）、`jig.csv`（124 B），干涉 `405.396 mm³`。
+     - **OpenCode（`1.17.4`，`nvidia/z-ai/glm-5.3-flash`，隔離 `XDG_*`）**：產出 `jig.3dba`（795 B）、`jig.step`（118,799 B）、`jig.csv`（124 B），干涉 `205.12 mm³`。
+     - **Kiro（`kiro-cli 2.21.1`）**：產出 `jig.3dba`（814 B）、`jig.step`（118,788 B）、`jig.csv`（124 B）。
+     - **Claude Code**：`2.1.325` 既有端對端通過；`2.1.328` 本日重測遇週額度上限。
+  3. **明確受阻與待 GUI 驗收**：DeepSeek Harness（`v0.8.16`）MCP 載入成功但 API `HTTP 402 Insufficient Balance`；Qoder（`1.0.25`）未登入；Antigravity（`agy 1.0.10`）待於全域 `mcp_config.json` 註冊 `3d-builder`；Agnes Code／KiroCrew／TRAE／WorkBuddy AI／Cline／ChatGPT Classic／Eigent／MiniMax Code 為 GUI／Web 客戶端無獨立 CLI。
+- **發現與 UX 記錄**：
+  - 較輕量模型（Codex 無推理模式、OpenCode `agnes-3.0-flash`）初次呼叫 `insertComponent` 時易將 `file` 誤放入 `component` 物件內部；中等推理或較強模型依 Schema 一次通過。
+  - 本機 `~/.codex/config.toml` 的 `3d-builder` 仍指向搬移前的舊路徑 `D:\Self-developed_Apps\G3\3D-Builder/...`；本機 `~/.config/opencode/opencode.json` 有 V2 `mcp.servers` 格式錯誤與 DB `no such table: data_migration`。
+- **同步文件與驗證**：
+  - 更新 `docs/design/ai-cad-control/assembly-mcp-plan.md`、`handoff.md`、`DEV_LOG.md`，並通過 `npm run lint:repo` 與 `git diff --check`。
+
 ## 2026-11-22（17:54）— 修復 Nightly CI `full-suite (7)` 失敗：補齊 `drw-revision` 動作圖示並納入 push 守門
 
 - **問題現象**：

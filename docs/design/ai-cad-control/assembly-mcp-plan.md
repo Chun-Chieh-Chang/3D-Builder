@@ -89,3 +89,20 @@
 - 15 檔、126 項相關回歸通過。型別、四個 lint、文件盤點與差異檢查均通過。
 - Claude Code 2.1.325 已完成一次隔離 Agent 建模與交付，產物經 `assembly_open` 獨立重新求解，確認位置、配合、干涉量及 PNG。Codex 暫待互動核准，其餘客戶端待驗。
 - 後續 ② GUI 即時連線完成（[ADR 0253](../../adr/0253-ai-live-assembly.md)）：連線中且 App 開著組合件時，`assembly_*` 工具改操作 App 的組合件；伺服器先試算，新零件檔請 App 從專案資料夾讀取；開檔、新建、存檔留給使用者。下一步 ③ 多張照片建組合件，需要使用者提供實物照片與實測尺寸。
+
+## 6. 2026-11-22 多客戶端實測矩陣（`v0.7.0` 內建 MCP Sidecar）
+
+以 `v0.7.0` 安裝包內建之 `%LOCALAPPDATA%\3D-Builder\3d-builder-mcp.exe` 與同一組黃金夾具（`locating-plate.3dbx` + `diamond-pin.3dbx`），在隔離工作區 `out/mcp-client-qa/<client>/` 逐一驗證「`assembly_new` → `assembly_query_elements` → `assembly_apply_commands`（`dry_run` + 干涉 + 預覽）→ 正式套用 → `assembly_inspect` → `assembly_save`（`jig.3dba`）→ `assembly_export`（`jig.step`、`jig.csv`）→ `assembly_open` 獨立重求解」：
+
+| 客戶端 | 版本／環境 | 狀態 | 實測證據與備註 |
+|---|---|---|---|
+| **Claude Code** | `2.1.325`（已驗）／`2.1.328`（本日） | **已驗證（既有）／本日額度受限** | `2.1.325` 已於 2026-11-14 完成隔離組裝、預覽、存檔、重開；`2.1.328` 重測 `v0.7.0` Sidecar 回報週額度達上限（`resets 5pm Asia/Taipei`）。 |
+| **Codex** | `codex-cli 0.167.0`（`gpt-6.2-sol`，`reasoning=medium`） | **已驗證通過** | 完整通過全部 6 步驟；產出 `jig.3dba`（818 B）、`jig.step`（118,722 B）、`jig.csv`（124 B）；檢出干涉 `405.396 mm³`；`assembly_open` 重求解一致（0 DOF / 1 DOF）。另發現本機 `~/.codex/config.toml` 仍指向舊路徑 `G3\3D-Builder`。 |
+| **OpenCode** | `1.17.4`（`nvidia/z-ai/glm-5.3-flash`，隔離 `XDG_*`） | **已驗證通過** | 完整通過全部 6 步驟；產出 `jig.3dba`（795 B）、`jig.step`（118,799 B）、`jig.csv`（124 B）；檢出干涉 `205.12 mm³`；`assembly_open` 重求解一致（0 DOF / 1 DOF）。註：預設 `~/.config/opencode/opencode.json` 有 V2 `mcp.servers` 格式錯誤與 DB `no such table: data_migration`，隔離設定後正常。 |
+| **Kiro** | `kiro-cli 2.21.1`（`--scope workspace`） | **已驗證通過** | 完整通過全部 6 步驟；產出 `jig.3dba`（814 B）、`jig.step`（118,788 B）、`jig.csv`（124 B）；`assembly_open` 重求解一致（0 DOF / 1 DOF）。 |
+| **DeepSeek Harness** | `deepseek v0.8.16` | **受阻（餘額不足）** | 成功載入 `3d-builder-mcp.exe`，呼叫模型回傳 `HTTP 402 Insufficient Balance`。 |
+| **Qoder** | `qodercli 1.0.25` | **受阻（未登入）** | 已備妥 `out/mcp-client-qa/qoder/mcp.json`，執行回傳 `Not logged in · Please run /login`。 |
+| **Antigravity** | `agy 1.0.10`／IDE | **待註冊全域 MCP** | `C:\Users\3kids\.gemini\antigravity\mcp_config.json` 尚未註冊 `3d-builder`（`agy` 無 `--mcp-config` 旗標，待使用者同意寫入全域設定並重載後驗收）。 |
+| **Agnes Code、KiroCrew、TRAE／TRAE SOLO、WorkBuddy AI、Cline、ChatGPT Classic、Eigent、MiniMax Code** | 桌面 GUI／Web／無獨立 CLI | **待 GUI 互動驗收** | 本機已檢出 AgnesCode、KiroCrew、Trae／TRAE SOLO、WorkBuddyAI 桌面安裝目錄；均無自動化 CLI，須於各 GUI 介面加入 `3d-builder-mcp.exe` 並以相同提示詞實測。 |
+
+- **共通 UX 觀察**：在 Codex（無推理模式）與 OpenCode（`agnes-3.0-flash`）皆觀察到模型初次呼叫 `insertComponent` 時易將 `file` 誤放入 `component` 內而非頂層欄位；後續可視需求於 `assembly_apply_commands` 錯誤訊息補上明確範例提示。
