@@ -354,7 +354,7 @@ export interface KernelApi {
    */
   drawingAssemblyEdges(requests: { parts: { part: string; mirrored: boolean; pose: Pose; leaf: string }[]; axes: ViewAxes }[]): Promise<({ edges: ViewEdgeSet; features?: ViewFeature[] } | { error: string })[]>;
   /** What the elements of a part that dimensions point at are (C16.4), by persistent name. */
-  drawingElements(requests: { part: string; refs: Ref[] }[]): Promise<DrawingElementsResult[]>;
+  drawingElements(requests: { part: string; refs: DrawingRef[] }[]): Promise<DrawingElementsResult[]>;
   /** The clearance between components (E2.2): the pairs closer than `least` mm, the closest first; with `only`, just those with one of these components. */
   clearance(components: InterferenceComponent[], least: number, only?: string[]): Promise<ClearanceResult>;
   /** How far `mover` can move along `dir` before it meets another component, at most `length` mm (E2.2). */

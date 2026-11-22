@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { applyDrawingCommand, CommandError, createEmptyDrawing, DRAWING_SCHEMA_VERSION, page, parseDrawing, serializeDrawing, viewVectors, type Dimension, type DrawingView, type ElementFacts, type ViewAxes } from '@3db/model';
-import { DIM_TEXT, dimensionTextItems, dragDimension, evaluateDimension, GAP, insideAt, OVERSHOOT, toSheet, type PlacedView, type SceneItem, type ViewLines } from '@3db/drawing';
+import { DIM_TEXT, dimensionTextItems, dragDimension, evaluateDimension, GAP, insideAt, OVERSHOOT, snapDimensionLine, toSheet, type PlacedView, type SceneItem, type ViewLines } from '@3db/drawing';
 
 const placed: PlacedView = { id: 'v', at: [200, 150], scale: 1, w: 100, h: 60, centre: [50, 30] };
 const axes: ViewAxes = viewVectors('front');
@@ -200,6 +200,22 @@ describe('the pointer and the line of a linear dimension', () => {
   it('the text of a dimension still slides along its line', () => {
     // the line runs from the first element (the top of the outline) to the second (the bottom), so the text slides down as the pointer moves up
     expect(dragDimension(handle(), true, [215, 195])).toEqual({ slide: -45 });
+  });
+
+  it('aligns to the nearest compatible line without crossing the view boundary', () => {
+    const h = handle();
+    const other = (d: Dimension) => {
+      const outcome = run(d);
+      if ('error' in outcome || !outcome.handle) throw new Error('Expected a dimension line');
+      return outcome.handle;
+    };
+    const outside = other(diameter({ offset: 23 }));
+    const inside = other(diameter({ insideAt: 98 }));
+    expect(snapDimensionLine(h, { offset: 24 }, [outside, inside], 2)).toEqual({ offset: 23 });
+    expect(snapDimensionLine(h, { insideAt: 99 }, [outside, inside], 2)).toEqual({ insideAt: 98 });
+    expect(snapDimensionLine(h, { offset: 1 }, [inside], 4)).toEqual({ offset: 1 });
+    expect(snapDimensionLine(h, { offset: 29 }, [outside], 2)).toEqual({ offset: 29 });
+    expect(snapDimensionLine(h, { slide: 2 }, [outside], 2)).toEqual({ slide: 2 });
   });
 
   it('the place is the view own millimetres, and none when the pointer is off the view', () => {

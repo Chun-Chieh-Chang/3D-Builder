@@ -496,20 +496,30 @@ export class DrawingSession {
       };
       // every page of a drawing is on the same sheet (rule P3, ADR 0261): the first page is laid out already, so the others start from its size
       const allSheets: SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
-      const autoMaxIdx = !o.sheet || o.sheet === 'auto' ? allSheets.indexOf('A3') : allSheets.indexOf(o.sheet);
+      const autoPaper = !o.sheet || o.sheet === 'auto';
+      const autoMaxIdx = autoPaper ? allSheets.indexOf('A3') : allSheets.indexOf(o.sheet as SheetSize);
       const same = page(doc, 0).sheet.size;
-      const sheets = allSheets.slice(0, Math.max(allSheets.indexOf(same), autoMaxIdx) + 1);
+      const preferredMaxIdx = Math.max(allSheets.indexOf(same), autoMaxIdx);
       if (!hasDetails) doc = layOut(same);
       else {
         // A page of detail views takes the smallest sheet on which none is crowded — from the first page's size (and not below A3): the views clear of each other,
         // every detail beside its parent with nothing between them, everything inside the area. When no sheet is clean, the one with the fewest faults (the smaller
         // on a tie).
         let pick: { doc: DrawingDoc; faults: number } | null = null;
-        for (const sheet of sheets.slice(Math.max(sheets.indexOf(same), sheets.indexOf('A3')))) {
+        let expand = false;
+        const firstIndex = Math.min(preferredMaxIdx, Math.max(allSheets.indexOf(same), allSheets.indexOf('A3')));
+        for (let index = firstIndex; index < allSheets.length; index++) {
+          if (index > preferredMaxIdx && !expand) break;
+          const sheet = allSheets[index]!;
           const trial = layOut(sheet);
           const faults = this.layoutFaults(trial, pi);
           if (!pick || faults < pick.faults) pick = { doc: trial, faults };
           if (faults === 0) break;
+          // A 1:100 fallback that still fails layout has exhausted the preferred paper size. Auto may use larger paper to fit the geometry and labels.
+          if (autoPaper && index === preferredMaxIdx && pick.faults > 0) {
+            const [n, d] = page(pick.doc, pi).sheet.scale;
+            expand = n === 1 && d === 100;
+          }
         }
         doc = pick!.doc;
       }
@@ -712,7 +722,9 @@ export class DrawingSession {
   /** Takes out what cannot be drawn, and lays the rows out again (the shortest nearest, as SolidWorks's Auto Arrange). */
   private tidy(doc: DrawingDoc, pageIndex = 0, room: 'refit' | 'keep' = 'refit'): DrawingDoc {
     let b = this.build(doc, pageIndex);
-    const failed = [...b.outcomes].filter(([, o]) => 'error' in o).map(([id]) => id);
+    // A manually placed intersection can recover after its model is repaired. Keep its references and report the failure.
+    const intersections = new Set(page(doc, pageIndex).dimensions.filter(d => dimensionRefs(d).some(ref => ref.crossing)).map(d => d.id));
+    const failed = [...b.outcomes].filter(([id, o]) => 'error' in o && !intersections.has(id)).map(([id]) => id);
     if (failed.length) {
       doc = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'deleteDimensions', dimensionIds: failed }));
       b = this.build(doc, pageIndex);
@@ -724,7 +736,7 @@ export class DrawingSession {
     if (changes.length) doc = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'batch', commands: changes.map((c) => ({ type: 'setDimension', dimensionId: c.id, patch: c.patch }) satisfies DrawingCommand) }));
     // room first (views apart, leaders turned), and only then a number slid along its line — a last resort, since it belongs in the middle (ISO 129-1)
     doc = this.placeCaptions(this.steerLeaders(this.spreadViews(this.steerLeaders(this.spreadViews(doc, pageIndex), false, pageIndex), pageIndex), true, pageIndex), pageIndex);
-    const afterFailed = [...this.build(doc, pageIndex).outcomes].filter(([, o]) => 'error' in o).map(([id]) => id);
+    const afterFailed = [...this.build(doc, pageIndex).outcomes].filter(([id, o]) => 'error' in o && !intersections.has(id)).map(([id]) => id);
     if (afterFailed.length) doc = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'deleteDimensions', dimensionIds: afterFailed }));
     // and last, whatever the clutter steps did: the views are as far apart as the dimensions between them need (measured, not guessed), then any dirty caption is cleared
     return this.placeCaptions(this.clearViews(doc, pageIndex, room === 'keep'), pageIndex, true);
@@ -777,6 +789,10 @@ export class DrawingSession {
       const tries: [number, number][] = [];
       for (let k = 7; k <= 70; k += 7) tries.push([0, (first?.[1] ?? 0) - k]);
       tries.push([0, own.h + 14], [0, own.h + 24], [-24, 0], [24, 0], [-24, own.h + 14], [24, own.h + 14], [-40, 0], [40, 0]);
+      if (onlyDirty && ownDirty && v.caption?.offset) {
+        const [x, y] = v.caption.offset;
+        for (const dy of [-14, -7, 7, 14]) tries.push([x, y + dy]);
+      }
       // the best of them all, not the first that helps: a little lower may help a little where over the view clears it
       let pick: { offset: [number, number]; c: number; clears: boolean } | null = null;
       for (const offset of tries) {
@@ -1416,9 +1432,11 @@ export class DrawingSession {
       this.elementCache.set(key, val);
       return val;
     };
-    const elements = new Map<Id, ElementsResult>(
-      pg.dimensions.map((d) => [d.id, { elements: dimensionRefs(d).map(getFacts) }]),
-    );
+    const elements = new Map<Id, ElementsResult>(pg.dimensions.map((d) => {
+      const refs = dimensionRefs(d);
+      const elements = refs.map(getFacts);
+      return [d.id, refs.some((ref, i) => ref.crossing && !elements[i]) ? { error: t('drawing.dimPointLost') } : { elements }];
+    }));
     const built = buildScene(single, lines, elements, features);
     return { lines, features, elements, scene: built.scene, placed: built.placed, outcomes: built.dimensions };
   }

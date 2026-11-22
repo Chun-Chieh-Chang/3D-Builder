@@ -26,7 +26,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { applyCommand, applyDrawingCommand, axesOf, createEmptyDrawing, createEmptyPart, sectionPlane, type Command, type Dimension, type DrawingDoc, type DrawingView, type ElementFacts, type Feature, type PartDoc, type Pose, type Ref, type SketchConstraint, type SketchEntity, type SurfaceFinish, type ViewAxes, dimensionRefs, page } from '@3db/model';
 import { readAnyDocumentFile, writeDrawingFile, writePartFile } from '@3db/io';
-import { autoDimensions, buildScene, checkDxf, evaluateDimension, factsOf, featureAt, planDimension, readDxf, readTrueType, toDxf, toPdf, type DimensionOutcome, type ElementsResult, type PlacedView, type Scene, type ViewLines } from '@3db/drawing';
+import { autoDimensions, buildScene, checkDxf, checkPdf, evaluateDimension, factsOf, featureAt, planDimension, readDxf, readPdf, readTrueType, toDxf, toPdf, type DimensionOutcome, type ElementsResult, type PlacedView, type Scene, type ViewLines } from '@3db/drawing';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, type ShapeId } from '@3db/kernel';
 import { elementFacts, holeFeatures, projectDrawingView, Regenerator, viewFeatures, type RebuildResult } from '@3db/regen';
@@ -410,6 +410,7 @@ async function sheet(o: {
   const fontFile = 'C:\\Windows\\Fonts\\msjh.ttc';
   const font = existsSync(fontFile) ? readTrueType(new Uint8Array(readFileSync(fontFile))) : undefined;
   const pdf = toPdf(built.scene, { ...(font ? { font } : {}), title: o.drawingName });
+  expect(checkPdf(readPdf(pdf.bytes))).toEqual([]);
   put(join('輸出', `${o.file}.pdf`), pdf.bytes, `${o.drawingName} PDF${font ? '（內嵌微軟正黑體）' : '（無字型）'}`);
   console.log(`  ${o.file}: 圖面文字 ${texts.join('、')}`);
   return { scene: built.scene, texts, sceneTexts, errors, dimensions: built.dimensions, axisSheetY, features, axes: axesById, lines, placed: built.placed };

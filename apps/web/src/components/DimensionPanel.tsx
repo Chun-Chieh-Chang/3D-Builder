@@ -144,7 +144,8 @@ export function DimensionPanel() {
     const [ax, ay] = toView(h.placed, h.a);
     return current.orientation === 'horizontal' ? ay : ax;
   })();
-  const nonEqualCone = current?.kind === 'chamfer' && current.coneSide !== undefined && measuredChamfer && Math.abs(measuredChamfer.angle - 45) > 1e-6;
+  const linkedChamfer = current?.kind === 'chamfer' && (current.coneSide !== undefined || current.straightEdge === true);
+  const nonEqualLinkedChamfer = linkedChamfer && measuredChamfer && Math.abs(measuredChamfer.angle - 45) > 1e-6;
   // the numbers of a tolerance are typed and shown in the unit of the sheet; the document holds millimetres
   const perUnit = curPage.sheet.unit === 'in' ? MM_PER_INCH : 1;
   const rawAxes = view ? axesOf(curPage.views, curPage.sheet.projection, view) : null;
@@ -423,18 +424,18 @@ export function DimensionPanel() {
                 <>
                   <label className="pm-row">
                     <span>{t('drawingUi.dimChamferFormat')}</span>
-                    <select data-field="dimChamferFormat" value={nonEqualCone ? 'distanceAngle' : current.chamferFormat ?? 'c'} onChange={(e) => d.setDimension(current.id, { chamferFormat: e.target.value as 'c' | 'distanceAngle' })}>
-                      <option value="c" disabled={!!nonEqualCone}>{t('drawingUi.dimChamferC')}</option>
+                    <select data-field="dimChamferFormat" value={nonEqualLinkedChamfer ? 'distanceAngle' : current.chamferFormat ?? 'c'} onChange={(e) => d.setDimension(current.id, { chamferFormat: e.target.value as 'c' | 'distanceAngle' })}>
+                      <option value="c" disabled={!!nonEqualLinkedChamfer}>{t('drawingUi.dimChamferC')}</option>
                       <option value="distanceAngle">{t('drawingUi.dimChamferAngle')}</option>
                     </select>
                   </label>
                   <label className="pm-row">
                     <span>{t('drawingUi.dimChamferSize')}</span>
-                    <NumberBox field="dimChamferSize" disabled={current.coneSide !== undefined} value={current.coneSide !== undefined ? measuredChamfer?.size ?? current.size : current.size} onCommit={(v) => v > 0 && d.setDimension(current.id, { size: v })} />
+                    <NumberBox field="dimChamferSize" disabled={linkedChamfer} value={linkedChamfer ? measuredChamfer?.size ?? current.size : current.size} onCommit={(v) => v > 0 && d.setDimension(current.id, { size: v })} />
                   </label>
                   <label className="pm-row">
                     <span>{t('drawingUi.dimChamferAngleVal')}</span>
-                    <NumberBox field="dimChamferAngleVal" disabled={current.coneSide !== undefined} value={current.coneSide !== undefined ? measuredChamfer?.angle ?? current.chamferAngle ?? 45 : current.chamferAngle ?? 45} onCommit={(v) => v > 0 && v < 90 && d.setDimension(current.id, { chamferAngle: v })} />
+                    <NumberBox field="dimChamferAngleVal" disabled={linkedChamfer} value={linkedChamfer ? measuredChamfer?.angle ?? current.chamferAngle ?? 45 : current.chamferAngle ?? 45} onCommit={(v) => v > 0 && v < 90 && d.setDimension(current.id, { chamferAngle: v })} />
                   </label>
                   <label className="pm-row">
                     <span>{t('drawingUi.dimAngle')}</span>
@@ -486,6 +487,18 @@ export function DimensionPanel() {
                   <span>{t('drawingUi.dimSlide')}</span>
                   <NumberBox field="dimSlide" value={current.slide ?? 0} onCommit={(v) => d.setDimension(current.id, { slide: v })} />
                 </label>
+              )}
+              {current.kind !== 'ordinate' && (
+                <>
+                  <label className="pm-row" title={t('drawingUi.dimTextOffsetTip')}>
+                    <span>{t('drawingUi.dimTextOffsetX')}</span>
+                    <NumberBox field="dimTextOffsetX" value={current.textOffset?.[0] ?? 0} onCommit={(v) => d.setDimension(current.id, { textOffset: [v, current.textOffset?.[1] ?? 0] })} />
+                  </label>
+                  <label className="pm-row" title={t('drawingUi.dimTextOffsetTip')}>
+                    <span>{t('drawingUi.dimTextOffsetY')}</span>
+                    <NumberBox field="dimTextOffsetY" value={current.textOffset?.[1] ?? 0} onCommit={(v) => d.setDimension(current.id, { textOffset: [current.textOffset?.[0] ?? 0, v] })} />
+                  </label>
+                </>
               )}
               {(current.kind === 'diameter' || current.kind === 'radius' || current.kind === 'chamfer') && (
                 <label className="pm-row">

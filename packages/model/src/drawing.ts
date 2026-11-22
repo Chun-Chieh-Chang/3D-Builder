@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, DRAWING_TEXT_WIDTH, framesUsing, va
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 41;
+export const DRAWING_SCHEMA_VERSION = 43;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -581,16 +581,24 @@ export type TitleField = (typeof TITLE_FIELDS)[number];
  * An element a dimension points at. In a view of a part it is the part's (`Ref`); in a view of an assembly (v14, D-I2, ADR 0138) `in` says which part of it,
  * by the leaf's id ("comp2", "comp2/pa": the components gone through from the assembly down), and the element is that part's, put where the assembly has it.
  */
-export const DRAWING_POINTS = ['midpoint', 'quadrant0', 'quadrant1', 'quadrant2', 'quadrant3', 'outlineStartPositive', 'outlineEndPositive', 'outlineMidPositive', 'outlineStartNegative', 'outlineEndNegative', 'outlineMidNegative', 'sketchPositive', 'sketchNegative'] as const;
+export const DRAWING_POINTS = ['midpoint', 'quadrant0', 'quadrant1', 'quadrant2', 'quadrant3', 'outlineStartPositive', 'outlineEndPositive', 'outlineMidPositive', 'outlineStartNegative', 'outlineEndNegative', 'outlineMidNegative', 'sketchPositive', 'sketchNegative', 'intersection'] as const;
 export type DrawingPoint = (typeof DRAWING_POINTS)[number];
 /** A generated view contour, distinct from an original B-rep edge. Identity is matched against regenerated HLR geometry, never used as measurement coordinates. */
-export type ProjectionRef = { kind: 'projection'; name: string; at?: number; in?: never; point?: never; fingerprint?: never };
-export type DrawingRef = (Ref & { in?: string; /** Model-derived point on the referenced element, evaluated in the dimension view. */ point?: DrawingPoint }) | ProjectionRef;
-export const validProjectionRef = (r: ProjectionRef): boolean => typeof r.name === 'string' && r.name.startsWith('projection:') && r.name.length > 11 && r.in === undefined && r.point === undefined && r.fingerprint === undefined && (r.at === undefined || (Number.isFinite(r.at) && r.at >= 0 && r.at <= 1));
-export const drawingRefKey = (r: DrawingRef): string => JSON.stringify([r.kind, r.name, r.in ?? null, r.point ?? null, r.kind === 'projection' ? r.at ?? null : null]);
+export type ProjectionRef = { kind: 'projection'; name: string; at?: number; in?: never; point?: never; fingerprint?: never; crossing?: never };
+export type DrawingRef = (Ref & { in?: string; point?: DrawingPoint; crossing?: { edge: Ref; extended: boolean } }) | ProjectionRef;
+export const validProjectionRef = (r: ProjectionRef): boolean => typeof r.name === 'string' && r.name.startsWith('projection:') && r.name.length > 11 && r.in === undefined && r.point === undefined && r.fingerprint === undefined && r.crossing === undefined && (r.at === undefined || (Number.isFinite(r.at) && r.at >= 0 && r.at <= 1));
+export const drawingRefKey = (r: DrawingRef): string => r.crossing
+  ? JSON.stringify([r.kind, [r.name, r.crossing.edge.name].sort(), r.in ?? null, r.point, r.crossing.extended])
+  : JSON.stringify([r.kind, r.name, r.in ?? null, r.point ?? null, r.kind === 'projection' ? r.at ?? null : null]);
 export const sameDrawingRef = (a: DrawingRef, b: DrawingRef): boolean => drawingRefKey(a) === drawingRefKey(b);
 export function validDrawingPointRef(r: DrawingRef): boolean {
   if (r.kind === 'projection') return validProjectionRef(r);
+  if (r.point === 'intersection') {
+    const edge = r.crossing?.edge;
+    return r.kind === 'edge' && typeof r.name === 'string' && r.name !== '' && edge?.kind === 'edge' && typeof edge.name === 'string' && edge.name !== '' && edge.name !== r.name &&
+      typeof r.crossing?.extended === 'boolean' && edge.name.includes('@flat:') === r.name.includes('@flat:');
+  }
+  if (r.crossing !== undefined) return false;
   if (r.kind === 'sketch') return /^[^:]+:[^:]+$/.test(r.name) && (r.point === undefined || r.point === 'sketchPositive' || r.point === 'sketchNegative') && r.fingerprint === undefined && r.silhouette === undefined;
   if (r.point === undefined) return true;
   if (r.point === 'sketchPositive' || r.point === 'sketchNegative') return false;
@@ -622,6 +630,8 @@ interface DimensionCommon {
   text?: string;
   /** A linear or an angle dimension: how far (mm) its text was slid along the dimension line (along the arc, for an angle) from the middle (v8). */
   slide?: number;
+  /** Additional position of a single dimension label, in paper millimetres along sheet x and y. */
+  textOffset?: [number, number];
   /** Its own text height, arrows or line width (v19, ADR 0146), over the drawing's `sheet.dimStyle`. */
   style?: DimStyle;
 }
@@ -728,6 +738,8 @@ export interface ChamferDimension extends DimensionCommon {
   size: number;
   /** Associative side of a native conical face seen in profile. */
   coneSide?: 1 | -1;
+  /** Setbacks measured from the current endpoints of the referenced straight edge. */
+  straightEdge?: true;
   chamferAngle?: number;
   chamferFormat?: 'c' | 'distanceAngle';
   leader?: number;
@@ -746,8 +758,10 @@ export interface ElementFacts {
   type: string;
   /** A vertex's place, a plane's origin, a cylinder's or circle's axis point (its middle), a line's middle, a torus's centre. */
   point: [number, number, number];
-  /** Native circular end centres of a whole cylindrical or conical face. */
+  /** Endpoints of a straight edge or circular end centres of a whole cylindrical or conical face. */
   ends?: [[number, number, number], [number, number, number]];
+  /** Endpoints of the second model edge when resolving a drawing intersection. */
+  crossingEnds?: [[number, number, number], [number, number, number]];
   endRadii?: [number, number];
   /** Distance on the planar end to the theoretical intersection with the adjacent tapered wall. */
   chamferSetback?: number;
@@ -815,7 +829,7 @@ export function placeElementFacts(f: ElementFacts, rows: readonly number[]): Ele
   const R = rows;
   const put = (p: readonly number[]): [number, number, number] => [R[0]! * p[0]! + R[1]! * p[1]! + R[2]! * p[2]! + R[3]!, R[4]! * p[0]! + R[5]! * p[1]! + R[6]! * p[2]! + R[7]!, R[8]! * p[0]! + R[9]! * p[1]! + R[10]! * p[2]! + R[11]!];
   const turn = (v: readonly number[]): [number, number, number] => [R[0]! * v[0]! + R[1]! * v[1]! + R[2]! * v[2]!, R[4]! * v[0]! + R[5]! * v[1]! + R[6]! * v[2]!, R[8]! * v[0]! + R[9]! * v[1]! + R[10]! * v[2]!];
-  return { ...f, point: put(f.point), ...(f.ends ? { ends: f.ends.map(put) as ElementFacts['ends'] } : {}), ...(f.dir ? { dir: turn(f.dir) } : {}), ...(f.center ? { center: put(f.center) } : {}),
+  return { ...f, point: put(f.point), ...(f.ends ? { ends: f.ends.map(put) as ElementFacts['ends'] } : {}), ...(f.crossingEnds ? { crossingEnds: [put(f.crossingEnds[0]), put(f.crossingEnds[1])] } : {}), ...(f.dir ? { dir: turn(f.dir) } : {}), ...(f.center ? { center: put(f.center) } : {}),
     ...(f.thread ? { thread: { ...f.thread, ...(f.thread.origin ? { origin: put(f.thread.origin) } : {}), ...(f.thread.axis ? { axis: turn(f.thread.axis) } : {}) } } : {}) };
 }
 
@@ -1158,6 +1172,7 @@ export type DimensionPatch = {
   text?: string | null;
   /** `null` (or 0) puts the text back in the middle. */
   slide?: number | null;
+  textOffset?: [number, number] | null;
   /** A diameter or a radius: the length of the leader; `null` puts it back to 8. */
   leader?: number | null;
   supplementary?: boolean | null;
@@ -1426,6 +1441,10 @@ function flatViewOf(views: readonly DrawingView[], id: Id): boolean {
 }
 
 /** Checks a dimension against the views it may be drawn on and what its kind needs. */
+export function validDimensionTextOffset(kind: unknown, value: unknown): boolean {
+  return kind !== 'ordinate' && Array.isArray(value) && value.length === 2 && Number.isFinite(value[0]) && Number.isFinite(value[1]);
+}
+
 function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
   if (!d.id) throw new CommandError(t('drawing.idMissing'));
   if (!viewById(views, d.view)) throw new CommandError(t('drawing.dimNoView', { id: String(d.view) }));
@@ -1471,6 +1490,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
     if (!isRefValue(d.ref) || d.ref.kind === 'vertex' || d.ref.kind === 'projection' || d.ref.kind === 'sketch' || d.ref.point) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
     if (d.coneSide !== undefined && (d.ref.kind !== 'face' || (d.coneSide !== 1 && d.coneSide !== -1))) throw new CommandError(t('drawing.dimBadRef'));
+    if (d.straightEdge !== undefined && (d.straightEdge !== true || d.ref.kind !== 'edge' || d.coneSide !== undefined)) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.size) || d.size <= 0) throw new CommandError(t('drawing.dimBadOffset'));
     if (d.chamferAngle !== undefined && (!Number.isFinite(d.chamferAngle) || d.chamferAngle <= 0 || d.chamferAngle >= 90)) throw new CommandError(t('drawing.dimBadAngle'));
     if (d.chamferFormat !== undefined && d.chamferFormat !== 'c' && d.chamferFormat !== 'distanceAngle') throw new CommandError(t('drawing.dimBadKind', { kind: String(d.chamferFormat) }));
@@ -1486,6 +1506,7 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
   if (d.precision !== undefined && !(Number.isInteger(d.precision) && d.precision >= 0 && d.precision <= 4)) throw new CommandError(t('drawing.dimBadPrecision'));
   for (const k of ['prefix', 'suffix', 'text'] as const) if (d[k] !== undefined && (typeof d[k] !== 'string' || d[k]!.length > 80)) throw new CommandError(t('drawing.dimBadText'));
   if (d.slide !== undefined && (!Number.isFinite(d.slide) || (d.kind !== 'linear' && d.kind !== 'angle'))) throw new CommandError(t('drawing.dimBadSlide'));
+  if (d.textOffset !== undefined && !validDimensionTextOffset(d.kind, d.textOffset)) throw new CommandError(t('drawing.badPosition'));
   if ((d.kind === 'diameter' || d.kind === 'radius' || d.kind === 'chamfer') && d.leader !== undefined && !(Number.isFinite(d.leader) && d.leader > 0)) throw new CommandError(t('drawing.dimBadLeader'));
   if (d.style !== undefined) checkDimStyle(d.style);
   const tol = d.tolerance;
@@ -1742,12 +1763,12 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     case 'setDimension': {
       const d = pg.dimensions.find((x) => x.id === cmd.dimensionId);
       if (!d) throw new CommandError(t('drawing.noDimension', { id: cmd.dimensionId }));
-      const { reference, tolerance, count, callout, calloutStyle, wrapWidth, supplementary, precision, prefix, suffix, text, slide, leader, style, kind, size, chamferAngle, chamferFormat, insideAt, ...rest } = cmd.patch;
+      const { reference, tolerance, count, callout, calloutStyle, wrapWidth, supplementary, precision, prefix, suffix, text, slide, textOffset, leader, style, kind, size, chamferAngle, chamferFormat, insideAt, ...rest } = cmd.patch;
       if (kind !== undefined) {
         if (d.kind !== 'diameter' && d.kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'kind', kind: d.kind }));
         if (kind !== 'diameter' && kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'kind', kind }));
       }
-      if (d.kind === 'chamfer' && d.coneSide !== undefined && (size !== undefined || chamferAngle !== undefined)) throw new CommandError(t('drawing.dimModelChamfer'));
+      if (d.kind === 'chamfer' && (d.coneSide !== undefined || d.straightEdge) && (size !== undefined || chamferAngle !== undefined)) throw new CommandError(t('drawing.dimModelChamfer'));
       const targetKind = kind ?? d.kind;
       const belongs: Record<Dimension['kind'], string[]> = {
         linear: ['offset', 'orientation', 'a', 'b'],
@@ -1804,6 +1825,12 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       }
       if (slide === null || slide === 0) delete loose.slide;
       else if (slide !== undefined) loose.slide = slide;
+      if (textOffset === null) delete next.textOffset;
+      else if (textOffset !== undefined) {
+        if (!validDimensionTextOffset(targetKind, textOffset)) throw new CommandError(t('drawing.badPosition'));
+        if (textOffset[0] === 0 && textOffset[1] === 0) delete next.textOffset;
+        else next.textOffset = [...textOffset];
+      }
       if (count === null) delete next.count;
       else if (count !== undefined) next.count = count;
       if (tolerance === null) delete next.tolerance;

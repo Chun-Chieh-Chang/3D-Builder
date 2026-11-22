@@ -22,7 +22,7 @@ window.__dimensionOnView={drawing:async()=>{
  const box={left:placed.at[0]-placed.w/2,right:placed.at[0]+placed.w/2,bottom:placed.at[1]-placed.h/2,top:placed.at[1]+placed.h/2};
  const client=p=>{const svg=document.querySelector('[data-svg] svg'),r=svg.getBoundingClientRect(),b=svg.viewBox.baseVal;return [r.left+p[0]/b.width*r.width,r.top+(b.height-p[1])/b.height*r.height];};
  const canvas=()=>document.querySelector('[data-drawing-canvas]');
- const drag=async(from,to)=>{const a=client(from),b=client(to);const send=(type,p)=>canvas().dispatchEvent(new PointerEvent(type,{clientX:p[0],clientY:p[1],button:0,buttons:type==='pointerup'?0:1,pointerId:19,bubbles:true}));send('pointerdown',a);for(let i=1;i<=6;i++){send('pointermove',[a[0]+(b[0]-a[0])*i/6,a[1]+(b[1]-a[1])*i/6]);await H.wait(25);}send('pointerup',b);await H.wait(200);};
+ const drag=async(from,to,altKey=false)=>{const a=client(from),b=client(to);const send=(type,p)=>canvas().dispatchEvent(new PointerEvent(type,{clientX:p[0],clientY:p[1],button:0,buttons:type==='pointerup'?0:1,pointerId:19,bubbles:true,altKey}));send('pointerdown',a);for(let i=1;i<=6;i++){send('pointermove',[a[0]+(b[0]-a[0])*i/6,a[1]+(b[1]-a[1])*i/6]);await H.wait(25);}send('pointerup',b);await H.wait(200);};
  // The line of the dimension, away from its number, so the hit test has to find the line itself.
  const handle=first.handle,onLine=[handle.mid[0]+(handle.a[0]-handle.b[0])*0.25,handle.mid[1]];
  check(onLine[1]<box.bottom||onLine[1]>box.top,'the dimension line is drawn outside the view to begin with');
@@ -70,5 +70,38 @@ window.__dimensionOnView={drawing:async()=>{
  check(dimension().insideAt!==undefined,'the panel puts the line on the view');
  check(Number.isFinite(dimension().insideAt),'the place on the view is a number');
  const at=document.querySelector('[data-field="dimOnViewAt"]');check(!!at,'the panel shows where the line is on the view');
+
+ // Alt-drag adjusts the label on both paper axes. The line, number, and existing along-line position stay put.
+ const before=outcome(), label=before.items.find(i=>i.kind==='text'), modelBefore=dimension();
+ const grab=[label.at[0],label.at[1]+label.height/2];
+ await drag(grab,[grab[0]+8,grab[1]+5],true);
+ const moved=dimension(), rendered=outcome(), movedLabel=rendered.items.find(i=>i.kind==='text');
+ check(near(moved.textOffset?.[0],8)&&near(moved.textOffset?.[1],5),'Alt-drag stores both paper offsets');
+ check(near(movedLabel.at[0]-label.at[0],8)&&near(movedLabel.at[1]-label.at[1],5),'the label moves by the pointer delta');
+ check(moved.insideAt===modelBefore.insideAt&&moved.slide===modelBefore.slide&&near(rendered.value,before.value),'the line position and measured value are preserved');
+ const x=document.querySelector('[data-field="dimTextOffsetX"]'),y=document.querySelector('[data-field="dimTextOffsetY"]');
+ check(near(Number(x?.value),8)&&near(Number(y?.value),5),'the panel displays the moved position');
+ d.undo();
+ await H.waitFor(()=>dimension().textOffset===undefined,5000,'the free label movement to undo');
+ d.redo();
+ await H.waitFor(()=>near(dimension().textOffset?.[0],8),5000,'the free label movement to redo');
+
+ const features=state().features.get(view.id);
+ const side=features.find(feature=>feature.type==='plane'&&feature.axis==='x');
+ const hole=features.find(feature=>feature.type==='circle'&&feature.full);
+ check(!!side&&!!hole,'the real plate has a side plane and a hole centre');
+ const neighbour=d.addDimension(view.id,{kind:'linear',a:side.ref,b:hole.ref,orientation:'horizontal',offset:-12});
+ check(!!neighbour,'a horizontal hole-position dimension was added');
+ d.setDimension(id,{insideAt:null,offset:-22,textOffset:null});
+ const neighbourHandle=await H.waitFor(()=>d.scene().dimensions.get(neighbour)?.handle,5000,'the neighbouring dimension to resolve');
+ const target=neighbourHandle.mid[1];
+ const lineHandle=outcome().handle;
+ const grip=[lineHandle.mid[0]+(lineHandle.a[0]-lineHandle.b[0])*0.25,lineHandle.mid[1]];
+ await drag(grip,[grip[0],target+0.8]);
+ check(near(outcome().handle.mid[1],target),'a nearby parallel dimension line snaps to the same paper axis');
+ d.undo();
+ await H.waitFor(()=>near(outcome().handle.mid[1],grip[1]),5000,'the alignment to undo');
+ await drag(grip,[grip[0],target+0.8],true);
+ check(near(outcome().handle.mid[1],target+0.8),'Alt bypasses dimension line alignment');
  return {pass:true,value};
 }};

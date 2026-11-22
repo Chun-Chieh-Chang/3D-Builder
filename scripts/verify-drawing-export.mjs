@@ -8,6 +8,7 @@
  * Required:
  * - FREECAD_CMD: absolute path to FreeCADCmd executable (optional if found in standard paths).
  * - DRAWING_ACCEPTANCE_REPORT: optional absolute path for the JSON result.
+ * - PARTS_OUT: optional directory for generated drawing samples.
  */
 import { createHash } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
@@ -56,7 +57,8 @@ const chrome = findBrowser();
 const output = process.env.DRAWING_ACCEPTANCE_REPORT ?? join(root, 'out', 'drawing-acceptance.json');
 if (!isAbsolute(output)) throw new Error('DRAWING_ACCEPTANCE_REPORT must be an absolute path.');
 
-const outDir = join(root, 'scratch', 'drawing-parts', '輸出');
+const partsOut = resolve(root, process.env.PARTS_OUT ?? 'scratch/drawing-parts');
+const outDir = join(partsOut, '輸出');
 const targetBushingDxf = join(outDir, '凸緣襯套加工圖.dxf');
 const targetBushingPdf = join(outDir, '凸緣襯套加工圖.pdf');
 const targetKnobDxf = join(outDir, '壓花旋鈕銷加工圖.dxf');
@@ -65,8 +67,12 @@ const targetKnobPdf = join(outDir, '壓花旋鈕銷加工圖.pdf');
 // Ensure drawing fixtures exist; if missing, generate them via make:drawing
 if (!existsSync(targetBushingDxf) || !existsSync(targetBushingPdf) || !existsSync(targetKnobDxf) || !existsSync(targetKnobPdf)) {
   process.stdout.write('Generating drawing kit export samples...\n');
-  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  execFileSync(npmCmd, ['run', 'make:drawing'], { cwd: root, stdio: 'inherit' });
+  const vitest = join(root, 'node_modules', 'vitest', 'vitest.mjs');
+  execFileSync(process.execPath, [vitest, 'run', '--config', 'tests/kit/vitest.kit.config.ts', 'drawing-parts'], {
+    cwd: root,
+    env: { ...process.env, PARTS_OUT: partsOut },
+    stdio: 'inherit',
+  });
 }
 
 const temp = mkdtempSync(join(tmpdir(), '3db-drawing-acceptance-'));
@@ -153,6 +159,7 @@ async function runChromiumPdfProbe(browserPath, pdfPaths) {
       results.push({
         file: basename(pdfPath),
         url,
+        sha256: createHash('sha256').update(readFileSync(pdfPath)).digest('hex'),
         contentType: evalRes.result?.value?.contentType,
         renderedBytes: screenshotBytes,
         ok: evalRes.result?.value?.contentType === 'application/pdf' && screenshotBytes > 0,
@@ -235,6 +242,8 @@ try {
   process.stdout.write(`\nDrawing export acceptance report written: ${output}\n`);
   process.stdout.write(`- FreeCAD DXF imports verified: ${dxfResults.length} files (shapes: ${dxfResults.map((r) => r.shapes).join(', ')})\n`);
   if (pdfResults) {
+    const failed = pdfResults.results.filter((result) => !result.ok);
+    if (failed.length) throw new Error(`Chromium PDF rendering failed for ${failed.map((result) => result.file).join(', ')}`);
     process.stdout.write(`- Chromium PDF renderings verified: ${pdfResults.results.length} files\n`);
   }
 } finally {

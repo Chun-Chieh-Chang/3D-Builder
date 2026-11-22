@@ -401,6 +401,31 @@ const isBound = (e: ElementFacts) => e.type === 'plane' || e.type === 'line';
  * an error) there is nothing to draw and the answer says why.
  */
 export function evaluateDimension(d: Dimension, resolved: ElementsResult | undefined, axes: ViewAxes, placed: PlacedView, unit: LengthUnit = 'mm', style: Style = DIM_STYLE_DEFAULT, viewLines?: ViewLines | null): DimensionOutcome {
+  const outcome = evaluateDimensionGeometry(d, resolved, axes, placed, unit, style, viewLines);
+  if (!d.textOffset || 'error' in outcome) return outcome;
+  const [dx, dy] = d.textOffset;
+  const move = ([x, y]: P): P => [x + dx, y + dy];
+  return {
+    ...outcome,
+    items: outcome.items.map((item) => item.kind === 'text' ? { ...item, at: move(item.at) } : item),
+    ...(outcome.dxf ? { dxf: { ...outcome.dxf, textAt: move(outcome.dxf.textAt) } } : {}),
+  };
+}
+
+/** The crossing of two projected straight edges, optionally along their extensions. */
+export function drawingEdgeIntersection(a: P, b: P, c: P, d: P, extended: boolean): P | null {
+  const u = sub(b, a), v = sub(d, c), w = sub(c, a);
+  const cross = (x: P, y: P) => x[0] * y[1] - x[1] * y[0];
+  const denominator = cross(u, v);
+  const lengths = len(u) * len(v);
+  if (!(lengths > 1e-12 && Math.abs(denominator) > lengths * 1e-6)) return null;
+  const first = cross(w, v) / denominator, second = cross(w, u) / denominator;
+  if (!extended && [first, second].some(t => t < -1e-8 || t > 1 + 1e-8)) return null;
+  const at = add(a, u, first);
+  return at.every(Number.isFinite) ? at : null;
+}
+
+function evaluateDimensionGeometry(d: Dimension, resolved: ElementsResult | undefined, axes: ViewAxes, placed: PlacedView, unit: LengthUnit, style: Style, viewLines: ViewLines | null | undefined): DimensionOutcome {
   axes = normalizedViewAxes(axes);
   const refs = dimensionRefs(d);
   if (!resolved && refs.every(r => r.kind === 'projection')) resolved = { elements: refs.map(() => null) };
@@ -419,6 +444,12 @@ export function evaluateDimension(d: Dimension, resolved: ElementsResult | undef
     const point = refs[i]?.point;
     if (!point || (e.kind === 'vertex' && e.type === 'point')) { els.push(e); continue; }
     let at: [number, number, number] | undefined;
+    if (point === 'intersection' && ref.crossing && e.type === 'line' && e.ends && e.crossingEnds) {
+      const right = rightOf(axes), up = sheetUp(axes);
+      const project = (p: readonly number[]): P => [dot(p, right), dot(p, up)];
+      const hit = drawingEdgeIntersection(project(e.ends[0]), project(e.ends[1]), project(e.crossingEnds[0]), project(e.crossingEnds[1]), ref.crossing.extended);
+      if (hit) at = [right[0] * hit[0] + up[0] * hit[1], right[1] * hit[0] + up[1] * hit[1], right[2] * hit[0] + up[2] * hit[1]];
+    }
     if ((point === 'sketchPositive' || point === 'sketchNegative') && ref.kind === 'sketch' && e.type === 'circle' && e.dir && e.radius !== undefined && Math.abs(dot(e.dir, axes.dir)) <= PERPENDICULAR) {
       const right = rightOf(axes), up = sheetUp(axes);
       const x = dot(e.dir, right), y = dot(e.dir, up), length = Math.hypot(x, y);
@@ -930,6 +961,15 @@ function chamfer(d: Extract<Dimension, { kind: 'chamfer' }>, e: ElementFacts, ax
   const to = (v: readonly number[]): P => [dot(v, right), dot(v, up)];
   let ptView = to(e.center ?? e.point);
   let size = d.size, measuredAngle = d.chamferAngle ?? 45;
+  if (d.straightEdge) {
+    if (e.type !== 'line' || !e.dir || !e.ends || Math.abs(dot(e.dir, axes.dir)) > PERPENDICULAR) return { error: t('drawing.dimNeedsChamfer') };
+    const a = to(e.ends[0]), b = to(e.ends[1]);
+    const dx = Math.abs(b[0] - a[0]), dy = Math.abs(b[1] - a[1]);
+    if (Math.min(dx, dy) <= 1e-9) return { error: t('drawing.dimNeedsChamfer') };
+    size = Math.max(dx, dy);
+    measuredAngle = Math.atan2(Math.min(dx, dy), size) * 180 / Math.PI;
+    ptView = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  }
   if (d.coneSide !== undefined && e.type !== 'conePreview') {
     if (e.type !== 'cone' || !e.dir || !e.ends || !e.endRadii || Math.abs(dot(e.dir, axes.dir)) > PERPENDICULAR) return { error: t('drawing.dimNeedsChamfer') };
     const dx = dot(e.dir, right), dy = dot(e.dir, up), length = Math.hypot(dx, dy);
@@ -949,7 +989,7 @@ function chamfer(d: Extract<Dimension, { kind: 'chamfer' }>, e: ElementFacts, ax
   const leader = d.leader ?? LEADER;
   const outer = add(centre, u, leader);
   const value = size;
-  const effective = { ...d, size, chamferAngle: measuredAngle, ...(d.coneSide !== undefined && Math.abs(measuredAngle - 45) > 1e-6 ? { chamferFormat: 'distanceAngle' as const } : {}) };
+  const effective = { ...d, size, chamferAngle: measuredAngle, ...((d.coneSide !== undefined || d.straightEdge) && Math.abs(measuredAngle - 45) > 1e-6 ? { chamferFormat: 'distanceAngle' as const } : {}) };
   const { text, parts } = dimensionWords(effective, value, e, unit);
   const dir = u[0] >= 0 ? 1 : -1;
   const textAt: P = [outer[0] + dir * 1, outer[1] + 1];

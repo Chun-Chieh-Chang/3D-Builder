@@ -2,7 +2,7 @@ import { sameDrawingRef, rightOf, sheetUp, type DrawingRef, type ElementFacts, t
 import { t } from '@3db/i18n';
 import { projectedAt, projectionEntities, projectionPoint } from './projectionRefs';
 import type { DimensionDraft } from './autoDimension';
-import { arcAt, insideAt, leaderAt, offsetAt, type DimensionHandle } from './dimension';
+import { arcAt, drawingEdgeIntersection, insideAt, leaderAt, offsetAt, type DimensionHandle } from './dimension';
 import { itemsBounds } from './fit';
 import { fromSheet, toSheet, type PlacedView, type ViewLines } from './layout';
 import type { SceneItem } from './scene';
@@ -108,9 +108,11 @@ export function segmentDistance(p: P2, a: P2, b: P2): number {
 const areaOf = (f: Pickable) => (f.type === 'circle' || f.type === 'torus' ? Math.PI * f.radius * f.radius : f.type === 'edge' || f.type === 'vertex' || f.type === 'outline' ? 0 : f.area);
 
 /** Dimension tools also acquire the exact centre of a visible circle/arc. Keep its persistent circular reference: never invent a vertex at the centre. */
-export function dimensionReferenceAt(lines: ViewLines | null | undefined, features: readonly PickFeature[], p: P2, tol: number, seen?: VisibleElements, pointSnaps = true): Pickable | null {
+export function dimensionReferenceAt(lines: ViewLines | null | undefined, features: readonly PickFeature[], p: P2, tol: number, seen?: VisibleElements, pointSnaps = true, extendEdges = false): Pickable | null {
   const hit = featureAt(lines, features, p, tol, seen);
-  if (!lines || hit?.type === 'vertex') return hit;
+  if (!lines) return hit;
+  const crossing = pointSnaps ? crossingAt(seen?.edges ?? [], p, tol, extendEdges) : null;
+  if (hit?.type === 'vertex') return extendEdges && crossing?.ref.crossing?.extended && hyp(p[0] - crossing.at[0], p[1] - crossing.at[1]) < hyp(p[0] - hit.at[0], p[1] - hit.at[1]) ? crossing : hit;
   const onDrawing = (q: P2) => lines.visible.some(poly => {
     for (let i = 0; i + 3 < poly.length; i += 2) if (segmentDistance(q, [poly[i]!, poly[i + 1]!], [poly[i + 2]!, poly[i + 3]!]) <= EDGE_TOLERANCE) return true;
     return false;
@@ -125,6 +127,7 @@ export function dimensionReferenceAt(lines: ViewLines | null | undefined, featur
     if (onDrawing(at)) offer({ type: 'vertex', ref: { ...source.ref, point: selector }, at, depth: source.type === 'edge' ? source.depth : 0, source, snap }, at);
   };
   if (pointSnaps) {
+    if (crossing) offer(crossing, crossing.at);
     for (const e of seen?.edges ?? []) point(e, [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2], 'midpoint', 'midpoint');
     for (const o of outlinesOf(features)) {
       const side = o.side === 1 ? 'Positive' : 'Negative';
@@ -150,6 +153,33 @@ export function dimensionReferenceAt(lines: ViewLines | null | undefined, featur
     if (visible) offer(f, f.centre);
   }
   return (best as { f: Pickable } | null)?.f ?? hit;
+}
+
+function crossingAt(edges: readonly EdgePick[], p: P2, tolerance: number, extendEdges: boolean): VertexPick | null {
+  const near = edges.filter(e => {
+    if (e.ref.kind !== 'edge') return false;
+    if (!extendEdges) return segmentDistance(p, e.a, e.b) <= tolerance;
+    const x = e.b[0] - e.a[0], y = e.b[1] - e.a[1];
+    return Math.abs((p[0] - e.a[0]) * y - (p[1] - e.a[1]) * x) <= tolerance * hyp(x, y);
+  });
+  let best: { pick: VertexPick; gap: number; reach: number } | null = null;
+  for (const [i, a] of near.entries()) {
+    if (a.ref.kind !== 'edge') continue;
+    for (let j = i + 1; j < near.length; j++) {
+      const b = near[j]!;
+      if (b.ref.kind !== 'edge' || a.ref.name === b.ref.name || a.ref.in !== b.ref.in) continue;
+      const real = drawingEdgeIntersection(a.a, a.b, b.a, b.b, false);
+      const at = real ?? (extendEdges ? drawingEdgeIntersection(a.a, a.b, b.a, b.b, true) : null);
+      if (!at) continue;
+      const gap = hyp(p[0] - at[0], p[1] - at[1]);
+      if (gap > tolerance) continue;
+      const reach = segmentDistance(at, a.a, a.b) + segmentDistance(at, b.a, b.b);
+      if (best && (gap > best.gap + 1e-9 || (Math.abs(gap - best.gap) <= 1e-9 && reach >= best.reach))) continue;
+      const edge = { kind: 'edge' as const, name: b.ref.name, ...(b.ref.fingerprint ? { fingerprint: b.ref.fingerprint } : {}) };
+      best = { pick: { type: 'vertex', at, depth: Math.max(a.depth, b.depth), ref: { ...a.ref, point: 'intersection', crossing: { edge, extended: real === null } } }, gap, reach };
+    }
+  }
+  return best?.pick ?? null;
 }
 
 /** Keep exact native references and explicit point snaps; a nearby unrelated analytic feature must not steal a generated contour. */
@@ -265,7 +295,7 @@ export function factsOf(f: Pickable, axes: ViewAxes): ElementFacts {
   }
   if (f.type === 'edge') {
     const l = hyp(f.b[0] - f.a[0], f.b[1] - f.a[1]);
-    return { kind: 'edge', type: 'line', point: at((f.a[0] + f.b[0]) / 2, (f.a[1] + f.b[1]) / 2), dir: at((f.b[0] - f.a[0]) / l, (f.b[1] - f.a[1]) / l) };
+    return { kind: 'edge', type: 'line', point: at((f.a[0] + f.b[0]) / 2, (f.a[1] + f.b[1]) / 2), dir: at((f.b[0] - f.a[0]) / l, (f.b[1] - f.a[1]) / l), ends: [at(...f.a), at(...f.b)] };
   }
   if (f.type === 'plane') return f.axis === 'x' ? { kind: 'face', type: 'plane', point: at(f.coord, 0), dir: at(1, 0) } : { kind: 'face', type: 'plane', point: at(0, f.coord), dir: at(0, 1) };
   if (f.type === 'slant' && f.cone) return { kind: 'face', type: 'conePreview', point: at(f.at[0], f.at[1]) };
@@ -330,6 +360,38 @@ export function dragDimension(handle: DimensionHandle, onText: boolean, p: P2): 
   return { arc: Math.round(arcAt(handle, p) * 100) / 100 };
 }
 
+/** Align an axis-parallel dimension line with the nearest compatible line, in sheet millimetres. */
+export function snapDimensionLine(
+  handle: DimensionHandle,
+  patch: ReturnType<typeof dragDimension>,
+  candidates: Iterable<DimensionHandle>,
+  tolerance: number,
+): ReturnType<typeof dragDimension> {
+  if (handle.kind !== 'linear' || handle.orientation === 'aligned') return patch;
+  const onView = patch.insideAt !== undefined;
+  if (!onView && patch.offset === undefined) return patch;
+  const axis = handle.orientation === 'horizontal' ? 1 : 0;
+  const { box, placed } = handle;
+  const [lo, hi] = axis === 1 ? [box.bottom, box.top] : [box.left, box.right];
+  const edge = (patch.offset ?? 0) < 0 ? lo : hi;
+  const proposed = onView ? placed.at[axis] + (patch.insideAt! - placed.centre[axis]) * placed.scale : edge + patch.offset!;
+  let best: number | undefined;
+  let distance = tolerance;
+  for (const candidate of candidates) {
+    if (candidate.kind !== 'linear' || candidate.orientation !== handle.orientation) continue;
+    const coord = candidate.mid[axis];
+    // Keep a line already on the view on it, and keep an outside line on its current side.
+    const compatible = onView ? coord >= lo && coord <= hi : edge === lo ? coord < lo : coord > hi;
+    const gap = Math.abs(coord - proposed);
+    if (!compatible || gap > distance || (gap === distance && best !== undefined && coord >= best)) continue;
+    best = coord;
+    distance = gap;
+  }
+  if (best === undefined) return patch;
+  if (!onView) return { ...patch, offset: best - edge };
+  return { ...patch, insideAt: placed.centre[axis] + (best - placed.at[axis]) / placed.scale };
+}
+
 /**
  * The dimension that is made from the elements the user pointed at (one or two, in the order they were pointed at) and the place they pointed at to put it (sheet mm): its
  * kind from the elements (a circle alone is a diameter, an arc a radius; two planes or a plane and a circle are a distance; two lines that are not parallel are an angle),
@@ -387,6 +449,7 @@ function planChamfer(picks: readonly Pickable[], p: P2, placed: PlacedView, axes
   const dx = Math.abs(b[0] - a[0]);
   const dy = Math.abs(b[1] - a[1]);
   const cone = f.type === 'slant' ? f.cone : undefined;
+  const profile = cone ? f : f.type === 'edge' ? f : along!;
   if (!Number.isFinite(dx + dy) || (!cone && (dx <= 1e-9 || dy <= 1e-9))) return { error: t('drawing.dimNeedsChamfer') };
   const equalLegs = Math.abs(dx - dy) <= 1e-7;
   const c = cone ? (cone.setback ?? cone.axial) : Math.max(dx, dy);
@@ -400,16 +463,16 @@ function planChamfer(picks: readonly Pickable[], p: P2, placed: PlacedView, axes
   return {
     draft: {
       kind: 'chamfer',
-      ref: f.ref,
+      ref: profile.ref,
       angle,
       size,
       chamferAngle,
       chamferFormat: (cone ? Math.abs(cone.axial - cone.radial) <= 1e-7 : equalLegs) ? 'c' : 'distanceAngle',
-      ...(cone ? { coneSide: cone.side } : {}),
+      ...(cone ? { coneSide: cone.side } : { straightEdge: true }),
       leader,
     },
-    refs: [f],
-    facts: [factsOf(f, axes)],
+    refs: [profile],
+    facts: [factsOf(profile, axes)],
   };
 }
 

@@ -290,7 +290,18 @@ export function elementFacts(topology: Topology, names: ElementNames, ref: Drawi
       const threads = e.faces.flatMap((face) => { const ct = threadOnFace(topology, names, face, cosmeticThreads); return ct ? [ct] : []; });
       return { kind: 'edge', type: 'circle', point: g.center, dir: g.normal, radius: g.radius, ...(threads.length === 1 ? { thread: threads[0] } : {}), ...(holes.length === 1 ? { hole: holes[0] } : {}) };
     }
-    if (e.curve === 'line' && e.dir) return { kind: 'edge', type: 'line', point: e.mid, dir: e.dir };
+    if (e.curve === 'line' && e.dir) {
+      const first = topology.vertices[e.vertices[0]!]?.point;
+      const last = topology.vertices[e.vertices[1]!]?.point;
+      if (ref.crossing) {
+        const { name, fingerprint } = ref.crossing.edge;
+        const other = elementFacts(topology, names, { kind: 'edge', name, ...(fingerprint ? { fingerprint } : {}) });
+        if ('error' in other) return other;
+        if (!first || !last || other.type !== 'line' || !other.ends) return { error: t('drawing.dimPointLost') };
+        return { kind: 'edge', type: 'line', point: e.mid, dir: e.dir, ends: [first, last], crossingEnds: other.ends };
+      }
+      return { kind: 'edge', type: 'line', point: e.mid, dir: e.dir, ...(first && last ? { ends: [first, last] } : {}) };
+    }
     return { error: t('drawing.refKind', { name: ref.name }) };
   }
   if (ref.kind === 'face') {

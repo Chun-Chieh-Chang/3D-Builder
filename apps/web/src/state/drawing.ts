@@ -1090,8 +1090,11 @@ export class DrawingStore {
           });
         }
         // what the elements are
-        const need = new Map<string, Map<string, Ref>>();
+        const need = new Map<string, Map<string, DrawingRef>>();
         const refsOf = (d: Dimension): DrawingRef[] => dimensionRefs(d);
+        const factsKey = (part: string, ref: DrawingRef): string => ref.crossing
+          ? JSON.stringify([part, ref.kind, ref.name, ref.fingerprint, ref.crossing.edge])
+          : `${part}|${ref.kind}|${ref.name}`;
         const keyOfDim = (d: Dimension): string | null => {
           const view = allDocViews.find((v) => v.id === d.view);
           return view && !this.assemblyData(view) ? this.keyOf(view) : null;
@@ -1112,8 +1115,9 @@ export class DrawingStore {
             // in a view of an assembly the element is its part's, asked of that part
             const part = key ?? (ref.in ? leafOf(d, ref)?.key : null);
             if (!part) continue;
-            const id = `${part}|${ref.kind}|${ref.name}`;
-            if (!this.elementCache.has(id)) need.set(part, (need.get(part) ?? new Map()).set(id, { kind: ref.kind, name: ref.name, ...(ref.fingerprint ? { fingerprint: ref.fingerprint } : {}) }));
+            const id = factsKey(part, ref);
+            const request: DrawingRef = { kind: ref.kind, name: ref.name, ...(ref.fingerprint ? { fingerprint: ref.fingerprint } : {}), ...(ref.crossing ? { point: 'intersection', crossing: ref.crossing } : {}) };
+            if (!this.elementCache.has(id)) need.set(part, (need.get(part) ?? new Map()).set(id, request));
           }
         }
         // the edges and vertices of the parts of each view of an assembly (D-I2)
@@ -1168,7 +1172,7 @@ export class DrawingStore {
                 if (ref.kind === 'projection') return null;
                 const at = ref.in ? leafOf(d, ref) : null;
                 if (!at) return { error: t('drawing.dimNoPart', { name: ref.name }) };
-                const facts = this.elementCache.get(`${at.key}|${ref.kind}|${ref.name}`);
+                const facts = this.elementCache.get(factsKey(at.key, ref));
                 return facts && !('error' in facts) ? placeElementFacts(facts, placementRows(at.leaf.pose, !!at.leaf.mirrored)) : facts;
               });
               if (got.some((g) => g === undefined)) continue;
@@ -1178,7 +1182,7 @@ export class DrawingStore {
             }
             const key = keyOfDim(d);
             if (!key) continue;
-            const got = refsOf(d).map((ref) => ref.kind === 'projection' ? null : this.elementCache.get(`${key}|${ref.kind}|${ref.name}`));
+            const got = refsOf(d).map((ref) => ref.kind === 'projection' ? null : this.elementCache.get(factsKey(key, ref)));
             if (got.some((g) => g === undefined)) continue;
             const bad = got.find((g) => g && 'error' in g) as { error: string } | undefined;
             elements.set(d.id, bad ? { error: bad.error } : { elements: got as (ElementFacts | null)[] });

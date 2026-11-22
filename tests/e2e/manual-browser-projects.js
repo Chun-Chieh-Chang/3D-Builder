@@ -18,6 +18,27 @@ const setInput = (el, v) => {
 const notice = () => store.getState().notice?.text ?? '';
 const waitNotice = (part, what) => H.waitFor(() => notice().includes(part), 20000, what ?? `notice ${part}`);
 const fileDialog = (mode) => H.waitFor(() => document.querySelector(`[data-project-file="${mode}"]`), 10000, `the ${mode} dialog of the project`);
+const listedFile = (mode, path) => H.waitFor(
+  () => document.querySelector(`[data-project-file="${mode}"] [data-file="${path}"]`), 10000, `${path} to appear in the ${mode} dialog`,
+);
+const useProject = (name, timeout) => H.waitFor(
+  () => store.getState().projectName === name && store.getState().projectInBrowser && store.getState().dialog === null,
+  timeout, `the browser project ${name} to be active`,
+);
+const openFile = async (path) => {
+  const button = await listedFile('open', path);
+  const previous = store.getState().notice;
+  let opened = false;
+  const unsubscribe = store.subscribe(() => {
+    if (store.getState().notice !== previous && notice() === `已開啟 ${path}`) opened = true;
+  });
+  try {
+    button.click();
+    await H.waitFor(() => opened, 20000, `${path} to open`);
+  } finally {
+    unsubscribe();
+  }
+};
 const NAME = '瀏覽器專案測試';
 const IMPORTED = '瀏覽器專案測試-匯入';
 
@@ -38,13 +59,10 @@ window.__browserProjects = { run: async () => {
     const manager = await H.waitFor(() => document.querySelector('[data-browser-projects-dialog]'), 5000, 'the browser projects dialog');
     check(manager.textContent.includes('清除這個網站的資料'), 'the dialog says what clearing the site data does');
     setInput(manager.querySelector('[data-new-name]'), 'a/b');
-    await H.wait(100);
-    check(manager.querySelector('[data-create]').disabled && manager.querySelector('.error-text'), 'a name with "/" is refused before anything is made');
+    await H.waitFor(() => manager.querySelector('[data-create]').disabled && manager.querySelector('.error-text'), 5000, 'a name with "/" to be refused');
     setInput(manager.querySelector('[data-new-name]'), NAME);
-    await H.wait(100);
-    manager.querySelector('[data-create]').click();
-    await waitNotice(`目前的專案：瀏覽器內的「${NAME}」`);
-    check(store.getState().projectInBrowser && store.getState().projectName === NAME, 'the new project is the project');
+    (await H.waitFor(() => manager.querySelector('[data-create]:enabled'), 5000, 'the project name to be accepted')).click();
+    await useProject(NAME, 20000);
     const project = await BP.browserProject(NAME);
     // the parts come into the project (a person would use 「從電腦加入專案…」, a dialog of the system a script cannot answer)
     for (const [path, url] of [['定位板.3dbx', `${H.GOLDEN}locating-plate.3dbx`], ['零件/削邊銷.3dbx', `${H.GOLDEN}diamond-pin.3dbx`]]) {
@@ -70,6 +88,7 @@ window.__browserProjects = { run: async () => {
     // saved again under the same name: the dialog asks before replacing
     await H.action('檔案', '另存新檔');
     dialog = await fileDialog('save');
+    await listedFile('save', '治具組.3dba');
     setInput(dialog.querySelector('[data-file-name]'), '治具組.3dba');
     dialog.querySelector('[data-save]').click();
     await H.waitFor(() => dialog.querySelector('[data-replace]'), 5000, 'the question whether to replace');
@@ -90,18 +109,17 @@ window.__browserProjects = { run: async () => {
     // ---- open the assembly again from the project: its parts are found by their paths in it
     await H.action('檔案', '開啟舊檔');
     dialog = await fileDialog('open');
+    await listedFile('open', '治具組.3dba');
     const listed = [...dialog.querySelectorAll('[data-file]')].map((b) => b.dataset.file);
     out.listed = listed;
     check(['治具組.3dba', '工程圖/治具組.3dbd', '定位板.3dbx', '零件/削邊銷.3dbx'].every((f) => listed.includes(f)), `the open dialog lists the project's files: ${listed}`);
-    dialog.querySelector('[data-file="治具組.3dba"]').click();
-    await waitNotice('已開啟 治具組.3dba');
+    await openFile('治具組.3dba');
     await H.loaded();
     check(H.asm().doc.components.length === 2 && [...H.asm().files.values()].every((s) => s.status === 'ok'), 'both parts of the reopened assembly are read');
 
     // ---- a part saved the way Safari without createWritable does: through the worker
     await H.action('檔案', '開啟舊檔');
-    (await fileDialog('open')).querySelector('[data-file="定位板.3dbx"]').click();
-    await waitNotice('已開啟 定位板.3dbx');
+    await openFile('定位板.3dbx');
     await H.settle();
     const plate = await project.getFileHandle('定位板.3dbx');
     const original = new Uint8Array(await (await plate.getFile()).arrayBuffer());
@@ -147,7 +165,7 @@ window.__browserProjects = { run: async () => {
     };
     document.querySelector('[data-browser-projects-dialog] [data-import]').click();
     // imported, it is the project (the notice of that comes right after the one of the import)
-    await H.waitFor(() => store.getState().projectName === IMPORTED && store.getState().projectInBrowser, 20000, 'the imported project to be the project');
+    await useProject(IMPORTED, 20000);
     const back = (await BP.filesOf(await BP.browserProject(IMPORTED))).map((e) => e.name).sort();
     check(JSON.stringify(back) === JSON.stringify(entries), `the imported project has the same files: ${back}`);
     check(!BP.exportDue(IMPORTED), 'an imported project is on the computer already: no reminder to export it');
@@ -155,10 +173,9 @@ window.__browserProjects = { run: async () => {
     // ---- a project in use is not deleted; another one is, after the second press
     await H.action('檔案', '瀏覽器內專案…');
     (await H.waitFor(() => document.querySelector(`[data-browser-projects-dialog] [data-browser-project="${NAME}"] [data-use]`), 5000, 'the row of the first project')).click();
-    await H.waitFor(() => store.getState().projectName === NAME, 5000, 'the first project to be the project again');
+    await useProject(NAME, 5000);
     await H.action('檔案', '開啟舊檔'); // open the assembly so that NAME is its project
-    (await fileDialog('open')).querySelector('[data-file="治具組.3dba"]').click();
-    await waitNotice('已開啟 治具組.3dba');
+    await openFile('治具組.3dba');
     await H.loaded();
     await H.action('檔案', '瀏覽器內專案…');
     let nameRow = await H.waitFor(() => document.querySelector(`[data-browser-projects-dialog] [data-browser-project="${NAME}"]`), 5000, 'the row');
@@ -166,7 +183,7 @@ window.__browserProjects = { run: async () => {
     (await H.waitFor(() => nameRow.querySelector('[data-delete-yes]'), 2000, 'the confirmation')).click();
     await waitNotice('請先關閉它們再刪除');
     check((await BP.listBrowserProjects()).includes(NAME), 'the project in use is still there');
-    const importedRow = document.querySelector(`[data-browser-project="${IMPORTED}"]`);
+    const importedRow = await H.waitFor(() => document.querySelector(`[data-browser-project="${IMPORTED}"]`), 5000, 'the row of the imported project');
     importedRow.querySelector('[data-delete]').click();
     (await H.waitFor(() => importedRow.querySelector('[data-delete-yes]'), 2000, 'the confirmation')).click();
     await waitNotice(`已刪除瀏覽器內專案「${IMPORTED}」`);
@@ -178,7 +195,7 @@ window.__browserProjects = { run: async () => {
     const folderModal = await H.waitFor(() => [...document.querySelectorAll('.modal')].find((m) => m.textContent.includes('test: which project?')), 5000, 'the project-folder dialog');
     check(![...folderModal.querySelectorAll('button')].some((b) => b.textContent === '選擇資料夾…'), 'no folder picker is offered');
     check(folderModal.textContent.includes('這個瀏覽器不能開啟電腦上的資料夾'), 'it says why');
-    folderModal.querySelector(`[data-browser-project="${NAME}"] [data-use]`).click();
+    (await H.waitFor(() => folderModal.querySelector(`[data-browser-project="${NAME}"] [data-use]`), 5000, 'the project in the folder dialog')).click();
     const answered = await asked;
     check(answered && (await BP.browserProjectName(answered)) === NAME, '「使用」 answers the dialog with the project');
 

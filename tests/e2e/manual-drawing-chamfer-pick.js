@@ -10,11 +10,11 @@ const s = () => store.getState().drw, d = () => store.drawingStore, pg = () => H
 const must = (ok, text) => { if (!ok) throw new Error(text); };
 const canvas = () => document.querySelector('[data-drawing-canvas]');
 const sheet = (view, p) => D.toSheet(d().scene().placed.get(view.id), ...p);
-async function click(p) {
+async function click(p, shiftKey = false) {
   const r = document.querySelector('[data-svg] svg').getBoundingClientRect();
   const x = r.left + p[0] / 420 * r.width, y = r.top + (297 - p[1]) / 297 * r.height;
   for (const type of ['pointermove', 'pointerdown', 'pointerup']) {
-    canvas().dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, pointerId: 66, button: 0, buttons: type === 'pointerdown' ? 1 : 0, bubbles: true })); await H.wait(60);
+    canvas().dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, pointerId: 66, button: 0, buttons: type === 'pointerdown' ? 1 : 0, bubbles: true, shiftKey })); await H.wait(60);
   }
 }
 window.__drawingChamferPick = { run: async () => {
@@ -61,6 +61,32 @@ window.__drawingChamferPick = { run: async () => {
       must(notes.some(n => n.includes('導角直邊')), 'immediate explicit explanation');
       must(pg().dimensions.length === 1, 'no fabricated chamfer added');
       d().setTool(null);
+    });
+    await step('5 Shift selects the persistent virtual sharp and the worker resolves it from the native edges', async () => {
+      d().setTool({ kind: 'dimension', mode: 'horizontal', picks: [] });
+      await click(sheet(view, [40, 30]), true);
+      must(s().tool?.picks[0]?.feature.ref.crossing?.extended === true, 'Shift picks the two model edges at the virtual sharp');
+      await click(sheet(view, [0, 0]));
+      await click(sheet(view, [23, 46]));
+      const dimension = await H.waitFor(() => pg().dimensions.find(x => x.kind === 'linear'), 10000, 'a linear dimension with a virtual sharp');
+      const outcome = await H.waitFor(() => {
+        const value = d().scene().dimensions.get(dimension.id);
+        return value?.value === undefined ? null : value;
+      }, 10000, 'the worker to resolve the two edges');
+      must(Math.abs(outcome.value - 40) < 1e-6 && dimension.a.crossing?.extended, 'the dimension measures the unchamfered 40 mm width');
+    });
+    await step('6 save and cold-open the virtual sharp on a new worker', async () => {
+      H.next.save = 'virtual-sharp.3dbd'; await H.action('檔案', '儲存檔案');
+      await H.waitFor(() => s().fileName === 'virtual-sharp.3dbd' && !s().dirty, 10000, 'the drawing to save');
+      await H.action('檔案', '新零件'); store.restartWorker();
+      await H.waitFor(() => store.getState().bootMs !== null && !store.getState().rebuilding, 20000, 'fresh native worker');
+      await H.open('virtual-sharp.3dbd');
+      const linear = pg().dimensions.find(dim => dim.kind === 'linear');
+      const outcome = await H.waitFor(() => {
+        const value = d().scene().dimensions.get(linear?.id);
+        return value?.value === undefined ? null : value;
+      }, 30000, 'the reopened intersection to recalculate');
+      must(linear?.a.crossing?.extended && Math.abs(outcome.value - 40) < 1e-6, 'both references survive a cold reopen');
     });
     return { pass: true, steps };
   } catch (error) { return { pass: false, steps, error: String(error?.stack ?? error) }; }

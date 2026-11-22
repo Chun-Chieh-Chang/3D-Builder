@@ -1,5 +1,35 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-22（23:26）— 七項裁決、R1-8032 公差補齊與提交
+
+- 使用者裁決（決策頁 `DELIVERY/pending-decisions.html`）：跨頁剖切線維持現行（1A）；5 個小角度依原圖人工標註（2A）；R1-8032 接受 10 項雜亂（3A）；一般公差暫用 ISO 2768-m（4A）；CNS 以教材數值結案並註記缺口（5B）；照片閉環暫緩（6B）；本輪 commit＋push（7B）。
+- 4A 執行：`drawing_apply` 對 R1-8032 A1 稿兩頁寫入 `generalTolerance = ISO 2768-m（暫定；正式發行前依原圖確認）`；回報 **C5 通過**（D5 仍 10 項，`status: draft`）。產物 `out/approved-20261122/R1-8032-A1-review/R1-8032-A1-review-final.3dbd` 與 `.pdf`（2 頁 841×594 mm、511,153 B，PDF 依 draft 規則標 PRELIMINARY）；檢查 JSON 為同目錄 `final-checks.json`。
+- 5B 執行：`docs/design/drawing-rules-cns.md` §5「CNS 數值的核對」改為「已決定（使用者，2026-11-22）：以教材數值結案」，並註明 CNS 3／B1001 原文未取得、正式發行前另案核對（特別是最小字高表）。
+- 本輪不再改動斜面角度規則：探針已證明自動值（3.738°／1.0°）與原圖（1.718°／2.0° 級）不符，硬補會標錯；差異清單 `gap-vs-original.md` 作為人工標註工作單。
+- 回歸與檢查（提交前）：工程圖 6 檔 108 項＋斜面基準面 2 項、黃金件版面 5 列 0 失敗、`typecheck`、`lint:rules`／`deps`／`i18n`／`repo`、`git diff --check` 全部通過。
+
+## 2026-11-22（22:21）— 交點／虛交點參照、直邊倒角連動與 R1-8032 選紙修復
+
+- 工程圖 Schema 43（在 42 的 `textOffset` 之上）：`DrawingPoint` 加 `intersection`；`DrawingRef` 加 `crossing: { edge, extended }`（虛交點為延長線相交）；直邊倒角加 `straightEdge`，由目前邊端點求退距。命令層與讀檔都驗證：兩參照同類、名稱不同、`extended` 為布林、`@flat:` 種類一致。MCP 求值失敗時保留交點參照並回報（`drawing.dimPointLost`），不再靜默刪除；面板與視圖可編輯。
+- 回歸（工作樹）：`apps/mcp/test` 與 `tests/phase5` 5 檔 **84 項通過**；瀏覽器 4 流程 PASS；375／390／768 px 無溢出；`typecheck` 通過。證據 `out/approved-20261122/handoff-intersection-regression.log`、`handoff-intersection-verified-ui.json`、`virtual-intersection-mobile.json`。
+- `drawingSession.create` 第 2 頁選紙：偏好紙張落在 1:100 fallback 且版面 faults > 0 時允許升紙（A2→A1→A0）。R1-8032 重現測試由紅轉綠：A3 1:100（fillH 1.102、detailPlacement 失敗）→ A1 5:1（fillH 0.658、淨空 6.528、版面閘門全過）。證據 `r18032-auto-red.json`、`r18032-auto-green.json`；本輪重跑報告 `r18032-auto-verified.json`（A1 5:1、fillH 0.658、淨空 6.528、閘門全過）在 420 秒逾時前寫出，逾時發生於斷言後清理階段；同一測試先前 316 秒完整通過。
+- 未完成（照實）：D5 雜亂以自動微調由 35 降至 **10**（兩輪 15 次移動，−71%；剩 3 組尺寸線互交非文字可解），C5 一般公差空白，A1 審閱稿仍 `draft`；R1-10226 7 個斜面缺標（`import1:f203/f211/f218/f91/f92/f124/f125`，覆蓋 22／29）與跨頁標註待與原始工程圖對讀；CNS 3／B1001 全文與照片閉環待外部資料。斜面診斷：7 面在左視／剖面 A-A 都是 slant 特徵、有平面可量、未隱藏；已存審閱稿 6 面已有 angle 尺寸、該圖覆蓋 29／29（僅 f203 缺，規劃對 f93 的 angle 求值成功 3.7379°），全新自動建立卻全數沒留下——差異在建立流程。重現（`r110226-guard-probe.json`）：移除 6 個既有 angle 後重規劃，6 個 draft 全被 `dimensionAll` 的「弧心離視圖框 > 8×scale」規則判為 detached（弧心 12.65–278.58 mm，上限 8；角度 1°–8° 本身正常）。機制已重現。修正（工作樹未提交）：`autoDrawing.ts` 斜面選基準面在同軸優先後加入「交點離視圖框 ≤ 8 mm」排序；R1-10226 全新建立缺標 7 → 5（f91、f124 自動補上，覆蓋 24／29），剩 5 面為 1°–8° 小角度需引線註記（未做）。回歸 6 檔 108 項全過、typecheck 過；新增 `tests/phase5/drawing-slant-anchor.test.ts` 2 項通過（近交點優先、同軸優先仍成立），`lint:repo` OK。修正後實檔 `out/approved-20261122/r110226-auto-fixed/`（.3dbd、PDF、coverage 24／29、版面閘門通過）。證據 `r110226-slant-probe.json`、`r110226-plan-probe.json`、`r110226-eval-probe.json`、`r110226-guard-probe.json`。
+- 原圖到手（`R1-10226-MC_04_mdx.pdf`，4 張 SIZE B、第三角法、英吋、ASME Y14.5-2009、Rev04）：一般公差 .X±.03"／.XX±.01"／.XXX±.005"／.XXXX±.0005"、角度 ±5°／±0.5°；小角度以角度值標註（.25°、1.718°、.5°、2.0°、8.0°…）。已據此補 **C5**（兩頁填換算 mm）與 **C7**（3D 模型權威註記），皆通過；產物 `out/approved-20261122/r110226-auto-fixed/R1-10226-auto-tol.3dbd`／`.pdf`。仍未解：D5 雜亂 81；5 斜面—自動規劃值 3.738° 與原圖 1.718°／2.0° 不符，基準面選錯會標錯，需改以軸線量測（新能力）。差異清單：剖面缺 D-D、詳圖缺 F 多 D；角度僅 8°／30° 共用（原圖另有 .25／.5／1.718／2.0／10／25／45／48／55／90°，自動圖另有 19.7／35／63.26／85°）——角度屬設計意圖，非幾何可推。軸線量測：f92／f125＝8.0°（吻合原圖）、f218＝1.0°、f203／f211＝3.738°（與原圖 1.718／2.0 級不符）。跨頁剖切線策略與原圖不同（我們用第 2 頁參考視圖承載 B-B），待使用者決定。
+- 支線：hosted GitHub Pages 對本機 MCP 的 Origin 檢查以 4403 拒絕（預設白名單），`THREEDB_LIVE_ORIGINS` 可放行；瀏覽器端混合內容／PNA 尚未實測。
+
+## 2026-11-22 — 尺寸文字偏移、實件複核與驗收整合
+
+- 工程圖 Schema 42 儲存可選的 `textOffset`。Web Alt 拖曳與屬性面板呼叫相同尺寸修改命令，SVG、PDF、DXF 共用已偏移的文字座標。原有沿線位移仍可獨立調整。
+- 水平／垂直尺寸線以同方向尺寸的圖紙位置為吸附目標，受視圖內外界線限制。Alt 可暫停吸附。瀏覽器以真實定位板量測線的位置並驗證復原與 Alt 拖曳。
+- 新建直邊倒角尺寸記住選取的真實模型邊。重建後取邊端點重新求長退距和角度，視圖失去真形時回報錯誤。舊圖的手動倒角標註、錐面倒角的參照與求值沿用原規則。用獨立建立的真實方塊及倒角重建核對 C1 變 C2、存讀往返與命令拒絕手改。
+- 紅隊核對四問。命令與讀檔都拒絕非有限偏移或不合規格的座標。排版修改只移文字，未呼叫布林。依賴沿用實際量測的尺寸參照，復原與重做由工程圖命令處理。測試以真實定位板的水平、垂直與圓形尺寸比對模型數值和原生 DXF 幾何。
+- 回歸測試先重現命令拒絕欄位及 DXF 文字座標未移動，加入支援後模型／DXF 測試 47/47。瀏覽器定向 4/4。Playwright 375、390、768 px 驗證屬性抽屜開關、偏移欄輸入、44 px 輸入高度、14 px 字體與零頁面溢出。鍵盤 Alt 拖曳以電腦操作，窄視口使用數值欄位。
+- 瀏覽器內專案腳本進一步訂閱每次開檔通知。首次修改用輪詢觀察開檔訊息，5 次中有 1 次等候失敗。最終改為在點擊前訂閱，並等檔案實際出現在清單及專案狀態完成，連續 8 次通過。
+- FreeCAD 匯入新產 DXF 分別得到 116、103 個形狀，Chromium 成功渲染兩份 PDF。STEP 公開樣本的雜湊、幾何、往返和 FreeCAD 匯入共同寫入 `out/approved-20261122/external-acceptance-verified.json`。
+- 慢測試以 worker 內的 V8 Inspector 取樣。`smooth=false` 30.38 s，`gap 0` 26.71 s，`seed 46` 162.02 s。兩個剖面的 `Kernel.isValid` 累計約 24.7／19.9 s，seed 46 在重建原生圓角 `build` 累計約 157.6 s。未調整逾時或允收門檻。第一次只篩 seed 時漏掉同檔的 Heap 與 Kernel 初始化案例，補上選取條件後通過。
+- Antigravity `agy 1.5.14` 以 Gemini 3.8 Flash (Medium) 驗證 `v0.7.0` Sidecar 的組合件六步驟。產出 `.3dba`、STEP 與 BOM CSV。跨程序 `assembly_open` 確認兩配合成立、自由度 0／1，`assembly_inspect` 重測干涉 405.396 mm³。
+- 最終定向驗證通過 138 個 Vitest 案例（1 略過）、8 個 Chromium 瀏覽器流程及 `typecheck`、四項 lint、`git diff --check`。全套瀏覽器回歸於後續修改前停止，無全套通過結果。
+
 ## 2026-11-22（19:48）— 全域 7 客戶端 `v0.7.0` MCP 設定補齊與交接準備
 
 - **需求與實作**：

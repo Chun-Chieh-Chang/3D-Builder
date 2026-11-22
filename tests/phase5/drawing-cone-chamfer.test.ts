@@ -4,9 +4,9 @@ import { readPartFile } from '@3db/io';
 import { Kernel } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Regenerator, viewFeatures, placedViewFeatures, elementFacts, sketchCircleFacts, drawingSketchCircles, drawingSketchFacts, viewEdges, type RebuildResult } from '@3db/regen';
-import { applyDrawingCommand, createEmptyDrawing, page, parseDrawing, serializeDrawing, placementRows, placeElementFacts, viewVectors, rightOf, sheetUp, type Dimension } from '@3db/model';
-import { chamferReferenceAt, dimensionModesFor, planDimension, evaluateDimension, visibleElements, toSheet, type PlacedView, type ViewLines } from '@3db/drawing';
-import { build, sketch, circle, front, extrude } from '../phase1/builders';
+import { applyDrawingCommand, createEmptyDrawing, page, parseDrawing, serializeDrawing, placementRows, placeElementFacts, viewVectors, rightOf, sheetUp, type Dimension, type ElementFacts } from '@3db/model';
+import { chamferReferenceAt, dimensionReferenceAt, dimensionModesFor, drawingEdgeIntersection, planDimension, evaluateDimension, visibleElements, toSheet, type PlacedView, type ViewLines } from '@3db/drawing';
+import { build, sketch, circle, rectangle, front, extrude } from '../phase1/builders';
 let k: Kernel, regen: Regenerator, result: RebuildResult;
 let base: ReturnType<typeof build>, chamfer: Extract<import('@3db/model').Feature, { type: 'chamfer' }>;
 const axes = viewVectors('top');
@@ -102,6 +102,83 @@ it('re-evaluates the conical setback after a real model rebuild instead of keepi
  const outcome = evaluateDimension(dim, { elements: [facts] }, axes, placed);
  expect(outcome).toMatchObject({ value: expect.closeTo(2, 8), text: 'C2' });
  result = await regen.rebuild({ ...base, features: [...base.features, chamfer] });
+});
+
+it('re-evaluates a selected straight chamfer after the model setbacks change', () => {
+ const block = build(sketch('s', front, rectangle('r', -10, -10, 20, 20)), extrude('e', 's', 'boss', { type: 'blind', depth: '20' }));
+ const body = regen.rebuild(block).body!;
+ const edge = body.topology.edges.findIndex(e => e.curve === 'line' && Math.abs(e.dir?.[1] ?? 0) > 0.99 && Math.abs(e.mid[2] - 20) < 1e-6);
+ expect(edge).toBeGreaterThanOrEqual(0);
+ const bevel = { ...chamfer, edges: [{ kind: 'edge' as const, name: body.names.edges[edge]! }] };
+ const initial = regen.rebuild({ ...block, features: [...block.features, bevel] });
+ expect(initial.features.every(f => f.status === 'ok')).toBe(true);
+ const b = initial.body!;
+ const features = viewFeatures(b.topology, b.names, axes), lines = k.projectView(b.shape, axes) as ViewLines;
+ const seen = visibleElements(lines, viewEdges(k, b.shape, b.topology, b.names, axes), features);
+ const profile = seen.edges.find(e => e.inPlane && Math.abs(e.b[0] - e.a[0]) > 0.1 && Math.abs(e.b[1] - e.a[1]) > 0.1);
+ if (!profile) throw new Error('No native bevel edge in the projected view');
+ const mid: [number, number] = [(profile.a[0] + profile.b[0]) / 2, (profile.a[1] + profile.b[1]) / 2];
+ const pick = chamferReferenceAt(lines, features, mid, 0.1, seen)!;
+ const plan = planDimension([pick], [190, 180], placed, axes, 'chamfer');
+ if (!('draft' in plan) || plan.draft.kind !== 'chamfer') throw new Error('Could not dimension the bevel');
+ const dim: Dimension = { ...plan.draft, id: 'd', view: 'v' };
+ expect(dim).toMatchObject({ straightEdge: true, ref: { kind: 'edge' } });
+ let drawing = applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [{ id: 'v', name: 'top', source: 'block.3dbx', direction: 'top' }] });
+ drawing = applyDrawingCommand(drawing, { type: 'insertDimensions', dimensions: [dim] });
+ expect(page(parseDrawing(serializeDrawing(drawing))).dimensions[0]).toEqual(dim);
+ expect(() => applyDrawingCommand(drawing, { type: 'setDimension', dimensionId: 'd', patch: { size: 9 } })).toThrow();
+ expect(evaluateDimension(dim, { elements: plan.facts }, axes, placed)).toMatchObject({ text: 'C1' });
+ const changed = regen.rebuild({ ...block, features: [...block.features, { ...bevel, distance: '2', second: '2' }] });
+ expect(changed.features.every(f => f.status === 'ok')).toBe(true);
+ const current = changed.body!, facts = elementFacts(current.topology, current.names, dim.ref);
+ if ('error' in facts) throw new Error(facts.error);
+ expect(evaluateDimension(dim, { elements: [facts] }, axes, placed)).toMatchObject({ value: expect.closeTo(2, 8), text: 'C2' });
+ expect(evaluateDimension(dim, { elements: [facts] }, viewVectors('front'), placed)).toHaveProperty('error');
+});
+
+it('persists the virtual sharp formed by the two unchamfered edges of a native bevel', () => {
+ const block = build(sketch('s', front, rectangle('r', -10, -10, 20, 20)), extrude('e', 's', 'boss', { type: 'blind', depth: '20' }));
+ const body = regen.rebuild(block).body!;
+ const edge = body.topology.edges.findIndex(e => e.curve === 'line' && Math.abs(e.dir?.[1] ?? 0) > 0.99 && Math.abs(e.mid[2] - 20) < 1e-6);
+ const bevel = { ...chamfer, edges: [{ kind: 'edge' as const, name: body.names.edges[edge]! }] };
+ const rebuild = (distance: string) => regen.rebuild({ ...block, features: [...block.features, { ...bevel, distance, second: distance }] }).body!;
+ const first = rebuild('1');
+ const corner = body.topology.edges[edge]!.mid;
+ const right = rightOf(axes), up = sheetUp(axes);
+ const dot = (a: readonly number[], b: readonly number[]) => a.reduce((sum, value, i) => sum + value * b[i]!, 0);
+ const target: [number, number] = [dot(corner, right), dot(corner, up)];
+ const lines = k.projectView(first.shape, axes) as ViewLines;
+ const features = viewFeatures(first.topology, first.names, axes);
+ const seen = visibleElements(lines, viewEdges(k, first.shape, first.topology, first.names, axes), features);
+ const pick = dimensionReferenceAt(lines, features, target, 0.1, seen, true, true);
+ expect(pick).toMatchObject({ type: 'vertex', ref: { point: 'intersection', crossing: { extended: true } }, at: target });
+ if (!pick || pick.ref.kind === 'projection') throw new Error('Virtual sharp unavailable');
+ const ref: Dimension = { id: 'virtual', view: 'v', kind: 'linear', a: pick.ref, b: { kind: 'vertex', name: 'origin' }, orientation: 'horizontal', offset: 20 };
+ let drawing = applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [{ id: 'v', name: 'top', source: 'block.3dbx', direction: 'top' }] });
+ drawing = applyDrawingCommand(drawing, { type: 'insertDimensions', dimensions: [ref] });
+ expect(page(parseDrawing(serializeDrawing(drawing))).dimensions[0]).toEqual(ref);
+ const broken = JSON.parse(serializeDrawing(drawing));
+ broken.pages[0].dimensions[0].a.crossing.edge.kind = 'face';
+ expect(() => parseDrawing(JSON.stringify(broken))).toThrow();
+ for (const shape of [first, rebuild('2')]) {
+   const facts = elementFacts(shape.topology, shape.names, ref.a);
+   if ('error' in facts) throw new Error(facts.error);
+   const origin: ElementFacts = { kind: 'vertex', type: 'point', point: [0, 0, 0] };
+   expect(evaluateDimension(ref, { elements: [facts, origin] }, axes, placed)).toMatchObject({ value: expect.closeTo(Math.abs(target[0]), 8) });
+ }
+});
+
+it('distinguishes finite projected crossings from virtual, parallel and collapsed edges', () => {
+ for (let i = 1; i <= 100; i++) {
+   const at: [number, number] = [i / 3, 2 * i / 9];
+   const [x, y] = at;
+   const horizontal: [[number, number], [number, number]] = [[x - 4, y], [x + 4, y]];
+   expect(drawingEdgeIntersection(...horizontal, [x, y - 3], [x, y + 5], false)).toEqual([expect.closeTo(x, 9), expect.closeTo(y, 9)]);
+   expect(drawingEdgeIntersection(...horizontal, [x, y + 1], [x, y + 5], false)).toBeNull();
+   expect(drawingEdgeIntersection(...horizontal, [x, y + 1], [x, y + 5], true)).toEqual([expect.closeTo(x, 9), expect.closeTo(y, 9)]);
+ }
+ expect(drawingEdgeIntersection([0, 0], [1, 0], [0, 1], [1, 1], true)).toBeNull();
+ expect(drawingEdgeIntersection([0, 0], [0, 0], [0, 1], [1, 0], true)).toBeNull();
 });
 it('rejects an end-on cone and validates both sides under 100 native assembly placements including mirrors', () => {
  const { dim, facts } = make();

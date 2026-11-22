@@ -771,16 +771,31 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
         const rep = [...group].sort((a, b) => b.area - a.area)[0]!;
         const distToPlane = (p: Extract<ViewFeature, { type: 'plane' }>) =>
           Math.abs(p.coord - (p.axis === 'x' ? rep.at[0] : rep.at[1]));
+        // Where the slant's line meets the plane's line in this view. An angle whose arc centre lands more than 8 mm outside the view box is
+        // dropped by the caller's guard, so a plane that meets the slant near the view is preferred over a merely nearby plane: same axis first
+        // (a draft wall must be measured against a vertical plane, not at 89.5° against a horizontal one), then the meeting point.
+        const meets = (p: Extract<ViewFeature, { type: 'plane' }>): number => {
+          const t = p.axis === 'x'
+            ? (Math.abs(rep.dir[0]) > 1e-9 ? (p.coord - rep.at[0]) / rep.dir[0] : Infinity)
+            : (Math.abs(rep.dir[1]) > 1e-9 ? (p.coord - rep.at[1]) / rep.dir[1] : Infinity);
+          if (!Number.isFinite(t)) return Infinity;
+          const x = rep.at[0] + t * rep.dir[0];
+          const y = rep.at[1] + t * rep.dir[1];
+          return Math.hypot(Math.max(box.x0 - x, 0, x - box.x1), Math.max(box.y0 - y, 0, y - box.y1));
+        };
         // Prefer a datum plane aligned with the slant's primary direction so near-vertical draft walls measure their acute draft angle against a vertical plane (not 89.5° against a horizontal plane)
         const preferAxis = Math.abs(Math.abs(rep.dir[0]) - Math.abs(rep.dir[1])) > 0.1 ? (Math.abs(rep.dir[0]) > Math.abs(rep.dir[1]) ? 'y' : 'x') : null;
         const anchor = [...planes].sort(
           (a, b) =>
             Number(Boolean(v.hidden?.has(a.ref.name))) - Number(Boolean(v.hidden?.has(b.ref.name))) ||
             (preferAxis ? Number(a.axis !== preferAxis) - Number(b.axis !== preferAxis) : 0) ||
+            Number(meets(a) > 8) - Number(meets(b) > 8) ||
+            meets(a) - meets(b) ||
             Number(a.area < rep.area) - Number(b.area < rep.area) ||
             distToPlane(a) - distToPlane(b) ||
             b.area - a.area,
         )[0]!;
+
         out.push({
           view: v.viewId,
           draft: { kind: 'angle', a: rep.ref, b: anchor.ref, arc: 6, ...(group.length > 1 ? { count: group.length } : {}) },

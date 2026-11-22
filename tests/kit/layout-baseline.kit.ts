@@ -3,6 +3,7 @@
  * to scratch/layout-baseline.json (or LAYOUT_BASELINE_OUT) and a table is printed. Run:
  *   npx vitest run --config tests/kit/vitest.kit.config.ts layout-baseline
  * LAYOUT_BASELINE_EXTRA names more .3dbx files (a path each, separated by ;) to measure beside the golden parts.
+ * LAYOUT_BASELINE_SHEET measures an explicit paper size instead of automatic fitting.
  */
 import { expect, it } from 'vitest';
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -17,6 +18,7 @@ import { drawingOf } from '../../apps/mcp/src/drawingTools';
 const OUT = process.env.LAYOUT_BASELINE_OUT ?? 'scratch/layout-baseline.json';
 const extra = (process.env.LAYOUT_BASELINE_EXTRA ?? '').split(';').filter(Boolean);
 const only = process.env.LAYOUT_BASELINE_ONLY ? new RegExp(process.env.LAYOUT_BASELINE_ONLY) : null;
+const sheet = process.env.LAYOUT_BASELINE_SHEET;
 
 it('measures the layout of every part', async () => {
   const root = mkdtempSync(join(tmpdir(), 'layout-baseline-'));
@@ -31,7 +33,7 @@ it('measures the layout of every part', async () => {
       await s.open(f);
       if (!s.drawingSource()) continue;
       const t0 = Date.now();
-      const r = await callTool(s, 'drawing_create', {});
+      const r = await callTool(s, 'drawing_create', sheet ? { sheet } : {});
       if (r.isError) {
         rows.push({ part: f, error: (r.content[0] as { text: string }).text.slice(0, 200) });
         continue;
@@ -45,10 +47,13 @@ it('measures the layout of every part', async () => {
         const b = d.build(doc, pi);
         const items = b.scene.items.slice(sheetItems(single).length);
         const area = sheetMetrics(pg.sheet).area;
-        const m = layoutMetrics({ items, views: pg.views, placed: b.placed, dimensionView: new Map(pg.dimensions.map((x) => [x.id, x.view])), area });
+        const dimensionView = new Map(pg.dimensions.map((x) => [x.id, x.view]));
+        const m = layoutMetrics({ items, views: pg.views, placed: b.placed, dimensionView, area });
+        const clutter = clutterOf(items, -0.6, dimensionView);
         rows.push({
           part: f,
           page: pi + 1,
+          clutter,
           sheet: `${pg.sheet.size} ${pg.sheet.scale[0]}:${pg.sheet.scale[1]}`,
           views: pg.views.map((v) => `${v.id}:${v.kind ?? 'model'}`).join(' '),
           fillW: m.fillW,
@@ -61,7 +66,7 @@ it('measures the layout of every part', async () => {
           // the captions among the texts that are over another text or crossed by a line that is not their own (the whole list, not the first 12 of `checks`)
           captionClutter: (() => {
             const caps = new Set(b.scene.items.filter((i) => i.kind === 'text' && i.viewCaption).map((i) => (i.kind === 'text' ? i.text : '')));
-            return clutterOf(items, -0.6, new Map(pg.dimensions.map((x) => [x.id, x.view]))).texts.filter((t) => caps.has(t));
+            return clutter.texts.filter((t) => caps.has(t));
           })(),
           captions: b.scene.items.filter((i) => i.kind === 'text' && i.viewCaption).map((i) => (i.kind === 'text' ? i.text : '')),
           reach: m.views.map((v) => `${v.id} L${Math.round(v.reach.left)} R${Math.round(v.reach.right)} B${Math.round(v.reach.below)} T${Math.round(v.reach.above)}`),
@@ -70,6 +75,7 @@ it('measures the layout of every part', async () => {
           multiPage: rep.checks.layout.multiPage,
           mainView: rep.checks.layout.mainView,
           overallLayoutPass: rep.checks.layout.pass,
+          ...(pi === 0 ? { drawingCoverage: rep.checks.coverage } : {}),
           seconds: Math.round((Date.now() - t0) / 100) / 10,
         });
       }

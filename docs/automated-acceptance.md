@@ -12,6 +12,18 @@ This project keeps two kinds of evidence separate:
 | Native SolidWorks feature history and analysis | None: `.sldprt` is not parsed by this repository | A reviewed SolidWorks export or a machine-readable measurement baseline with units and settings |
 | Company standards and drafting wording | Parameterized tests can enforce a supplied table | The approved table, tolerance policy and terminology |
 
+## Combined external acceptance report
+
+Run the native STEP checks, the independent FreeCAD application imports, and the Chromium PDF checks in one command. Set `FREECAD_CMD` to an absolute path and let the script find Chromium, or set `CHROME_PATH` explicitly.
+
+```powershell
+$env:FREECAD_CMD = 'C:\Program Files\FreeCAD 26.3\bin\FreeCADCmd.exe'
+$env:EXTERNAL_ACCEPTANCE_REPORT = 'D:\reports\external-acceptance.json'
+npm run verify:external-acceptance
+```
+
+The default report path is `out/external-acceptance.json`. Each run builds fresh drawing exports in a temporary directory, checks them with the native PDF and DXF parsers, and records hashes and the external consumer results. The public STEP input hashes are pinned to the supplied fixtures. A combined report is written once all probes succeed.
+
 ## External drawing export probe (DXF & PDF)
 
 Run:

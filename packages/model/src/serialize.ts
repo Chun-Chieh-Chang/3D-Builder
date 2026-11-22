@@ -1,7 +1,7 @@
 import { t } from '@3db/i18n';
 import { DRAWING_TEXT_WIDTH, validDrawingTextWidth } from './drawingAnnotations';
 import { countersFor } from './ids';
-import { checkViewCaption, dimensionRefs, normalizeDrawingRevision, validTriangleSizePercent, validDrawingPointRef, validProjectionRef, DRAWING_SCHEMA_VERSION, DRAWING_STANDARDS, type Dimension, type DrawingDoc, type DrawingStandard } from './drawing';
+import { checkViewCaption, dimensionRefs, normalizeDrawingRevision, validDimensionTextOffset, validTriangleSizePercent, validDrawingPointRef, validProjectionRef, DRAWING_SCHEMA_VERSION, DRAWING_STANDARDS, type Dimension, type DrawingDoc, type DrawingStandard } from './drawing';
 import { ASSEMBLY_SCHEMA_VERSION, SCHEMA_VERSION, type AssemblyDoc, type PartDoc } from './schema';
 
 /**
@@ -484,6 +484,10 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   39: (doc) => doc,
   // v41 adds revision triangle markers (RevisionAnnotation) on drawing views.
   40: (doc) => doc,
+  // v42 adds optional paper-space dimension text offsets and associative straight chamfer edges.
+  41: (doc) => doc,
+  // v43 adds persistent intersections of two model edges.
+  42: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {
@@ -515,6 +519,9 @@ export function parseDrawing(text: string): DrawingDoc {
     p.title ??= {};
     p.views ??= [];
     p.dimensions ??= [];
+    for (const dim of p.dimensions as Json[]) {
+      if (dim?.textOffset !== undefined && !validDimensionTextOffset(dim.kind, dim.textOffset)) throw new FormatError(t('drawing.badPosition'));
+    }
     p.tables ??= [];
     p.surfaceFinishes ??= [];
     for (const finish of p.surfaceFinishes as Json[]) {
@@ -527,10 +534,14 @@ export function parseDrawing(text: string): DrawingDoc {
       }
     }
     for (const v of p.views as Json[]) if (v.caption !== undefined) checkViewCaption(v.caption);
-    for (const d of p.dimensions as unknown as Dimension[]) if (d.kind === 'chamfer' && d.coneSide !== undefined && (d.ref.kind !== 'face' || (d.coneSide !== 1 && d.coneSide !== -1))) throw new FormatError(t('drawing.dimBadRef'));
+    for (const d of p.dimensions as unknown as Dimension[]) {
+      if (d.kind !== 'chamfer') continue;
+      if (d.coneSide !== undefined && (d.ref?.kind !== 'face' || (d.coneSide !== 1 && d.coneSide !== -1))) throw new FormatError(t('drawing.dimBadRef'));
+      if (d.straightEdge !== undefined && (d.straightEdge !== true || d.ref?.kind !== 'edge' || d.coneSide !== undefined)) throw new FormatError(t('drawing.dimBadRef'));
+    }
     for (const d of p.dimensions as unknown as Dimension[]) for (const ref of dimensionRefs(d)) if (ref?.kind === 'projection' && !validProjectionRef(ref)) throw new FormatError(t('drawing.dimBadRef'));
     for (const d of p.dimensions as unknown as Dimension[]) for (const ref of dimensionRefs(d)) if (ref?.kind === 'sketch' && !validDrawingPointRef(ref)) throw new FormatError(t('drawing.dimBadRef'));
-    for (const d of p.dimensions as unknown as Dimension[]) for (const ref of dimensionRefs(d)) if (ref?.point !== undefined && !validDrawingPointRef(ref)) throw new FormatError(t('drawing.dimBadRef'));
+    for (const d of p.dimensions as unknown as Dimension[]) for (const ref of dimensionRefs(d)) if ((ref?.point !== undefined || ref?.crossing !== undefined) && !validDrawingPointRef(ref)) throw new FormatError(t('drawing.dimBadRef'));
   }
   // As for parts: counters cover every id in the file, even one edited by hand or by a script.
   const ids = pages.flatMap((p) => [...(p.views as Json[]), ...(p.dimensions as Json[]), ...(p.tables as Json[]), ...(p.surfaceFinishes as Json[]), ...(p.annotations as Json[])].map((v) => v.id as string));

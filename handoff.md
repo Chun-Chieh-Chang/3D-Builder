@@ -1,5 +1,47 @@
 # 交接與接續工作
 
+## 2026-11-22（23:26）— 七項裁決與本輪收尾
+
+使用者於決策頁（`DELIVERY/pending-decisions.html`）裁決七項，照此執行：
+
+1. **1A 跨頁剖切線**：維持現行——第 2 頁以「左視（參考）」承載 B-B 剖切線；不改版面、不新增 ADR。
+2. **2A 五個小角度**：依原圖數值**人工標註**，以 `out/approved-20261122/r110226-auto-fixed/gap-vs-original.md` 為工作單；**不**放寬自動角度的刪除門檻（自動值 3.738°／1.0° 與原圖 1.718°／2.0° 級不符）。
+3. **3A R1-8032 剩餘雜亂**：接受 10 項（原 35），交製圖者微調；3 組尺寸線互交需改排列演算法，另案。
+4. **4A R1-8032 A1 一般公差**：填「**ISO 2768-m（暫定；正式發行前依原圖確認）**」，兩頁皆填；**C5 通過**，D5 仍 10 項，`status` 為 `draft`，PDF 依規則標 PRELIMINARY。產物 `out/approved-20261122/R1-8032-A1-review/R1-8032-A1-review-final.3dbd`／`.pdf`（2 頁 A1、511,153 B）。
+5. **5B CNS 核對**：以教材數值**結案**；CNS 3／B1001 原文（付費、未取得）列為已知缺口，已註記於 `docs/design/drawing-rules-cns.md` §5。
+6. **6B 照片閉環**：暫緩，待圖面與 MCP 收尾後再排。
+7. **7B 提交**：本輪 commit 並 push（`main`），Pages 部署由 CI 三平台檢查把關。
+
+仍未完成（照實）：R1-8032 A1 的 D5 雜亂 10 項；R1-10226 自動版 D5 81 項；5 個小角度的人工標註；CNS 原文核對；照片閉環。
+
+## 2026-11-22（22:21 續作）— 交點參照落地、R1-8032 選紙修復；工程圖剩餘縮到三項
+
+- **持久交點／虛交點參照**已實作（工作樹未提交）。工程圖 Schema 43：`DrawingPoint` 增加 `intersection`；`DrawingRef` 增加 `crossing: { edge: Ref; extended: boolean }`（`extended` 為延長線交點）；直邊倒角尺寸加 `straightEdge`（由目前邊端點取退距）；沿用 Schema 42 的 `textOffset`。合法性在命令層與讀檔檢查（同類參照、名稱不得相同、`extended` 為布林、`@flat:` 種類須一致）。MCP 端交點求值失敗時**保留參照並回報**（不再靜默刪除），`DimensionPanel`／`DrawingViewport` 可選取與編輯。
+  驗證（工作樹）：`apps/mcp/test/drawing-clearance`、`drawing-details`、`tests/phase5/drawing-cone-chamfer`、`drawing-dimension-modes`、`drawing-dimensions` 共 **5 檔 84 項通過**；瀏覽器 **4 流程 PASS**（`manual-drawing-chamfer-pick`、`manual-drawing-dimension-kinds`、`manual-drawing-dimension-on-view`、`manual-drawing-dimension-stepped`）；375／390／768 px 無頁面溢出。證據：`out/approved-20261122/handoff-intersection-regression.log`、`handoff-intersection-verified-ui.json`、`virtual-intersection-*.png`、`virtual-intersection-mobile.json`。
+- **R1-8032 自動排版退到 1:100 的根治**（工作樹未提交）：`apps/mcp/src/drawingSession.ts` 第 2 頁（含詳圖）的選紙階梯原本只到偏好紙張（auto 上限 A3）；`fitViews` 在無標準比例可用時回 `1:100` fallback，該頁仍 overfull（fillH 1.102、詳圖超距）。改為：偏好紙張落在 1:100 fallback 且 faults > 0 時允許續試 A2、A1、A0。重現測試 `scratch/ff/handoff-r18032-auto-paper.test.ts`：修復前**紅**（第 2 頁 A3 1:100、fillH 1.102、detailPlacement 失敗，`r18032-auto-red.json`）；修復後**綠**（第 1 頁 A1 20:1、第 2 頁 A1 5:1、fillH 0.658、最小淨空 6.528、版面閘門全過，`r18032-auto-green.json`）。本輪重跑：報告已於逾時前寫出（`r18032-auto-verified.json`，A1 5:1、fillH 0.658、淨空 6.528、閘門全過）；測試在 420 秒於斷言後逾時（清理階段），先前同一測試 316 秒完整通過。
+- **工程圖剩餘（照實）**：
+  1. **審閱稿雜亂與一般公差**：R1-8032 A1 稿版面閘門全過，但 D5 雜亂（門檻 0）與 C5 一般公差空白，`status` 仍為 `draft`。本輪以探針自動微調尺寸標籤（`textOffset`／`slide`，只接受「總雜亂下降、尺寸值不變、不出圖框、不動標題」的移動）：**35 → 18 → 10**（兩輪共 15 次移動，−71%）；版面閘門仍全過、覆蓋不變、出界 0。剩 10 項中含 3 組尺寸線互交（`dim41|dim48`、`dim19|dim54`、`dim21|dim54`），非文字位移可解。曾嘗試再降：尺寸線的列距由 `arrangeDimensions` 自動排、`DimensionPatch.offset` 屬 ADR 0227 的「畫在視圖上」語意，不能用來移列；要再降需改排列演算法（本輪未做）。證據 `refined-review-checks.json`、`refined2-review-checks.json`、`R1-8032-A1-review-refined2.3dbd`／`.pdf`。C5 需選定一般公差標準，未代填。
+  2. **R1-10226 缺標與跨頁標註**：兩頁 A3 1:1、版面閘門通過；斜面覆蓋 22／29，缺 `import1:f203`、`f211`、`f218`、`f91`、`f92`、`f124`、`f125`；兩頁雜亂 50／25。診斷（`out/approved-20261122/r110226-slant-probe.json`）：7 面在視圖中**都已是 slant 特徵、都有平面可量、皆未隱藏**（f203／f211／f218 在左視，21 個平面；f91／f92／f124／f125 在剖面 A-A，17 個平面），所以不是可見性問題。另對已存審閱稿 `R1-10226-annotation-refined.3dbd` 重跑規劃（`r110226-plan-probe.json`）：**6 面已有 angle 尺寸、僅 f203 仍被規劃為 angle**，顯示幾何可標；但全新自動建立時 7 面都沒留下尺寸。第三支探針（`r110226-eval-probe.json`）：在已建立的審閱稿上，**7 面中 6 面已有 angle 尺寸、該圖自身覆蓋 29／29**；僅 f203 缺，規劃它對 `f93` 的 angle **求值成功（3.7379°）**。因此差異在**建立流程**（新建立時這些 angle 未留下）。第五支探針（`r110226-guard-probe.json`）重現了刪除規則：移除 6 個既有 angle 後重新規劃，6 個 draft 全部被 `dimensionAll` 的「弧心離視圖框 > 8×scale」判為 detached 而刪除（角度本身 1°–8°，弧心超標 12.65／33.86／39.98／278.58 mm，上限 8 mm）。**機制已重現**；反向驗證（放寬該規則後 create 是否留下）尚未跑。已實作第一半（工作樹未提交）：斜面角度選基準面時，同軸優先之後加入「交點離視圖框 ≤ 8 mm」排序（對齊 `dimensionAll` 的刪除門檻）。R1-10226 全新自動建立缺標由 **7 → 5**（`f91`、`f124` 已自動標註，覆蓋 22／29 → 24／29）；剩 `f203`、`f211`、`f218`、`f92`、`f125` 為 1°–8° 小角度，交點本質上很遠（12.65–278.58 mm），需改用引線文字註記（未做）。回歸 6 檔 **108 項全過**、`typecheck` 過；新增可追蹤測試 `tests/phase5/drawing-slant-anchor.test.ts`（2 項：近交點優先、同軸優先仍成立）通過，`lint:repo` OK。第二半（小角度引線註記）列為後續工作。修正後的實檔已落盤：`out/approved-20261122/r110226-auto-fixed/`（`R1-10226-step-reference.3dbd`、`R1-10226-auto-fixed.pdf`、`coverage-fixed.json`：24／29、`report-fixed.json`：兩頁 A3 1:1、版面閘門通過）。**哪些跨頁標註須補，仍須與原始正式工程圖對讀**（需使用者提供）。
+  3. **CNS 3／B1001 全表核對**：需官方標準全文（付費，未取得）。**照片閉環**：需多角度實照與實測尺寸（需使用者提供）。
+- **R1-10226 原圖到手（23:00）**：`R1-10226-MC_04_mdx.pdf`，**4 張 SIZE B（11×17 in）、第三角法、英吋、ASME Y14.5-2009、Rev04（2024-04-23）**。標題欄一般公差：.X ±.03"／.XX ±.01"／.XXX ±.005"／.XXXX ±.0005"，角度 ±5°／±0.5°。視圖：SHEET2 SECTION A-A＋SNAP DETAILS、SHEET3 SECTION B-B＋3-C、SHEET4 SECTION D-D＋DETAIL F。小角度以**角度值**標註（.25°、10.0°、1.718°、.5°×2、2.0°×3、8.0°、45°、25°、30°、48°、55°、90°）。
+  據此已補：**C5**（兩頁標題欄填入英制換算 mm：±0.76／±0.25／±0.13／±0.013，角度 ±5°／±0.5°）與 **C7**（加「未標註尺寸以 3D 模型為準（PER 3D MODEL）；來源 R1-10226-MC Rev04」），兩項**皆通過**；產物 `out/approved-20261122/r110226-auto-fixed/R1-10226-auto-tol.3dbd`／`R1-10226-auto-tol.pdf`、`final-checks.json`。
+  仍未解：D5 雜亂 81（自動版）；5 個斜面未標——探針顯示 f203／f211 規劃值 **3.738°**，與原圖 1.718°／2.0° 級**不符**，即基準面選錯會產生**錯誤角度**，故不宜自動補；正解是改以**軸線／中心線**量測拔模角（新能力，需 ADR）。
+  差異清單（`gap-vs-original.json`／`.md`）：剖面**缺 D-D**；詳圖**缺 F**、多 D；角度只有 **8°／30° 共用**，原圖另有 `.25°／.5°／1.718°／2.0°／10°／25°／45°／48°／55°／90°`，自動圖另有 `19.7°／35°／63.26°／85°`——角度是設計意圖，不能只靠幾何推得，這是自動出圖與正式圖的最大差距。軸線角度探針（`axis-angles-missing.json`）：對軸線量測得 f92／f125＝**8.0°（與原圖吻合）**、f218＝**1.0°**、f203／f211＝**3.738°**；後三者與原圖的 1.718°／2.0° 級仍不符，故即使改軸線量測也不能直接採用，需逐項對照設計意圖。
+  跨頁標註：原圖把剖切線與剖面**分張**（A-A 在 SHEET2、B-B 在 SHEET3、D-D 在 SHEET4），我們目前用第 2 頁「左視（參考）」承載 B-B 剖切線；屬策略差異，待使用者決定是否改成原圖式。
+- **本輪結論（22:40）**：可自主完成的工程項（交點／虛交點參照、R1-8032 選紙根治）已落地並有證據；其餘三項需外部資料：**R1-10226 原始正式工程圖**（判定缺標與跨頁標註）、**CNS 3／B1001 官方全文**、**實物多角度照片與實測尺寸**。已向使用者提出精準需求：提供 R1-10226 原始工程圖第 1、2 頁。工作樹**未提交、未推送**。
+- **GitHub Pages ↔ 本機 MCP live bridge（支線，部分）**：對真實 hosted 站台（`https://chun-chieh-chang.github.io/3D-Builder/`，bundle `index-C4-UVtt3.js` 已含 AI 控制對話框與 `ws://127.0.0.1`）以原始 WebSocket 探針帶 `Origin: https://chun-chieh-chang.github.io` 連本機 MCP：伺服器以 **4403 `origin not allowed`** 關閉（預設白名單只收 localhost／127.0.0.1／tauri）；`THREEDB_LIVE_ORIGINS` 可放行。**瀏覽器端尚未實測**（https → ws://127.0.0.1 的混合內容／PNA 未知）：DOM 驅動腳本在 hosted 頁面找不到 `[data-help="ai-control"]` 選單項，候選原因為點擊分頁後 React 尚未重繪即查詢（腳本競爭，未證實）。腳本 `scratch/pages-mcp-live-test.mjs`、輸出 `out/pages-mcp/`。
+
+## 2026-11-22 — 續作交接待辦
+
+- **尺寸文字 2D 偏移**已實作。按住 Alt 拖曳文字，或在尺寸屬性輸入 X／Y 圖紙毫米。兩軸歸零可重設。尺寸線的位置、參照與測量值沿用原設定。工程圖 Schema 42。座標尺寸是一組共用引線排列，維持整組移動操作。
+- **尺寸線對齊與直邊倒角**已實作。拖曳水平／垂直尺寸線時，附近平行尺寸線可吸附對齊，按 Alt 暫停。新建的直邊倒角尺寸會參照模型邊，模型改尺寸後重算。舊圖的手動倒角尺寸沿用既有數值。
+- **工程圖實件**已重新生成。R1-8032 自動版第 2 頁為 A3 1:100，垂直填滿 1.102，詳圖 F 距母視圖 108.005 mm（上限 56 mm）。指定 A2 時第 2 頁回到 2:1，但仍有一個超距詳圖。另存 A1 稿，第 2 頁 5:1，將右視參考標題移開 14 mm 後兩頁版面閘門均通過。審閱稿仍有 35 項整份雜亂，為 `draft`。`.3dbd`、PDF 與數據在 `out/approved-20261122/R1-8032-A1-review/`。R1-10226 為兩頁 A3 1:1，兩頁版面閘門通過，斜面標註 22／29，兩頁雜亂 50／25。實件重跑報告為 `out/approved-20261122/handoff-r1-10226-coverage.json`。
+- **草圖互動**現行主線已有槽／多邊形精確輸入、修改預覽與畫布輪廓選取。精確輸入的瀏覽器案例已重跑。其餘既有驗收見 [草圖互動驗收](docs/design/sketch-interaction/acceptance.md)。
+- **測試債**已修改瀏覽器內專案腳本的等待條件。最終版本連續 8 次通過。三個慢案例已在 Vitest worker 取樣。兩個剖面以原生 BRep 有效性檢查為熱點，seed 46 以重建圓角的原生 fillet 為熱點。執行紀錄和 profile 在 `out/approved-20261122/`。
+- **外部驗收**新增 `npm run verify:external-acceptance`。可重跑兩份公開鈑金 STEP、兩份新產 DXF 和兩份 PDF，並輸出同一份 JSON。[外部驗收操作](docs/automated-acceptance.md)
+- **Antigravity CLI**已通過六步驟 MCP 驗收。新 CLI 使用測試工作區的 `.agents/mcp_config.json`，本次權限限制於組合件工具。獨立重開證據在 `out/mcp-client-qa/antigravity/handoff-independent-verification.json`。[MCP 驗收矩陣](docs/design/ai-cad-control/assembly-mcp-plan.md)
+- **工程圖剩餘**為 R1-8032 自動排版退到 1:100 的根治及審閱稿雜亂、R1-10226 缺標與跨頁標註，以及持久交點／虛交點參照。官方系統查到 CNS 3／B1001 為現行標準，預覽未取得正式全文，仍待全表核對。照片閉環仍需多角度實照與實測尺寸。
+
 ## 2026-11-22（19:48 交接）— 7 處全域 MCP 設定預置完成，準備由下一位 Agent 接手
 
 - **最新主線基準**：`origin/main` 位於 `3131e5c0`（已推送多客戶端實測矩陣）；本次更新僅補齊交接與開發日誌（待使用者同意提交推送）。

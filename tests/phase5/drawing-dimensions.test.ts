@@ -194,6 +194,16 @@ describe('the dimensions in the document', () => {
     expect(back.schemaVersion).toBe(DRAWING_SCHEMA_VERSION);
     expect(page(back).dimensions).toEqual([]);
   });
+
+  it('persists and resets a two-axis paper offset and refuses malformed offsets', () => {
+    const doc = applyDrawingCommand(base(), { type: 'insertDimensions', dimensions: [lin('dim1')] });
+    const move = (drawing: DrawingDoc, textOffset: [number, number] | null) =>
+      applyDrawingCommand(drawing, { type: 'setDimension', dimensionId: 'dim1', patch: { textOffset } });
+    const moved = move(doc, [8.5, -4]);
+    expect(page(parseDrawing(serializeDrawing(moved))).dimensions[0]).toMatchObject({ textOffset: [8.5, -4], offset: -10 });
+    expect(move(moved, null)).toEqual(doc);
+    expect(() => move(doc, [8.5, Infinity])).toThrow();
+  });
 });
 
 describe('the locating plate dimensioned in its top view', () => {
@@ -269,6 +279,23 @@ describe('the locating plate dimensioned in its top view', () => {
     // stacked outward: horizontal below (negative), the overall one outermost; vertical to the right
     expect(linear('horizontal').map((x) => (x.dimension.kind === 'linear' ? x.dimension.offset : 0))).toEqual([-10, -17, -24, -31, -38]);
     expect(linear('vertical').map((x) => (x.dimension.kind === 'linear' ? x.dimension.offset : 0))).toEqual([10, 17, 24, 31]);
+  });
+
+  it('moves real model dimension labels in both paper axes and preserves the measured geometry', () => {
+    const body = built(doc);
+    const drafts = autoDimensions(viewFeatures(body.topology, body.names, top), { overall: true, holes: true, positions: false });
+    const baseline = evaluate(body, drafts);
+    const moved = evaluate(body, drafts.map((draft) => ({ ...draft, textOffset: [8.5, -4] })));
+    expect(moved.length).toBeGreaterThan(0);
+    for (const [index, { outcome }] of moved.entries()) {
+      const before = baseline[index]!.outcome;
+      if ('error' in outcome || 'error' in before || !outcome.dxf || !before.dxf) throw new Error('Expected a resolved native dimension');
+      expect(outcome.value).toBe(before.value);
+      expect(outcome.dxf.geometry).toEqual(before.dxf.geometry);
+      expect(outcome.dxf.textAt).toEqual([before.dxf.textAt[0] + 8.5, before.dxf.textAt[1] - 4]);
+      const positions = (items: typeof before.items) => items.flatMap((item) => item.kind === 'text' ? [item.at] : []);
+      expect(positions(outcome.items)).toEqual(positions(before.items).map(([x, y]) => [x + 8.5, y - 4]));
+    }
   });
 
   it('asked for separately: only the overall size, or only the holes', () => {

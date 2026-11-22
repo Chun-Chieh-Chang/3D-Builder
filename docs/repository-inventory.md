@@ -6,7 +6,7 @@
 
 | 項目 | 程式來源值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 96／7／41 |
+| 零件／組合件／工程圖 Schema | 96／7／43 |
 | ADR 文件 | 262 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 233／228／280 |
 | 實機清單項目 | 101 |
@@ -54,6 +54,7 @@
 | `lint:i18n` | `node scripts/check-i18n.mjs` |
 | `verify:ui` | `node scripts/verify-ui.mjs` |
 | `verify:external-samples` | `vitest run tests/phase7/public-sheet-metal-acceptance.test.ts` |
+| `verify:external-acceptance` | `node scripts/verify-external-acceptance.mjs` |
 | `verify:freecad-sheet-metal` | `node scripts/verify-freecad-sheet-metal.mjs` |
 | `verify:drawing-export` | `node scripts/verify-drawing-export.mjs` |
 | `check:perf` | `node scripts/check-perf.mjs` |

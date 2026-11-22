@@ -16,6 +16,7 @@ import {
   rectInBox,
   selectionBox,
   dragDimension,
+  snapDimensionLine,
   featureAt,
   fromSheet,
   layoutViews,
@@ -85,7 +86,7 @@ type Drag =
   | { kind: 'detailLabel'; id: string; from: P; origin: P; delta: P }
   | { kind: 'move'; id: string; mode: 'shift' | 'slide' | 'free'; axis: 0 | 1 | null; from: P; origin: P; delta: P }
   | { kind: 'scale'; id: string; target: ReturnType<typeof scaleTarget>; centre: P; r0: number; ratio0: number; scale: Scale }
-  | { kind: 'dimension'; id: string; from: P; onText: boolean; handle: DimensionHandle; patch: ReturnType<typeof dragDimension> }
+  | { kind: 'dimension'; id: string; from: P; onText: boolean; freeText: boolean; handle: DimensionHandle; patch: DimensionDragPatch }
   | { kind: 'sectionLine'; id: string; line: SectionDrawingView['line']; vertical: boolean; scale: number; from: P; delta: number }
   | { kind: 'table'; id: string; from: P; origin: P; delta: P }
   | { kind: 'balloon'; id: string; item: string; from: P; origin: P; delta: P }
@@ -111,7 +112,9 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * The dimension as a drag leaves it (ADR 0227): the place its line is drawn on the view (`insideAt`) and the distance it is outside it (`offset`) take turns — a
  * distance given on its own takes the line off the view, and the place given takes it back on.
  */
-function dimensionWithPatch(d: Dimension, patch: { offset?: number; slide?: number; angle?: number; leader?: number; arc?: number; insideAt?: number }): Dimension {
+type DimensionDragPatch = ReturnType<typeof dragDimension> & { textOffset?: P };
+
+function dimensionWithPatch(d: Dimension, patch: DimensionDragPatch): Dimension {
   const next = { ...d, ...patch } as Dimension & { insideAt?: number };
   if (patch.offset !== undefined) delete next.insideAt;
   return next as Dimension;
@@ -411,7 +414,7 @@ export function DrawingViewport() {
 
   /** The edges and vertices each view shows, by name (D-I2): worked out once per view from its lines and the worker's projected edges. */
   /** The element of a view under the point (the views in the order they are drawn, the last on top); when `only` is given, in that view only. */
-  const featureUnder = (p: P, only?: Id, referencePoints = true): { view: Id; feature: Pickable } | null => {
+  const featureUnder = (p: P, only?: Id, referencePoints = true, extendEdges = false): { view: Id; feature: Pickable } | null => {
     for (const v of [...curPage.views].reverse()) {
       if (only && v.id !== only) continue;
       const placed = basePlaced.get(v.id);
@@ -420,7 +423,7 @@ export function DrawingViewport() {
       const acquire = tool?.kind === 'dimension' && tool.mode === 'chamfer' ? chamferReferenceAt : referencePoints && isDimTool ? dimensionReferenceAt : featureAt;
       const pointSnaps = tool?.kind === 'ordinate' || tool?.kind === 'baseline' || (tool?.kind === 'dimension' && (!tool.mode || ['smart', 'horizontal', 'vertical', 'aligned'].includes(tool.mode)));
       const q = toView(placed, p), tolerance = reach / placed.scale;
-      const native = acquire(selectionLines.get(v.id), drw.features.get(v.id) ?? [], q, tolerance, seenByView.get(v.id), pointSnaps);
+      const native = acquire(selectionLines.get(v.id), drw.features.get(v.id) ?? [], q, tolerance, seenByView.get(v.id), pointSnaps, extendEdges);
       const f = !tool || isDimTool ? withProjectedReference(native, selectionLines.get(v.id), q, tolerance, referencePoints && pointSnaps) : native;
       if (f) return { view: v.id, feature: f };
     }
@@ -546,10 +549,10 @@ export function DrawingViewport() {
   };
 
   /** A press with the dimension tool: the first element, the second, or the place the dimension goes. */
-  const dimensionDown = (p: P) => {
+  const dimensionDown = (p: P, extendEdges: boolean) => {
     if (tool?.kind !== 'dimension') return;
     const first = tool.picks[0];
-    const hit = featureUnder(p, first?.view);
+    const hit = featureUnder(p, first?.view, true, extendEdges);
     const mode = tool.mode;
     const keep = mode ? { mode } : {};
     if (!first) {
@@ -584,10 +587,10 @@ export function DrawingViewport() {
   };
 
   /** A press with the ordinate tool (D-I4): the origin, an element, or (on the paper) where the row goes. */
-  const ordinateDown = (p: P) => {
+  const ordinateDown = (p: P, extendEdges: boolean) => {
     if (tool?.kind !== 'ordinate') return;
     const first = tool.picks[0];
-    const hit = featureUnder(p, first?.view);
+    const hit = featureUnder(p, first?.view, true, extendEdges);
     if (hit) {
       if (tool.picks.some((x) => sameDrawingRef(x.feature.ref, hit.feature.ref) && x.view === hit.view)) return;
       d.setTool({ kind: 'ordinate', picks: [...tool.picks, hit] });
@@ -603,10 +606,10 @@ export function DrawingViewport() {
   };
 
   /** A press with the baseline tool (E5): pick base element, pick 2nd element + sheet point to place initial dim, then subsequent picks auto-step */
-  const baselineDown = (p: P) => {
+  const baselineDown = (p: P, extendEdges: boolean) => {
     if (tool?.kind !== 'baseline') return;
     const viewId = tool.view ?? tool.base?.view;
-    const hit = featureUnder(p, viewId);
+    const hit = featureUnder(p, viewId, true, extendEdges);
 
     // 1. If base element is not chosen yet:
     if (!tool.base && !tool.baseRef) {
@@ -739,7 +742,8 @@ export function DrawingViewport() {
         d.setTool(null);
         d.selectDimension(hit.id);
         capture(e);
-        setDrag({ kind: 'dimension', id: hit.id, from: p, onText: curPage.dimensions.find(x => x.id === hit.id)?.kind !== 'ordinate', handle: outcome.handle, patch: {} });
+        const onText = outcome.handle.kind !== 'ordinate';
+        setDrag({ kind: 'dimension', id: hit.id, from: p, onText, freeText: onText && e.altKey, handle: outcome.handle, patch: {} });
         return;
       }
     }
@@ -758,9 +762,10 @@ export function DrawingViewport() {
       d.select(tool.parent);
       return;
     }
-    if (tool?.kind === 'dimension') return dimensionDown(p);
-    if (tool?.kind === 'ordinate') return ordinateDown(p);
-    if (tool?.kind === 'baseline') return baselineDown(p);
+    const extendEdges = e.shiftKey || e.pointerType === 'touch';
+    if (tool?.kind === 'dimension') return dimensionDown(p, extendEdges);
+    if (tool?.kind === 'ordinate') return ordinateDown(p, extendEdges);
+    if (tool?.kind === 'baseline') return baselineDown(p, extendEdges);
     if (tool?.kind === 'annotate') {
       if (tool.what === 'centreLine' && !betweenEdges && !tool.first) {
         centreLinePress.current = { point: p, pointerId: e.pointerId };
@@ -869,7 +874,8 @@ export function DrawingViewport() {
       d.selectDimension(dim.id);
       if (outcome.handle) {
         capture(e);
-        setDrag({ kind: 'dimension', id: dim.id, from: p, onText: dim.text && curPage.dimensions.find((x) => x.id === dim.id)?.kind !== 'ordinate', handle: outcome.handle, patch: {} });
+        const onText = dim.text && outcome.handle.kind !== 'ordinate';
+        setDrag({ kind: 'dimension', id: dim.id, from: p, onText, freeText: onText && e.altKey, handle: outcome.handle, patch: {} });
       }
       return;
     }
@@ -981,10 +987,15 @@ export function DrawingViewport() {
     if (drag?.kind === 'scale') {
       setDrag({ ...drag, scale: scaleFromRatio((drag.ratio0 * Math.hypot(p[0] - drag.centre[0], p[1] - drag.centre[1])) / drag.r0) });
     } else if (drag?.kind === 'dimension') {
+      const original = curPage.dimensions.find(dimension => dimension.id === drag.id);
+      if (drag.freeText && original) {
+        const [x, y] = original.textOffset ?? [0, 0];
+        setDrag({ ...drag, patch: { textOffset: [round2(x + p[0] - drag.from[0]), round2(y + p[1] - drag.from[1])] } });
+        return;
+      }
       // measured against the dimension as it was when it was taken hold of, not as the drag has moved it since
       const patch = dragDimension(drag.handle, drag.onText, p);
       const start = dragDimension(drag.handle, drag.onText, drag.from);
-      const original = curPage.dimensions.find(dimension => dimension.id === drag.id);
       // Preserve the grab point: extension lines and text need not start on the dimension line itself.
       if (original) {
         if (patch.offset !== undefined && start.offset !== undefined && 'offset' in original) {
@@ -1007,7 +1018,10 @@ export function DrawingViewport() {
         if (patch.slide !== undefined && start.slide !== undefined && (original.kind === 'linear' || original.kind === 'angle')) patch.slide = round2((original.slide ?? 0) + patch.slide - start.slide);
         if (patch.arc !== undefined && start.arc !== undefined && 'arc' in original) patch.arc = round2(original.arc + patch.arc - start.arc);
       }
-      setDrag({ ...drag, patch });
+      const candidates = !e.altKey && !drag.onText && drag.handle.kind === 'linear' && drag.handle.orientation !== 'aligned'
+        ? [...built.dimensions].flatMap(([id, outcome]) => id !== drag.id && !('error' in outcome) && outcome.handle ? [outcome.handle] : [])
+        : [];
+      setDrag({ ...drag, patch: candidates.length ? snapDimensionLine(drag.handle, patch, candidates, reach) : patch });
     } else if (drag?.kind === 'sectionLine') {
       const by = drag.vertical ? p[0] - drag.from[0] : p[1] - drag.from[1];
       setDrag({ ...drag, delta: by / drag.scale });
@@ -1042,9 +1056,9 @@ export function DrawingViewport() {
       // what is under the pointer: for the tool's preview, and for the cursor (and hover highlight when no tool)
       const feature =
         tool?.kind === 'dimension' || tool?.kind === 'ordinate'
-          ? featureUnder(p, tool.picks[0]?.view)
+          ? featureUnder(p, tool.picks[0]?.view, true, e.shiftKey)
           : tool?.kind === 'baseline'
-            ? featureUnder(p, tool.view ?? tool.base?.view)
+            ? featureUnder(p, tool.view ?? tool.base?.view, true, e.shiftKey)
             : tool?.kind === 'hideEdge'
               ? featureUnder(p)
               : !tool
@@ -1768,10 +1782,17 @@ export function DrawingViewport() {
             const at = toSheet(placed, q[0], q[1]);
             if (Math.hypot(at[0] - hover.p[0], at[1] - hover.p[1]) > reach) return null;
             const r = 5 / (pan.zoom * PX);
-            return <g data-dimension-snap={f.type === 'vertex' ? ('snap' in f && f.snap === 'midpoint' ? 'midpoint' : 'snap' in f && f.snap === 'quadrant' ? 'quadrant' : 'vertex') : 'centre'} stroke="var(--accent)" strokeWidth={1.5 / (pan.zoom * PX)} fill="var(--card)">
+            const crossing = f.type === 'vertex' && f.ref.crossing;
+            const snapKind = crossing ? crossing.extended ? 'virtualIntersection' : 'intersection' : f.type === 'vertex' ? 'snap' in f ? f.snap : 'vertex' : 'centre';
+            const label = snapKind === 'endpoint' || snapKind === 'vertex' ? 'drawingUi.snapVertex'
+              : snapKind === 'virtualIntersection' ? 'drawingUi.snapVirtualIntersection'
+              : snapKind === 'intersection' ? 'drawingUi.snapIntersection'
+              : snapKind === 'midpoint' ? 'drawingUi.snapMidpoint'
+              : snapKind === 'quadrant' ? 'drawingUi.snapQuadrant' : 'drawingUi.snapCentre';
+            return <g data-dimension-snap={snapKind === 'endpoint' ? 'vertex' : snapKind} stroke="var(--accent)" strokeWidth={1.5 / (pan.zoom * PX)} fill="var(--card)">
               <rect x={at[0] - r} y={sheet.height - at[1] - r} width={2 * r} height={2 * r} />
               <path d={`M ${at[0] - r} ${sheet.height - at[1]} h ${2 * r} M ${at[0]} ${sheet.height - at[1] - r} v ${2 * r}`} />
-              <text x={at[0] + 2 * r} y={sheet.height - at[1] - r} stroke="none" fill="var(--accent)" fontSize={11 / (pan.zoom * PX)}>{t(f.type === 'vertex' && f.ref.kind === 'projection' ? 'drawingUi.snapProjectedPoint' : f.type !== 'vertex' ? 'drawingUi.snapCentre' : 'snap' in f && f.snap === 'midpoint' ? 'drawingUi.snapMidpoint' : 'snap' in f && f.snap === 'quadrant' ? 'drawingUi.snapQuadrant' : 'drawingUi.snapVertex')}</text>
+              <text x={at[0] + 2 * r} y={sheet.height - at[1] - r} stroke="none" fill="var(--accent)" fontSize={11 / (pan.zoom * PX)}>{t(f.type === 'vertex' && f.ref.kind === 'projection' ? 'drawingUi.snapProjectedPoint' : label)}</text>
             </g>;
           })()}
           {((tool?.kind === 'dimension' || tool?.kind === 'ordinate' || tool?.kind === 'baseline') || (!tool && !drag && hover?.feature)) && (() => {
