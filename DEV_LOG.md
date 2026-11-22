@@ -1,5 +1,12 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-22 — 跨工作階段待辦同步
+
+- 盤點 10 個 3D-Builder Codex 聊天（8 個非封存、2 個已封存），以 `167d29ce`、遠端 PR 與本機檔案對照。現行接續清單放在 [handoff.md](handoff.md#2026-11-22--跨工作階段待辦總表) 頂部。
+- `101b2103` 分開剖面中心線的兩點與平行邊操作，使用原檢具及定位板複核。該階段曾回報全量 UI 275／280，其餘 5 項在原基準也重現，不能作為本次全綠證據。`0d4d3269` 隱藏塗彩側視的螺孔示意線，取消等角投影的預設比例後綴。原檢具在全新瀏覽器驗證可重現模式切換，中心／剖切線仍在。
+- [PR #15](https://github.com/Chun-Chieh-Chang/3D-Builder/pull/15) 已合併。R1-9035、R1-16148 的 A3 審閱稿與未提交的 `meshIntegrity` 閘門仍有各自的後續驗收，詳見 handoff。零件 PropertyManager、STEP Heap、外部 PDF／DXF 驗收已納入主線。
+- 粗糙度大小設定推送前在 PR #15 的合併基準重跑，29 項工程圖測試及 TypeScript 通過。11 月 22 日複核，Windows、Linux、macOS 的 Repository integrity 檢查均通過，GitHub Pages 已完成部署。[GitHub Actions](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/44971456035)
+
 ## 2026-11-22 — 工程圖粗糙度三角形大小
 
 - 每個傳統粗糙度符號可設定 10–1000% 的三角形大小。100% 為預設，舊檔省略這個欄位即可沿用原大小。
