@@ -1386,6 +1386,8 @@ export const help = {
   'help.drwArrange.keywords': '排列 對正 重疊 尺寸位置',
   'help.drwNote.summary': '在圖上放文字，可加引線並附著到模型；選取註解後可在屬性選擇隨文字自動縮放的圓形或圓角外框。',
   'help.drwNote.keywords': '註解 文字 技術要求 引線',
+  'help.drwRevision.summary': '在圖上放置版次三角形標記變更位置，可附引線並編輯版次代碼。',
+  'help.drwRevision.keywords': '版次 三角形 變更 標記 修訂',
   'help.drwDatum.summary': '放一個基準符號，附著到邊或頂點。',
   'help.drwDatum.keywords': '基準 基準符號 GD&T',
   'help.drwFcf.summary': '放一個 ISO 1101 幾何公差框。',

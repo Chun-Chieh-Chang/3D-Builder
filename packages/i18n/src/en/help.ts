@@ -1378,6 +1378,8 @@ export const help: Translation = {
   'help.drwArrange.keywords': 'arrange align overlap dimensions',
   'help.drwNote.summary': 'Adds drawing text with an optional model-attached leader. Select the note to choose a circle or rounded rectangle that fits its text.',
   'help.drwNote.keywords': 'note text leader',
+  'help.drwRevision.summary': 'Places a revision triangle marking a changed location, with an optional leader and editable revision code.',
+  'help.drwRevision.keywords': 'revision triangle change marker rev',
   'help.drwDatum.summary': 'Puts a datum feature symbol on an edge or a vertex.',
   'help.drwDatum.keywords': 'datum GD&T',
   'help.drwFcf.summary': 'Puts an ISO 1101 feature control frame.',
