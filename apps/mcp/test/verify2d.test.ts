@@ -34,6 +34,9 @@ describe('part_verify_against_2d (2D->3D projection back-verification)', () => {
       const report = parseReport(r);
       expect(report.pass).toBe(true);
       expect(report.passed).toBe(8);
+      const faceCount = s.drawingSource()!.body.topology.faces.length;
+      expect(faceCount).toBeGreaterThan(0);
+      expect(report.meshIntegrity).toEqual({ totalFaces: faceCount, triangulatedFaces: faceCount, unmeshedFaces: [], pass: true });
       expect(report.failed).toBe(0);
       expect(report.maxAbsError).toBeLessThan(1e-3);
       expect(report.views.top).toEqual({ width: 120, height: 80 });

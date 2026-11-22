@@ -44,6 +44,12 @@ export interface Verify2dReport {
   failed: number;
   total: number;
   maxAbsError: number;
+  meshIntegrity: {
+    totalFaces: number;
+    triangulatedFaces: number;
+    unmeshedFaces: number[];
+    pass: boolean;
+  };
   results: Verify2dCheckResult[];
   views: Record<string, { width: number; height: number }>;
 }
@@ -304,13 +310,35 @@ export function verifyPartAgainst2d(session: CadSession, checks: readonly Verify
     });
   }
 
+  // Deterministic Layer-1 Mesh Triangulation Completeness Gate:
+  // Any OCCT boolean degeneracy that leaves a topological face with 0 triangles in `kernel.mesh` fails verification immediately.
+  const mesh = src.kernel.mesh(src.body.shape);
+  const totalFaces = src.body.topology.faces.length;
+  const meshedSet = new Set<number>();
+  for (let t = 0; t < mesh.faceRanges.length; t += 3) {
+    if (mesh.faceRanges[t + 1]! > 0) meshedSet.add(mesh.faceRanges[t + 2]!);
+  }
+  const unmeshedFaces: number[] = [];
+  for (let fi = 0; fi < totalFaces; fi++) {
+    if (!meshedSet.has(fi) && src.body.topology.faces[fi]!.area > 1e-6) {
+      unmeshedFaces.push(fi);
+    }
+  }
+  const meshIntegrity = {
+    totalFaces,
+    triangulatedFaces: meshedSet.size,
+    unmeshedFaces,
+    pass: unmeshedFaces.length === 0 && totalFaces > 0,
+  };
+
   const passed = results.filter((r) => r.pass).length;
   return {
-    pass: passed === results.length,
+    pass: passed === results.length && meshIntegrity.pass,
     passed,
     failed: results.length - passed,
     total: results.length,
     maxAbsError: r4(maxAbsError),
+    meshIntegrity,
     results,
     views: viewsSummary,
   };
