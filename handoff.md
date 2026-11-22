@@ -1,5 +1,21 @@
 # 交接與接續工作
 
+## 2026-11-22（17:42 交接）— 桌面版 `v0.7.0`（內建 MCP Sidecar）正式發佈核對、清理完成與待辦同步（`bb77de56`）
+
+- **最新主線基準**：`main` 與 `origin/main` 同步於 `bb77de56`（本輪文件同步提交在此之上）。
+- **已確認完成並通過 CI**：
+  1. **桌面版 `v0.7.0` 正式發佈（`43e74d6e`）**：[GitHub Release v0.7.0](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.7.0) 已於 `2026-11-22T09:24:15Z` 正式公開（標籤 `v0.7.0` 指向 `43e74d6e`）；遠端 `3D-Builder_0.7.0_x64-setup.exe` 大小（`49,350,112 B`）與 SHA-256（`509d5851986624a43dd70eaaf597da5847f4b6e93d3e0b11e75a089977da443d`）與本機建置完全一致，且已同步紀錄至 [桌面版版本履歷](docs/desktop-release-history.md)。
+  2. **舊探針清理與盤點同步（`bb77de56`）**：已移除過時 `scratch/` 探針並同步 `docs/repository-inventory.md`。
+  3. **CI 狀態**：`43e74d6e`（[run 45007011143](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45007011143)）與 `bb77de56`（[run 45008004279](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45008004279)）之 `Repository integrity` 皆已通過。
+- **下一步待接續（依優先序）**：
+  1. **P0｜多客戶端 MCP 操作驗收**：直接以 `v0.7.0` 內建 `3d-builder-mcp.exe` 補齊 Codex／OpenCode 組合件試組、預覽、存檔與重開實測證據。
+  2. **P1｜核心產品衝刺（建議二選一）**：
+     - **工程圖路線**：以現行引擎重跑 `R1-8032`（剩餘引線／重疊）與 `R1-10226`（斜面與跨頁標註清單）；接續補齊工程圖互動缺口（平面直邊導角參數連動、尺寸文字自由 2D 偏移、持久交點／虛交點參照、跨尺寸對齊磁吸）。
+     - **草圖互動路線**：推進草圖互動計畫 P1 第二批（槽／多邊形游標旁即時輸入、修改預覽、畫布輪廓選取）。
+     - **照片建模閉環**：待取得多角度實物照片與至少一項實測尺寸後執行。
+  3. **P2｜技術債與外部驗收（已同意延後／中長期）**：`tests/e2e/manual-browser-projects.js` 計時競爭修復、三項慢測試 Profiling（`section-spline-isolation` `smooth=false`、`section-clearance-probe` `gap 0`、`recognize-rolling-ball-fuzz-5` `seed 46`）、`task_plan.md` Phase 3–4 外部驗收報告整合、CNS 3 正式原文全表核對，以及中長期架構／UI 項目（Ribbon、投影線掃出路徑、連動陣列群組編輯、3D 操控器、組合件就地編輯、導角容差閘門）。
+  4. **維持擱置**：指定大型／複雜 STEP 精確自動辨識（`R1-10226`、`R1-9035`、`E13-999-421`、`MT17203`、`CIV0000467` 治具等）。
+
 ## 2026-11-22（16:07 交接）— A3 審閱稿 v3、缺面回歸、版次三角形與可選 AC1021 UTF-8 DXF 全部完成並推送（`db408d2b`）
 
 - **最新主線基準**：`main` 與 `origin/main` 同步於 `db408d2b`（工程圖 Schema 升至 **41**）。

@@ -8,7 +8,7 @@
 
 | 版本 | 首次建置 | 含到的提交 | 安裝檔大小 | 狀態 |
 |---|---|---|---|---|
-| 0.7.0 | 2026-11-22 17:00 | `b66b53d1`＋路線 A 與升版提交 | 49,350,112 B | **目前本機安裝包（內建 MCP Sidecar）**（待發佈 GitHub Release `v0.7.0`） |
+| 0.7.0 | 2026-11-22 17:00 | `43e74d6e` | 49,350,112 B | GitHub Release `v0.7.0`（內建 MCP Sidecar） |
 | 0.6.0 | 2026-11-15 16:16 | `0cd8b09f` | 13,177,478 B | GitHub Release `v0.6.0` |
 | 0.5.0 | 2026-11-14 21:31 | `b3771674`＋升版提交 `da072cd5` | 13,128,755 B | GitHub Release `v0.5.0`；本機舊安裝檔已移至資源回收筒（2026-11-15） |
 | 0.4.1 | 2026-11-14 20:10 | `5e4d1ad6`＋升版提交 `b3771674` | 13,129,684 B | 已刪除本機安裝檔（2026-11-14）；從未發佈成 Release（改發 0.5.0） |
@@ -45,6 +45,7 @@
   - Tauri 2 建置 exit 0，Rust 0 警告；以 `/S` 覆蓋安裝至 `%LOCALAPPDATA%\3D-Builder\`，確認 `desktop.exe`、`3d-builder-mcp.exe`、`mcp/node.exe`、`mcp/dist/server.mjs` 與 `opencascade_single.wasm` 皆完整就位，登錄與執行檔版本皆為 `0.7.0`。
   - **桌面 GUI 驗收（WebView2 CDP）**：命令列正確顯示 `v0.7.0`、0 console error；「工具 → AI 控制」正確顯示內建 `3d-builder-mcp.exe` 設定區塊；成功開啟 `R1-16148-rev-triangle-acceptance.3dbd`（含來源 `.3dbx`）並渲染版次履歷表與 `03` 版次三角形；點擊「檔案 → 輸出 PDF」實際輸出有效 PDF（`189,851 B`，`%PDF-1.4`）。
   - **完全隔離 MCP 驗收（無專案目錄、`PATH=""` 無系統 Node.js）**：於暫存目錄執行 `%LOCALAPPDATA%\3D-Builder\3d-builder-mcp.exe --workspace <temp>`，通過 JSON-RPC `initialize`（`0.7.0`）、`tools/list`（39 工具）、`part_open`、`part_verify_against_2d`（`pass: true`、`meshIntegrity: true`）、`drawing_create`、`drawing_export` PDF（`303,352 B`，`%PDF-1.4`）與 `AC1021` UTF-8 DXF（含原生中文 `圖名`）。
+- **發布驗證**：[GitHub Release v0.7.0](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.7.0) 已於 `2026-11-22T09:24:15Z` 正式發佈（`isDraft: false`、`isPrerelease: false`），標籤 `v0.7.0` 指向 `43e74d6e`。遠端附件 `3D-Builder_0.7.0_x64-setup.exe` 大小（`49,350,112 B`）與 SHA-256（`509d5851986624a43dd70eaaf597da5847f4b6e93d3e0b11e75a089977da443d`）與本機建置完全一致。[Repository integrity CI（`43e74d6e`）](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45007011143) 與後續清理提交 [CI（`bb77de56`）](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45008004279) 皆已通過。
 
 ## 0.6.0（2026-11-15）
 

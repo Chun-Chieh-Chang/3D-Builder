@@ -1,5 +1,14 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-22（17:42）— 桌面版 `v0.7.0`（內建 MCP Sidecar）正式發佈核對與交接文件同步
+
+- **需求與實作**：
+  1. 核對 [GitHub Release v0.7.0](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.7.0) 發佈狀態與附件完整性：確認已於 `2026-11-22T09:24:15Z` 正式發佈（標籤 `v0.7.0` 指向 `43e74d6e`），遠端 `3D-Builder_0.7.0_x64-setup.exe` 大小（`49,350,112 B`）與 SHA-256（`509d5851986624a43dd70eaaf597da5847f4b6e93d3e0b11e75a089977da443d`）與本機 `Get-FileHash` 結果逐字元一致。
+  2. 核對 GitHub Actions `Repository integrity` 狀態：`43e74d6e`（run `45007011143`）與後續清理提交 `bb77de56`（run `45008004279`）皆為 `success`。
+  3. 同步更新 `docs/desktop-release-history.md`、`handoff.md` 與本 `DEV_LOG.md`，解除 `handoff.md` 仍停留在 `b66b53d1` 與「待建置桌面版」的過時狀態。
+- **驗證結果**：
+  - 本機 `npm run lint:repo` 與 `git diff --check` 通過。
+
 ## 2026-11-22（16:07）— 工程圖版次三角形（Schema v41）、可選 `AC1021` UTF-8 DXF 與 R1-16148／R1-9035 下游驗收閉環
 
 - **需求與實作**：
