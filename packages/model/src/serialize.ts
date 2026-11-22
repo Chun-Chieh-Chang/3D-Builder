@@ -1,6 +1,7 @@
 import { t } from '@3db/i18n';
+import { DRAWING_TEXT_WIDTH, validDrawingTextWidth } from './drawingAnnotations';
 import { countersFor } from './ids';
-import { checkViewCaption, dimensionRefs, validTriangleSizePercent, validDrawingPointRef, validProjectionRef, DRAWING_SCHEMA_VERSION, DRAWING_STANDARDS, type Dimension, type DrawingDoc, type DrawingStandard } from './drawing';
+import { checkViewCaption, dimensionRefs, normalizeDrawingRevision, validTriangleSizePercent, validDrawingPointRef, validProjectionRef, DRAWING_SCHEMA_VERSION, DRAWING_STANDARDS, type Dimension, type DrawingDoc, type DrawingStandard } from './drawing';
 import { ASSEMBLY_SCHEMA_VERSION, SCHEMA_VERSION, type AssemblyDoc, type PartDoc } from './schema';
 
 /**
@@ -479,12 +480,30 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v39: the sheet's drafting standard (ADR 0260). Nothing to convert: a sheet that names none is ISO, as every drawing before v39 was drawn; the version keeps
   // an older program from opening a CNS drawing and drawing it to ISO's widths and frame without saying so.
   38: (doc) => doc,
+  // v40 stores optional document-wide revision records. Legacy title values remain the fallback.
+  39: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {
   let raw = parseJson(text);
   if (raw.kind !== 'drawing') throw new FormatError(t('format.notDrawing'));
   raw = upgrade(raw, DRAWING_SCHEMA_VERSION, drawingMigrations);
+  if (raw.revisionHistory !== undefined) {
+    if (!Array.isArray(raw.revisionHistory)) throw new FormatError(t('drawing.revisions.invalid'));
+    const seen = new Set<string>();
+    raw.revisionHistory = raw.revisionHistory.map((value) => {
+      let entry;
+      try {
+        entry = normalizeDrawingRevision(value);
+      } catch (error) {
+        throw new FormatError(error instanceof Error ? error.message : t('drawing.revisions.invalid'));
+      }
+      const key = entry.revision.toUpperCase();
+      if (seen.has(key)) throw new FormatError(t('drawing.revisions.duplicate'));
+      seen.add(key);
+      return entry;
+    });
+  }
   const pages = raw.pages as Json[] | undefined;
   if (!Array.isArray(pages) || pages.length === 0) throw new FormatError(t('format.noViews'));
   for (const p of pages) {
@@ -500,6 +519,11 @@ export function parseDrawing(text: string): DrawingDoc {
       if (finish?.triangleSizePercent !== undefined && !validTriangleSizePercent(finish.triangleSizePercent)) throw new FormatError(t('drawing.badFinishTriangleSize'));
     }
     p.annotations ??= [];
+    for (const entry of [...(p.annotations as Json[]), ...(p.dimensions as Json[])]) {
+      if (entry?.wrapWidth !== undefined && ((entry.kind !== 'note' && entry.kind !== 'diameter') || !validDrawingTextWidth(entry.wrapWidth))) {
+        throw new FormatError(t('drawing.badTextWidth', DRAWING_TEXT_WIDTH));
+      }
+    }
     for (const v of p.views as Json[]) if (v.caption !== undefined) checkViewCaption(v.caption);
     for (const d of p.dimensions as unknown as Dimension[]) if (d.kind === 'chamfer' && d.coneSide !== undefined && (d.ref.kind !== 'face' || (d.coneSide !== 1 && d.coneSide !== -1))) throw new FormatError(t('drawing.dimBadRef'));
     for (const d of p.dimensions as unknown as Dimension[]) for (const ref of dimensionRefs(d)) if (ref?.kind === 'projection' && !validProjectionRef(ref)) throw new FormatError(t('drawing.dimBadRef'));

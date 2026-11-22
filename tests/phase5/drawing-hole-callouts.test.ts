@@ -7,7 +7,7 @@ import { viewVectors, type Dimension, type Feature, type PartDoc } from '@3db/mo
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { Regenerator, elementFacts, holeInfo, holeFeatures, viewFeatures } from '@3db/regen';
-import { autoDimensions, dimensionText, evaluateDimension, holeNote, holeRows, threadedHoleText, type PlacedView } from '@3db/drawing';
+import { autoDimensions, dimensionOverride, dimensionText, evaluateDimension, holeNote, holeRows, textWidthMm, threadedHoleText, type PlacedView } from '@3db/drawing';
 import { build, extrude, face, front, rectangle, sketch } from '../phase1/builders';
 
 const point = (id: string, x: number, y: number) => ({ id, type: 'point', x, y }) as const;
@@ -68,6 +68,28 @@ describe('a countersunk hole', () => {
   it('is the callout of its diameter: Ø6 貫穿 錐孔 Ø12 90°', () => {
     const doc = plate(holeSketch('s2', 20, 15), hole('h1', 's2', { kind: 'countersink', diameter: '6', csDiameter: '12', csAngle: '90deg', end: { type: 'throughAll' } }));
     expect(callouts(doc)).toEqual(['Ø6 貫穿 錐孔 Ø12 90°']);
+  });
+
+  it('wraps the callout of the rebuilt hole within the paper width and emits native DXF breaks', () => {
+    const doc = plate(holeSketch('s2', 20, 15), hole('h1', 's2', { kind: 'countersink', diameter: '6', csDiameter: '12', csAngle: '90deg', end: { type: 'throughAll' } }));
+    const body = regen.rebuild(doc).body!;
+    const holes = holeFeatures(doc);
+    const circle = viewFeatures(body.topology, body.names, top, undefined, holes).find((f) => f.type === 'circle' && f.hole && !f.convex)!;
+    if (circle.type !== 'circle') throw new Error('hole circle missing');
+    const facts = elementFacts(body.topology, body.names, circle.ref, holes);
+    if ('error' in facts) throw new Error(facts.error);
+    const dimension: Dimension = { id: 'dim1', view: 'view1', kind: 'diameter', ref: circle.ref, callout: true, angle: 45, wrapWidth: 30 };
+    const result = evaluateDimension(dimension, { elements: [facts] }, top, placed);
+    if ('error' in result) throw new Error(result.error);
+    expect(result.text).toBe('Ø6 貫穿 錐孔 Ø12 90°');
+    const rows = result.items.filter((item) => item.kind === 'text');
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows.every((row) => textWidthMm(row.text, row.height) <= 30)).toBe(true);
+    expect(new Set(rows.map((row) => row.at[0])).size).toBe(1);
+    expect(dimensionOverride({ text: result.text, parts: result.parts })).toContain('\\P');
+    const explicit = evaluateDimension({ ...dimension, wrapWidth: 90, text: '<DIM>\n確認孔口' }, { elements: [facts] }, top, placed);
+    if ('error' in explicit) throw new Error(explicit.error);
+    expect(explicit.items.filter((item) => item.kind === 'text').map((item) => item.text)).toEqual([result.text, '確認孔口']);
   });
 });
 

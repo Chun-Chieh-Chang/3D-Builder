@@ -5,7 +5,7 @@
  */
 import { z } from 'zod';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
-import { DEFAULT_DRAWING_STANDARD, DRAWING_STANDARDS, GEOMETRIC_CHARACTERISTICS, type DrawingCommand, type DrawingStandard, type Scale } from '@3db/model';
+import { DEFAULT_DRAWING_STANDARD, DRAWING_STANDARDS, DRAWING_TEXT_WIDTH, GEOMETRIC_CHARACTERISTICS, type DrawingCommand, type DrawingStandard, type Scale } from '@3db/model';
 import { AgentError, type CadSession } from './session';
 import { DrawingSession, type AnnotateInput, type CreateOptions } from './drawingSession';
 
@@ -46,6 +46,7 @@ const schemas = {
     target: z.string().optional().describe('The element: a ref name from drawing_inspect, or a dimension (id or text) whose element it goes on. A note without one is a general note under the main view.'),
     view: z.string().optional().describe('The view, when the target is seen in several.'),
     text: z.string().max(500).optional(),
+    wrapWidth: z.number().min(DRAWING_TEXT_WIDTH.min).max(DRAWING_TEXT_WIDTH.max).optional().describe('Maximum note text width in paper millimetres.'),
     enclosure: z.enum(['circle', 'rounded']).optional().describe('A note enclosure, such as rounded for an inspection callout.'),
     ra: z.number().optional().describe('Ra in µm (0.008–400).'),
     method: z.string().optional().describe('How the surface is made (「研磨」).'),

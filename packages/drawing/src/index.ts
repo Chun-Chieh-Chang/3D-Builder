@@ -15,6 +15,7 @@ export * from './annotation';
 export * from './surfaceFinish';
 export * from './overlap';
 export * from './bomTable';
+export * from './revisionTable';
 export * from './helvetica';
 export * from './ttf';
 export * from './pdf';

@@ -1,11 +1,36 @@
 import { describe, expect, it } from 'vitest';
 import { applyDrawingCommand, createEmptyDrawing, parseDrawing, serializeDrawing, page, DRAWING_SCHEMA_VERSION, type NoteAnnotation } from '@3db/model';
-import { annotationItems, textWidthMm, toSvg, toDxf, readDxf, toPdf, readPdf, type PlacedView } from '@3db/drawing';
+import { annotationItems, textWidthMm, toSvg, toDxf, readDxf, toPdf, readPdf, type DxfText, type PlacedView } from '@3db/drawing';
 
 const placed: PlacedView = { id: 'v', at: [80, 80], centre: [0, 0], w: 30, h: 30, scale: 1 };
 const note: NoteAnnotation = { id: 'n', kind: 'note', view: 'v', at: [0, 0], text: 'A\n較長文字', height: 3.5, leader: [30, 10] };
 
 describe('fitted note outlines', () => {
+ it('aligns automatic and manual continuation rows with the numbered item body', () => {
+  const source = 'NOTES\n1. Secure the plate before tightening\n   Check alignment.\n2. Finish';
+  const items = annotationItems([{ ...note, text: source, wrapWidth: 40 }], placed, () => undefined);
+  const text = items.filter(item => item.kind === 'text');
+  const marker = text.findIndex(item => item.text === '1.');
+  const next = text.findIndex(item => item.text === '2.');
+  expect(marker).toBe(1);
+  expect(next - marker).toBeGreaterThan(3);
+  const firstBody = text[marker + 1]!;
+  expect(firstBody.at[0]).toBeCloseTo(80 + textWidthMm('1. ', note.height!));
+  for (const row of text.slice(marker + 1, next)) {
+   expect(row.at[0]).toBe(firstBody.at[0]);
+   expect(row.at[0] - 80 + textWidthMm(row.text, row.height)).toBeLessThanOrEqual(40);
+  }
+  expect(text[next + 1]?.text).toBe('Finish');
+  const rendered = readDxf(toDxf({ width: 210, height: 297, items }));
+  const bodies = rendered.entities.filter((entity): entity is DxfText => entity.type === 'TEXT');
+  expect(bodies).toHaveLength(text.length);
+  for (const [index, row] of text.entries()) {
+   expect(bodies[index]?.text).toBe(row.text);
+   expect(bodies[index]?.at[0]).toBeCloseTo(row.at[0], 5);
+  }
+  const longMarker = annotationItems([{ ...note, height: 20, text: '123456789. 甲乙丙', wrapWidth: 30 }], placed, () => undefined);
+  expect(longMarker.filter(item => item.kind === 'text').every(row => row.at[0] - 80 + textWidthMm(row.text, row.height) <= 30)).toBe(true);
+ });
  it('validates, serializes, edits and removes the selected outline', () => {
   let doc = applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [{ id: 'v', name: 'front', source: 'p.3dbx', direction: 'front' }] });
   doc = applyDrawingCommand(doc, { type: 'insertAnnotations', annotations: [{ ...note, enclosure: 'circle' }] });

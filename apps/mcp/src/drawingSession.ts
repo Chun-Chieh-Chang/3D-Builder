@@ -17,6 +17,7 @@ import {
   createEmptyDrawing,
   dimensionRefs,
   drawingIdsInUse,
+  drawingPageForOutput,
   IdAllocator,
   isDerived,
   page,
@@ -52,6 +53,7 @@ import {
   chooseProjections,
   clutterOf,
   dimensionCoverage,
+  drawingSheetMetrics,
   encodeShade,
   evaluateQualityGate,
   FILL_RANGE,
@@ -67,6 +69,7 @@ import {
   rasterizeSheet,
   ratio,
   revolutionAxis,
+  revisionTableOverlaps,
   STANDARD_SCALES,
   readTrueType,
   sheetItems,
@@ -415,7 +418,8 @@ export class DrawingSession {
 
     // title
     const title: Partial<Record<TitleField, string>> = { drawingName: basename(s.path, extname(s.path)), date: new Date().toISOString().slice(0, 10), ...o.title };
-    for (const [field, value] of Object.entries(title)) if (value) doc = applyDrawingCommand(doc, { type: 'setTitle', field: field as TitleField, value });
+    for (const [field, value] of Object.entries(title)) if (field !== 'revision' && value) doc = applyDrawingCommand(doc, { type: 'setTitle', field: field as TitleField, value });
+    if (title.revision) doc = applyDrawingCommand(doc, { type: 'setTitle', field: 'revision', value: title.revision });
 
     // the dimensions that determine the part, main view first, then the sections, then the others
     doc = this.dimensionAll(doc, o.ordinateAbove);
@@ -608,7 +612,7 @@ export class DrawingSession {
     const tryOn = (size: SheetSize) => {
       const d = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setSheet', sheet: { size, orientation } }));
       const b = this.build(d, pageIndex);
-      const single = pageIndex === 0 && d.pages.length === 1 ? d : { ...d, pages: [page(d, pageIndex)] };
+      const single = drawingPageForOutput(d, pageIndex);
       // Keep the base views of ordinary parts at 2:1 or below. Detail views have their own scale.
       const spans = [...b.lines.values()].flatMap((lines) => {
         const box = lines?.box;
@@ -641,7 +645,7 @@ export class DrawingSession {
     const pg = page(doc);
     const b = this.build(doc);
     const used = itemsBounds(b.scene.items.slice(sheetItems(doc).length));
-    const area = sheetMetrics(pg.sheet).area;
+    const area = drawingSheetMetrics(doc).area;
     if (!used) return doc;
     const free = emptyRectangles(b.scene.items.slice(sheetItems(doc).length), area, 8);
     const corner = pg.views.find((v) => v.id === mainId)!;
@@ -684,10 +688,10 @@ export class DrawingSession {
   /** Tidy can move the final arrangement past a sheet edge, even if its total span still fits. */
   private keepInsideSheet(doc: DrawingDoc, pageIndex: number): DrawingDoc {
     const pg = page(doc, pageIndex);
-    const single = { ...doc, pages: [pg] };
+    const single = drawingPageForOutput(doc, pageIndex);
     const bounds = itemsBounds(this.build(doc, pageIndex).scene.items.slice(sheetItems(single).length));
     if (!bounds) return doc;
-    const { area } = sheetMetrics(pg.sheet);
+    const { area } = drawingSheetMetrics(single);
     const pushInside = (low: number, high: number, start: number, span: number) => {
       if (high - low > span) return 0;
       return Math.max(start - low, Math.min(0, start + span - high));
@@ -732,8 +736,7 @@ export class DrawingSession {
     let score = this.clutter(doc, pageIndex);
     const captionTexts = (d: DrawingDoc) => {
       const b0 = this.build(d, pageIndex);
-      const pg0 = page(d, pageIndex);
-      const single0 = pageIndex === 0 ? d : { ...d, pages: [pg0] };
+      const single0 = drawingPageForOutput(d, pageIndex);
       const items0 = b0.scene.items.slice(sheetItems(single0).length);
       const cl0 = clutterOf(items0, CLEARANCE, viewsOfDimensions(single0));
       const caps = new Set(b0.scene.items.flatMap((i) => (i.kind === 'text' && i.viewCaption ? [i.text] : [])));
@@ -792,7 +795,7 @@ export class DrawingSession {
     const b = built ?? this.build(doc, pageIndex);
     const failed = [...b.outcomes.values()].filter((o) => 'error' in o).length;
     const pg = page(doc, pageIndex);
-    const single = pageIndex === 0 ? doc : { ...doc, pages: [pg] };
+    const single = drawingPageForOutput(doc, pageIndex);
     const items = b.scene.items.slice(sheetItems(single).length);
     const frame = sheetMetrics(pg.sheet).frame;
     const drawn = itemsBounds(items);
@@ -1345,7 +1348,7 @@ export class DrawingSession {
     const placedIds = new Set<Id>();
     for (const dv of details) {
       const pg = page(doc, pageIndex);
-      const single: DrawingDoc = { ...doc, pages: [pg] };
+      const single = drawingPageForOutput(doc, pageIndex);
       const b = this.build(doc, pageIndex);
       const m = this.layout(doc, pageIndex, b);
       const unplaced = new Set(details.filter((v) => !placedIds.has(v.id)).map((v) => v.id));
@@ -1356,7 +1359,7 @@ export class DrawingSession {
       const parent = m.views.find((v) => v.id === dv.parent);
       const placed = b.placed.get(dv.id);
       if (!parent || !placed) continue;
-      const area = sheetMetrics(pg.sheet).area;
+      const area = drawingSheetMetrics(single).area;
       const occupied = m.views.filter((v) => !unplaced.has(v.id)).map((v) => v.drawn);
       const sightObstacles = m.views.filter((v) => v.id !== dv.id && v.id !== parent.id && v.kind !== 'detail').map((v) => v.box);
       const diagonal = Math.hypot(parent.box.x1 - parent.box.x0, parent.box.y1 - parent.box.y0);
@@ -1386,7 +1389,7 @@ export class DrawingSession {
   build(doc: DrawingDoc = this.need(), pageIndex = 0): Built {
     const s = this.source();
     const pg = page(doc, pageIndex);
-    const single: DrawingDoc = pageIndex === 0 && doc.pages.length === 1 ? doc : { ...doc, pages: [pg] };
+    const single = drawingPageForOutput(doc, pageIndex);
     const lines = new Map<Id, ViewLines | null>();
     const features = new Map<Id, ViewFeature[]>();
     for (const v of pg.views) {
@@ -1424,14 +1427,14 @@ export class DrawingSession {
    */
   layout(doc: DrawingDoc = this.need(), pageIndex = 0, built?: Built): LayoutMetrics {
     const pg = page(doc, pageIndex);
-    const single: DrawingDoc = pageIndex === 0 && doc.pages.length === 1 ? doc : { ...doc, pages: [pg] };
+    const single = drawingPageForOutput(doc, pageIndex);
     const b = built ?? this.build(doc, pageIndex);
     return layoutMetrics({
       items: b.scene.items.slice(sheetItems(single).length),
       views: pg.views,
       placed: b.placed,
       dimensionView: new Map(pg.dimensions.map((d) => [d.id, d.view])),
-      area: sheetMetrics(pg.sheet).area,
+      area: drawingSheetMetrics(single).area,
     });
   }
 
@@ -1455,7 +1458,7 @@ export class DrawingSession {
     const pageLayouts: PageLayoutInspection[] = [];
     for (let pi = 0; pi < doc.pages.length; pi++) {
       const pg = page(doc, pi);
-      const single: DrawingDoc = pi === 0 && doc.pages.length === 1 ? doc : { ...doc, pages: [pg] };
+      const single = drawingPageForOutput(doc, pi);
       const built = pi === 0 && b ? b : this.build(doc, pi);
       const ids = new Set(pg.dimensions.map((d) => d.id));
       allDims.push(...(pg.dimensions as DimensionLike[]));
@@ -1751,6 +1754,7 @@ export class DrawingSession {
    */
   annotate(a: AnnotateInput): Id {
     if (a.enclosure !== undefined && a.kind !== 'note') throw new AgentError('an enclosure applies to notes');
+    if (a.wrapWidth !== undefined && a.kind !== 'note') throw new AgentError('a note text width applies to notes');
     const doc = this.need();
     let viewId = a.view;
     let refName = a.target;
@@ -1829,7 +1833,7 @@ export class DrawingSession {
       if (a.kind === 'note') {
         if (!a.text) throw new AgentError('a note needs its text');
         const text = a.text;
-        make = (spot, reach) => ({ type: 'insertAnnotations', annotations: [{ id, view: viewId, kind: 'note', at: away(spot, reach), text, ...(a.enclosure ? { enclosure: a.enclosure } : {}), leader: pt(spot.on), ...attach } satisfies Annotation] });
+        make = (spot, reach) => ({ type: 'insertAnnotations', annotations: [{ id, view: viewId, kind: 'note', at: away(spot, reach), text, wrapWidth: a.wrapWidth, ...(a.enclosure ? { enclosure: a.enclosure } : {}), leader: pt(spot.on), ...attach } satisfies Annotation] });
       } else if (a.kind === 'datum') {
         if (!a.label) throw new AgentError('a datum needs its letter (A, B, …)');
         if (!feature) throw new AgentError('a datum goes on a feature: give its target');
@@ -1849,7 +1853,7 @@ export class DrawingSession {
         const lines = (pg.annotations ?? []).filter((x) => x.kind === 'note' && !x.leader).length;
         const sheetAt: [number, number] = [area.x + 2, area.y + 2 + lines * 6];
         const viewAt = pt([placed.centre[0] + (sheetAt[0] - placed.at[0]) / placed.scale, placed.centre[1] + (sheetAt[1] - placed.at[1]) / placed.scale]);
-        this.apply([{ type: 'insertAnnotations', annotations: [{ id, view: viewId, kind: 'note', at: viewAt, text, ...(a.enclosure ? { enclosure: a.enclosure } : {}) } satisfies Annotation] }], pi);
+        this.apply([{ type: 'insertAnnotations', annotations: [{ id, view: viewId, kind: 'note', at: viewAt, text, wrapWidth: a.wrapWidth, ...(a.enclosure ? { enclosure: a.enclosure } : {}) } satisfies Annotation] }], pi);
         return id;
       }
     }
@@ -1863,7 +1867,7 @@ export class DrawingSession {
           continue;
         }
         const b2 = this.build(trial, pi);
-        const trialPage: DrawingDoc = { ...trial, pages: [page(trial, pi)] };
+        const trialPage = drawingPageForOutput(trial, pi);
         const items = b2.scene.items.slice(sheetItems(trialPage).length);
         const drawn = itemsBounds(items);
         const frame = sheetMetrics(pg.sheet).frame;
@@ -2012,22 +2016,23 @@ export class DrawingSession {
     }
     const preliminary = !quality.pass;
     const f = font();
-    let warnings: string[] = [];
+    const warnings: string[] = [];
     const outputs: { page: number; full: string; data: Uint8Array | string }[] = [];
+    const exportScene = (i: number) => {
+      const scene = this.build(doc, i).scene;
+      if (revisionTableOverlaps(drawingPageForOutput(doc, i), scene.items)) warnings.push(t('drawing.revisions.overlap'));
+      return preliminary ? stampPreliminary(scene, page(doc, i).sheet) : scene;
+    };
     if (format === 'pdf') {
-      const scenes = doc.pages.map((_, i) => {
-        const sc = this.build(doc, i).scene;
-        return preliminary ? stampPreliminary(sc, page(doc, i).sheet) : sc;
-      });
+      const scenes = doc.pages.map((_, i) => exportScene(i));
       const pdf = toPdf(scenes.length === 1 ? scenes[0]! : scenes, { ...(f ? { font: f } : {}), title: page(doc).title.drawingName ?? 'drawing' });
       outputs.push({ page: 0, full, data: pdf.bytes });
-      warnings = pdf.warnings;
+      warnings.push(...pdf.warnings);
     } else {
       const ext = extname(full);
       const stem = full.slice(0, full.length - ext.length);
       for (let pi = 0; pi < doc.pages.length; pi++) {
-        const rawScene = this.build(doc, pi).scene;
-        const scene = preliminary ? stampPreliminary(rawScene, page(doc, pi).sheet) : rawScene;
+        const scene = exportScene(pi);
         const at = pi === 0 ? full : await this.part.inside(relative(this.part.root, `${stem}-${pi + 1}${ext}`));
         outputs.push({ page: pi, full: at, data: format === 'dxf' ? toDxf(scene) : toSvg(scene) });
       }
@@ -2211,6 +2216,7 @@ export interface AnnotateInput {
   target?: string;
   text?: string;
   enclosure?: Extract<Annotation, { kind: 'note' }>['enclosure'];
+  wrapWidth?: number;
   ra?: number;
   method?: string;
   process?: SurfaceFinish['kind'];

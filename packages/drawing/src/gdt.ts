@@ -2,7 +2,8 @@ import { noteText, type Annotation, type Attachment, type DrawingRef, type ViewF
 import { CENTRE_OVERSHOOT } from './annotation';
 import { ARROW, DIM_TEXT, lengthNumber } from './dimension';
 import { circlePolyline } from './geometry';
-import { textWidthMm } from './sheet';
+import { textWidthMm, wrapPaperText } from './sheet';
+import { DRAWING_TEXT_WIDTH } from '@3db/model';
 import { toSheet, type PlacedView } from './layout';
 import type { SceneItem } from './scene';
 import type { VisibleElements } from './viewEdges';
@@ -179,15 +180,38 @@ function datumItems(a: DatumAnnotation, placed: PlacedView): SceneItem[] {
   return items;
 }
 
+function noteRows(text: string, width: number, height: number) {
+  const measure = (line: string) => textWidthMm(line, height);
+  let indent = 0;
+  return text.split(/\r\n?|\n/).flatMap((paragraph) => {
+    let item = /^([ \t]*(?:[0-9\uFF10-\uFF19]+[.)][ \t]+|[0-9\uFF10-\uFF19]+[\u3001\uFF0E\uFF09][ \t]*|[•●▪◦*–-][ \t]+))(.*)$/.exec(paragraph);
+    if (item) {
+      const prefixWidth = measure(item[1]!);
+      // Leave enough space for at least one full-width character after the marker.
+      indent = prefixWidth + measure('\u4E00') <= width ? prefixWidth : 0;
+      if (!indent) item = null;
+    }
+    else if (!paragraph.trim()) indent = 0;
+    const content = item?.[2] ?? (indent ? paragraph.trimStart() : paragraph);
+    return wrapPaperText(content, width - indent, measure).map((line, index) => {
+      const marker = index === 0 ? item?.[1]?.trimEnd() : undefined;
+      return { text: line, offset: indent, marker };
+    });
+  });
+}
+
 /** A note: its lines down from the first's baseline, and a leader from the side of the text nearer the feature. */
 function noteItems(a: NoteAnnotation, placed: PlacedView, lookup: (key: string) => string | undefined): SceneItem[] {
   const [x, y] = toSheet(placed, a.at[0], a.at[1]);
   const h = a.height ?? DIM_TEXT;
-  const lines = noteText(a.text, lookup).split('\n');
-  const w = Math.max(...lines.map((line) => a.enclosure ? textWidthMm(line, h) : charWidth(line, h)));
-  // The same centre anchor is used by SVG, DXF and PDF. It also centres
-  // each line independently when the note contains lines of different lengths.
-  const items: SceneItem[] = lines.map((text, i) => ({ kind: 'text', at: [a.enclosure ? x + w / 2 : x, y - i * 1.6 * h], text, height: h, ...(a.enclosure ? { anchor: 'center' as const } : {}) }));
+  const lines = noteRows(noteText(a.text, lookup), a.wrapWidth ?? DRAWING_TEXT_WIDTH.default, h);
+  const w = Math.max(...lines.map((line) => line.offset + textWidthMm(line.text, h)));
+  const items: SceneItem[] = lines.flatMap(({ text, offset, marker }, i): SceneItem[] => {
+    const center = a.enclosure && offset === 0;
+    const baseline = y - i * 1.6 * h;
+    const body: SceneItem = { kind: 'text', at: [center ? x + w / 2 : x + offset, baseline], text, height: h, ...(center ? { anchor: 'center' as const } : {}) };
+    return marker ? [{ kind: 'text', at: [x, baseline], text: marker, height: h }, body] : [body];
+  });
   let outline: { centre: P; rx: number; ry: number; corner: number } | undefined;
   if (a.enclosure) {
     const bottom = y - (lines.length - 1) * 1.6 * h;

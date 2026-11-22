@@ -39,7 +39,8 @@ import {
   scaleFromRatio,
   scaleTarget,
   segmentDistance,
-  sheetMetrics,
+  drawingSheetMetrics,
+  revisionTableOverlaps,
   slideAxis,
   surfaceFinishBox,
   toSheet,
@@ -55,7 +56,7 @@ import {
   type SceneItem,
   type ViewLines,
 } from '@3db/drawing';
-import { sameDrawingRef, axesOf, oppositeSide, page, drawingFromPage, projectedAxes, type Annotation, type Attachment, type AuxiliaryDrawingView, type ClosedOutline, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide} from '@3db/model';
+import { sameDrawingRef, axesOf, oppositeSide, page, drawingPageForOutput, projectedAxes, type Annotation, type Attachment, type AuxiliaryDrawingView, type ClosedOutline, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide} from '@3db/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, useStore } from '../state/store';
 import type { DrawingPick } from '../state/drawing';
@@ -186,8 +187,8 @@ export function DrawingViewport() {
   const [hover, setHover] = useState<{ p: P; feature: { view: Id; feature: Pickable } | null; snap?: { view: Id; snap: DrawingSnap; bisector?: [P, P] | null } | null; dimension: string | null; ctrl?: boolean } | null>(null);
   const activePageIndex = drw.activePageIndex ?? 0;
   const curPage = page(drw.doc, activePageIndex);
-  const pageDoc = useMemo(() => drawingFromPage(curPage, drw.doc.properties), [curPage, drw.doc.properties]);
-  const sheet = sheetMetrics(curPage.sheet);
+  const pageDoc = useMemo(() => drawingPageForOutput(drw.doc, activePageIndex), [drw.doc, activePageIndex]);
+  const sheet = drawingSheetMetrics(pageDoc);
   const tool = drw.tool;
   /** Where the views are before anything is dragged: what the tools read their geometry from. */
   const basePlaced = useMemo(() => layoutViews(pageDoc, drw.lines), [pageDoc, drw.lines]);
@@ -272,8 +273,9 @@ export function DrawingViewport() {
   const elements = useMemo(() => (plan ? new Map(drw.elements).set('preview', { elements: plan.facts }) : drw.elements), [drw.elements, plan]);
   // the annotations fastened to the model, where the model has their elements now (D-I2)
   const attached = useMemo(() => attachedAnnotations(shown.annotations ?? [], new Map(curPage.views.map((v) => [v.id, { seen: seenByView.get(v.id), features: drw.features.get(v.id) ?? [] }]))), [shown, seenByView, curPage.views, drw.features]);
-  const shownDoc = useMemo(() => drawingFromPage({ ...shown, annotations: attached.annotations }, drw.doc.properties), [drw.doc.properties, shown, attached]);
+  const shownDoc = useMemo(() => drawingPageForOutput(drw.doc, activePageIndex, { ...shown, annotations: attached.annotations }), [drw.doc, activePageIndex, shown, attached]);
   const built = useMemo(() => buildScene(shownDoc, drw.lines, elements, drw.features, drw.boms), [shownDoc, drw.lines, elements, drw.features, drw.boms]);
+  const revisionOverlap = useMemo(() => revisionTableOverlaps(shownDoc, built.scene.items), [shownDoc, built.scene.items]);
   const svg = useMemo(() => toSvg(built.scene, { strokeScale: pan.zoom }), [built, pan.zoom]);
   /** The items of the dimensions that are there (not the one being made): what the pointer can take hold of. */
   const captionItems = useMemo(() => built.scene.items.filter(i => i.kind === 'text' && i.viewCaption).map(i => ({ ...i, group: i.kind === 'text' ? i.viewCaption : undefined })), [built]);
@@ -1909,9 +1911,9 @@ export function DrawingViewport() {
           </button>
         </div>
       )}
-      {hint && (
-        <div className="drawing-hint" data-hint>
-          {hint}
+      {(hint || revisionOverlap) && (
+        <div className="drawing-hint" data-hint role={hint ? undefined : 'status'}>
+          {hint || t('drawing.revisions.overlap')}
         </div>
       )}
       {!bootMs && <div className="boot-overlay">{t('drawingUi.loadingKernel')}</div>}

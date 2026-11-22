@@ -316,13 +316,13 @@ function holeTableLayout(rows: readonly HoleRow[], unit: LengthUnit) {
 }
 
 /** Where the hole table is on the sheet: its lower left corner and its size (mm). */
-export function holeTableBox(table: HoleTable, rows: readonly HoleRow[], sheet: Parameters<typeof sheetMetrics>[0], unit: LengthUnit = 'mm'): Rect {
+export function holeTableBox(table: HoleTable, rows: readonly HoleRow[], sheet: Parameters<typeof sheetMetrics>[0], unit: LengthUnit = 'mm', area = sheetMetrics(sheet).area): Rect {
   const { width, height } = holeTableLayout(rows, unit);
-  const [x0, top] = table.at ?? defaultTableAt(sheetMetrics(sheet).area, width);
+  const [x0, top] = table.at ?? defaultTableAt(area, width);
   return { x: x0, y: top - height, w: width, h: height };
 }
 
-export function holeTableItems(table: HoleTable, rows: readonly HoleRow[], placed: PlacedView, sheet: Parameters<typeof sheetMetrics>[0], unit: LengthUnit = 'mm'): SceneItem[] {
+export function holeTableItems(table: HoleTable, rows: readonly HoleRow[], placed: PlacedView, sheet: Parameters<typeof sheetMetrics>[0], unit: LengthUnit = 'mm', area = sheetMetrics(sheet).area): SceneItem[] {
   const items: SceneItem[] = [];
   // the tags beside the holes: up and to the right of the circle
   for (const r of rows) {
@@ -331,7 +331,7 @@ export function holeTableItems(table: HoleTable, rows: readonly HoleRow[], place
     items.push({ kind: 'text', at: [sx + d, sy + d], text: r.tag, height: TEXT });
   }
   const { headers, body, widths, width, height } = holeTableLayout(rows, unit);
-  const [x0, top] = table.at ?? defaultTableAt(sheetMetrics(sheet).area, width);
+  const [x0, top] = table.at ?? defaultTableAt(area, width);
   const y0 = top - height;
   const poly = (pts: number[], style: 'visible' | 'thin', closed = false): SceneItem => ({ kind: 'polyline', points: pts, style, ...(closed ? { closed: true } : {}) });
   items.push(poly([x0, y0, x0 + width, y0, x0 + width, top, x0, top], 'visible', true));

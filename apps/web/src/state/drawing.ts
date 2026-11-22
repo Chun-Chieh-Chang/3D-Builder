@@ -51,13 +51,14 @@ import {
   type Annotation,
   type AnnotationPatch, dimensionRefs,
   displayOf,
-  drawingFromPage,
+  drawingPageForOutput,
+  currentDrawingRevision,
   allViews,
   isShaded,
   page,
   type ViewCorner } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
-import { alignCollinear, arrangeDimensions, attachedAnnotations, FontError, SHADE_SHEET_PX, readTrueType, resolveLines, sectionMissed, toDxf, toPdf, turnLines, visibleElements, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
+import { alignCollinear, arrangeDimensions, attachedAnnotations, FontError, SHADE_SHEET_PX, readTrueType, resolveLines, revisionTableOverlaps, sectionMissed, toDxf, toPdf, turnLines, visibleElements, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
 import { autoDimensions, buildScene, type DimensionDraft, type DimensionMode, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, centreViews, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
@@ -1261,7 +1262,7 @@ export class DrawingStore {
     // the annotations fastened to the model are drawn where the model has their elements now (D-I2)
     const targetPage = page(this.state.doc, pIndex);
     const { annotations, lost } = attachedAnnotations(targetPage.annotations ?? [], this.viewsSeen(pIndex));
-    const singleDoc = drawingFromPage({ ...targetPage, annotations }, this.state.doc.properties);
+    const singleDoc = drawingPageForOutput(this.state.doc, pageIndex, { ...targetPage, annotations });
     const value = buildScene(singleDoc, this.state.lines, this.state.elements, this.state.features, this.state.boms);
     this.lostCache = lost;
     this.sceneCache = { pageIndex: pIndex, doc: this.state.doc, lines: this.state.lines, elements: this.state.elements, features: this.state.features, boms: this.state.boms, edges: this.state.edges, value };
@@ -1280,7 +1281,7 @@ export class DrawingStore {
   viewsSeen(pageIndex: number = this.state.activePageIndex): Map<Id, { seen: VisibleElements; features: ViewFeature[] }> {
     const pIndex = Math.max(0, Math.min(this.state.doc.pages.length - 1, pageIndex));
     const targetPage = page(this.state.doc, pIndex);
-    const singleDoc = drawingFromPage(targetPage, this.state.doc.properties);
+    const singleDoc = drawingPageForOutput(this.state.doc, pageIndex, targetPage);
     const lines = resolveLines(singleDoc, this.state.lines);
     return new Map(targetPage.views.map((v) => [v.id, { seen: visibleElements(lines.get(v.id), this.state.edges.get(v.id), this.state.features.get(v.id) ?? []), features: this.state.features.get(v.id) ?? [] }]));
   }
@@ -1292,7 +1293,9 @@ export class DrawingStore {
   }
 
   setTitle(field: TitleField, value: string): void {
-    if ((page(this.state.doc, this.state.activePageIndex).title[field] ?? '') !== value.trim()) this.execute({ type: 'setTitle', field, value });
+    const { doc, activePageIndex } = this.state;
+    const current = (field === 'revision' ? currentDrawingRevision(doc) : undefined) ?? page(doc, activePageIndex).title[field] ?? '';
+    if (current !== value.trim()) this.execute({ type: 'setTitle', field, value });
   }
 
   /** Views of the part the first view shows (or `source`, relative to the drawing), from these directions. */
@@ -1602,7 +1605,7 @@ export class DrawingStore {
   /** What 「最適比例」 changes of the sheet; null when nothing (it fits already, or nothing is drawn to fit). */
   private fitSheet(): Extract<DrawingCommand, { type: 'setSheet' }>['sheet'] | null {
     const { doc, lines, elements, features, boms, activePageIndex } = this.state;
-    const curDoc = drawingFromPage(page(doc, activePageIndex), doc.properties);
+    const curDoc = drawingPageForOutput(doc, activePageIndex);
     const fit = fitViews(curDoc, lines, elements, features, boms);
     if (!fit) return null;
     const curSheet = page(doc, activePageIndex).sheet;
@@ -1616,7 +1619,7 @@ export class DrawingStore {
   /** The shift that puts the arrangement in the middle at the scale it has, the way a new drawing is put there (with the names under the views, the dimensions, the marks). */
   private centredShift(): [number, number] | null {
     const { doc, lines, elements, features, boms, activePageIndex } = this.state;
-    const curDoc = drawingFromPage(page(doc, activePageIndex), doc.properties);
+    const curDoc = drawingPageForOutput(doc, activePageIndex);
     return centreViews(curDoc, lines, elements, features, boms);
   }
 
@@ -1653,8 +1656,10 @@ export class DrawingStore {
     const pages = this.state.doc.pages.length;
     const pageIndex = Math.max(0, Math.min(pages - 1, this.state.activePageIndex));
     const file = pages > 1 ? `${name}-${pageIndex + 1}.${ext}` : `${name}.${ext}`;
-    download(file, write(this.scene(pageIndex).scene), mime);
+    const { scene } = this.scene(pageIndex);
+    download(file, write(scene), mime);
     this.host.notify(pages > 1 ? t('drawing.exportedPage', { name: file, page: pageIndex + 1, pages }) : t('drawing.exported', { name: file }));
+    if (revisionTableOverlaps(drawingPageForOutput(this.state.doc, pageIndex), scene.items)) this.host.notify(t('drawing.revisions.overlap'), 'error');
   }
 
   /** The drawing as a PDF, with the font chosen for the characters Helvetica does not have; what could not be written is said. */
@@ -1670,6 +1675,7 @@ export class DrawingStore {
       download(`${name}.pdf`, bytes as BlobPart, 'application/pdf');
       this.host.notify(t('drawing.exported', { name: `${name}.pdf` }));
       for (const w of warnings) this.host.notify(w, 'error');
+      if (scenes[0] && revisionTableOverlaps(drawingPageForOutput(this.history.doc, 0), scenes[0].items)) this.host.notify(t('drawing.revisions.overlap'), 'error');
     } catch (e) {
       this.host.notify(e instanceof FontError ? e.message : t('drawing.exportFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
     }

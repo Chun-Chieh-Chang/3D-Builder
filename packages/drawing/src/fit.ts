@@ -3,7 +3,7 @@ import type { ElementsResult } from './dimension';
 import type { ViewBom } from './bomTable';
 import { STANDARD_SCALES, type ViewLines } from './layout';
 import { buildScene, sheetItems, type SceneItem } from './scene';
-import { sheetMetrics } from './sheet';
+import { drawingSheetMetrics, revisionTableItems } from './revisionTable';
 
 /** How wide a text is, as the dimension code and the overlap check reckon it (a Chinese character is wider than a letter). */
 const widthOf = (text: string, height: number) => [...text].reduce((w, c) => w + (c.charCodeAt(0) > 0x2e80 ? 1.4 : 0.62) * height, 0);
@@ -46,6 +46,17 @@ export interface Fit {
   shift: [number, number] | null;
 }
 
+/** Positioned views and notes retain their positions. Surface any overlap for the drafter to resolve. */
+export function revisionTableOverlaps(doc: DrawingDoc, items: readonly SceneItem[]): boolean {
+  const layout = revisionTableItems(doc, drawingSheetMetrics(doc).frame);
+  if (!layout) return false;
+  const { x, y, w, h } = layout.box;
+  return items.slice(sheetItems(doc).length).some((item) => {
+    const bounds = itemsBounds([item]);
+    return bounds !== null && bounds.x1 >= x && bounds.x0 <= x + w && bounds.y1 >= y && bounds.y0 <= y + h;
+  });
+}
+
 /**
  * 「最適比例」 (C16.1): the largest standard scale at which what the views that take the sheet's scale draw fits the area of the sheet, with what is drawn on them (the
  * dimensions, the centre marks, the labels of sections), not only their boxes; and where the arrangement has to be shifted to be in the middle of the area with all that.
@@ -62,7 +73,7 @@ export function fitViews(
 ): Fit | null {
   const boxAt = arrangedBox(doc, lines, elements, features, boms);
   if (!boxAt) return null;
-  const area = sheetMetrics(page(doc).sheet).area;
+  const area = drawingSheetMetrics(doc).area;
   for (const scale of [...STANDARD_SCALES, [1, 100] as Scale]) {
     if (scale[0] / scale[1] > maxRatio + 1e-9) continue;
     const box = boxAt(scale);
@@ -89,7 +100,7 @@ export function centreViews(
 
 /** Where the arrangement has to move for `box` to be in the middle of the area; null under 0.05 mm. */
 function shiftToCentre(doc: DrawingDoc, box: { x0: number; y0: number; x1: number; y1: number }): [number, number] | null {
-  const area = sheetMetrics(page(doc).sheet).area;
+  const area = drawingSheetMetrics(doc).area;
   const dx = area.x + area.w / 2 - (box.x0 + box.x1) / 2;
   const dy = area.y + area.h / 2 - (box.y0 + box.y1) / 2;
   const r = (n: number) => Math.round(n * 100) / 100;

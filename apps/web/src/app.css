@@ -759,6 +759,11 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 /* ---------------------------------------------------------------- the drawing's sidebar, as SolidWorks lays it out (D-I1b, ADR 0133)
    tabs (FeatureManager / PropertyManager), the commands at hand, a PropertyManager header that names what is being edited, and group boxes that open and close */
 .workspace.with-task-pane { grid-template-columns: 300px minmax(0, 1fr) auto; }
+.workspace.with-task-pane.sidebar-overlay { grid-template-columns: minmax(0, 1fr) auto; }
+.with-task-pane.sidebar-overlay > .task-pane { grid-column: 2; grid-row: 2; max-width: 60vw; }
+.with-task-pane.sidebar-overlay > .task-pane.closed { width: 44px; }
+.with-task-pane.sidebar-overlay > .task-pane :is(.task-pane-close, .task-pane-tab) { min-width: 44px; min-height: 44px; }
+.with-task-pane.sidebar-overlay input[data-field="revision"] { min-height: 44px; font-size: 14px; }
 .sw-panel { display: flex; flex-direction: column; min-height: 100%; background: var(--chrome); font-size: 12.5px; color: var(--text); }
 .sw-tabs { display: flex; gap: 0; padding: 4px 6px 0; background: linear-gradient(var(--chrome), var(--chrome-line)); border-bottom: 1px solid var(--chrome-line); position: sticky; top: 0; z-index: 3; }
 /* the drawing's 工具 tab (B2.6): the drawing's commands and the keys they answer to */
@@ -849,6 +854,20 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .sw-panel .pm-button.danger { color: var(--error); }
 .sw-panel .pm-button.danger:hover:not(:disabled) { border-color: var(--error-line); background: var(--error-soft); }
 .sw-panel .pm-button:disabled { color: var(--disabled); cursor: default; background: var(--surface); }
+.drawing-revisions { min-width: 0; padding: 8px 0; font-size: 14px; overflow-wrap: anywhere; }
+.drawing-revisions h3 { font-size: inherit; margin: 0 0 8px; }
+.drawing-revisions form, .drawing-revisions label { display: grid; gap: 4px; min-width: 0; }
+.drawing-revisions form { gap: 8px; }
+.drawing-revisions input, .drawing-revisions textarea { width: 100%; min-width: 0; min-height: 44px; font: inherit; }
+.drawing-revisions textarea { resize: vertical; }
+.drawing-revisions .pm-button { white-space: normal; min-height: 44px; max-width: 100%; font-size: inherit; }
+.drawing-revisions ol { list-style: none; margin: 8px 0 0; padding: 0; }
+.drawing-revisions li { border-top: 1px solid var(--line); padding: 8px 0; }
+.drawing-revisions li p { margin: 4px 0; white-space: pre-wrap; }
+.drawing-revision-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.sw-panel .drawing-wrap-width { flex-wrap: wrap; font-size: 14px; }
+.sw-panel .drawing-wrap-width input { min-height: 44px; max-width: 100%; }
+.sw-panel textarea[data-field="dimText"] { min-height: 44px; max-width: 100%; font-size: 14px; }
 .sw-panel .selection-box { border: 1px solid var(--line-2); background: var(--surface); border-radius: 4px; padding: 2px; min-height: 0; }
 .sw-panel .selection-box li { flex-direction: row; align-items: center; justify-content: space-between; gap: 6px; padding: 3px 6px; border-radius: 3px; cursor: pointer; }
 .sw-panel .selection-box li:hover { background: var(--accent-faint); }

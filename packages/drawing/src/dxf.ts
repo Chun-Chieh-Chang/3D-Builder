@@ -54,9 +54,10 @@ export function dxfEscape(text: string): string {
  * so a CAD program that draws the dimension again draws them stacked too.
  */
 export function dimensionOverride(d: Pick<SceneDimension, 'text' | 'parts'>): string {
-  if (!d.parts) return dxfEscape(d.text);
+  const lines = (text: string) => text.split(/\r\n?|\n/).map(dxfEscape).join('\\P');
+  if (!d.parts) return lines(d.text);
   // `^` and `;` end the halves of a stack; a deviation is a signed number with a degree sign, which has neither
-  return d.parts.map((p) => (typeof p === 'string' ? dxfEscape(p) : `\\S${dxfEscape(p.upper)}^${dxfEscape(p.lower)};`)).join('');
+  return d.parts.map((p) => (typeof p === 'string' ? lines(p) : `\\S${dxfEscape(p.upper)}^${dxfEscape(p.lower)};`)).join('');
 }
 
 class Out {

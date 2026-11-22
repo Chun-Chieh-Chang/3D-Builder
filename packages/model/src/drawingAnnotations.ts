@@ -83,6 +83,8 @@ export interface NoteAnnotation extends AnnotationCommon {
   text: string;
   /** The height of the capitals (mm on the sheet). Absent: 3.5. */
   height?: number;
+  /** Maximum text width in millimetres on the sheet. */
+  wrapWidth?: number;
   /** Optional outline fitted to all resolved text lines, in paper units. */
   enclosure?: 'circle' | 'rounded';
   leader?: P;
@@ -153,6 +155,11 @@ export const ANNOTATION_KINDS: readonly AnnotationKind[] = ['note', 'datum', 'fc
 export const DATUM_LABEL = /^[A-HJ-NPR-Z]{1,2}$/;
 export const NOTE_MAX = 500;
 export const NOTE_HEIGHT = { min: 1.8, max: 20 };
+export const DRAWING_TEXT_WIDTH = { min: 30, max: 1000, default: 90 };
+
+export function validDrawingTextWidth(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= DRAWING_TEXT_WIDTH.min && value <= DRAWING_TEXT_WIDTH.max;
+}
 
 const finite = (p: unknown): p is P => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
 
@@ -181,6 +188,7 @@ export function checkAnnotation(a: Annotation, viewExists: (id: Id) => boolean, 
       if (typeof a.text !== 'string' || a.text.trim() === '') throw new CommandError(t('drawing.noteEmpty'));
       if (a.text.length > NOTE_MAX) throw new CommandError(t('drawing.noteTooLong', { max: String(NOTE_MAX) }));
       if (a.height !== undefined && !(Number.isFinite(a.height) && a.height >= NOTE_HEIGHT.min && a.height <= NOTE_HEIGHT.max)) throw new CommandError(t('drawing.noteBadHeight', { min: String(NOTE_HEIGHT.min), max: String(NOTE_HEIGHT.max) }));
+      if (a.wrapWidth !== undefined && !validDrawingTextWidth(a.wrapWidth)) throw new CommandError(t('drawing.badTextWidth', DRAWING_TEXT_WIDTH));
       if (a.enclosure !== undefined && a.enclosure !== 'circle' && a.enclosure !== 'rounded') throw new CommandError(t('drawing.noteBadEnclosure'));
       return;
     }
@@ -238,7 +246,7 @@ export type AnnotationPatch = { [K in string]?: unknown };
 
 /** The fields each kind may have changed, and which of them may be taken away. */
 export const ANNOTATION_FIELDS: Record<AnnotationKind, { set: string[]; optional: string[] }> = {
-  note: { set: ['at', 'text', 'height', 'enclosure', 'leader', 'attach', 'color'], optional: ['height', 'enclosure', 'leader', 'attach', 'color'] },
+  note: { set: ['at', 'text', 'height', 'wrapWidth', 'enclosure', 'leader', 'attach', 'color'], optional: ['height', 'wrapWidth', 'enclosure', 'leader', 'attach', 'color'] },
   datum: { set: ['at', 'label', 'angle', 'length', 'attach', 'color'], optional: ['angle', 'length', 'attach', 'color'] },
   fcf: { set: ['at', 'characteristic', 'tolerance', 'diameter', 'material', 'datums', 'leader', 'attach', 'color'], optional: ['diameter', 'material', 'leader', 'attach', 'color'] },
   centreLine: { set: ['from', 'to', 'color'], optional: ['color'] },

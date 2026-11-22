@@ -86,6 +86,34 @@ export function textWidthMm(text: string, height: number): number {
   return (thousandths / 1000) * em;
 }
 
+const wordSegments = new Intl.Segmenter(undefined, { granularity: 'word' });
+
+/** Fit text to paper millimetres, preserving explicit line breaks and splitting overlong words when necessary. */
+export function wrapPaperText(text: string, width: number, measure: (line: string) => number): string[] {
+  return text.split(/\r\n?|\n/).flatMap((paragraph) => {
+    if (measure(paragraph) <= width) return [paragraph];
+    const rows: string[] = [];
+    let line = '';
+    const flush = () => {
+      const content = line.trimEnd();
+      if (content) rows.push(content);
+      line = '';
+    };
+    for (const { segment } of wordSegments.segment(paragraph)) {
+      if (measure(line + segment) > width) flush();
+      if (measure(segment) <= width) line += line ? segment : segment.trimStart();
+      else {
+        for (const char of segment.trimStart()) {
+          if (line && measure(line + char) > width) flush();
+          line += char;
+        }
+      }
+    }
+    if (line || !rows.length) rows.push(line.trimEnd());
+    return rows;
+  });
+}
+
 /** The height a title block text is written at (ADR 0150): the style's, shrunk to the cell when it is wider than the cell and the style fits — never grown, never below `TITLE_FIT_MIN`. */
 export function fittedTitleHeight(text: string, height: number, cellWidth: number, fit: boolean): number {
   if (!fit) return height;

@@ -13,6 +13,8 @@ import { AnnotationPanel } from './AnnotationPanel';
 import { DimensionPanel } from './DimensionPanel';
 import { Icon, type IconName } from './Icon';
 import { PMGroup } from './PMGroup';
+import { currentDrawingRevision } from '@3db/model';
+import { DrawingRevisionHistory } from './DrawingRevisionHistory';
 
 const SIDES: readonly ViewSide[] = ['right', 'left', 'up', 'down'];
 const same = (a: Scale, b: Scale) => a[0] === b[0] && a[1] === b[1];
@@ -591,9 +593,10 @@ export function DrawingPanel() {
           {TITLE_FIELDS.map((field: TitleField) => (
             <label key={field} className="pm-row">
               <span>{t(`drawing.title.${field}`)}</span>
-              <TextBox value={curPage.title[field] ?? ''} onCommit={(v) => d.setTitle(field, v)} />
+              <TextBox field={field === 'revision' ? field : undefined} value={(field === 'revision' ? currentDrawingRevision(doc) : undefined) ?? curPage.title[field] ?? ''} onCommit={(v) => d.setTitle(field, v)} />
             </label>
           ))}
+          <DrawingRevisionHistory entries={doc.revisionHistory} drafter={curPage.title.drafter} execute={(command) => d.execute(command)} />
           <TitleStyleFields value={curPage.sheet.titleStyle ?? {}} base={TITLE_STYLE_DEFAULT} onChange={(s) => d.setSheet({ titleStyle: s })} />
         </PMGroup>
 

@@ -5,7 +5,7 @@ import { CommandError } from './commands';
 import { isFilePath, joinPath, relativePath } from './paths';
 import { parseFit } from './tolerance';
 import type { Ref } from './schema';
-import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type AnnotationPatch } from './drawingAnnotations';
+import { ANNOTATION_FIELDS, checkAnnotation, DRAWING_TEXT_WIDTH, framesUsing, validDrawingTextWidth, type Annotation, type AnnotationPatch } from './drawingAnnotations';
 
 /**
  * The drawing document (B1.1, C16, Phase 5): the sheet, the title block, and the views of a part or an assembly. Only the design intent is stored — which file a
@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, framesUsing, type Annotation, type 
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 39;
+export const DRAWING_SCHEMA_VERSION = 40;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -624,6 +624,8 @@ export interface DiameterDimension extends DimensionCommon {
   calloutStyle?: CalloutStyle;
   /** Independent side-view thread leader. Requires model thread data and callout=true. */
   threadLeader?: boolean;
+  /** Maximum callout text width in millimetres on the sheet. */
+  wrapWidth?: number;
 }
 
 /** The radius (R) of a cylinder or circle seen as an arc or a circle in the view. */
@@ -928,6 +930,46 @@ export interface DrawingPage {
   annotations: Annotation[];
 }
 
+export interface DrawingRevision {
+  revision: string;
+  date: string;
+  description: string;
+  author: string;
+  changeOrder?: string;
+}
+
+export const DRAWING_REVISION_FIELDS = ['revision', 'date', 'description', 'author', 'changeOrder'] as const;
+export const DRAWING_REVISION_LIMITS = { revision: 16, date: 10, description: 280, author: 40, changeOrder: 32 };
+
+export function drawingRevisionDate(now = new Date()): string {
+  return [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((part, index) => String(part).padStart(index === 0 ? 4 : 2, '0')).join('-');
+}
+
+export function normalizeDrawingRevision(value: unknown): DrawingRevision {
+  if (!value || typeof value !== 'object') throw new CommandError(t('drawing.revisions.invalid'));
+  const input = value as Partial<Record<keyof DrawingRevision, unknown>>;
+  const read = (field: keyof DrawingRevision, multiline = false): string => {
+    const raw = input[field];
+    if (raw === undefined && field === 'changeOrder') return '';
+    if (typeof raw !== 'string') throw new CommandError(t('drawing.revisions.invalid'));
+    const text = raw.trim().replace(/\r\n?/g, '\n');
+    if ((!text && (field === 'revision' || field === 'date')) || text.length > DRAWING_REVISION_LIMITS[field] || (!multiline && text.includes('\n'))) {
+      throw new CommandError(t('drawing.revisions.invalid'));
+    }
+    return text;
+  };
+  const revision = read('revision');
+  const date = read('date');
+  const parsed = new Date(date + 'T00:00:00Z');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+    throw new CommandError(t('drawing.revisions.badDate'));
+  }
+  const description = read('description', true);
+  const author = read('author');
+  const changeOrder = read('changeOrder');
+  return { revision, date, description, author, ...(changeOrder ? { changeOrder } : {}) };
+}
+
 export interface DrawingDoc {
   kind: 'drawing';
   schemaVersion: number;
@@ -935,6 +977,7 @@ export interface DrawingDoc {
   pages: DrawingPage[];
   properties: Record<string, string>;
   idCounters: Record<string, number>;
+  revisionHistory?: DrawingRevision[];
 }
 
 /** The page the program reads while a drawing holds one sheet (B2.8, ADR 0154). */
@@ -942,6 +985,20 @@ export const page = (doc: Pick<DrawingDoc, 'pages'>, index = 0): DrawingPage => 
 
 /** A drawing of one page: what the layout builds when it tries a scale or a place (B2.8, ADR 0154). */
 export const drawingFromPage = (p: DrawingPage, properties: Record<string, string> = {}): DrawingDoc => ({ kind: 'drawing', schemaVersion: DRAWING_SCHEMA_VERSION, pages: [p], properties, idCounters: {} });
+
+export function currentDrawingRevision(doc: Pick<DrawingDoc, 'revisionHistory'>): string | undefined {
+  return doc.revisionHistory?.at(-1)?.revision;
+}
+
+/** A single page for layout and output, with the current revision on every sheet and the history on the first. */
+export function drawingPageForOutput(doc: DrawingDoc, index: number, p = page(doc, index)): DrawingDoc {
+  const revision = currentDrawingRevision(doc);
+  const sheet = revision === undefined ? p : { ...p, title: { ...p.title, revision } };
+  return {
+    ...drawingFromPage(sheet, doc.properties),
+    ...(index === 0 && doc.revisionHistory?.length ? { revisionHistory: doc.revisionHistory } : {}),
+  };
+}
 
 /** The same drawing with a page replaced (B2.8, ADR 0154). */
 export const withPage = (doc: DrawingDoc, p: DrawingPage, index = 0): DrawingDoc => ({
@@ -970,7 +1027,7 @@ export type DrawingCommand =
   /** Changes the sheet: its size, orientation, projection, scale or (`shift: null`: take it back) the shift of the arrangement (C16.1). */
   | { type: 'setSheet'; pageIndex?: number; pageId?: Id; sheet: Partial<Omit<DrawingSheet, 'shift' | 'language' | 'dimStyle' | 'titleStyle' | 'pdfFont'>> & { shift?: [number, number] | null; language?: Locale | null; dimStyle?: DimStyle | null; titleStyle?: TitleStyle | null; pdfFont?: string | null } }
   /** Writes a field of the title block; an empty text takes it away (C16.1). */
-  | { type: 'setTitle'; pageIndex?: number; pageId?: Id; field: TitleField; value: string }
+  | { type: 'setTitle'; pageIndex?: number; pageId?: Id; field: TitleField; value: string; revisionDate?: string }
   /** Adds views at the end of the list (C16.2), each with its own new id. */
   | { type: 'insertViews'; pageIndex?: number; pageId?: Id; views: DrawingView[] }
   /** Changes a view: what is given replaces what is there; `at: null` and `scale: null` take the choice back (the view is laid out again / uses the sheet's scale). */
@@ -983,6 +1040,8 @@ export type DrawingCommand =
   | { type: 'setDimension'; dimensionId: Id; patch: DimensionPatch }
   | { type: 'deleteDimensions'; dimensionIds: Id[] }
   /** Adds tables (C16.6), each with its own new id, on views that are there. */
+  | { type: 'saveRevision'; previousRevision?: string; entry: DrawingRevision }
+  | { type: 'deleteRevision'; revision: string }
   | { type: 'insertTables'; pageIndex?: number; pageId?: Id; tables: DrawingTable[] }
   /** Changes a table: `at: null` puts it back in the corner; `fits` replaces the classes (an empty one takes them all away). */
   | { type: 'setTable'; tableId: Id; patch: { at?: [number, number] | null; fits?: Record<string, string>; balloons?: boolean | null; balloonAt?: Record<string, [number, number]> | null } }
@@ -1042,6 +1101,7 @@ export type DimensionPatch = {
   count?: number | null;
   callout?: boolean | null;
   calloutStyle?: CalloutStyle | null;
+  wrapWidth?: number | null;
   /** An angle dimension: the radius of its arc (mm), and the other angle of the two lines. */
   arc?: number;
   precision?: number | null;
@@ -1370,6 +1430,8 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
   } else throw new CommandError(t('drawing.dimBadKind', { kind: String((d as { kind?: unknown }).kind) }));
   const calloutStyle = (d as DiameterDimension).calloutStyle;
   if (calloutStyle !== undefined && (d.kind !== 'diameter' || !['text', 'symbols'].includes(calloutStyle))) throw new CommandError(t('drawing.dimBadCalloutStyle'));
+  const wrapWidth = (d as DiameterDimension).wrapWidth;
+  if (wrapWidth !== undefined && (d.kind !== 'diameter' || !validDrawingTextWidth(wrapWidth))) throw new CommandError(t('drawing.badTextWidth', DRAWING_TEXT_WIDTH));
   const threadLeader = (d as DiameterDimension).threadLeader;
   if (threadLeader !== undefined && (d.kind !== 'diameter' || typeof threadLeader !== 'boolean' || (threadLeader && !d.callout))) throw new CommandError(t('drawing.badThreadLeader'));
   if (threadLeader && d.text !== undefined) throw new CommandError(t('drawing.badThreadLeader'));
@@ -1462,8 +1524,37 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     }
     case 'setTitle': {
       const value = cmd.value.trim();
+      if (cmd.field === 'revision') {
+        const current = currentDrawingRevision(draft);
+        if (value === (current ?? pg.title.revision ?? '').trim()) return;
+        if (!value && current !== undefined) throw new CommandError(t('drawing.revisions.empty'));
+        if (value) {
+          const author = (pg.title.drafter ?? '').replace(/\s+/g, ' ').trim().slice(0, DRAWING_REVISION_LIMITS.author);
+          mutateDrawing(draft, { type: 'saveRevision', entry: { revision: value, date: cmd.revisionDate ?? drawingRevisionDate(), description: '', author } });
+          return;
+        }
+      }
       if (value === '') delete pg.title[cmd.field];
       else pg.title[cmd.field] = value;
+      return;
+    }
+    case 'saveRevision': {
+      const entry = normalizeDrawingRevision(cmd.entry);
+      const history = draft.revisionHistory ?? [];
+      const index = cmd.previousRevision === undefined ? history.length : history.findIndex((item) => item.revision === cmd.previousRevision);
+      if (index < 0) throw new CommandError(t('drawing.revisions.missing'));
+      if (history.some((item, i) => i !== index && item.revision.toUpperCase() === entry.revision.toUpperCase())) {
+        throw new CommandError(t('drawing.revisions.duplicate'));
+      }
+      history[index] = entry;
+      draft.revisionHistory = history;
+      return;
+    }
+    case 'deleteRevision': {
+      const index = draft.revisionHistory?.findIndex((item) => item.revision === cmd.revision) ?? -1;
+      if (index < 0) throw new CommandError(t('drawing.revisions.missing'));
+      draft.revisionHistory!.splice(index, 1);
+      if (!draft.revisionHistory!.length) delete draft.revisionHistory;
       return;
     }
     case 'insertViews': {
@@ -1588,7 +1679,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     case 'setDimension': {
       const d = pg.dimensions.find((x) => x.id === cmd.dimensionId);
       if (!d) throw new CommandError(t('drawing.noDimension', { id: cmd.dimensionId }));
-      const { reference, tolerance, count, callout, calloutStyle, supplementary, precision, prefix, suffix, text, slide, leader, style, kind, size, chamferAngle, chamferFormat, insideAt, ...rest } = cmd.patch;
+      const { reference, tolerance, count, callout, calloutStyle, wrapWidth, supplementary, precision, prefix, suffix, text, slide, leader, style, kind, size, chamferAngle, chamferFormat, insideAt, ...rest } = cmd.patch;
       if (kind !== undefined) {
         if (d.kind !== 'diameter' && d.kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'kind', kind: d.kind }));
         if (kind !== 'diameter' && kind !== 'radius') throw new CommandError(t('drawing.notForKind', { field: 'kind', kind }));
@@ -1607,6 +1698,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (slide !== undefined && targetKind !== 'linear' && targetKind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'slide', kind: targetKind }));
       if (leader !== undefined && targetKind !== 'diameter' && targetKind !== 'radius' && targetKind !== 'chamfer') throw new CommandError(t('drawing.notForKind', { field: 'leader', kind: targetKind }));
       if (calloutStyle !== undefined && targetKind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'calloutStyle', kind: targetKind }));
+      if (wrapWidth !== undefined && targetKind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'wrapWidth', kind: targetKind }));
       if (callout !== undefined && targetKind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: targetKind }));
       if (supplementary !== undefined && targetKind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'supplementary', kind: targetKind }));
       if (size !== undefined && targetKind !== 'chamfer') throw new CommandError(t('drawing.notForKind', { field: 'size', kind: targetKind }));
@@ -1620,6 +1712,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
         if (kind === 'radius') {
           delete next.callout;
           delete (next as unknown as { calloutStyle?: CalloutStyle }).calloutStyle;
+          delete (next as unknown as { wrapWidth?: number }).wrapWidth;
         }
       }
       if (supplementary === null || supplementary === false) delete next.supplementary;
@@ -1636,6 +1729,10 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (next.kind === 'diameter' && calloutStyle !== undefined) {
         if (calloutStyle === null) delete next.calloutStyle;
         else next.calloutStyle = calloutStyle;
+      }
+      if (next.kind === 'diameter' && wrapWidth !== undefined) {
+        if (wrapWidth === null) delete next.wrapWidth;
+        else next.wrapWidth = wrapWidth;
       }
       const loose = next as unknown as Record<string, unknown>;
       for (const [k, v] of [['precision', precision], ['prefix', prefix], ['suffix', suffix], ['text', text], ['leader', leader]] as const) {

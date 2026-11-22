@@ -11,6 +11,8 @@ import { circlePolyline, clipToOutline, clipToBand, hatch, outlinePoints, type P
 import { layoutViews, ratio, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
 import { fittedTitleHeight, sheetMetrics, titleCells, type Rect } from './sheet';
 import { surfaceFinishItems } from './surfaceFinish';
+import { currentDrawingRevision, DRAWING_TEXT_WIDTH } from '@3db/model';
+import { drawingSheetMetrics, revisionTableItems } from './revisionTable';
 
 /**
  * What a drawing is as lines and text on the sheet (C16, F3.1, F3.2): one list of polylines and texts in sheet millimetres (origin at the lower left corner,
@@ -158,6 +160,7 @@ export function sheetItems(doc: DrawingDoc): SceneItem[] {
   const items: SceneItem[] = [rect(m.frame, 'frame'), rect(m.titleBlock, 'frame')];
   const values: Record<string, string> = {
     ...pg.title,
+    revision: currentDrawingRevision(doc) ?? pg.title.revision ?? '',
     scale: scaleText(pg.sheet.scale),
     sheet: pg.sheet.size,
     unit: pg.sheet.unit ?? 'mm',
@@ -178,6 +181,8 @@ export function sheetItems(doc: DrawingDoc): SceneItem[] {
       items.push({ kind: 'text', at: [x + 2, y + (c.large ? 3.5 : 2.2)], text, height });
     }
   }
+  const revisions = revisionTableItems(doc, m.frame);
+  if (revisions) items.push(...revisions.items);
   return items;
 }
 
@@ -388,13 +393,14 @@ function buildSceneIn(
   boms: ReadonlyMap<Id, ViewBom>,
 ): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]>; tableBoxes: Map<Id, Rect>; balloons: Map<Id, BalloonSpot[]> } {
   const pg = page(doc);
-  const m = sheetMetrics(pg.sheet);
+  const m = drawingSheetMetrics(doc);
   const placed = layoutViews(doc, lines);
   const resolved = resolveLines(doc, lines);
   const items: SceneItem[] = [...sheetItems(doc)];
   const images: SceneImage[] = [];
   // what a note's $PRP:key stands for: a field of the title block, else a property of the drawing
-  const lookup = (key: string): string | undefined => (pg.title as Record<string, string | undefined>)[key] ?? doc.properties?.[key];
+  const lookup = (key: string): string | undefined => (key === 'revision' ? currentDrawingRevision(doc) : undefined)
+    ?? (pg.title as Record<string, string | undefined>)[key] ?? doc.properties?.[key];
   for (const v of pg.views) {
     const own = placed.get(v.id)!;
     const image = viewImage(v, resolved.get(v.id), own);
@@ -429,7 +435,10 @@ function buildSceneIn(
     for (const a of (pg.annotations ?? []).filter((x) => x.view === v.id)) {
       const anchor = a.kind === 'fcf' || a.kind === 'note' ? (a.leader ?? a.at) : a.kind === 'datum' ? a.at : null;
       const own_k = a.kind === 'note' && a.height !== undefined ? 1 : k;
-      const drawn = annotationItems([a], own, lookup, pg.sheet.unit ?? 'mm');
+      const annotation = a.kind === 'note' && own_k !== 1
+        ? { ...a, wrapWidth: (a.wrapWidth ?? DRAWING_TEXT_WIDTH.default) / own_k }
+        : a;
+      const drawn = annotationItems([annotation], own, lookup, pg.sheet.unit ?? 'mm');
       const annColor = a.color && a.color.toLowerCase() !== '#000000' ? a.color : undefined;
       items.push(...(anchor ? scaleAbout(drawn, toSheet(own, anchor[0], anchor[1]), own_k) : drawn).map((i) => ({ ...i, owner: a.id, ...(annColor ? { color: annColor } : {}) })));
     }
@@ -476,8 +485,8 @@ function buildSceneIn(
     }
     const rows = holeRows(features.get(table.view) ?? [], table.fits, pg.sheet.unit ?? 'mm', pg.sheet.calloutStyle ?? 'text');
     tables.set(table.id, rows);
-    items.push(...holeTableItems(table, rows, own, pg.sheet, pg.sheet.unit ?? 'mm'));
-    tableBoxes.set(table.id, holeTableBox(table, rows, pg.sheet, pg.sheet.unit ?? 'mm'));
+    items.push(...holeTableItems(table, rows, own, pg.sheet, pg.sheet.unit ?? 'mm', m.area));
+    tableBoxes.set(table.id, holeTableBox(table, rows, pg.sheet, pg.sheet.unit ?? 'mm', m.area));
   }
   // an ISO sheet's scene says nothing of its lines and dimension style beyond what it always did, so what is written from it is what was written before v39
   const iso = standardOf(pg.sheet) === 'ISO';

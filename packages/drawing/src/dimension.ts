@@ -4,6 +4,8 @@ import { projectionFacts } from './projectionRefs';
 import { circlePolyline } from './geometry';
 import { toSheet, fromSheet, type PlacedView, type ViewLines } from './layout';
 import { HELVETICA_CAP_HEIGHT, helveticaWidth } from './helvetica';
+import { DRAWING_TEXT_WIDTH } from '@3db/model';
+import { textWidthMm, wrapPaperText } from './sheet';
 import type { SceneDimensionGeometry, SceneItem, SceneText } from './scene';
 
 /**
@@ -292,6 +294,26 @@ export function dimensionTextItems(parts: readonly DimensionTextPart[], at: P, h
 }
 
 const stackedParts = (parts: DimensionTextPart[]) => (parts.some((p) => typeof p !== 'string') ? { parts } : {});
+
+function roundLabel(
+  parts: DimensionTextPart[], at: P, height: number, anchor: 'left' | 'right', wrapWidth?: number,
+) {
+  if (wrapWidth === undefined) return { ...dimensionTextItems(parts, at, height, anchor), ...stackedParts(parts), rows: 1 };
+  // A stacked tolerance stays together as one unit when its surrounding text wraps.
+  const stack = parts.find((part) => typeof part !== 'string');
+  const token = '\u0001';
+  const decode = (line: string): DimensionTextPart[] => stack
+    ? line.split(/(\u0001)/).map((part) => part === token ? stack : part)
+    : [line];
+  const measure = (line: string) => line.includes(token)
+    ? dimensionTextItems(decode(line), [0, 0], height).width
+    : textWidthMm(line, height);
+  const lines = wrapPaperText(parts.map((part) => typeof part === 'string' ? part : token).join(''), wrapWidth, measure);
+  const rows = lines.map(decode);
+  const items = rows.flatMap((row, index) => dimensionTextItems(row, [at[0], at[1] + (rows.length - index - 1) * height * 1.6], height, anchor).items);
+  const outputParts = rows.flatMap((row, index) => index ? ['\n', ...row] : row);
+  return { items, width: Math.max(...lines.map(measure)), ...(rows.length > 1 ? { parts: outputParts } : stackedParts(parts)), rows: rows.length };
+}
 
 type P = [number, number];
 const add = (a: P, b: P, k = 1): P => [a[0] + b[0] * k, a[1] + b[1] * k];
@@ -849,9 +871,9 @@ function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: Eleme
     const outer = add(near, u, d.leader ?? LEADER);
     const { text, parts } = dimensionWords(d, 2 * e.radius, e, unit);
     const dir = u[0] >= 0 ? 1 : -1;
-    const label = dimensionTextItems(parts, [outer[0] + dir, outer[1] + 1], DIM_TEXT, dir > 0 ? 'left' : 'right');
+    const label = roundLabel(parts, [outer[0] + dir, outer[1] + 1], DIM_TEXT, dir > 0 ? 'left' : 'right', d.wrapWidth ?? DRAWING_TEXT_WIDTH.default);
     const shelf: P = [outer[0] + dir * (label.width + 2), outer[1]];
-    return { value: 2 * e.radius, text, ...stackedParts(parts), items: [line(near, outer, shelf), ...arrowhead(near, [-u[0], -u[1]]), ...label.items],
+    return { value: 2 * e.radius, text, ...(label.parts ? { parts: label.parts } : {}), items: [line(near, outer, shelf), ...arrowhead(near, [-u[0], -u[1]]), ...label.items],
       handle: { kind: 'round', centre: near, radius: 0 } };
   }
   // the circle has to be seen as a circle
@@ -866,7 +888,8 @@ function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: Eleme
   const outer = add(centre, u, r + leader);
   const dir = u[0] >= 0 ? 1 : -1;
   const textAt: P = [outer[0] + dir * 1, outer[1] + 1];
-  const label = dimensionTextItems(parts, textAt, DIM_TEXT, dir > 0 ? 'left' : 'right');
+  const wrapWidth = d.kind === 'diameter' && d.callout ? d.wrapWidth ?? DRAWING_TEXT_WIDTH.default : undefined;
+  const label = roundLabel(parts, textAt, DIM_TEXT, dir > 0 ? 'left' : 'right', wrapWidth);
   const shelfEnd: P = [outer[0] + dir * (label.width + 2), outer[1]];
   const items: SceneItem[] = [];
   const farView: P = [at[0] - u[0] * e.radius, at[1] - u[1] * e.radius];
@@ -888,11 +911,11 @@ function circle(d: Extract<Dimension, { kind: 'diameter' | 'radius' }>, e: Eleme
     items.push(line(shelfEnd, outer, near), ...arrowhead(near, [-u[0], -u[1]]));
   }
   items.push(...label.items);
-  const middle: P = [textAt[0] + (dir * label.width) / 2, textAt[1] + DIM_TEXT / 2];
+  const middle: P = [textAt[0] + (dir * label.width) / 2, textAt[1] + DIM_TEXT * (0.5 + (label.rows - 1) * 0.8)];
   return {
     value,
     text,
-    ...stackedParts(parts),
+    ...(label.parts ? { parts: label.parts } : {}),
     items,
     handle: { kind: 'round', centre, radius: r },
     dxf: { textAt: middle, geometry: d.kind === 'diameter' ? { kind: 'diameter', far: add(centre, u, -r), near, leader } : { kind: 'radius', centre, near, leader } },

@@ -17,7 +17,7 @@ import {
 } from '@3db/model';
 import type { AnnotateWhat } from '../state/drawing';
 import { ColorRow } from './DimStyleFields';
-import { NumberBox as ValidatedNumberBox } from './DimensionPanel';
+import { DrawingTextWidthField, NumberBox as ValidatedNumberBox } from './DimensionPanel';
 import { useState } from 'react';
 import { store, useStore } from '../state/store';
 
@@ -194,6 +194,7 @@ function AnnotationFields({ a }: { a: Annotation }) {
           <span>{t('drawingUi.noteText')}</span>
           <NoteBox value={a.text} onCommit={(v) => d.setAnnotation(a.id, { text: v })} />
         </label>
+        <DrawingTextWidthField field="noteWrapWidth" value={a.wrapWidth} onCommit={(wrapWidth) => d.setAnnotation(a.id, { wrapWidth })} />
         <label className="pm-row">
           <span>{t('drawingUi.noteHeight')}</span>
           <NumberBox field="noteHeight" value={a.height ?? 3.5} onCommit={(v) => d.setAnnotation(a.id, { height: v === 3.5 ? null : v })} />

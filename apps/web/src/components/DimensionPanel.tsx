@@ -1,6 +1,6 @@
 import { t } from '@3db/i18n';
 import { formatNumber, overlappingDimensions, toView } from '@3db/drawing';
-import { MM_PER_INCH, axesOf, baseDimStyle, normalizedViewAxes, rightOf, sheetUp, page, resolveDimStyle } from '@3db/model';
+import { DRAWING_TEXT_WIDTH, MM_PER_INCH, axesOf, baseDimStyle, normalizedViewAxes, rightOf, sheetUp, page, resolveDimStyle, validDrawingTextWidth } from '@3db/model';
 import type { DimStyle, Dimension, DimensionOrientation, DimensionTolerance, DrawingSketchCircle, ViewFeature } from '@3db/model';
 import { ColorRow, DimStyleFields } from './DimStyleFields';
 import { useEffect, useState } from 'react';
@@ -380,6 +380,9 @@ export function DimensionPanel() {
                   </select>
                 </label>
               )}
+              {current.kind === 'diameter' && current.callout && (
+                <DrawingTextWidthField field="calloutWrapWidth" value={current.wrapWidth} onCommit={(wrapWidth) => d.setDimension(current.id, { wrapWidth })} />
+              )}
               {current.kind === 'linear' ? (
                 <>
                   {current.orientation !== 'aligned' && (
@@ -476,7 +479,7 @@ export function DimensionPanel() {
               </label>
               {!(current.kind === 'diameter' && current.threadLeader) && <label className="pm-row" title={t('drawingUi.dimTextTip')}>
                 <span>{t('drawingUi.dimText')}</span>
-                <TextField field="dimText" value={current.text ?? ''} onCommit={(v) => d.setDimension(current.id, { text: v })} />
+                <TextField field="dimText" value={current.text ?? ''} multiline={current.kind === 'diameter' && !!current.callout} onCommit={(v) => d.setDimension(current.id, { text: v })} />
               </label>}
               {(current.kind === 'linear' || current.kind === 'angle') && (
                 <label className="pm-row">
@@ -733,7 +736,16 @@ function BatchDimensions({ dims, perUnit }: { dims: readonly Dimension[]; perUni
 }
 
 /** A text box committed on Enter or on leaving (an empty text takes what was written away). */
-function TextField({ value, onCommit, field }: { value: string; onCommit: (v: string) => void; field: string }) {
+export function DrawingTextWidthField({ field, value, onCommit }: { field: string; value?: number; onCommit: (value: number | null) => void }) {
+  return <label className="pm-row drawing-wrap-width">
+    <span>{t('drawingUi.textWrapWidth')}</span>
+    <NumberBox field={field} value={value ?? DRAWING_TEXT_WIDTH.default}
+      validate={(width) => validDrawingTextWidth(width) ? null : t('drawing.badTextWidth', DRAWING_TEXT_WIDTH)}
+      onCommit={(width) => onCommit(width === DRAWING_TEXT_WIDTH.default ? null : width)} />
+  </label>;
+}
+
+function TextField({ value, onCommit, field, multiline }: { value: string; onCommit: (v: string) => void; field: string; multiline?: boolean }) {
   const [text, setText] = useState(value);
   const [shown, setShown] = useState(value);
   if (value !== shown) {
@@ -741,6 +753,7 @@ function TextField({ value, onCommit, field }: { value: string; onCommit: (v: st
     setText(value);
   }
   const commit = () => (text !== value ? onCommit(text) : undefined);
+  if (multiline) return <textarea data-field={field} rows={3} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.stopPropagation()} />;
   return (
     <input
       data-field={field}

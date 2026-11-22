@@ -1,7 +1,7 @@
 import { BREAK_GAP, isCorner, isDerived, page, rightOf, sectionArrow, sectionSide, withPage, type SectionHatchRegion, type ClosedOutline, type ViewAxes, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type ViewCorner, type ViewName, type ViewSide } from '@3db/model';
 import { clipToCircle, clipToOutline, outlineBox } from './geometry';
 import type { ShadeImage } from './shade';
-import { sheetMetrics} from './sheet';
+import { drawingSheetMetrics } from './revisionTable';
 
 /** What a view needs to be laid out and drawn: its lines at full size, and for a section the outlines of the faces the cut made (to be hatched). */
 export interface ViewLines {
@@ -331,7 +331,7 @@ export function slideAxis(doc: Pick<DrawingDoc, 'pages'>, v: DrawingView): 0 | 1
  */
 export function layoutViews(doc: DrawingDoc, rawLines: ReadonlyMap<Id, ViewLines | null>): Map<Id, PlacedView> {
   const pg = page(doc);
-  const sheet = sheetMetrics(pg.sheet);
+  const sheet = drawingSheetMetrics(doc);
   const lines = resolveLines(doc, rawLines);
   const measured = new Map<Id, Measured>();
   for (const v of pg.views) {

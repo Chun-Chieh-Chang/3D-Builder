@@ -28,7 +28,7 @@ export function WorkspaceLayout({ drawing, editing, sidebar, children }: {
   const [expanded, setExpanded] = useState(editing);
   const toggle = useRef<HTMLButtonElement>(null);
   const drag = useRef<{ pointer: number; x: number; width: number } | null>(null);
-  const overlay = !drawing && screenWidth <= OVERLAY_WIDTH;
+  const overlay = screenWidth <= OVERLAY_WIDTH;
   const maxWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, screenWidth - MIN_MODEL_WIDTH));
   const clamp = (value: number) => Math.round(Math.max(MIN_WIDTH, Math.min(value, maxWidth)));
   const width = clamp(preview ?? preferred);
