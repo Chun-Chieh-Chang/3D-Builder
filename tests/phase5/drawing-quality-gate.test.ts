@@ -144,8 +144,8 @@ describe('Phase 4: drawing quality gate (ADR 0263, rules Q1, Q2, C5, C7, Q3)', (
 
   it('stampPreliminary writes PRELIMINARY into SVG and DXF scenes', () => {
     const base: Scene = { width: 420, height: 297, items: [] };
-    const stamped = stampPreliminary(base);
-    expect(stamped.items.some((i) => i.kind === 'text' && i.text === 'PRELIMINARY')).toBe(true);
+    const stamped = stampPreliminary(base, { size: 'A3', orientation: 'landscape' });
+    expect(stamped.items).toContainEqual(expect.objectContaining({ kind: 'text', text: 'PRELIMINARY', at: [320, 59.5] }));
     expect(toSvg(stamped)).toContain('PRELIMINARY');
     expect(toDxf(stamped)).toContain('PRELIMINARY');
     expect(toSvg(base)).not.toContain('PRELIMINARY');

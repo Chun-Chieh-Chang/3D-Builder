@@ -34,7 +34,7 @@ export type DimensionOutcome = { value: number; text: string; parts?: DimensionT
  */
 export const DIM_TEXT = DIM_STYLE_DEFAULT.text;
 export const ARROW = DIM_STYLE_DEFAULT.arrow;
-/** A filled or open arrowhead is a sixth as wide each side as it is long (3 mm long, 0.5 mm each side). */
+/** A filled or open arrowhead is 3 mm long and 1 mm wide at the default size. */
 const ARROW_SPREAD = 1 / 6;
 /** A dot's radius, and an oblique stroke's half-length, as parts of the arrow's length. */
 const DOT_RADIUS = 1 / 5;
@@ -450,33 +450,30 @@ function contourIntervals(p: P, across: 0 | 1, viewLines?: ViewLines | null): [n
   return merged;
 }
 
+/** Moves an extension's start out to the last contour crossing on its chosen side. */
+function outerWitness(p: P, lines: readonly number[][], across: 0 | 1, outward: 1 | -1): P {
+  const along = across === 0 ? 1 : 0;
+  const x = p[across];
+  const result: P = [...p];
+  for (const line of lines) {
+    for (let i = 0; i + 3 < line.length; i += 2) {
+      const a = line[i + across]!;
+      const b = line[i + 2 + across]!;
+      if (x < Math.min(a, b) - 1e-6 || x > Math.max(a, b) + 1e-6) continue;
+      const lo = line[i + along]!;
+      const hi = line[i + 2 + along]!;
+      const t = b - a;
+      const y = Math.abs(t) > 1e-12 ? lo + Math.max(0, Math.min(1, (x - a) / t)) * (hi - lo) : outward > 0 ? Math.max(lo, hi) : Math.min(lo, hi);
+      if (outward * y > outward * result[along]) result[along] = y;
+    }
+  }
+  return result;
+}
+
 /** Finds the end of the referenced visible contour nearest the dimension row so extension lines start near the contour and never cross section hatching (ADR 0262 rule D1). */
 function contourAttach(p: P, e: ElementFacts, axes: ViewAxes, across: 0 | 1, outward: 1 | -1, viewLines?: ViewLines | null): P {
   const along = across === 0 ? 1 : 0;
-  const clearCut = (q: P): P => {
-    if (!viewLines?.cut || viewLines.cut.length === 0) return q;
-    const x = q[across];
-    let extreme = q[along];
-    for (const poly of viewLines.cut) {
-      for (let i = 0; i + 3 < poly.length; i += 2) {
-        const a: P = [poly[i]!, poly[i + 1]!];
-        const b: P = [poly[i + 2]!, poly[i + 3]!];
-        const da = a[across] - x;
-        const db = b[across] - x;
-        if ((da <= 1e-6 && db >= -1e-6) || (db <= 1e-6 && da >= -1e-6)) {
-          const span = b[across] - a[across];
-          const atAlong = Math.abs(span) > 1e-12 ? a[along] + ((x - a[across]) / span) * (b[along] - a[along]) : (outward > 0 ? Math.max(a[along], b[along]) : Math.min(a[along], b[along]));
-          if (outward > 0 ? atAlong > extreme : atAlong < extreme) extreme = atAlong;
-        }
-      }
-    }
-    if (extreme !== q[along]) {
-      const out: P = [...q];
-      out[along] = extreme;
-      return out;
-    }
-    return q;
-  };
+  const clearCut = (q: P): P => viewLines?.cut?.length ? outerWitness(q, viewLines.cut, across, outward) : q;
   if (!isBound(e)) return clearCut(p);
   const centre = e.center ? inView({ ...e, point: e.center }, axes) : p;
   const merged = contourIntervals(p, across, viewLines);
@@ -517,8 +514,11 @@ function ordinate(d: Extract<Dimension, { kind: 'ordinate' }>, els: readonly Ele
   const edge = d.axis === 'x' ? (outward > 0 ? box.top : box.bottom) : outward > 0 ? box.right : box.left;
   const row = edge + d.offset;
   const entries = at.map((p, i) => {
-    const attached = viewLines ? contourAttach(p, els[i]!, axes, k, outward, viewLines) : p;
-    const s = toSheet(placed, attached[0], attached[1]);
+    const e = els[i]!;
+    const attached = viewLines ? contourAttach(p, e, axes, k, outward, viewLines) : p;
+    // The projected position of a plane has the same coordinate anywhere along its witness.
+    const witness = e.type === 'plane' && viewLines ? outerWitness(attached, viewLines.visible, k, outward) : attached;
+    const s = toSheet(placed, witness[0], witness[1]);
     const value = Math.abs(p[k] - origin);
     const words = i === 0 ? { text: '0', parts: ['0'] } : dimensionWords(d, value, undefined, unit);
     return { s, value, ...words, bound: isBound(els[i]!) };

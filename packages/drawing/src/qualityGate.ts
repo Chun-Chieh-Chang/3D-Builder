@@ -1,4 +1,5 @@
-import { standardOf, type DrawingDoc } from '@3db/model';
+import { standardOf, type DrawingDoc, type DrawingSheet } from '@3db/model';
+import { sheetMetrics } from './sheet';
 import type { CoverageReport } from './autoDrawing';
 import type { DrawingLayoutInspection } from './layoutMetrics';
 import type { Scene, SceneText } from './scene';
@@ -212,20 +213,20 @@ export function evaluateQualityGate(input: QualityGateInput): QualityGateReport 
 }
 
 /**
- * Stamps a prominent `PRELIMINARY` watermark onto a sheet scene for draft exports (ADR 0263, rule Q1).
+ * Places the `PRELIMINARY` status above the title block for draft exports (ADR 0263, rule Q1).
  * Works across PDF, SVG, DXF, and PNG because all exporters render `SceneText` with `angle` and `color`.
  */
-export function stampPreliminary(scene: Scene): Scene {
-  const height = Math.max(12, Math.round(Math.min(scene.width, scene.height) * 0.06));
+export function stampPreliminary(scene: Scene, sheet: Pick<DrawingSheet, 'size' | 'orientation' | 'standard'>): Scene {
+  const { titleBlock } = sheetMetrics(sheet);
   const stamp: SceneText = {
     kind: 'text',
     owner: 'quality:preliminary',
     color: '#CC3333',
-    at: [scene.width / 2, scene.height / 2],
+    at: [titleBlock.x + titleBlock.w / 2, titleBlock.y + titleBlock.h + 1.5],
     text: 'PRELIMINARY',
-    height,
+    height: 4.5,
     anchor: 'center',
-    angle: 30,
+    angle: 0,
   };
   return {
     ...scene,

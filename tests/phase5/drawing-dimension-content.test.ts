@@ -132,6 +132,22 @@ describe('section extension lines and ordinate spacing (rules D1, D3)', () => {
     }
   });
 
+  it.each([-10, 10])('starts ordinate witnesses for planes on the selected outer contour at offset %s', (offset) => {
+    const dim: Dimension = { id: 'd1', view: 'v1', kind: 'ordinate', axis: 'x', origin: ref('p0'), refs: [ref('p1')], offset };
+    const elements: ElementFacts[] = [10, 30].map((x) => ({ kind: 'face', type: 'plane', point: [x, 20, 0], dir: [1, 0, 0], center: [x, 20, 0] }));
+    const lines: ViewLines = {
+      visible: [[0, 0, 40, 0, 40, 40, 0, 40, 0, 0], [10, 17, 10, 23], [30, 17, 30, 23]],
+      hidden: [],
+      box: { min: [0, 0], max: [40, 40] },
+    };
+    const out = evaluateDimension(dim, { elements }, axes, placed, 'mm', undefined, lines);
+    expect(out).not.toHaveProperty('error');
+    if ('error' in out) return;
+    const starts = out.items.flatMap((i) => i.kind === 'polyline' ? [i.points[1]] : []);
+    expect(starts).toEqual(offset < 0 ? [79, 79] : [121, 121]);
+    expect(out.text).toBe('0 / 20');
+  });
+
   it('ordinate dimension numbers stay clear of their own extension lines under -0.6 mm clearance', () => {
     const dim: Dimension = { id: 'd1', view: 'v1', kind: 'ordinate', axis: 'x', origin: ref('p0'), refs: [ref('p1'), ref('p2')], offset: -10 };
     const els: ElementFacts[] = [0, 10, 30].map((x) => ({ kind: 'face', type: 'plane', point: [x, 0, 0], dir: [1, 0, 0], center: [x, 0, 0] }));

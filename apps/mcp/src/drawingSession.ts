@@ -105,6 +105,7 @@ import { AgentError, messageOf, type CadSession } from './session';
 import { renderView } from './render';
 
 const ORTHO: ViewName[] = ['front', 'back', 'top', 'bottom', 'left', 'right'];
+const AUTO_SHEETS: SheetSize[] = ['A4', 'A3'];
 const SIDES: ViewSide[] = ['up', 'down', 'left', 'right'];
 const IDENTITY = { position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number] };
 
@@ -332,7 +333,7 @@ export class DrawingSession {
     const sourceRel = relative(dirname(full), s.path).split(sep).join('/');
 
     let doc = createEmptyDrawing();
-    doc = applyDrawingCommand(doc, { type: 'setSheet', sheet: { projection, orientation: o.orientation ?? 'landscape', ...(o.standard ? { standard: o.standard } : {}) } });
+    doc = applyDrawingCommand(doc, { type: 'setSheet', sheet: { projection, orientation: o.orientation ?? 'landscape', dimStyle: { text: 3 }, ...(o.standard ? { standard: o.standard } : {}) } });
     const ids = () => new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const mainId = ids().take('view');
     doc = applyDrawingCommand(doc, { type: 'insertViews', views: [{ id: mainId, name: t(`drawing.view.${main}`), source: sourceRel, direction: main }] });
@@ -453,7 +454,7 @@ export class DrawingSession {
       let score = this.clutter(best, 0);
       const hasIso = (d: DrawingDoc) => page(d, 0).views.some((v) => v.display === 'shadedEdges');
       let isoOk = !(o.isometric ?? true) || hasIso(best);
-      const order: SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
+      const order = AUTO_SHEETS;
       const overfull = (d: DrawingDoc) => {
         const m = this.layout(d, 0);
         return Math.max(m.fillW, m.fillH) > FILL_RANGE[1] + 1e-9;
@@ -488,8 +489,10 @@ export class DrawingSession {
         return d;
       };
       // every page of a drawing is on the same sheet (rule P3, ADR 0261): the first page is laid out already, so the others start from its size
-      const sheets: SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
+      const allSheets: SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
+      const autoMaxIdx = !o.sheet || o.sheet === 'auto' ? allSheets.indexOf('A3') : allSheets.indexOf(o.sheet);
       const same = page(doc, 0).sheet.size;
+      const sheets = allSheets.slice(0, Math.max(allSheets.indexOf(same), autoMaxIdx) + 1);
       if (!hasDetails) doc = layOut(same);
       else {
         // A page of detail views takes the smallest sheet on which none is crowded — from the first page's size (and not below A3): the views clear of each other,
@@ -523,6 +526,8 @@ export class DrawingSession {
       const bare = iso.length ? onPage(doc, 0, (st) => applyDrawingCommand(st, { type: 'deleteViews', viewIds: iso })) : doc;
       doc = layOutPage(bare, 0, biggest);
     }
+
+    for (let i = 0; i < doc.pages.length; i++) doc = this.keepInsideSheet(doc, i);
 
     this.undoStack.length = 0;
     this.doc = doc;
@@ -564,7 +569,28 @@ export class DrawingSession {
     if (planned.length === 0) return doc;
     const alloc = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const dimensions = planned.map((p) => ({ ...p.draft, id: alloc.take('dim'), view: p.view }) as Dimension);
-    return applyDrawingCommand(doc, { type: 'insertDimensions', dimensions });
+    const draft = applyDrawingCommand(doc, { type: 'insertDimensions', dimensions });
+    const { placed, outcomes } = this.build(draft);
+    const commands: DrawingCommand[] = [];
+    const detached: Id[] = [];
+    for (const d of dimensions) {
+      if (d.kind !== 'angle') continue;
+      const view = placed.get(d.view);
+      const result = outcomes.get(d.id);
+      if (!view || !result || 'error' in result || result.handle?.kind !== 'angle') continue;
+      const [x, y] = result.handle.centre;
+      // An intersection of extended lines can lie far from either real feature.
+      const outsideX = Math.max(0, Math.abs(x - view.at[0]) - view.w / 2);
+      const outsideY = Math.max(0, Math.abs(y - view.at[1]) - view.h / 2);
+      const acute = Math.min(result.value, 180 - result.value);
+      if (Math.hypot(outsideX, outsideY) > 8 * view.scale || acute >= 87) {
+        detached.push(d.id);
+      } else if (result.value > 120) {
+        commands.push({ type: 'setDimension', dimensionId: d.id, patch: { supplementary: true } });
+      }
+    }
+    if (detached.length) commands.push({ type: 'deleteDimensions', dimensionIds: detached });
+    return commands.length ? applyDrawingCommand(draft, { type: 'batch', commands }) : draft;
   }
 
   /**
@@ -583,12 +609,18 @@ export class DrawingSession {
       const d = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setSheet', sheet: { size, orientation } }));
       const b = this.build(d, pageIndex);
       const single = pageIndex === 0 && d.pages.length === 1 ? d : { ...d, pages: [page(d, pageIndex)] };
-      return { d, fit: fitViews(single, b.lines, b.elements, b.features) };
+      // Keep the base views of ordinary parts at 2:1 or below. Detail views have their own scale.
+      const spans = [...b.lines.values()].flatMap((lines) => {
+        const box = lines?.box;
+        return box ? [box.max[0] - box.min[0], box.max[1] - box.min[1]] : [];
+      });
+      const maxRatio = spans.some((span) => span >= 35) ? 2 : Infinity;
+      return { d, fit: fitViews(single, b.lines, b.elements, b.features, undefined, maxRatio) };
     };
     let chosen: { d: DrawingDoc; fit: ReturnType<typeof fitViews> } | null = null;
     if (o.sheet && o.sheet !== 'auto') chosen = tryOn(o.sheet);
     else {
-      for (const size of ['A4', 'A3', 'A2'] as SheetSize[]) {
+      for (const size of AUTO_SHEETS) {
         const c = tryOn(size);
         if (c.fit && ratio(c.fit.scale) >= 1) {
           chosen = c;
@@ -647,6 +679,28 @@ export class DrawingSession {
       d = this.tidy(this.fitSheet(d, o, pageIndex), pageIndex);
     }
     return d;
+  }
+
+  /** Tidy can move the final arrangement past a sheet edge, even if its total span still fits. */
+  private keepInsideSheet(doc: DrawingDoc, pageIndex: number): DrawingDoc {
+    const pg = page(doc, pageIndex);
+    const single = { ...doc, pages: [pg] };
+    const bounds = itemsBounds(this.build(doc, pageIndex).scene.items.slice(sheetItems(single).length));
+    if (!bounds) return doc;
+    const { area } = sheetMetrics(pg.sheet);
+    const pushInside = (low: number, high: number, start: number, span: number) => {
+      if (high - low > span) return 0;
+      return Math.max(start - low, Math.min(0, start + span - high));
+    };
+    const dx = pushInside(bounds.x0, bounds.x1, area.x, area.w);
+    const dy = pushInside(bounds.y0, bounds.y1, area.y, area.h);
+    if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return doc;
+    const [sx, sy] = pg.sheet.shift ?? [0, 0];
+    const commands: DrawingCommand[] = [{ type: 'setSheet', sheet: { shift: [sx + dx, sy + dy] } }];
+    for (const v of pg.views) {
+      if (v.at) commands.push({ type: 'setView', viewId: v.id, patch: { at: [v.at[0] + dx, v.at[1] + dy] } });
+    }
+    return onPage(doc, pageIndex, (st) => applyDrawingCommand(st, { type: 'batch', commands }));
   }
 
   /** Takes out what cannot be drawn, and lays the rows out again (the shortest nearest, as SolidWorks's Auto Arrange). */
@@ -892,11 +946,60 @@ export class DrawingSession {
    * better. A linear dimension's text is slid along its line likewise.
    */
   private steerLeaders(doc: DrawingDoc, slideNumbers = true, pageIndex = 0): DrawingDoc {
-    // First snap any round dimension whose initial leader angle misses the drawn arc (e.g. a split or trimmed cylinder) onto an angle that hits the geometry.
-    const b0 = this.build(doc, pageIndex);
-    const pg0 = page(doc, pageIndex);
+    // First snap any round dimension whose initial leader angle misses the drawn arc (e.g. a split or trimmed cylinder) onto an angle that hits the geometry,
+    // snap any obtuse angle dimension (> 90°) to its acute supplementary angle, and ensure concentric round leaders clear the outermost concentric circle.
+    let b0 = this.build(doc, pageIndex);
+    let pg0 = page(doc, pageIndex);
     const candidateAngles = [45, 135, 225, 315, 30, 60, 120, 150, 210, 240, 300, 330, 15, 75, 105, 165, 195, 255, 285, 345, 0, 90, 180, 270];
     const fineAngles = Array.from({ length: 72 }, (_, i) => i * 5).filter((a) => a % 15 !== 0);
+    for (const d of pg0.dimensions) {
+      if (d.kind === 'angle') {
+        const out = b0.outcomes.get(d.id);
+        if (out && !('error' in out) && out.value > 90 + 1e-6) {
+          try {
+            const trial = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setDimension', dimensionId: d.id, patch: { supplementary: !d.supplementary } }));
+            const bt = this.build(trial, pageIndex);
+            const tout = bt.outcomes.get(d.id);
+            if (tout && !('error' in tout) && tout.value <= 90 + 1e-6) {
+              doc = trial;
+              b0 = bt;
+              pg0 = page(doc, pageIndex);
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+    // Fan concentric round dimensions across distinct radial angles and extend inner circle leaders outside the outer concentric boundary
+    const roundGroups = new Map<string, { id: Id; r: number }[]>();
+    for (const d of pg0.dimensions) {
+      if (d.kind !== 'diameter' && d.kind !== 'radius' && d.kind !== 'chamfer') continue;
+      const out = b0.outcomes.get(d.id);
+      if (!out || 'error' in out || out.handle?.kind !== 'round') continue;
+      const key = `${d.view}|${Math.round(out.handle.centre[0])}|${Math.round(out.handle.centre[1])}`;
+      roundGroups.set(key, [...(roundGroups.get(key) ?? []), { id: d.id, r: out.handle.radius }]);
+    }
+    for (const grp of roundGroups.values()) {
+      if (grp.length <= 1) continue;
+      const maxR = Math.max(...grp.map((g) => g.r));
+      grp.sort((a, b) => a.r - b.r);
+      grp.forEach((g, idx) => {
+        const minLeader = Math.max(8, Math.ceil(maxR - g.r + 8));
+        const fanAngle = candidateAngles[idx % candidateAngles.length]!;
+        try {
+          const trial = onPage(doc, pageIndex, (s) => applyDrawingCommand(s, { type: 'setDimension', dimensionId: g.id, patch: { angle: fanAngle, leader: minLeader } }));
+          const bt = this.build(trial, pageIndex);
+          if (this.arrowHitsView(bt, page(trial, pageIndex), g.id)) {
+            doc = trial;
+            b0 = bt;
+            pg0 = page(doc, pageIndex);
+          }
+        } catch {
+          /* ignore */
+        }
+      });
+    }
     for (const d of pg0.dimensions) {
       if (d.kind !== 'diameter' && d.kind !== 'radius' && d.kind !== 'chamfer') continue;
       if (this.arrowHitsView(b0, pg0, d.id)) continue;
@@ -913,6 +1016,8 @@ export class DrawingSession {
           const bt = this.build(trial, pageIndex);
           if (this.arrowHitsView(bt, page(trial, pageIndex), d.id)) {
             doc = trial;
+            b0 = bt;
+            pg0 = page(doc, pageIndex);
             break;
           }
         } catch {
@@ -965,7 +1070,10 @@ export class DrawingSession {
         } else if (d.kind === 'angle') {
           const baseArc = d.arc || 12;
           const baseSupp = Boolean(d.supplementary);
-          outerAngle: for (const supplementary of [baseSupp, !baseSupp]) {
+          const curOut = this.build(doc, pageIndex).outcomes.get(d.id);
+          const canFlip = curOut && !('error' in curOut) && curOut.value > 90 + 1e-6;
+          const suppCandidates = canFlip ? [baseSupp, !baseSupp] : [baseSupp];
+          outerAngle: for (const supplementary of suppCandidates) {
             for (const arc of [baseArc, 4, 8, 14, 22]) {
               const slides = slideNumbers ? [0, -6, 6] : [0];
               for (const slide of slides) {
@@ -1624,11 +1732,13 @@ export class DrawingSession {
     throw new AgentError(`${hits.length} dimensions write ${JSON.stringify(which)} (${hits.map((h) => h.dimension.id).join(', ')}): give the id`);
   }
 
-  setTolerance(which: string, tolerance: string | null, extra: { reference?: boolean; precision?: number } = {}): Id {
+  setTolerance(which: string, tolerance: string | null | undefined, extra: { reference?: boolean; precision?: number } = {}): Id {
     const { dimension: d, pageIndex } = this.locateDimension(which);
-    const patch: Extract<DrawingCommand, { type: 'setDimension' }>['patch'] = { tolerance: tolerance === null ? null : parseTolerance(tolerance) };
+    const patch: Extract<DrawingCommand, { type: 'setDimension' }>['patch'] = {};
+    if (tolerance !== undefined) patch.tolerance = tolerance === null ? null : parseTolerance(tolerance);
     if (extra.reference !== undefined) patch.reference = extra.reference;
     if (extra.precision !== undefined) patch.precision = extra.precision;
+    if (Object.keys(patch).length === 0) throw new AgentError('give a tolerance, precision or reference status');
     this.apply([{ type: 'setDimension', dimensionId: d.id, patch }], pageIndex);
     // a longer text (「Ø10 H7 (+0.015/0)」) may now cross what it did not: swing the leaders again (only where they are, never what they measure)
     this.doc = this.steerLeaders(this.doc!, true, pageIndex);
@@ -1640,6 +1750,7 @@ export class DrawingSession {
    * `target` is the element's ref name (as drawing_inspect lists them) or a dimension (by id or text), whose element it goes on.
    */
   annotate(a: AnnotateInput): Id {
+    if (a.enclosure !== undefined && a.kind !== 'note') throw new AgentError('an enclosure applies to notes');
     const doc = this.need();
     let viewId = a.view;
     let refName = a.target;
@@ -1718,7 +1829,7 @@ export class DrawingSession {
       if (a.kind === 'note') {
         if (!a.text) throw new AgentError('a note needs its text');
         const text = a.text;
-        make = (spot, reach) => ({ type: 'insertAnnotations', annotations: [{ id, view: viewId, kind: 'note', at: away(spot, reach), text, leader: pt(spot.on), ...attach } satisfies Annotation] });
+        make = (spot, reach) => ({ type: 'insertAnnotations', annotations: [{ id, view: viewId, kind: 'note', at: away(spot, reach), text, ...(a.enclosure ? { enclosure: a.enclosure } : {}), leader: pt(spot.on), ...attach } satisfies Annotation] });
       } else if (a.kind === 'datum') {
         if (!a.label) throw new AgentError('a datum needs its letter (A, B, …)');
         if (!feature) throw new AgentError('a datum goes on a feature: give its target');
@@ -1738,7 +1849,7 @@ export class DrawingSession {
         const lines = (pg.annotations ?? []).filter((x) => x.kind === 'note' && !x.leader).length;
         const sheetAt: [number, number] = [area.x + 2, area.y + 2 + lines * 6];
         const viewAt = pt([placed.centre[0] + (sheetAt[0] - placed.at[0]) / placed.scale, placed.centre[1] + (sheetAt[1] - placed.at[1]) / placed.scale]);
-        this.apply([{ type: 'insertAnnotations', annotations: [{ id, view: viewId, kind: 'note', at: viewAt, text } satisfies Annotation] }], pi);
+        this.apply([{ type: 'insertAnnotations', annotations: [{ id, view: viewId, kind: 'note', at: viewAt, text, ...(a.enclosure ? { enclosure: a.enclosure } : {}) } satisfies Annotation] }], pi);
         return id;
       }
     }
@@ -1906,7 +2017,7 @@ export class DrawingSession {
     if (format === 'pdf') {
       const scenes = doc.pages.map((_, i) => {
         const sc = this.build(doc, i).scene;
-        return preliminary ? stampPreliminary(sc) : sc;
+        return preliminary ? stampPreliminary(sc, page(doc, i).sheet) : sc;
       });
       const pdf = toPdf(scenes.length === 1 ? scenes[0]! : scenes, { ...(f ? { font: f } : {}), title: page(doc).title.drawingName ?? 'drawing' });
       outputs.push({ page: 0, full, data: pdf.bytes });
@@ -1916,7 +2027,7 @@ export class DrawingSession {
       const stem = full.slice(0, full.length - ext.length);
       for (let pi = 0; pi < doc.pages.length; pi++) {
         const rawScene = this.build(doc, pi).scene;
-        const scene = preliminary ? stampPreliminary(rawScene) : rawScene;
+        const scene = preliminary ? stampPreliminary(rawScene, page(doc, pi).sheet) : rawScene;
         const at = pi === 0 ? full : await this.part.inside(relative(this.part.root, `${stem}-${pi + 1}${ext}`));
         outputs.push({ page: pi, full: at, data: format === 'dxf' ? toDxf(scene) : toSvg(scene) });
       }
@@ -2099,6 +2210,7 @@ export interface AnnotateInput {
   view?: Id;
   target?: string;
   text?: string;
+  enclosure?: Extract<Annotation, { kind: 'note' }>['enclosure'];
   ra?: number;
   method?: string;
   process?: SurfaceFinish['kind'];

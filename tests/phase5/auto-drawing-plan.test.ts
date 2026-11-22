@@ -99,6 +99,28 @@ describe('the planner makes every random part fully determined (200 parts)', () 
     expect(dims).toBeGreaterThan(1000);
   });
 
+  it('keeps reference dimensions out of manufacturing coverage and completion', () => {
+    const part = randomPart(4);
+    const views = [viewOf(part, 'v1', 'front'), viewOf(part, 'v2', 'top'), viewOf(part, 'v3', 'right')];
+    const planned = planDrawingDimensions(views);
+    expect(planned.some((p) => p.role === 'place')).toBe(true);
+    const reference = planned.map((p) => ({ ...p.draft, view: p.view, reference: true }));
+    expect(dimensionCoverage(views, reference)).toEqual(dimensionCoverage(views, []));
+    expect(planDrawingDimensions(views, reference)).toEqual(planned);
+  });
+
+  it('automatically groups ordinates only when the row has a visible plane datum', () => {
+    const part: Part = {
+      planes: [0, 5, 10, 15, 20, 25, 30, 35].map((x) => ({ axis: 0, at: x, area: 100, name: 'f' + x })),
+      holes: [],
+    };
+    const view = viewOf(part, 'v1', 'front');
+    const hiddenDatum = { ...view, hidden: new Set(['f0']) };
+    expect(planDrawingDimensions([view]).map((p) => p.role)).toEqual(['ordinate']);
+    expect(planDrawingDimensions([hiddenDatum]).map((p) => p.role)).toEqual(Array(7).fill('place'));
+    expect(planDrawingDimensions([hiddenDatum], [], { ordinateAbove: 6 }).map((p) => p.role)).toEqual(['ordinate']);
+  });
+
   it('a negative, a NaN or an empty part never throws and is never reported complete when it is not', () => {
     const empty: ViewToDimension[] = [{ viewId: 'v', axes: viewVectors('front'), features: [] }];
     expect(planDrawingDimensions(empty)).toEqual([]);

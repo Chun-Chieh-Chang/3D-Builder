@@ -58,11 +58,13 @@ export function fitViews(
   elements: ReadonlyMap<Id, ElementsResult> = new Map(),
   features: ReadonlyMap<Id, readonly ViewFeature[]> = new Map(),
   boms: ReadonlyMap<Id, ViewBom> = new Map(),
+  maxRatio = Infinity,
 ): Fit | null {
   const boxAt = arrangedBox(doc, lines, elements, features, boms);
   if (!boxAt) return null;
   const area = sheetMetrics(page(doc).sheet).area;
   for (const scale of [...STANDARD_SCALES, [1, 100] as Scale]) {
+    if (scale[0] / scale[1] > maxRatio + 1e-9) continue;
     const box = boxAt(scale);
     if (box && box.x1 - box.x0 <= area.w + 1e-9 && box.y1 - box.y0 <= area.h + 1e-9) return { scale, shift: shiftToCentre(doc, box) };
   }
