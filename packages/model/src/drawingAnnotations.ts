@@ -147,13 +147,29 @@ export interface CentreMarkAnnotation extends AnnotationCommon {
   attach?: Attachment;
 }
 
-export type Annotation = NoteAnnotation | DatumAnnotation | ToleranceFrameAnnotation | CentreLineAnnotation | CentreMarkAnnotation;
+/**
+ * A revision triangle (ISO 7200 / ASME Y14.35 / CNS 3): an upward-pointing equilateral triangle enclosing the revision code (`revision`),
+ * placed at `at` in view coordinates, optionally with a `leader` pointing to the changed feature and `attach` fastening it to the model.
+ */
+export interface RevisionAnnotation extends AnnotationCommon {
+  kind: 'revision';
+  at: P;
+  revision: string;
+  /** The height of the revision text (mm on the sheet). Absent: 3.5. */
+  height?: number;
+  leader?: P;
+  /** What the leader's point is fastened to. */
+  attach?: Attachment;
+}
+
+export type Annotation = NoteAnnotation | DatumAnnotation | ToleranceFrameAnnotation | CentreLineAnnotation | CentreMarkAnnotation | RevisionAnnotation;
 export type AnnotationKind = Annotation['kind'];
-export const ANNOTATION_KINDS: readonly AnnotationKind[] = ['note', 'datum', 'fcf', 'centreLine', 'centreMark'];
+export const ANNOTATION_KINDS: readonly AnnotationKind[] = ['note', 'datum', 'fcf', 'centreLine', 'centreMark', 'revision'];
 
 /** A letter of a datum: one or two capitals, not I, O or Q (ISO 5459 leaves them out: they are taken for 1, 0 and each other). */
 export const DATUM_LABEL = /^[A-HJ-NPR-Z]{1,2}$/;
 export const NOTE_MAX = 500;
+export const REVISION_MARK_MAX = 16;
 export const NOTE_HEIGHT = { min: 1.8, max: 20 };
 export const DRAWING_TEXT_WIDTH = { min: 30, max: 1000, default: 90 };
 
@@ -179,8 +195,8 @@ export function checkAnnotation(a: Annotation, viewExists: (id: Id) => boolean, 
     const r = attach?.ref;
     const refOk = typeof r === 'object' && r !== null && typeof r.name === 'string' && r.name !== '' && ['face', 'edge', 'vertex'].includes(r.kind) && (r.in === undefined || (typeof r.in === 'string' && r.in !== ''));
     if (!refOk || !(Number.isFinite(attach.u) && attach.u >= 0 && attach.u <= 1)) throw new CommandError(t('drawing.badAttach'));
-    // a note or a frame is fastened by its leader: without one there is nothing to fasten
-    if ((a.kind === 'note' || a.kind === 'fcf') && !a.leader) throw new CommandError(t('drawing.attachNoLeader'));
+    // a note, frame or revision triangle is fastened by its leader: without one there is nothing to fasten
+    if ((a.kind === 'note' || a.kind === 'fcf' || a.kind === 'revision') && !a.leader) throw new CommandError(t('drawing.attachNoLeader'));
   }
   switch (a.kind) {
     case 'note': {
@@ -234,6 +250,16 @@ export function checkAnnotation(a: Annotation, viewExists: (id: Id) => boolean, 
       if (!(Number.isFinite(a.radius) && a.radius > 0)) throw new CommandError(t('drawing.centreMarkBadRadius'));
       return;
     }
+    case 'revision': {
+      if (!finite(a.at) || (a.leader !== undefined && !finite(a.leader))) throw new CommandError(t('drawing.badPosition'));
+      if (typeof a.revision !== 'string' || a.revision.trim() === '' || a.revision.trim().length > REVISION_MARK_MAX || /[\r\n]/.test(a.revision)) {
+        throw new CommandError(t('drawing.revisionBadLabel'));
+      }
+      if (a.height !== undefined && !(Number.isFinite(a.height) && a.height >= NOTE_HEIGHT.min && a.height <= NOTE_HEIGHT.max)) {
+        throw new CommandError(t('drawing.noteBadHeight', { min: String(NOTE_HEIGHT.min), max: String(NOTE_HEIGHT.max) }));
+      }
+      return;
+    }
   }
 }
 
@@ -251,6 +277,7 @@ export const ANNOTATION_FIELDS: Record<AnnotationKind, { set: string[]; optional
   fcf: { set: ['at', 'characteristic', 'tolerance', 'diameter', 'material', 'datums', 'leader', 'attach', 'color'], optional: ['diameter', 'material', 'leader', 'attach', 'color'] },
   centreLine: { set: ['from', 'to', 'color'], optional: ['color'] },
   centreMark: { set: ['at', 'radius', 'attach', 'color'], optional: ['attach', 'color'] },
+  revision: { set: ['at', 'revision', 'height', 'leader', 'attach', 'color'], optional: ['height', 'leader', 'attach', 'color'] },
 };
 
 /** The text of a note with `$PRP:key` replaced by what `lookup` says of the key; a key it does not know is left as written, so that it is seen to be wrong. */

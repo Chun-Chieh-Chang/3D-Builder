@@ -13,7 +13,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, DRAWING_TEXT_WIDTH, framesUsing, va
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 40;
+export const DRAWING_SCHEMA_VERSION = 41;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -910,6 +910,8 @@ export interface SurfaceFinish {
   leader?: number;
   /** Independent offset of the text (Ra, method, note) from its default place on the symbol, in sheet millimetres. */
   textOffset?: [number, number];
+  /** Stroke and text color as `#RRGGBB`. Absent: `#000000`. */
+  color?: string;
 }
 
 /**
@@ -1086,6 +1088,7 @@ export type SurfaceFinishPatch = {
   note?: string | null;
   leader?: number | null;
   textOffset?: [number, number] | null;
+  color?: string | null;
 };
 
 export type DimensionPatch = {
@@ -1478,6 +1481,7 @@ function checkSurfaceFinish(f: SurfaceFinish, views: readonly DrawingView[]): vo
   if (f.note !== undefined && (typeof f.note !== 'string' || f.note.length > 40)) throw new CommandError(t('drawing.badFinishText'));
   if (f.leader !== undefined && !(Number.isFinite(f.leader) && f.leader >= 0)) throw new CommandError(t('drawing.badFinishLeader'));
   if (f.textOffset !== undefined && !(Array.isArray(f.textOffset) && f.textOffset.length === 2 && f.textOffset.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
+  if (f.color !== undefined && (typeof f.color !== 'string' || !HEX_COLOR.test(f.color))) throw new CommandError(t('drawing.badDimStyle'));
 }
 
 /** Immer recipe: mutates the draft or throws CommandError, leaving the document untouched. */
@@ -1827,10 +1831,10 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
     case 'setSurfaceFinish': {
       const f = pg.surfaceFinishes.find((x) => x.id === cmd.finishId);
       if (!f) throw new CommandError(t('drawing.noSurfaceFinish', { id: cmd.finishId }));
-      const { at, angle, kind, triangles, triangleSizePercent, ra, method, note, leader, textOffset } = cmd.patch;
+      const { at, angle, kind, triangles, triangleSizePercent, ra, method, note, leader, textOffset, color } = cmd.patch;
       const next = { ...(JSON.parse(JSON.stringify(f)) as SurfaceFinish), ...(at !== undefined ? { at } : {}) } as SurfaceFinish;
       const loose = next as unknown as Record<string, unknown>;
-      for (const [k, v] of [['angle', angle], ['kind', kind], ['triangles', triangles], ['triangleSizePercent', triangleSizePercent], ['ra', ra], ['method', method], ['note', note], ['leader', leader], ['textOffset', textOffset]] as const) {
+      for (const [k, v] of [['angle', angle], ['kind', kind], ['triangles', triangles], ['triangleSizePercent', triangleSizePercent], ['ra', ra], ['method', method], ['note', note], ['leader', leader], ['textOffset', textOffset], ['color', color]] as const) {
         if (v === null) delete loose[k];
         else if (v !== undefined) loose[k] = v;
       }

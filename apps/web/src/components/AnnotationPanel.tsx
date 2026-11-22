@@ -128,6 +128,7 @@ function NoteBox({ value, onCommit }: { value: string; onCommit: (v: string) => 
 
 const TOOLS: { what: AnnotateWhat; label: string }[] = [
   { what: 'note', label: 'drawingUi.toolNote' },
+  { what: 'revision', label: 'drawingUi.toolRevision' },
   { what: 'datum', label: 'drawingUi.toolDatum' },
   { what: 'fcf', label: 'drawingUi.toolFcf' },
   { what: 'centreLine', label: 'drawingUi.toolCentreLine' },
@@ -137,6 +138,7 @@ const TOOLS: { what: AnnotateWhat; label: string }[] = [
 /** What an annotation is called in the list (and in the drawing's tree). */
 export function annotationLabel(a: Annotation): string {
   if (a.kind === 'note') return t('drawingUi.annNoteLabel', { text: a.text.split('\n')[0]!.slice(0, 24) });
+  if (a.kind === 'revision') return `${t('drawingUi.annKind.revision')} ${a.revision}`;
   if (a.kind === 'datum') return `${t('drawingUi.annKind.datum')} ${a.label}`;
   if (a.kind === 'fcf') return `${t(`drawing.gdt.${a.characteristic}`)} ${a.diameter ? 'Ø' : ''}${formatNumber(a.tolerance, 4)}${a.datums.length ? ' | ' + a.datums.map((d) => d.label).join(' | ') : ''}`;
   return t(`drawingUi.annKind.${a.kind}`);
@@ -216,6 +218,40 @@ function AnnotationFields({ a }: { a: Annotation }) {
         )}
       </>
     );
+  if (a.kind === 'revision') {
+    const revOptions = (drw.doc.revisionHistory ?? []).map((r) => r.revision);
+    return (
+      <>
+        {colorControl}
+        <label className="pm-row">
+          <span>{t('drawingUi.revisionLabel')}</span>
+          <TextBox field="revisionLabel" value={a.revision} onCommit={(v) => d.setAnnotation(a.id, { revision: v.trim() })} />
+        </label>
+        {revOptions.length > 0 && (
+          <div className="pm-row">
+            <span>{t('drawing.revisions.title')}</span>
+            <select data-field="revisionPick" value={revOptions.includes(a.revision) ? a.revision : ''} onChange={(e) => e.target.value && d.setAnnotation(a.id, { revision: e.target.value })}>
+              <option value="">—</option>
+              {revOptions.map((rev) => (
+                <option key={rev} value={rev}>{rev}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        <label className="pm-row">
+          <span>{t('drawingUi.noteHeight')}</span>
+          <NumberBox field="revisionHeight" value={a.height ?? 3.5} onCommit={(v) => d.setAnnotation(a.id, { height: v === 3.5 ? null : v })} />
+        </label>
+        {a.leader && (
+          <div className="pm-row">
+            <button className="pm-button" data-action="removeLeader" onClick={() => d.setAnnotation(a.id, { leader: null, attach: null })}>
+              {t('drawingUi.removeLeader')}
+            </button>
+          </div>
+        )}
+      </>
+    );
+  }
   if (a.kind === 'datum')
     return (
       <>
@@ -493,6 +529,13 @@ export function AnnotationPanel() {
       </ul>
       {currentFinish && (
         <>
+          <ColorRow
+            field="finishColor"
+            value={currentFinish.color ?? '#000000'}
+            canReset={!!currentFinish.color}
+            onChange={(color) => d.setSurfaceFinish(currentFinish.id, { color: color === '#000000' ? null : color })}
+            onReset={() => d.setSurfaceFinish(currentFinish.id, { color: null })}
+          />
           <label className="pm-row">
             <span>{t('drawingUi.finishSymbol')}</span>
             <select

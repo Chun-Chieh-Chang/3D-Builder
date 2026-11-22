@@ -1,4 +1,4 @@
-import { noteText, type Annotation, type Attachment, type DrawingRef, type ViewFeature, type DatumAnnotation, type GeometricCharacteristic, type LengthUnit, type NoteAnnotation, type ToleranceFrameAnnotation } from '@3db/model';
+import { noteText, type Annotation, type Attachment, type DrawingRef, type ViewFeature, type DatumAnnotation, type GeometricCharacteristic, type LengthUnit, type NoteAnnotation, type RevisionAnnotation, type ToleranceFrameAnnotation } from '@3db/model';
 import { CENTRE_OVERSHOOT } from './annotation';
 import { ARROW, DIM_TEXT, lengthNumber } from './dimension';
 import { circlePolyline } from './geometry';
@@ -270,6 +270,50 @@ function noteItems(a: NoteAnnotation, placed: PlacedView, lookup: (key: string) 
 }
 
 /**
+ * A revision triangle (ISO 7200 / ASME Y14.35 / CNS 3): an upward-pointing equilateral triangle sized to enclose `a.revision` cleanly,
+ * with its centroid at `a.at` on the sheet and an optional leader leaving from the exact ray-triangle boundary exit.
+ */
+function revisionItems(a: RevisionAnnotation, placed: PlacedView): SceneItem[] {
+  const c = toSheet(placed, a.at[0], a.at[1]);
+  const h = a.height ?? DIM_TEXT;
+  const label = a.revision.trim();
+  const w = textWidthMm(label, h);
+  const padX = h * 0.35;
+  const padY = h * 0.35;
+  const sqrt3 = Math.sqrt(3);
+  const altitude = Math.max(h * 2.4, padY + h + sqrt3 * (w / 2 + padX));
+  const yBase = c[1] - altitude / 3;
+  const yTop = c[1] + (2 * altitude) / 3;
+  const halfBase = altitude / sqrt3;
+  const v0: P = [c[0] - halfBase, yBase];
+  const v1: P = [c[0] + halfBase, yBase];
+  const v2: P = [c[0], yTop];
+  const items: SceneItem[] = [
+    { kind: 'polyline', points: [v0[0], v0[1], v1[0], v1[1], v2[0], v2[1]], style: 'thin', closed: true },
+    { kind: 'text', at: [c[0], yBase + padY], text: label, height: h, anchor: 'center' },
+  ];
+  if (a.leader) {
+    const target = toSheet(placed, a.leader[0], a.leader[1]);
+    const dx = target[0] - c[0];
+    const dy = target[1] - c[1];
+    let bestT = Infinity;
+    const edges: [P, P][] = [[v0, v1], [v1, v2], [v2, v0]];
+    for (const [p, q] of edges) {
+      const ex = q[0] - p[0];
+      const ey = q[1] - p[1];
+      const denom = dx * ey - dy * ex;
+      if (Math.abs(denom) < 1e-12) continue;
+      const t = ((p[0] - c[0]) * ey - (p[1] - c[1]) * ex) / denom;
+      const u = ((p[0] - c[0]) * dy - (p[1] - c[1]) * dx) / denom;
+      if (t > 1e-9 && u >= -1e-9 && u <= 1 + 1e-9 && t < bestT) bestT = t;
+    }
+    const from: P = Number.isFinite(bestT) ? [c[0] + dx * bestT, c[1] + dy * bestT] : c;
+    items.push(...leader(from, target));
+  }
+  return items;
+}
+
+/**
  * What the annotations of a view draw on the sheet, where the view is placed: all of them, in the order they are in the document. `lookup` answers a note's
  * `$PRP:key`.
  */
@@ -282,6 +326,8 @@ export function annotationItems(annotations: readonly Annotation[], placed: Plac
         return datumItems(a, placed);
       case 'fcf':
         return frameItems(a, placed, unit);
+      case 'revision':
+        return revisionItems(a, placed);
       case 'centreLine': {
         const p = toSheet(placed, a.from[0], a.from[1]);
         const q = toSheet(placed, a.to[0], a.to[1]);
@@ -340,7 +386,7 @@ export function attachedAnnotations(annotations: readonly Annotation[], views: R
       return a;
     }
     if (a.kind === 'datum' || a.kind === 'centreMark') return { ...a, at: p };
-    if ((a.kind === 'note' || a.kind === 'fcf') && a.leader) return { ...a, leader: p };
+    if ((a.kind === 'note' || a.kind === 'fcf' || a.kind === 'revision') && a.leader) return { ...a, leader: p };
     return a;
   });
   return { annotations: out, lost };

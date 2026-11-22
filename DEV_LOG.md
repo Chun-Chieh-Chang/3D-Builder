@@ -1,5 +1,15 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-22（15:28）— 表面粗糙度標註新增顏色選擇支援（`SurfaceFinish.color`）
+
+- **需求與實作**：
+  1. `packages/model/src/drawing.ts`：`SurfaceFinish` 與 `SurfaceFinishPatch` 新增可選欄位 `color?: string`（`#RRGGBB`），於 `checkSurfaceFinish` 以 `HEX_COLOR` 嚴格驗證，並於 `setSurfaceFinish` 支援設定與 `null` 重設。
+  2. `packages/drawing/src/scene.ts`：`buildSceneIn` 繪製表面粗糙度符號與文字時套用 `color`（非 `#000000` 時寫入 `SceneItem.color`），使圖紙畫面、SVG、DXF 與 PDF 輸出一致著色。
+  3. `apps/web/src/components/AnnotationPanel.tsx`：於表面粗糙度屬性面板加入 `ColorRow`（`field="finishColor"`），與一般註記（註解、基準、公差框、中心線）共用同一色盤與重設邏輯。
+- **驗證結果**：
+  - `tests/phase5/drawing-surface-finish.test.ts` 新增非法色碼拒絕、存檔讀檔往返、`setSurfaceFinish` 變色與重設、`buildScene` 場景項目與 `toSvg` 輸出驗證（16/16 通過）。
+  - 4 檔共 64/64 測試通過；`npm run typecheck`、`lint:i18n`、`lint:rules`、`lint:deps` 全數通過。
+
 ## 2026-11-22 — 封存舊接手指令與本機清理
 
 - `f16ffade` 已推送至 `origin/main`。S3 與 part-3 的舊接手指令移入 `docs/archive/`，文件連結與自動盤點已同步。

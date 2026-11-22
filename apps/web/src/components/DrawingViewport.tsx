@@ -56,7 +56,7 @@ import {
   type SceneItem,
   type ViewLines,
 } from '@3db/drawing';
-import { sameDrawingRef, axesOf, oppositeSide, page, drawingPageForOutput, projectedAxes, type Annotation, type Attachment, type AuxiliaryDrawingView, type ClosedOutline, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide} from '@3db/model';
+import { sameDrawingRef, axesOf, currentDrawingRevision, oppositeSide, page, drawingPageForOutput, projectedAxes, type Annotation, type Attachment, type AuxiliaryDrawingView, type ClosedOutline, sectionArrow, sectionLookAxes, type Dimension, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type SurfaceFinish, type ViewCorner, type ViewSide} from '@3db/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, useStore } from '../state/store';
 import type { DrawingPick } from '../state/drawing';
@@ -1238,7 +1238,7 @@ export function DrawingViewport() {
   /** A press with an annotation tool (D-I3): the first click (the feature), or the second (where it goes), or a circle for a centre mark. */
   const annotateDown = (p: P, bypassSnap: boolean) => {
     if (tool?.kind !== 'annotate') return;
-    const hintKey = { note: 'drawingUi.hint.note', datum: 'drawingUi.hint.datum', fcf: 'drawingUi.hint.fcf', centreLine: 'drawingUi.hint.centreLine', centreMark: 'drawingUi.hint.centreMark' } as const;
+    const hintKey = { note: 'drawingUi.hint.note', datum: 'drawingUi.hint.datum', fcf: 'drawingUi.hint.fcf', centreLine: 'drawingUi.hint.centreLine', centreMark: 'drawingUi.hint.centreMark', revision: 'drawingUi.hint.revision' } as const;
     const first = tool.first;
     const hitSnap = bypassSnap ? null : snapUnder(p, first?.view);
     if (betweenEdges && !hitSnap?.snap.edge) return d.notifyInfo(t('drawingUi.hint.centreLineEdges'));
@@ -1329,6 +1329,13 @@ export function DrawingViewport() {
         // the text is written in the panel
         setTimeout(() => document.querySelector<HTMLTextAreaElement>('[data-field="noteText"]')?.select(), 0);
         return;
+      case 'revision': {
+        const rev = (currentDrawingRevision(drw.doc) ?? page(drw.doc, drw.activePageIndex ?? 0).title?.revision ?? 'A').trim() || 'A';
+        d.addAnnotation({ kind: 'revision', view: view.id, revision: rev, ...(same ? { at: first.at } : { at: pv, leader: first.at, ...(firstAttach ? { attach: firstAttach } : {}) }) });
+        d.setTool(null);
+        setTimeout(() => document.querySelector<HTMLInputElement>('[data-field="revisionLabel"]')?.select(), 0);
+        return;
+      }
       case 'fcf':
         d.addAnnotation({ kind: 'fcf', view: view.id, characteristic: 'position', tolerance: 0.05, datums: [], ...(same ? { at: first.at } : { at: pv, leader: first.at, ...(firstAttach ? { attach: firstAttach } : {}) }) });
         d.setTool(null);
@@ -1538,7 +1545,7 @@ export function DrawingViewport() {
       : tool?.kind === 'ordinate'
       ? t(tool.picks.length === 0 ? 'drawingUi.hint.ordinate0' : 'drawingUi.hint.ordinate1')
       : tool?.kind === 'annotate'
-      ? t(betweenEdges ? 'drawingUi.hint.centreLineEdges' : ({ note: 'drawingUi.hint.note', datum: 'drawingUi.hint.datum', fcf: 'drawingUi.hint.fcf', centreLine: 'drawingUi.hint.centreLine', centreMark: 'drawingUi.hint.centreMark' } as const)[tool.what])
+      ? t(betweenEdges ? 'drawingUi.hint.centreLineEdges' : ({ note: 'drawingUi.hint.note', datum: 'drawingUi.hint.datum', fcf: 'drawingUi.hint.fcf', centreLine: 'drawingUi.hint.centreLine', centreMark: 'drawingUi.hint.centreMark', revision: 'drawingUi.hint.revision' } as const)[tool.what])
       : tool?.kind === 'dimension'
       ? dimensionHint(tool.mode, tool.picks.length)
       : tool?.kind === 'surface'

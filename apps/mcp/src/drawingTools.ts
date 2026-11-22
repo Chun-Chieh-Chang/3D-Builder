@@ -42,10 +42,11 @@ const schemas = {
     picture,
   }),
   drawing_annotate: z.strictObject({
-    kind: z.enum(['note', 'finish', 'datum', 'fcf']).describe('note: text (with a leader when it has a target); finish: surface roughness (ISO 1302); datum: a datum letter (ISO 5459); fcf: a geometric tolerance (ISO 1101).'),
-    target: z.string().optional().describe('The element: a ref name from drawing_inspect, or a dimension (id or text) whose element it goes on. A note without one is a general note under the main view.'),
+    kind: z.enum(['note', 'finish', 'datum', 'fcf', 'revision']).describe('note: text (with a leader when it has a target); finish: surface roughness (ISO 1302); datum: a datum letter (ISO 5459); fcf: a geometric tolerance (ISO 1101); revision: a revision triangle marking a changed location.'),
+    target: z.string().optional().describe('The element: a ref name from drawing_inspect, or a dimension (id or text) whose element it goes on. A note or revision triangle without one is placed on the view without a leader.'),
     view: z.string().optional().describe('The view, when the target is seen in several.'),
     text: z.string().max(500).optional(),
+    revision: z.string().max(16).optional().describe('Revision code inside a revision triangle (defaults to the current drawing revision).'),
     wrapWidth: z.number().min(DRAWING_TEXT_WIDTH.min).max(DRAWING_TEXT_WIDTH.max).optional().describe('Maximum note text width in paper millimetres.'),
     enclosure: z.enum(['circle', 'rounded']).optional().describe('A note enclosure, such as rounded for an inspection callout.'),
     ra: z.number().optional().describe('Ra in µm (0.008–400).'),

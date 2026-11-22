@@ -15,6 +15,7 @@ import {
   axesOf,
   baseDimStyle,
   createEmptyDrawing,
+  currentDrawingRevision,
   dimensionRefs,
   drawingIdsInUse,
   drawingPageForOutput,
@@ -1844,8 +1845,18 @@ export class DrawingSession {
         if (!(a.tolerance !== undefined && Number.isFinite(a.tolerance) && a.tolerance > 0)) throw new AgentError('a geometric tolerance needs its tolerance, a positive number of mm');
         const base = { id, view: viewId, kind: 'fcf' as const, characteristic: a.characteristic, tolerance: a.tolerance, ...(a.diameter ? { diameter: true } : {}), ...(a.material ? { material: a.material } : {}), datums: (a.datums ?? []).map((label) => ({ label })) };
         make = (spot, reach) => ({ type: 'insertAnnotations', annotations: [{ ...base, at: away(spot, reach), leader: pt(spot.on), ...attach } satisfies Annotation] });
-      } else throw new AgentError(`kind must be note, finish, datum or fcf, not ${JSON.stringify(a.kind)}`);
+      } else if (a.kind === 'revision') {
+        const rev = (a.revision ?? currentDrawingRevision(doc) ?? pg.title?.revision ?? 'A').trim();
+        if (!rev) throw new AgentError('a revision triangle needs a revision code');
+        make = (spot, reach) => ({ type: 'insertAnnotations', annotations: [{ id, view: viewId, kind: 'revision', at: away(spot, reach), revision: rev, leader: pt(spot.on), ...attach } satisfies Annotation] });
+      } else throw new AgentError(`kind must be note, finish, datum, fcf or revision, not ${JSON.stringify(a.kind)}`);
       if (!feature) {
+        if (a.kind === 'revision') {
+          const rev = (a.revision ?? currentDrawingRevision(doc) ?? pg.title?.revision ?? 'A').trim();
+          const at = pt([mid[0] + halfW + 10 / placed.scale, mid[1] + halfH + 6 / placed.scale]);
+          this.apply([{ type: 'insertAnnotations', annotations: [{ id, view: viewId, kind: 'revision', at, revision: rev } satisfies Annotation] }], pi);
+          return id;
+        }
         // a general note: at the lower left of the area, above the title block's row, clear of the views
         if (a.kind !== 'note') throw new AgentError(`a ${a.kind} goes on a feature: give its target`);
         const area = sheetMetrics(pg.sheet).area;
@@ -1906,7 +1917,7 @@ export class DrawingSession {
         for (const v of pg.views) push(pi, { type: 'setView', viewId: v.id, patch: { caption: { ...(v.caption ?? {}), height: o.reset || v.caption?.height === undefined ? caption : v.caption.height } } });
         if (o.reset) {
           for (const d of pg.dimensions) if (d.style?.text !== undefined) { const { text: _t, ...rest } = d.style; push(pi, { type: 'setDimension', dimensionId: d.id, patch: { style: Object.keys(rest).length ? rest : null } as never }); }
-          for (const a of pg.annotations ?? []) if (a.kind === 'note' && a.height !== undefined) push(pi, { type: 'setAnnotation', annotationId: a.id, patch: { height: null } as never });
+          for (const a of pg.annotations ?? []) if ((a.kind === 'note' || a.kind === 'revision') && a.height !== undefined) push(pi, { type: 'setAnnotation', annotationId: a.id, patch: { height: null } as never });
         }
       }
       changed.push(`all ${o.all} mm（視圖標題 ${caption} mm）`);
@@ -1923,7 +1934,7 @@ export class DrawingSession {
       const itemPage = d ? located!.pageIndex : a ? aPage : vPage;
       if (o.size !== null) within(o.size, v && !d && !a ? TEXT_RANGE.caption : TEXT_RANGE.text, v && !d && !a ? '視圖標題' : '尺寸與註記');
       if (d) push(itemPage, { type: 'setDimension', dimensionId: d.id, patch: { style: o.size === null ? (() => { const { text: _t, ...rest } = d.style ?? {}; return Object.keys(rest).length ? rest : null; })() : { ...(d.style ?? {}), text: o.size } } as never });
-      else if (a && a.kind === 'note') push(itemPage, { type: 'setAnnotation', annotationId: a.id, patch: { height: o.size } as never });
+      else if (a && (a.kind === 'note' || a.kind === 'revision')) push(itemPage, { type: 'setAnnotation', annotationId: a.id, patch: { height: o.size } as never });
       else if (v) push(itemPage, { type: 'setView', viewId: v.id, patch: { caption: { ...(v.caption ?? {}), ...(o.size === null ? { height: undefined } : { height: o.size }) } } });
       else throw new AgentError(`${o.item} is not a dimension, a note or a view of the drawing (finishes and frames follow the drawing's size)`);
       changed.push(`${o.item} ${o.size === null ? '跟隨全圖' : `${o.size} mm`}`);
@@ -2211,10 +2222,11 @@ const STANDARD: readonly Scale[] = [[2, 1], [1, 1], [1, 2], [1, 5], [1, 10], [1,
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
 export interface AnnotateInput {
-  kind: 'note' | 'finish' | 'datum' | 'fcf';
+  kind: 'note' | 'finish' | 'datum' | 'fcf' | 'revision';
   view?: Id;
   target?: string;
   text?: string;
+  revision?: string;
   enclosure?: Extract<Annotation, { kind: 'note' }>['enclosure'];
   wrapWidth?: number;
   ra?: number;

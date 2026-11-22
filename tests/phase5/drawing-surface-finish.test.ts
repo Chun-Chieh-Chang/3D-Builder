@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { applyDrawingCommand, createEmptyDrawing, parseDrawing, serializeDrawing, type DrawingDoc, type SurfaceFinish, type ViewFeature, page } from '@3db/model';
-import { FINISH_HEIGHT, bisectorCentreLine, buildScene, raText, snapAt, surfaceFinishBox, surfaceFinishItems, toSheet, type PlacedView, type SceneItem, type ScenePolyline, type ViewLines } from '@3db/drawing';
+import { FINISH_HEIGHT, bisectorCentreLine, buildScene, raText, snapAt, surfaceFinishBox, surfaceFinishItems, toSheet, toSvg, type PlacedView, type SceneItem, type ScenePolyline, type ViewLines } from '@3db/drawing';
 
 const view = { id: 'view1', name: '前視', source: 'a.3dbx', direction: 'front' as const };
 const withViews = (): DrawingDoc => applyDrawingCommand(createEmptyDrawing(), { type: 'insertViews', views: [view] });
@@ -220,6 +220,33 @@ describe('the symbol of a surface finish (ISO 1302)', () => {
     expect(page(d).surfaceFinishes[0]).toMatchObject({ triangles: 3, ra: 0.8, textOffset: [-10, 4] });
     d = applyDrawingCommand(d, { type: 'setSurfaceFinish', finishId: 'fin1', patch: { triangles: null, textOffset: null } });
     expect(page(d).surfaceFinishes[0]).toEqual({ id: 'fin1', view: 'view1', at: [10, 20], ra: 0.8 });
+  });
+
+  it('supports custom ink color (#RRGGBB), rejects invalid colors, persists through save/load, and renders in scene and SVG', () => {
+    const insert = (f: SurfaceFinish) => applyDrawingCommand(withViews(), { type: 'insertSurfaceFinishes', finishes: [f] });
+    expect(() => insert(finish('fin1', { color: 'red' }))).toThrow();
+    expect(() => insert(finish('fin1', { color: '#123' }))).toThrow();
+    expect(() => insert(finish('fin1', { color: 'dc2626' }))).toThrow();
+
+    let d = insert(finish('fin1', { ra: 0.08, method: 'G', color: '#dc2626' }));
+    expect(page(d).surfaceFinishes[0]?.color).toBe('#dc2626');
+    expect(parseDrawing(serializeDrawing(d))).toEqual(d);
+
+    const lines: ViewLines = { visible: [[0, 0, 40, 0, 40, 30, 0, 30, 0, 0]], hidden: [], box: { min: [0, 0], max: [40, 30] } };
+    const built = buildScene(d, new Map([['view1', lines]]));
+    const owned = built.scene.items.filter((i) => i.owner === 'fin1');
+    expect(owned.length).toBeGreaterThan(1);
+    expect(owned.every((i) => i.color === '#dc2626')).toBe(true);
+    const svg = toSvg(built.scene);
+    expect(svg).toContain('#dc2626');
+
+    d = applyDrawingCommand(d, { type: 'setSurfaceFinish', finishId: 'fin1', patch: { color: '#2563eb' } });
+    expect(page(d).surfaceFinishes[0]?.color).toBe('#2563eb');
+    expect(buildScene(d, new Map([['view1', lines]])).scene.items.filter((i) => i.owner === 'fin1').every((i) => i.color === '#2563eb')).toBe(true);
+
+    d = applyDrawingCommand(d, { type: 'setSurfaceFinish', finishId: 'fin1', patch: { color: null } });
+    expect(page(d).surfaceFinishes[0]).not.toHaveProperty('color');
+    expect(buildScene(d, new Map([['view1', lines]])).scene.items.filter((i) => i.owner === 'fin1').every((i) => i.color === undefined)).toBe(true);
   });
 });
 

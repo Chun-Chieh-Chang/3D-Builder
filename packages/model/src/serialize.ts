@@ -482,6 +482,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   38: (doc) => doc,
   // v40 stores optional document-wide revision records. Legacy title values remain the fallback.
   39: (doc) => doc,
+  // v41 adds revision triangle markers (RevisionAnnotation) on drawing views.
+  40: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

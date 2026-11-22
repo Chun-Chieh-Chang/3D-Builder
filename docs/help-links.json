@@ -269,7 +269,8 @@
   ],
   "F5": [
     "drw-bom",
-    "drw-note"
+    "drw-note",
+    "drw-revision"
   ],
   "F6": [
     "drw-pdf",

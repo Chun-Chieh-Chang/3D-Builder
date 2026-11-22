@@ -426,15 +426,20 @@ function buildSceneIn(
     const k = resolveDimStyle(pg.sheet.dimStyle).text / DIM_STYLE_DEFAULT.text;
     for (const f of pg.surfaceFinishes.filter((x) => x.view === v.id)) {
       const [dx, dy] = f.textOffset ?? [0, 0];
+      const finishColor = f.color && f.color.toLowerCase() !== '#000000' ? f.color : undefined;
       const symbol = surfaceFinishItems([{ ...f, textOffset: undefined }], own);
       for (const i of scaleAbout(symbol, toSheet(own, f.at[0], f.at[1]), k)) {
-        items.push(i.kind === 'text' ? { ...i, at: [i.at[0] + dx, i.at[1] + dy], owner: f.id } : { ...i, owner: f.id });
+        items.push(
+          i.kind === 'text'
+            ? { ...i, at: [i.at[0] + dx, i.at[1] + dy], owner: f.id, ...(finishColor ? { color: finishColor } : {}) }
+            : { ...i, owner: f.id, ...(finishColor ? { color: finishColor } : {}) },
+        );
       }
     }
     items.push(...threadItems(v, viewFeats ?? [], own, axesOf(pg.views, pg.sheet.projection, v) ?? undefined).map((i) => ({ ...i, owner: ofView })));
     for (const a of (pg.annotations ?? []).filter((x) => x.view === v.id)) {
-      const anchor = a.kind === 'fcf' || a.kind === 'note' ? (a.leader ?? a.at) : a.kind === 'datum' ? a.at : null;
-      const own_k = a.kind === 'note' && a.height !== undefined ? 1 : k;
+      const anchor = a.kind === 'fcf' || a.kind === 'note' || a.kind === 'revision' ? (a.leader ?? a.at) : a.kind === 'datum' ? a.at : null;
+      const own_k = (a.kind === 'note' || a.kind === 'revision') && a.height !== undefined ? 1 : k;
       const annotation = a.kind === 'note' && own_k !== 1
         ? { ...a, wrapWidth: (a.wrapWidth ?? DRAWING_TEXT_WIDTH.default) / own_k }
         : a;
