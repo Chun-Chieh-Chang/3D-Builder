@@ -1,5 +1,15 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-22（19:48）— 全域 7 客戶端 `v0.7.0` MCP 設定補齊與交接準備
+
+- **需求與實作**：
+  1. 依使用者同意，提交並推送多客戶端實測矩陣文件（`3131e5c0` → `origin/main`）。
+  2. 將 `v0.7.0` 內建 `C:/Users/3kids/AppData/Local/3D-Builder/3d-builder-mcp.exe --workspace D:/Self-developed_Apps/3D-Builder/out/agent` 註冊至 7 處本機設定：Antigravity（`mcp_config.json`）、Codex（更新移除舊 `G3` 路徑）、Cline VS Code、Cline 獨立版、WorkBuddy AI、Agnes Code 與 MiniMax Code，並保留各檔既有伺服器設定；同時將黃金夾具 `locating-plate.3dbx`、`diamond-pin.3dbx` 預置於 `out/agent/`。
+  3. 實測確認 `kiro-cli --agent kirocrew` 受限於 `kirocrew-mate` 專屬閘道，須從 KiroCrew 儀表板新增 MCP 伺服器；另輸出零依賴離線版 HTML／SVG 任務儀表板至 `out/task-dashboard-20261122.html`。
+  4. 同步更新 `handoff.md` 與本 `DEV_LOG.md`，供下一位 Agent 無縫接手。
+- **驗證結果**：
+  - `npm run lint:repo` 與 `git diff --check` 通過。
+
 ## 2026-11-22（19:37）— 多客戶端 MCP 組合件實測（`v0.7.0` 內建 Sidecar）
 
 - **需求與實作**：

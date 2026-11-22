@@ -1,5 +1,27 @@
 # 交接與接續工作
 
+## 2026-11-22（19:48 交接）— 7 處全域 MCP 設定預置完成，準備由下一位 Agent 接手
+
+- **最新主線基準**：`origin/main` 位於 `3131e5c0`（已推送多客戶端實測矩陣）；本次更新僅補齊交接與開發日誌（待使用者同意提交推送）。
+- **本輪收尾已完成**：
+  1. **7 處本機客戶端 MCP 設定統一升級至 `v0.7.0` Sidecar**（`C:/Users/3kids/AppData/Local/3D-Builder/3d-builder-mcp.exe --workspace D:/Self-developed_Apps/3D-Builder/out/agent`，均保留原有其他伺服器設定）：
+     - Antigravity（`C:\Users\3kids\.gemini\antigravity\mcp_config.json`）
+     - Codex（`~/.codex/config.toml`，已移除舊 `G3` 路徑）
+     - Cline VS Code（`%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`）
+     - Cline 獨立版（`C:\Users\3kids\.cline\data\settings\cline_mcp_settings.json`）
+     - WorkBuddy AI（`C:\Users\3kids\.workbuddy\mcp.json`）
+     - Agnes Code（`C:\Users\3kids\.agnes\mcp.json`）
+     - MiniMax Code（`C:\Users\3kids\.minimax\mcp.json`）
+  2. **黃金夾具與離線儀表板就緒**：已將 `locating-plate.3dbx`、`diamond-pin.3dbx` 預置於 `out/agent/`；離線版 SVG 任務進度儀表板存於 `out/task-dashboard-20261122.html`（皆在 git 忽略之 `out/`）。
+  3. **KiroCrew 診斷確認**：實測 `kiro-cli --agent kirocrew` 透過 `kirocrew-mate` 閘道管理工具，需於 KiroCrew 儀表板「Settings → MCP Servers」手動新增 `3d-builder-mcp.exe`。
+- **下一位 Agent 接手建議順序**：
+  1. **若由 Antigravity 新會話接手**：重開後已內建載入 `3d-builder` MCP 工具，可直接對 `out/agent/{locating-plate,diamond-pin}.3dbx` 執行 6 步驟組裝驗收並補進 [assembly-mcp-plan.md](docs/design/ai-cad-control/assembly-mcp-plan.md) §6 矩陣。
+  2. **其餘客戶端補測**：Cline／WorkBuddy AI／Agnes Code／MiniMax Code 已備好設定，於 GUI 開啟跑一次即可；Qoder 待 `/login`、DeepSeek 待儲值（HTTP 402）、Claude Code `2.1.328` 週額度於明日 17:00 重置（`2.1.325` 已有通過紀錄）。
+  3. **主線產品開發（P1）**：
+     - **工程圖路線**：以現行引擎重跑 `R1-8032`、`R1-10226` 確認殘留項，接續補齊尺寸文字自由 2D 偏移、跨尺寸對齊磁吸、平面直邊導角參數連動與持久交點參照。
+     - **草圖互動路線**：推進草圖互動計畫 P1 第二批（槽／多邊形游標旁即時輸入、修改預覽、畫布輪廓選取）。
+     - **測試債（P2）**：優先修復 `tests/e2e/manual-browser-projects.js` 間歇計時競爭，再 profiling 三項慢測試。
+
 ## 2026-11-22（19:37 交接）— 多客戶端 MCP 組合件實測（`v0.7.0` Sidecar）完成 Codex／OpenCode／Kiro 端對端驗收
 
 - **本輪完成（不改產品碼，純驗收與文件同步）**：
