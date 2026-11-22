@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CadSession } from '../src/session';
 import { callTool } from '../src/server';
 import type { Verify2dReport } from '../src/verify2d';
@@ -77,6 +77,52 @@ describe('part_verify_against_2d (2D->3D projection back-verification)', () => {
       expect(bad.results[1]?.pass).toBe(false);
       expect(bad.results[1]?.matchedCount).toBe(2);
       expect(bad.results[1]?.expectedCount).toBe(4);
+    } finally {
+      s.dispose();
+    }
+  }, 30_000);
+
+  it('fails the overall report when a real face loses its triangles even though the projected dimensions pass', async () => {
+    const s = await CadSession.create({ root: GOLDEN, locale: 'zh-TW' });
+    try {
+      await s.open('locating-plate.3dbx');
+      const source = s.drawingSource();
+      if (!source) throw new Error('expected the rebuilt locating plate');
+      const checks = { checks: [
+        { label: 'Overall length', view: 'top', kind: 'width', nominal: 120, tolerance: 0.05 },
+        { label: 'Overall width', view: 'top', kind: 'height', nominal: 80, tolerance: 0.05 },
+      ] };
+      const intact = parseReport(await callTool(s, 'part_verify_against_2d', checks));
+      expect(intact.pass).toBe(true);
+
+      // Inject a lost face at the tessellation boundary, preserving the exact shape and projection.
+      const mesh = source.kernel.mesh(source.body.shape);
+      const [start, count, face] = mesh.faceRanges.slice(-3);
+      if (start === undefined || count === undefined || face === undefined) throw new Error('expected a triangulated face');
+      expect(count).toBeGreaterThan(0);
+      expect(start + count).toBe(mesh.indices.length);
+      expect(source.body.topology.faces[face]!.area).toBeGreaterThan(1e-6);
+
+      const meshCall = vi.spyOn(source.kernel, 'mesh').mockReturnValueOnce({
+        ...mesh,
+        indices: mesh.indices.slice(0, start),
+        faceRanges: mesh.faceRanges.slice(0, -3),
+      });
+      try {
+        const missingFace = parseReport(await callTool(s, 'part_verify_against_2d', checks));
+        expect(meshCall).toHaveBeenCalledWith(source.body.shape);
+        expect(missingFace.results).toEqual(intact.results);
+        expect(missingFace.failed).toBe(0);
+        expect(missingFace.meshIntegrity).toEqual({
+          totalFaces: intact.meshIntegrity.totalFaces,
+          triangulatedFaces: intact.meshIntegrity.triangulatedFaces - 1,
+          unmeshedFaces: [face],
+          pass: false,
+        });
+        expect(missingFace.pass).toBe(false);
+      } finally {
+        meshCall.mockRestore();
+      }
     } finally {
       s.dispose();
     }
