@@ -1,5 +1,13 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-23 — DWG 橋接安裝版實機驗證與完整測試 CI 確認
+
+- **結果**：自 main 建置並安裝 0.7.1 後，DWG 匯入／編輯／存檔重開／輸出 DWG 全流程在真實桌面版通過；輸出檔（AC1032）可在 Autodesk Viewer 開啟。安裝包含 `mcp\licenses\dxf-parser-MIT.txt`。
+- **CI**：排程執行 #365（`66399fa`）8 個 `full-suite` 分片與 `section-offset-cost` 全綠，本機逾時未在 CI 重現。
+- **未驗證／待查**：文字編輯（測試檔無文字）；平移值寫入輸出檔的轉回比對（`1600` 搜尋無命中，原因未明）；`dwg2dxf` 讀輸出檔時報 `Invalid max class number 499`、`Invalid morehandles size 1 … DIMSTYLE_CONTROL`，需以 AutoCAD／DWG TrueView 嚴格驗證。
+- **發現**：匯入圖面線寬過細（不隨縮放）、結果提示只在狀態列、非 mm 拒絕訊息不夠清楚、輸出位置未告知。細節與建議修法見 `handoff.md` 同日（晚）區段。
+- **自我更正**：首次 Viewer 驗證誤用輸入檔，已以 AC1018／AC1032 版本標頭區分並重驗，詳見 handoff。
+
 ## 2026-11-23 — 修復 CI #362 (`action-icons.test.ts`) 紅燈並物理硬化 `lint:rules`（RSI Layer 1）
 
 - **根因分析（RCA）**：commit `b8b8bfa1` 於 `apps/web/src/actions.ts` 新增指令 `drw-dxf-compat`，但未在 `apps/web/src/icons/solidcraft/manifest.json` 登錄對應圖示鍵；且推送前只執行了局部 DXF 測試與既有 `lint:rules`，漏跑 `tests/phase8/action-icons.test.ts`，導致 GitHub Actions `repository-integrity.yml` 三平台全數失敗。

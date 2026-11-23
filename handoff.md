@@ -1,5 +1,20 @@
 # 交接與接續工作
 
+## 2026-11-23（晚）— DWG 橋接安裝版實機驗證（0.7.1，使用者機器）
+
+- **建置與安裝**：自 main（`76243ab4`）`npm ci` → `cd apps/desktop; npm run build`（tauri build，Rust 編譯 1m35s）產出 `3D-Builder_0.7.1_x64-setup.exe`（47.04 MiB），安裝到 `D:\軟體資料夾\3D-Builder`。`desktop.exe`、`3d-builder-mcp.exe`、`mcp\node.exe`、`mcp\dist\server.mjs`、`mcp\licenses\dxf-parser-MIT.txt` 五項全在 → 「dxf-parser 授權檔隨安裝包出貨」已在實際封裝確認，結案。
+- **完整測試 CI**：排程執行 #365（`66399fa`）的 8 個 `full-suite` 分片與 `section-offset-cost`（3m41s）全部成功，本機 `section-offset-cost` 逾時的疑慮在 CI 未重現。最新 `76243ab4` 尚無完整測試執行（僅改 `stage-mcp.mjs` 與授權文字）。
+- **DWG 實機流程（WebView2 → Rust → 內建 Node → LibreDWG）通過**：安裝 DWG 引擎成功；匯入 `bed-in-mm.dwg`（AC1018）得 2009 個圖元；改 `cad2` 的 X 為 1600，整條線平移；存 `.3dbd`、重開後修改仍在；輸出 DWG 得 `Downloads\bed-in-mm.dwg`（AC1032、307,722 位元組），在 Autodesk Viewer 開啟，三視圖完整。直接以節點執行橋接：匯入 553 KB DWG 約 1 秒、無 stderr。
+- **未驗證**：(1) 文字編輯（D5）：此檔無文字圖元，需另一個 mm 單位且含文字的 DWG；(2) 平移後的 1600 是否寫進輸出 DWG：`cad2` 僅 0.36 mm 長無法目視；以 `dwg2dxf` 轉回 DXF 後用 `^\s*1600(\.0*)?\s*$` 搜尋**無命中**（原因未明：可能是數值格式或座標換算，尚不能判定編輯是否寫入，需取得 DXF 內容比對）。(3) `dwg2dxf` 讀**輸出檔**時印出 `ERROR: Invalid max class number 499` 與 `ERROR: Invalid morehandles size 1 ... for DIMSTYLE_CONTROL`（仍寫出 DXF、結束碼可被匯出內建 read-back 接受、Autodesk Viewer 可開）。LibreDWG 的 R2018 寫入屬較新功能，建議再以 AutoCAD 或 DWG TrueView（含修復／稽核）嚴格驗證，確認這兩則訊息是否代表結構瑕疵。
+- **過程更正**：第一次 Viewer 檢視用到的是原始輸入檔，不是輸出檔；改以版本標頭（輸入 AC1018、輸出 AC1032）區分後重驗。`dwg2dxf` 對**輸入檔**報 `Ignore invalid handleoff (@4070)`，是原始檔的警告，與我們的輸出無關。
+- **發現的使用性問題（待修，皆非資料錯誤）**：
+  1. 匯入圖面的線寬以圖面單位繪製，整張縮進畫面後不到 1 px，線條幾乎看不見；Autodesk Viewer 同檔清楚。建議可見折線加 `vectorEffect="non-scaling-stroke"` 並設最小像素寬（`CadDrawingEditor.tsx` 約第 138–139 行，點選感應區已不隨縮放）。
+  2. 「安裝 DWG 引擎」「匯入」的進度與結果只顯示在左下角狀態列，一閃即被取代，使用者誤以為沒反應。
+  3. 非 mm 單位的 DWG（例如 AutoCAD 範例 `visualization_-_sun_and_sky_demo.dwg`）依設計拒絕，但訊息為英文且未說明如何處理。
+  4. 輸出 DWG 直接存進「下載」資料夾，不跳另存視窗，也沒告知位置。
+  5. 存檔對話框標題「警告: 此網站可以看到您所做的編輯」是 WebView2 標準提示，非錯誤。
+- **殘留**：驗證時誤植檔名，產生 `D:\Self-developed_Apps\3DB實機確認\bed-in-mm.3dbdbed-in-mm-edited.3dbd`，內容正確，使用者可自行刪除。
+
 ## 2026-11-23 — DWG 匯入／匯出與可編輯工程圖（281/281 UI 回歸通過，已提交主線）
 
 - **使用者範圍已確認**：除 DWG 匯出外，須保留顏色並可編輯；DWG 匯入的目的為「工程圖內編輯線條、文字、尺寸與顏色」，不是匯入草圖。設計及能力邊界見 [ADR 0264](docs/adr/0264-dwg-editable-drawing-import-export.md)。
