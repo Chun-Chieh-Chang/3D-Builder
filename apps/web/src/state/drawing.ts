@@ -58,7 +58,7 @@ import {
   page,
   type ViewCorner } from '@3db/model';
 import { drawingFileName, writeDrawingFile } from '@3db/io';
-import { alignCollinear, arrangeDimensions, attachedAnnotations, FontError, SHADE_SHEET_PX, readTrueType, resolveLines, revisionTableOverlaps, sectionMissed, toDxf, toPdf, turnLines, visibleElements, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
+import { alignCollinear, arrangeDimensions, attachedAnnotations, FontError, SHADE_SHEET_PX, readTrueType, resolveLines, revisionTableOverlaps, sectionMissed, toDxf, toPdf, turnLines, visibleElements, type DxfMode, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
 import { autoDimensions, buildScene, type DimensionDraft, type DimensionMode, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, centreViews, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
 import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
@@ -1646,20 +1646,25 @@ export class DrawingStore {
     this.exportSheet('svg', (scene) => toSvg(scene), 'image/svg+xml');
   }
 
-  /** The drawing as DXF (AC1015), handed to the browser as a download (the page shown: a DXF holds one sheet). */
-  exportDxf(): void {
-    this.exportSheet('dxf', (scene) => toDxf(scene), 'application/dxf');
+  /** The drawing as DXF (AC1021 UTF-8), handed to the browser as a download (the page shown: a DXF holds one sheet). */
+  exportDxf(mode: DxfMode = 'standard'): void {
+    this.exportSheet(
+      'dxf',
+      (scene) => toDxf(scene, mode === 'compat' ? { mode: 'compat' } : undefined),
+      'application/dxf',
+      mode === 'compat' ? '-compat' : '',
+    );
   }
 
   /**
    * A one-sheet format of the page shown. A drawing of several pages names the file by its page (「name-2.dxf」, as the MCP export does) and says which page
    * it is and how to get the others, so a page is never left out without a word.
    */
-  private exportSheet(ext: 'svg' | 'dxf', write: (scene: Scene) => string, mime: string): void {
+  private exportSheet(ext: 'svg' | 'dxf', write: (scene: Scene) => string, mime: string, suffix = ''): void {
     const name = this.name();
     const pages = this.state.doc.pages.length;
     const pageIndex = Math.max(0, Math.min(pages - 1, this.state.activePageIndex));
-    const file = pages > 1 ? `${name}-${pageIndex + 1}.${ext}` : `${name}.${ext}`;
+    const file = pages > 1 ? `${name}-${pageIndex + 1}${suffix}.${ext}` : `${name}${suffix}.${ext}`;
     const { scene } = this.scene(pageIndex);
     download(file, write(scene), mime);
     this.host.notify(pages > 1 ? t('drawing.exportedPage', { name: file, page: pageIndex + 1, pages }) : t('drawing.exported', { name: file }));

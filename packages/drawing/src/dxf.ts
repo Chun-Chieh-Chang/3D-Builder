@@ -17,7 +17,8 @@ import { textWidthMm } from './sheet';
  */
 
 export type DxfVersion = 'AC1015' | 'AC1021';
-export const DXF_VERSION: DxfVersion = 'AC1015';
+export type DxfMode = 'standard' | 'compat';
+export const DXF_VERSION: DxfVersion = 'AC1021';
 export const DXF_VERSIONS: readonly DxfVersion[] = ['AC1015', 'AC1021'];
 /** The lineweights a DXF may give an entity (group 370), in 1/100 mm. */
 const LINEWEIGHTS = [0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200, 211];
@@ -85,8 +86,14 @@ export interface DxfWrite {
 }
 
 export interface DxfExtras {
-  /** DXF format version: AC1015 (R2000 ASCII, default) or AC1021 (R2007 UTF-8). */
+  /** DXF format version: AC1021 (R2007 UTF-8, default) or AC1015 (R2000 ASCII). */
   version?: DxfVersion;
+  /**
+   * Output mode:
+   * - `standard` (default): native DIMENSION entities with `*D<n>` anonymous blocks and SOLID arrowheads (for AutoCAD / SolidWorks).
+   * - `compat`: explodes dimensions into Model Space polylines/texts and writes filled arrowheads as closed LWPOLYLINEs (for FreeCAD and lightweight viewers).
+   */
+  mode?: DxfMode;
   layers?: { name: string; linetype: string; weight: number }[];
   entities?: (out: {
     /** Starts an entity on a layer; the group codes of the entity follow through `g` and `int`. */
@@ -120,9 +127,10 @@ function splitByDimension(scene: Scene): { loose: SceneItem[]; blocks: SceneItem
   return { loose, blocks };
 }
 
-/** The scene as a DXF (AC1015 by default; optional AC1021 UTF-8). */
+/** The scene as a DXF (AC1021 UTF-8 by default; optional AC1015 ASCII and FreeCAD-compatible exploded mode). */
 export function toDxf(scene: Scene, extras?: DxfExtras): string {
   const version: DxfVersion = extras?.version ?? DXF_VERSION;
+  const compat = extras?.mode === 'compat';
   let next = 0x30;
   const handle = () => (next++).toString(16).toUpperCase();
   const o = new Out();
@@ -133,9 +141,9 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
     modelRecord: 'B', paperRecord: 'C', rootDict: 'D', groupDict: 'E', byBlock: '10', byLayer: '11', standardStyle: '12',
   };
 
-  // the dimensions: each gets an anonymous block for what it is drawn with (the items marked with its id), the other items stay in model space
-  const dims = scene.dimensions ?? [];
-  const { loose, blocks: blockItems } = splitByDimension(scene);
+  // standard mode: each dimension gets an anonymous block; compat mode: explode all dimension items directly into model space
+  const dims = compat ? [] : (scene.dimensions ?? []);
+  const { loose, blocks: blockItems } = compat ? { loose: scene.items, blocks: [] as SceneItem[][] } : splitByDimension(scene);
   const blockRecords = dims.map(() => handle());
 
   // the sheet's own line styles (ADR 0260); a linetype of theirs that the standard list does not have (CNS 3's centre line) is written after it, from its dashes
@@ -242,7 +250,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
         minY = Math.min(minY, item.points[i + 1]!);
         maxY = Math.max(maxY, item.points[i + 1]!);
       }
-      if (item.filled) {
+      if (item.filled && !compat) {
         // a filled polygon: a fan of triangles from its first corner (a SOLID of three corners repeats the third)
         for (let k = 1; k + 1 < n; k++) {
           entity('SOLID', styles[item.style].layer, 'AcDbTrace', item.width);
@@ -252,7 +260,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
         return;
       }
       entity('LWPOLYLINE', styles[item.style].layer, 'AcDbPolyline', item.width);
-      o.int(90, n).int(70, item.closed ? 1 : 0);
+      o.int(90, n).int(70, item.closed || item.filled ? 1 : 0);
       for (let i = 0; i < item.points.length; i += 2) o.g(10, item.points[i]!).g(20, item.points[i + 1]!);
     } else if (item.text !== '') {
       entity('TEXT', TEXT_LAYER, 'AcDbText');

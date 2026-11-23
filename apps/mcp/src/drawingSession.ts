@@ -85,6 +85,7 @@ import {
   type CoverageReport,
   type DimensionLike,
   type DirectionStats,
+  type DxfMode,
   type DxfVersion,
   type DrawingLayoutInspection,
   type DrawingReleaseStatus,
@@ -2042,7 +2043,7 @@ export class DrawingSession {
   async export(
     path: string,
     format: 'pdf' | 'dxf' | 'svg',
-    options?: { release?: boolean; dxfVersion?: DxfVersion },
+    options?: { release?: boolean; dxfVersion?: DxfVersion; dxfMode?: DxfMode },
   ): Promise<{
     path: string;
     bytes: number;
@@ -2082,7 +2083,12 @@ export class DrawingSession {
         outputs.push({
           page: pi,
           full: at,
-          data: format === 'dxf' ? toDxf(scene, options?.dxfVersion ? { version: options.dxfVersion } : undefined) : toSvg(scene),
+          data: format === 'dxf'
+            ? toDxf(scene, {
+                ...(options?.dxfVersion ? { version: options.dxfVersion } : {}),
+                ...(options?.dxfMode ? { mode: options.dxfMode } : {}),
+              })
+            : toSvg(scene),
         });
       }
     }

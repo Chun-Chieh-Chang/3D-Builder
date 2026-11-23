@@ -53,7 +53,7 @@ describe('the DXF of a flat pattern', () => {
   it('a 90° flange: a file the checker has nothing to say of, the outline four lines on OUTLINE — 127.3197 × 50 from the origin — and one bend line on BEND at x = 96.5 + BA/2 from y 0 to 50', () => {
     const { text, doc } = dxfOf([...base, flange()]);
     expect(checkDxf(doc)).toEqual([]);
-    expect(doc.version).toBe('AC1015');
+    expect(doc.version).toBe('AC1021');
     const outline = lines(doc, 'OUTLINE');
     expect(outline).toHaveLength(4);
     const xs = outline.flatMap((l) => [l.a[0], l.b[0]]);
@@ -82,7 +82,7 @@ describe('the DXF of a flat pattern', () => {
     const notes = doc.entities.filter((e): e is DxfText => e.type === 'TEXT').map((e) => e.text);
     expect(notes).toContain('UP 90° R2');
     expect(notes).toContain('T=1.5  K=0.5');
-    expect(text).toContain('\\U+00B0');
+    expect(text).toContain('UP 90° R2');
     const down = dxfOf([...base, flange({ flip: true })]);
     expect(down.doc.entities.filter((e): e is DxfText => e.type === 'TEXT').map((e) => e.text)).toContain('DOWN 90° R2');
   });

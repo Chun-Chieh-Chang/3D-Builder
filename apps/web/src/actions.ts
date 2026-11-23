@@ -395,6 +395,7 @@ export const ACTIONS: UiAction[] = [
   // 檔案: what a drawing is written out as
   { id: 'drw-pdf', get label() { return t('drawingUi.exportPdf'); }, group: 'file', enabled: drawingOn, run: () => store.drawingStore?.exportPdf() },
   { id: 'drw-dxf', get label() { return t('drawingUi.exportDxf'); }, group: 'file', enabled: drawingOn, run: () => store.drawingStore?.exportDxf() },
+  { id: 'drw-dxf-compat', get label() { return t('drawingUi.exportDxfCompat'); }, group: 'file', enabled: drawingOn, run: () => store.drawingStore?.exportDxf('compat') },
   { id: 'drw-svg', get label() { return t('drawingUi.exportSvg'); }, group: 'file', enabled: drawingOn, run: () => store.drawingStore?.exportSvg() },
 
   { id: 'undo', get label() { return t('act.undo'); }, shortcut: 'Ctrl+Z', group: 'edit', enabled: (s) => (s.drw ? s.drw.canUndo : s.asm ? s.asm.canUndo && idle(s) : s.canUndo), run: () => store.undo() },

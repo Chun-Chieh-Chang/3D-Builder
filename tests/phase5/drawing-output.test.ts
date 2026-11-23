@@ -59,24 +59,31 @@ describe('the scene the outputs are made from', () => {
   });
 });
 
-describe('DXF (AC1015)', () => {
+describe('DXF (AC1021 default, AC1015 optional)', () => {
   let text: string;
   beforeAll(() => {
     text = toDxf(scene);
   });
 
-  it('escapes what is not ASCII as \\U+XXXX and reads it back: Ø9 is \\U+00D89, Chinese, a character beyond the Basic Multilingual Plane, a backslash', () => {
-    expect(dxfEscape('Ø9')).toBe('\\U+00D89');
-    expect(dxfEscape('孔')).toBe('\\U+5B54');
+  it('escapes what is not ASCII in AC1015 as \\U+XXXX and keeps UTF-8 in AC1021', () => {
+    expect(dxfEscape('Ø9', 'AC1015')).toBe('\\U+00D89');
+    expect(dxfEscape('孔', 'AC1015')).toBe('\\U+5B54');
+    expect(dxfEscape('a\\b', 'AC1015')).toBe('a\\\\b');
+    expect(dxfEscape('😀', 'AC1015')).toBe('\\U+D83D\\U+DE00');
+    expect(dxfEscape('Ø9')).toBe('Ø9');
+    expect(dxfEscape('孔')).toBe('孔');
     expect(dxfEscape('a\\b')).toBe('a\\\\b');
-    expect(dxfEscape('😀')).toBe('\\U+D83D\\U+DE00');
-    for (const s of ['Ø9', '定位板 H7 (+0.012/0)', '4×R10 ±0.05', 'a\\b', '😀', '貫穿 沉頭 Ø12 深 4']) expect(dxfUnescape(dxfEscape(s)), s).toBe(s);
-    expect(/^[\x20-\x7e\r\n]*$/.test(text)).toBe(true); // the whole file is ASCII
+    for (const s of ['Ø9', '定位板 H7 (+0.012/0)', '4×R10 ±0.05', 'a\\b', '😀', '貫穿 沉頭 Ø12 深 4']) {
+      expect(dxfUnescape(dxfEscape(s, 'AC1015')), s).toBe(s);
+      expect(dxfUnescape(dxfEscape(s, 'AC1021')), s).toBe(s);
+    }
+    const ascii = toDxf(scene, { version: 'AC1015' });
+    expect(/^[\x20-\x7e\r\n]*$/.test(ascii)).toBe(true); // AC1015 is pure ASCII
   });
 
-  it('is a version 2000 file with its sections in order, and a check of it finds nothing wrong', () => {
+  it('is a version 2007 (AC1021) file with its sections in order, and a check of it finds nothing wrong', () => {
     const doc = readDxf(text);
-    expect(doc.version).toBe('AC1015');
+    expect(doc.version).toBe('AC1021');
     expect(doc.sections).toEqual(['HEADER', 'CLASSES', 'TABLES', 'BLOCKS', 'ENTITIES', 'OBJECTS']);
     expect(checkDxf(doc)).toEqual([]);
     expect(doc.header.get('$INSUNITS')![0]![1]).toBe('4'); // millimetres
@@ -151,7 +158,7 @@ describe('DXF (AC1015)', () => {
     const dup = text.replace(/\r\n5\r\n3F\r\n/, '\r\n5\r\n3E\r\n');
     expect(checkDxf(readDxf(dup)).some((p) => p.includes('控制碼重複'))).toBe(true);
     expect(checkDxf(readDxf(text.replace('\r\n8\r\nVISIBLE\r\n', '\r\n8\r\nNOPE\r\n'))).some((p) => p.includes('圖層不存在'))).toBe(true);
-    expect(checkDxf(readDxf(text.replace('AC1015', 'AC1018'))).some((p) => p.includes('AC1015'))).toBe(true);
+    expect(checkDxf(readDxf(text.replace('AC1021', 'AC1018'))).some((p) => p.includes('AC1021'))).toBe(true);
     expect(checkDxf(readDxf(text.replace(/\r\n90\r\n(\d+)\r\n/, (_, n) => `\r\n90\r\n${Number(n) + 1}\r\n`))).some((p) => p.includes('頂點數'))).toBe(true);
     expect(checkDxf(readDxf(text.replace('\r\n330\r\nB\r\n', '\r\n330\r\nFFFF\r\n'))).some((p) => p.includes('擁有者'))).toBe(true);
   });

@@ -1,5 +1,18 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-23 — FreeCAD 1.1.4 工程圖 DXF 相容匯出與預設 AC1021 UTF-8
+
+- **根因分析（RCA）**：以本機 `FreeCADCmd.exe`（FreeCAD 1.1.4）實測 3D-Builder 工程圖 DXF，確認圖面缺字與缺標註來自三項因素：(1) FreeCAD 預設關閉 `dxftext`（匯入文字與尺寸）與 `dxfstarblocks`；(2) 即使開啟 `dxftext`，FreeCAD C++ DXF Importer 明確標記 `Dimension type 2/3/4`（角度／直徑／半徑）與 `Entity type SOLID`（填滿箭頭）為不支援而直接丟棄；(3) 網頁預設 `AC1015` 轉義為 `\U+XXXX`，FreeCAD 1.1.4 不解碼該跳脫碼。
+- **矯正與預防措施（CAPA）**：
+  - `packages/drawing/src/dxf.ts`：將預設 `DXF_VERSION` 改為 `AC1021`（UTF-8，仍保留可選 `AC1015`）；新增 `mode: 'standard' | 'compat'`（相容模式展開全部尺寸至 Model Space 且將 `filled` 箭頭改寫為封閉 `LWPOLYLINE`，零 `DIMENSION`／`*D`／`SOLID`）。
+  - `apps/web` 與 `apps/mcp`：工程圖匯出面板與指令面板新增「輸出 DXF（相容）」按鈕（檔名 `-compat.dxf`）與 FreeCAD 需勾選「匯入文字與尺寸」的提示文字；MCP `drawing_export` 同步支援 `dxfMode`。
+  - **確效驗證**：`vitest`（`drawing-dxf-dimensions`、`drawing-output`、`flat-dxf`、`dxf-import` 67/67 通過）、`npm run typecheck`、`lint:i18n`、`lint:deps`、`lint:rules`、`npm run build`、`npm run mcp:build` 皆 0 錯誤；另以本機 FreeCAD 1.1.4 實測匯入相容 DXF（含線性、Ø、R、°、中文與 3 個箭頭），結果為 `Unsupported features: (none)`、11/11 Wires（含 5 個封閉多段線）與 7/7 Texts 完整保留且無亂碼。
+
+## 2026-11-23 — R1-8032 Rev. 08 原圖公差核對
+
+- 核對 Rev. 08 原圖、同版生效章與供應商簽認附件。公差欄依原始英吋小數位，`.X`／`.XX`／`.XXX`／`.XXXX` 分別換算為 ±0.762／0.254／0.127／0.0127 mm，整度與一位小數角度各為 ±5°、±0.5°。獨立記錄個別公差、理論尖角、F 詳圖尺寸鏈與 A–D 檢查點。
+- 重開 A1 圖檔，67 筆尺寸均可解析，D5 維持 0。C–C 原圖 `.818 in` 名義總長為 20.7772 mm；`dim66` 量得 20.740082 mm，大口端投影參照在 Y=0.037118 mm。原生剖面亦未找到 Y=0 的端面投影，OCCT 實體包圍盒大口端下界約 Y=0.03347 mm。需用同版受控 3D 核對重建幾何和量測基準，現行稿維持 `PRELIMINARY`。換算及量測證據見 `out/r18032-tolerance-audit/`。
+
 ## 2026-11-23 — R1-8032 A1 剩餘標註干涉歸零
 
 - 以重開前一版 `.3dbd` 的原生場景重現 D5 餘 6 項。按局部位移調四筆文字降至 2 項，再用實際圖元對核：第 1 頁 `18.842` 遭 `20.74` 總高延伸線穿過，調整總高尺寸列並沿列移標籤；第 2 頁 `4×5°` 與 A-A 中心線相交，移開其文字後歸零。

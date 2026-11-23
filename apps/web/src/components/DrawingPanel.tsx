@@ -955,9 +955,17 @@ export function DrawingPanel() {
             <button className="pm-button" data-action="exportDxf" onClick={() => d.exportDxf()}>
               {t('drawingUi.exportDxf')}
             </button>
+            <button className="pm-button" data-action="exportDxfCompat" onClick={() => d.exportDxf('compat')}>
+              {t('drawingUi.exportDxfCompat')}
+            </button>
             <button className="pm-button" data-action="exportPdf" onClick={() => d.exportPdf()}>
               {t('drawingUi.exportPdf')}
             </button>
+          </div>
+          <div className="pm-row">
+            <span className="muted" data-field="dxfFreecadHint" style={{ fontSize: '0.85em', lineHeight: 1.5 }}>
+              {t('drawingUi.dxfFreecadHint')}
+            </span>
           </div>
           <div className="pm-row">
             <select

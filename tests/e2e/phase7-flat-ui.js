@@ -76,7 +76,7 @@ g.run = async () => {
   URL.createObjectURL = make;
   H.check(!!captured, 'the DXF is handed to the browser');
   const dxf = await captured.text();
-  H.check(dxf.includes('AC1015') && dxf.includes('OUTLINE') && dxf.includes('BEND') && dxf.includes('DASHED'), 'the DXF has the layers of the pattern');
+  H.check(dxf.includes('AC1021') && dxf.includes('OUTLINE') && dxf.includes('BEND') && dxf.includes('DASHED'), 'the DXF has the layers of the pattern');
 
   // closing it
   panel().querySelector('button.primary').click();

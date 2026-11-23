@@ -80,7 +80,7 @@ o.run = async () => {
   const dxfText = new TextDecoder().decode(dxf.bytes);
   const dxfDoc = lib.readDxf(dxfText);
   H.check(lib.checkDxf(dxfDoc).length === 0, `the DXF checks out: ${lib.checkDxf(dxfDoc)}`);
-  H.check(dxfDoc.version === 'AC1015', 'AC1015');
+  H.check(dxfDoc.version === 'AC1021', 'AC1021');
   const dxfLineCount = dxfDoc.entities.filter((e) => e.type === 'LWPOLYLINE').length;
   H.check(dimensionIds.size === 12 && looseLines.length < sceneLines.length, `the dimensions have items of their own: ${dimensionIds.size} dimensions, ${sceneLines.length - looseLines.length} lines`);
   H.check(dxfLineCount === looseLines.length, `every line of the sheet outside the dimensions is in the DXF (${dxfLineCount} in the DXF, ${looseLines.length} in the scene)`);

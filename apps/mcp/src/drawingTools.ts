@@ -75,7 +75,8 @@ const schemas = {
   drawing_export: z.strictObject({
     path: z.string().min(1),
     format: z.enum(['pdf', 'dxf', 'svg']),
-    dxfVersion: z.enum(['AC1015', 'AC1021']).optional().describe('DXF version when format is dxf: AC1015 (R2000 ASCII, default) or AC1021 (R2007 UTF-8 for native Chinese in FreeCAD).'),
+    dxfVersion: z.enum(['AC1015', 'AC1021']).optional().describe('DXF version when format is dxf: AC1021 (R2007 UTF-8, default) or AC1015 (R2000 ASCII).'),
+    dxfMode: z.enum(['standard', 'compat']).optional().describe('DXF output mode: standard (default, native DIMENSION + SOLID arrowheads) or compat (FreeCAD-compatible: explodes dimensions to Model Space polylines/texts and writes arrowheads as closed LWPOLYLINEs).'),
     release: z.boolean().optional().describe('When true, refuses export unless every quality gate rule passes (status === "release"). Default false: draft drawings export stamped PRELIMINARY.'),
   }),
   drawing_open: z.strictObject({ path: z.string().min(1) }),
@@ -207,7 +208,11 @@ export async function callDrawingTool(session: CadSession, name: string, raw: un
     }
     case 'drawing_export': {
       const a = parse('drawing_export');
-      const opts = { ...(a.release ? { release: true } : {}), ...(a.dxfVersion ? { dxfVersion: a.dxfVersion } : {}) };
+      const opts = {
+        ...(a.release ? { release: true } : {}),
+        ...(a.dxfVersion ? { dxfVersion: a.dxfVersion } : {}),
+        ...(a.dxfMode ? { dxfMode: a.dxfMode } : {}),
+      };
       return { content: [{ type: 'text', text: JSON.stringify(await d.export(a.path, a.format, Object.keys(opts).length ? opts : undefined)) }] };
     }
     case 'drawing_open': {

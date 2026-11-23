@@ -198,7 +198,7 @@ describe('each kind, by hand', () => {
     expect(checkDxf(readDxf(text.slice(0, text.indexOf('AcDbAlignedDimension')) + text.slice(text.indexOf('AcDbAlignedDimension')).replace('\r\n14\r\n', '\r\n17\r\n'))).some((p) => p.includes('定義點'))).toBe(true);
   });
 
-  it('keeps AC1015 ASCII as default and supports optional AC1021 UTF-8 with native Chinese and zero checkDxf errors', () => {
+  it('uses AC1021 UTF-8 as default with native Chinese and supports optional AC1015 ASCII with zero checkDxf errors', () => {
     const base = sceneOf(
       { id: 'd1', view: 'view1', kind: 'linear', orientation: 'horizontal', a: ref('a'), b: ref('b'), offset: 10, suffix: ' 貫穿' } as Dimension,
       1,
@@ -213,13 +213,7 @@ describe('each kind, by hand', () => {
       ],
     };
 
-    const ascii = toDxf(scene);
-    expect(ascii).toContain('$ACADVER\r\n1\r\nAC1015\r\n');
-    expect(ascii).toContain('\\U+5716\\U+540D');
-    expect(ascii).not.toContain('圖名');
-    expect(checkDxf(readDxf(ascii))).toEqual([]);
-
-    const utf8 = toDxf(scene, { version: 'AC1021' });
+    const utf8 = toDxf(scene);
     expect(utf8).toContain('$ACADVER\r\n1\r\nAC1021\r\n');
     expect(utf8).toContain('圖名：法蘭\\\\A DEPTH10');
     expect(utf8).toContain('貫穿');
@@ -227,5 +221,47 @@ describe('each kind, by hand', () => {
     const parsed = readDxf(utf8);
     expect(parsed.version).toBe('AC1021');
     expect(checkDxf(parsed)).toEqual([]);
+
+    const ascii = toDxf(scene, { version: 'AC1015' });
+    expect(ascii).toContain('$ACADVER\r\n1\r\nAC1015\r\n');
+    expect(ascii).toContain('\\U+5716\\U+540D');
+    expect(ascii).not.toContain('圖名');
+    expect(checkDxf(readDxf(ascii))).toEqual([]);
+  });
+
+  it('compat mode explodes all dimensions into Model Space and converts SOLID arrowheads to closed LWPOLYLINEs for FreeCAD', () => {
+    const standard = readDxf(toDxf(plate.scene));
+    const compatText = toDxf(plate.scene, { mode: 'compat' });
+    const compat = readDxf(compatText);
+
+    expect(compat.version).toBe('AC1021');
+    expect(checkDxf(compat)).toEqual([]);
+
+    // No DIMENSION entities, no *D anonymous blocks, no SOLID entities
+    expect(compat.entities.some((e) => e.type === 'DIMENSION')).toBe(false);
+    expect(compat.entities.some((e) => e.type === 'SOLID')).toBe(false);
+    expect(compat.blocks.some((b) => b.startsWith('*D'))).toBe(false);
+    expect(compat.tables.get('BLOCK_RECORD')!.entries.some((r) => r.name.startsWith('*D'))).toBe(false);
+
+    // Every polyline (including filled arrowheads) and every non-empty text of the scene is directly in Model Space
+    const expectedPolylines = plate.scene.items.filter((i): i is Extract<typeof i, { kind: 'polyline' }> => i.kind === 'polyline' && i.points.length >= 4);
+    const expectedFilled = expectedPolylines.filter((i) => i.filled);
+    const expectedTexts = plate.scene.items.filter((i) => i.kind === 'text' && i.text !== '');
+    expect(expectedFilled.length).toBeGreaterThan(0);
+
+    const compatPolylines = compat.entities.filter((e): e is DxfPolyline => e.type === 'LWPOLYLINE');
+    const compatTexts = compat.entities.filter((e): e is DxfText => e.type === 'TEXT');
+    expect(compatPolylines).toHaveLength(expectedPolylines.length);
+    expect(compatTexts).toHaveLength(expectedTexts.length);
+
+    // Dimension texts (including Ø, R, ±, H11) are all present in Model Space TEXT
+    const modelTexts = compatTexts.map((t) => t.text);
+    for (const d of plate.scene.dimensions ?? []) {
+      expect(modelTexts, d.id).toContain(d.text);
+    }
+
+    // Standard mode still emits DIMENSION and SOLID as before
+    expect(standard.entities.some((e) => e.type === 'DIMENSION')).toBe(true);
+    expect(drawnEntities(standard).some((e) => e.type === 'SOLID')).toBe(true);
   });
 });
