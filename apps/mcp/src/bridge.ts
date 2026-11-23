@@ -6,7 +6,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
-import { fromBase64, LIVE_CLOSE, LIVE_PROTOCOL, liveCode, liveOriginAllowed, type AppMessage, type LiveBatch, type LiveBlobs, type LiveOpen, type ServerMessage } from '@3db/io';
+import { fromBase64, LIVE_CLOSE, LIVE_PROBE_PATH, LIVE_PROBE_REPLY, LIVE_PROTOCOL, liveCode, liveOriginAllowed, type AppMessage, type LiveBatch, type LiveBlobs, type LiveOpen, type ServerMessage } from '@3db/io';
 import type { PartDoc } from '@3db/model';
 
 export interface BridgeOptions {
@@ -122,6 +122,11 @@ export class LiveBridge {
 
   private accept(ws: WebSocket, req: IncomingMessage): void {
     if (!liveOriginAllowed(req.headers.origin, this.options.origins)) return ws.close(LIVE_CLOSE.badOrigin, 'origin not allowed');
+    if (req.url === LIVE_PROBE_PATH) {
+      ws.send(LIVE_PROBE_REPLY);
+      ws.close();
+      return;
+    }
     let greeted = false;
     // the first message must be the hello, soon
     const deadline = setTimeout(() => !greeted && ws.close(LIVE_CLOSE.badMessage, 'no hello'), 10_000);

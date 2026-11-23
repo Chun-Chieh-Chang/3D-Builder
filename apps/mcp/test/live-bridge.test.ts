@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { createEmptyAssembly, createEmptyPart, DocHistory } from '@3db/model';
 import { LiveBridge } from '../src/bridge';
 import { AiBridge, type AiBridgeStatus } from '../../web/src/state/aiBridge';
+import { discoverMcp } from '../../web/src/state/mcpDiscovery';
 import { WebSocket as NodeSocket } from 'ws';
 import { LIVE_PROTOCOL, toBase64 } from '@3db/io';
 
@@ -33,6 +34,23 @@ it('rejects a foreign Origin before accepting its hello', async () => {
   const closed = new Promise<number>((resolve) => ws.on('close', resolve));
   expect(await closed).toBe(4403);
   expect(server.connected).toBe(false);
+});
+
+it('detects an opted-in loopback bridge without claiming a session or exposing pairing data', async () => {
+  const pages = 'https://chun-chieh-chang.github.io';
+  const socketFor = (origin: string) => class extends NodeSocket {
+    constructor(url: string) { super(url, { origin }); }
+  } as unknown as typeof WebSocket;
+  server = new LiveBridge({ origins: [pages] });
+  const port = await server.start();
+  const { signal } = new AbortController();
+  expect(await discoverMcp(signal, port, socketFor(pages))).toBe('ready');
+  expect(await discoverMcp(signal, port, socketFor('https://example.com'))).toBe('origin');
+  expect(server.connected).toBe(false);
+  expect(server.takePending()).toBeNull();
+  for (const badPort of [NaN, Infinity, 0, -1, 1000.5, 65536]) {
+    expect(await discoverMcp(signal, badPort, socketFor(pages))).toBe('unreachable');
+  }
 });
 
 it('keeps the first app when another tries to connect', async () => {

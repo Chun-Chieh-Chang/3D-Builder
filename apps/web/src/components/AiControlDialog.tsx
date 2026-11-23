@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { t } from '@3db/i18n';
+import { LIVE_SETUP_PORT } from '@3db/io';
 import { store, useStore } from '../state/store';
 import type { AiBridgeStatus } from '../state/aiBridge';
+import { discoverMcp, loopbackPermission, type McpDiscovery } from '../state/mcpDiscovery';
 
 interface McpLauncherInfo {
   launcherPath: string;
@@ -38,6 +40,52 @@ export function AiControlDialog() {
   const [code, setCode] = useState('');
   const [mcpInfo, setMcpInfo] = useState<McpLauncherInfo | null>(null);
   const [copied, setCopied] = useState(false);
+  const [discovery, setDiscovery] = useState<McpDiscovery | 'ask' | 'denied' | 'checking'>('ask');
+  const probe = useRef<AbortController | null>(null);
+  const webSetup = window.isSecureContext && !('__TAURI_INTERNALS__' in window);
+  const linked = ai.state === 'on' || ai.state === 'connecting';
+  const checkMcp = useCallback(() => {
+    probe.current?.abort();
+    const check = new AbortController();
+    probe.current = check;
+    setDiscovery('checking');
+    void discoverMcp(check.signal).then(async (result) => {
+      const status = result === 'unreachable' && await loopbackPermission() === 'denied' ? 'denied' : result;
+      if (!check.signal.aborted) {
+        probe.current = null;
+        setDiscovery(status);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!webSetup) return;
+    let cancelled = false;
+    void loopbackPermission().then((permission) => {
+      if (cancelled || probe.current) return;
+      if (permission === 'granted') checkMcp();
+      else if (permission === 'denied') setDiscovery('denied');
+    });
+    return () => {
+      cancelled = true;
+      probe.current?.abort();
+      probe.current = null;
+    };
+  }, [checkMcp, webSetup]);
+
+  useEffect(() => {
+    if (!open || !webSetup || linked || discovery === 'ready') return;
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      void loopbackPermission().then((permission) => {
+        if (!cancelled && !probe.current && permission === 'granted') checkMcp();
+      });
+    }, 12_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [checkMcp, discovery, linked, open, webSetup]);
 
   useEffect(() => {
     if (!open) return;
@@ -46,7 +94,6 @@ export function AiControlDialog() {
   }, [open]);
 
   if (!open) return null;
-  const linked = ai.state === 'on' || ai.state === 'connecting';
   const close = () => store.openDialog(null);
   const mcpSnippet = mcpInfo?.installed
     ? JSON.stringify(
@@ -70,11 +117,30 @@ export function AiControlDialog() {
 
   return (
     <div className="modal-backdrop" onPointerDown={close}>
-      <form className="modal parameters" role="dialog" aria-modal="true" aria-label={t('ai.title')} onPointerDown={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); if (!linked && active === 'part') store.connectAi(code); }}>
+      <form className="modal parameters ai-control-dialog" role="dialog" aria-modal="true" aria-label={t('ai.title')} onPointerDown={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); if (!linked && active === 'part') store.connectAi(code); }}>
         <h3>{t('ai.title')}</h3>
+        {webSetup && (
+          <section className="ai-mcp-setup" aria-label={t('ai.setup.title')}>
+            <div className="ai-mcp-check">
+              <p role="status" data-mcp-discovery={discovery}>{t(`ai.setup.${discovery}`)}</p>
+              <button type="button" data-mcp-check disabled={discovery === 'checking' || linked} onClick={checkMcp}>{t('ai.setup.check')}</button>
+            </div>
+            <details>
+              <summary>{t('ai.setup.title')}</summary>
+              <ol>
+                <li><a href="https://github.com/Chun-Chieh-Chang/3D-Builder/releases/latest" target="_blank" rel="noopener noreferrer">{t('ai.setup.download')}</a>{t('ai.setup.install')}</li>
+                <li>{t('ai.setup.configure')}
+                  <pre>{JSON.stringify({ env: { THREEDB_LIVE_PORT: String(LIVE_SETUP_PORT), THREEDB_LIVE_ORIGINS: window.location.origin } }, null, 2)}</pre>
+                </li>
+                <li>{t('ai.setup.start')}</li>
+              </ol>
+              <a href="https://github.com/Chun-Chieh-Chang/3D-Builder/tree/main/apps/mcp#readme" target="_blank" rel="noopener noreferrer">{t('ai.setup.docs')}</a>
+            </details>
+          </section>
+        )}
         <p>{t('ai.instructions')}</p>
         <label>{t('ai.code')}<input data-ai-code autoFocus autoComplete="off" spellCheck={false} value={code} disabled={linked} onChange={(e) => setCode(e.target.value)} /></label>
-        <p role="status">{statusText(ai)}</p>
+        <p role="status" data-ai-connection>{statusText(ai)}</p>
         <p className="hint">{t('ai.scope')}</p>
         {mcpSnippet && (
           <section data-mcp-bundled style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border, #334155)' }}>

@@ -1,5 +1,17 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-23 — 網頁 MCP 自動偵測與安裝引導
+
+- 「AI 控制」在瀏覽器已授予回送權限時自動檢查使用者設定的本機埠 `38923`。無既有授權時提供明確的偵測操作。引導連到包含 MCP 的桌面安裝程式，並提供目前來源與埠號供使用者合併到 AI 客戶端設定。
+- 紅隊核對：非整數、非有限值及越界埠直接拒絕；無幾何運算；偵測使用獨立 WebSocket 路徑、沿用來源檢查，回應只有服務標記，配對驗證與 CAD 工作階段維持既有流程。Vitest 以實際 WebSocket 驗證允許／拒絕來源與未建立工作階段，原連線回歸同跑共 11 項通過。
+- 頁面在隔離的 Chrome 158 自動發現修改前的 MCP v0.7.0 與修改後的建置，兩者均完成手動配對及斷線，且 390 px 展開引導沒有橫向溢出。停止新版服務後重新偵測能顯示未就緒。報告在 `out/pages-mcp/run-cDcvQG/verification.json` 與 `out/pages-mcp/run-kB9ZtI/verification.json`。
+
+## 2026-11-23 — GitHub Pages 與本機 MCP 瀏覽器驗收
+
+- 在正式 Pages（v0.7.0，`index-BHghSpLB.js`）以新建的 Headless Chrome 158 工作階段和本機建置的 MCP v0.7.0 做四組對照。未授權瀏覽器的回送網路存取時，預設 MCP 與允許 Pages 來源的 MCP 都被 Chrome 以 `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS` 擋下。單獨授權瀏覽器後，預設 MCP 回 `4403 origin not allowed`。
+- Chrome 的 `loopback-network` 權限以 DevTools 僅授予測試網站，MCP 以 `THREEDB_LIVE_ORIGINS` 加入同一來源後，實際從「工具 → AI 控制」配對成功。WebSocket 回 HTTP 101，頁面顯示「AI 已連線」，`live_status` 回 `connected: true`／`open: part`，從頁面斷線後回 `connected: false`。報告在 `out/pages-mcp/run-JJhxrK/verification.json`，未留存配對碼。此次驗收未測試其他瀏覽器的權限介面。
+- README 補上 Pages 連線步驟。瀏覽器權限遭拒時，現行 UI 只顯示通用連線錯誤；環境診斷與初次安裝引導仍可另案改善。
+
 ## 2026-11-23 — 接手核對與主線回歸
 
 - 以 `58f0d29f` 為驗證基準，核對最新交接與舊待辦；更新交接首頁，保留 R1-8032 審閱稿的既有裁決、R1-10226 的 PRELIMINARY 狀態及外部驗收缺口。

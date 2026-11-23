@@ -287,6 +287,13 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11px; }
 .relations h4 { margin: 0 0 4px; font-size: 12px; color: var(--muted); }
 .relations ul { margin: 0; padding-left: 16px; }
 .modal-actions { text-align: right; margin-top: 12px; }
+.ai-control-dialog { width: min(760px, calc(100vw - 24px)); min-width: 0; max-height: calc(100dvh - 24px); overflow: auto; }
+.ai-mcp-setup { margin-block: 12px; padding-block: 8px; border-bottom: 1px solid var(--line); }
+.ai-mcp-check { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ai-mcp-check p { margin: 0; flex: 1 1 15rem; }
+.ai-mcp-check button { padding: 6px 12px; }
+.ai-mcp-setup details { margin-block: 8px; }
+.ai-mcp-setup pre { white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 
 /* PropertyManager */
 .property-manager { padding: 6px; }

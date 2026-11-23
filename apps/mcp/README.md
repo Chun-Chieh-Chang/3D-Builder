@@ -128,7 +128,13 @@ Claude 會依照片與實測尺寸提出特徵，遇到無法判定的尺寸會�
 
 ## 連到開啟中的零件（S3）
 
-建置並啟動本機 MCP 伺服器後，呼叫 `live_status` 取得連線碼。在本機 3D-Builder 選「工具 → AI 控制」，貼上連線碼並按「連線」。狀態列會顯示連線與批次數。每批可一次復原，開啟另一零件或組合件後改為追蹤新文件。App 開著組合件時，`assembly_*` 工具操作的是該組合件（[ADR 0253](../../docs/adr/0253-ai-live-assembly.md)）：來源路徑相對於組合件所在資料夾，由 App 從專案資料夾讀取；批次先在伺服器求解，可行才送到 App 成為一筆復原步驟；`undo` 收回 Agent 的上一批；`assembly_new`／`assembly_open`／`assembly_save` 與零件工具此時拒絕，`assembly_export` 照常寫到工作區。編輯中（含組合件的 PropertyManager）、版本不符或工程圖會拒絕修改。關閉對話框不會斷線；請按「中斷連線」。
+建置並啟動本機 MCP 伺服器後，呼叫 `live_status` 取得連線碼。在 3D-Builder 選「工具 → AI 控制」，貼上連線碼並按「連線」。狀態列會顯示連線與批次數。每批可一次復原，開啟另一零件或組合件後改為追蹤新文件。App 開著組合件時，`assembly_*` 工具操作的是該組合件（[ADR 0253](../../docs/adr/0253-ai-live-assembly.md)）：來源路徑相對於組合件所在資料夾，由 App 從專案資料夾讀取；批次先在伺服器求解，可行才送到 App 成為一筆復原步驟；`undo` 收回 Agent 的上一批；`assembly_new`／`assembly_open`／`assembly_save` 與零件工具此時拒絕，`assembly_export` 照常寫到工作區。編輯中（含組合件的 PropertyManager）、版本不符或工程圖會拒絕修改。關閉對話框不會斷線；請按「中斷連線」。
+
+從 [GitHub Pages](https://chun-chieh-chang.github.io/3D-Builder/) 連線時，先在啟動 MCP 的環境設定 `THREEDB_LIVE_ORIGINS=https://chun-chieh-chang.github.io`，值只包含網站來源。重新啟動 MCP 並取得新連線碼。Chrome 若詢問網站是否可連線到本機，請允許該網站的回送網路存取。若已拒絕過，可在 Chrome 的該網站權限中重新設定。設定完成後再用「AI 控制」配對。[Chrome 的回送網路權限說明](https://developer.chrome.com/docs/modern-web-guidance/guides/security/local-network-access)
+
+網頁可使用已在執行的本機 MCP。首次安裝或啟動 MCP 由使用者在本機完成。Chrome 權限拒絕與 MCP 沒有執行在目前介面都可能顯示「連線已關閉或無法建立」，可分別檢查網站權限及 `live_status`。
+
+若要使用網頁的「偵測本機 MCP」，在 AI 客戶端的同一個 MCP 伺服器項目加入 `THREEDB_LIVE_PORT=38923` 和上述來源設定。頁面只檢查這個本機連接埠，有瀏覽器權限時會自動檢查。未授權時請點「偵測本機 MCP」，再依瀏覽器提示和頁面上的安裝步驟操作。偵測只確認服務是否回應，配對仍需 `live_status` 的連線碼。使用原本隨機連接埠的 MCP 可照常直接貼碼連線。
 
 GUI 整合檢查：`npm run mcp:build` 後執行 `node scripts/verify-live.mjs`。另需完整 `npm run check` 與 `npm run verify:ui`；局部腳本不能代替全量驗收。
 

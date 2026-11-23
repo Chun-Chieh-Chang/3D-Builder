@@ -60,6 +60,11 @@ export type LiveRefusal = 'conflict' | 'busy' | 'notPart' | 'wrongDocument' | 'i
 /** Close codes (4000–4999 are the application's): why the server closed the link. */
 export const LIVE_CLOSE = { badToken: 4401, badOrigin: 4403, timeout: 4408, busy: 4409, protocol: 4426, badMessage: 4400 } as const;
 
+/** Opt-in port for the web setup guide. Regular MCP clients still get an ephemeral port by default. */
+export const LIVE_SETUP_PORT = 38923;
+export const LIVE_PROBE_PATH = '/3d-builder/status';
+export const LIVE_PROBE_REPLY = '3d-builder-mcp:ready';
+
 /** The connection code is `<port>-<token>`: the token is 16 letters and digits, the port the one the server listens on. */
 export const LIVE_TOKEN = /^[a-z0-9]{16}$/;
 
