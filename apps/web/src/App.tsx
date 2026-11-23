@@ -27,6 +27,7 @@ import { FormSubPanel } from './components/FormSubPanel';
 import { PropertyManager } from './components/PropertyManager';
 import { SelectionPanel } from './components/SelectionPanel';
 import { assemblySelection, pickKey } from './state/selectionFacts';
+import { NoticeToast } from './components/NoticeToast';
 import { ShutdownOverlay } from './components/ShutdownOverlay';
 import { StatusBar } from './components/StatusBar';
 import { Viewport } from './components/Viewport';
@@ -147,6 +148,7 @@ export function App() {
         {drawing && <DrawingTaskPane />}
       </WorkspaceLayout>
       <StatusBar />
+      <NoticeToast />
       <HelpPanel />
       <DeleteDialog />
       <DxfImportDialog />

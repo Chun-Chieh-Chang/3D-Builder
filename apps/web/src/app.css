@@ -1022,3 +1022,7 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .project-file-name input { padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--card); color: inherit; }
 .project-file-backdrop { z-index: 31; }
 .unpack-list li label { display: flex; align-items: center; gap: 6px; padding: 4px 8px; overflow-wrap: anywhere; }
+
+.notice-toast { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); max-width: min(720px, 86vw); padding: 10px 18px; border-radius: 8px; border: 1px solid; font-size: 14px; line-height: 1.5; cursor: pointer; z-index: 2000; box-shadow: 0 4px 16px oklch(0% 0 0 / 0.18); }
+.notice-toast.error { background: var(--error-soft); border-color: var(--error-line); color: var(--error); }
+.notice-toast.info { background: oklch(96% 0.03 152); border-color: oklch(80% 0.09 152); color: var(--ok); }

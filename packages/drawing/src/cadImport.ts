@@ -27,6 +27,68 @@ function ink(e: { pairs: [number, string][] }): string | undefined {
 /** DXF $INSUNITS code → millimetres per drawing unit. Codes not listed here are refused; 0 (unitless) is read as millimetres with a notice. */
 const CAD_UNIT_MM: Record<number, number | undefined> = { 1: 25.4, 2: 304.8, 4: 1, 5: 10, 6: 1000, 9: 0.0254, 10: 914.4, 13: 0.001, 14: 100 };
 
+type DimGeometry = Extract<CadEntity, { kind: 'dimension' }>['geometry'];
+const fmt = (v: number): string => (Math.round(v * 1000) / 1000).toString();
+
+/** The standard-style drawing of a dimension whose own graphics block is missing: extension lines, the dimension line with arrowheads, and the measured text. Millimetres. */
+/** The dimension line of a linear dimension: its direction and the two points where the extension lines meet it. */
+function linearDimensionLine(g: Extract<DimGeometry, { kind: 'linear' }>): { u: CadPoint; n: CadPoint; p1: CadPoint; p2: CadPoint } {
+  const len = Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1]) || 1;
+  const u: CadPoint = g.rotation === undefined ? [(g.b[0] - g.a[0]) / len, (g.b[1] - g.a[1]) / len] : [Math.cos(g.rotation * Math.PI / 180), Math.sin(g.rotation * Math.PI / 180)];
+  const n: CadPoint = [-u[1], u[0]];
+  const onLine = (p: CadPoint): CadPoint => { const k = (g.line[0] - p[0]) * n[0] + (g.line[1] - p[1]) * n[1]; return [p[0] + n[0] * k, p[1] + n[1] * k]; };
+  return { u, n, p1: onLine(g.a), p2: onLine(g.b) };
+}
+
+/** Some CAD files leave a dimension's text position at (0, 0) meaning "not set": put the text on the middle of the dimension line (a little above a linear one). */
+function defaultTextAt(g: DimGeometry): CadPoint {
+  const mid = (p: CadPoint, q: CadPoint): CadPoint => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+  if (g.kind === 'linear') { const { n, p1, p2 } = linearDimensionLine(g); const m = mid(p1, p2); return [m[0] + n[0] * 2.5, m[1] + n[1] * 2.5]; }
+  if (g.kind === 'diameter') return mid(g.far, g.near);
+  if (g.kind === 'radius') return mid(g.centre, g.near);
+  return g.arc;
+}
+
+function standardDimensionItems(g: DimGeometry, textAt: CadPoint, override: string, a: CadAppearance): CadItem[] {
+  const out: CadItem[] = [];
+  const line = (...pts: CadPoint[]) => { out.push({ ...a, kind: 'polyline', points: pts.flatMap((p) => p) }); };
+  const arrow = (tip: CadPoint, toward: CadPoint) => {
+    const len = Math.hypot(toward[0] - tip[0], toward[1] - tip[1]) || 1, ux = (toward[0] - tip[0]) / len, uy = (toward[1] - tip[1]) / len, s = 2.5, w = 0.8;
+    line([tip[0] + ux * s - uy * w, tip[1] + uy * s + ux * w], tip, [tip[0] + ux * s + uy * w, tip[1] + uy * s - ux * w]);
+  };
+  const text = (measured: string) => { out.push({ ...a, kind: 'text', at: textAt, text: override && override !== '<>' ? override.replace('<>', measured) : measured, height: 3.5, angle: 0, anchor: 'center' }); };
+  const dist = (p: CadPoint, q: CadPoint) => Math.hypot(q[0] - p[0], q[1] - p[1]);
+  if (g.kind === 'linear') {
+    const { u, p1, p2 } = linearDimensionLine(g);
+    line(g.a, p1); line(g.b, p2); line(p1, p2); arrow(p1, p2); arrow(p2, p1);
+    text(fmt(Math.abs((g.b[0] - g.a[0]) * u[0] + (g.b[1] - g.a[1]) * u[1])));
+  } else if (g.kind === 'diameter') {
+    line(g.far, g.near); arrow(g.far, g.near); arrow(g.near, g.far);
+    text(`Ø${fmt(dist(g.far, g.near))}`);
+  } else if (g.kind === 'radius') {
+    line(g.centre, g.near); arrow(g.near, g.centre);
+    text(`R${fmt(dist(g.centre, g.near))}`);
+  } else {
+    const [p, q] = g.first, [r, t] = g.second;
+    const d1: CadPoint = [q[0] - p[0], q[1] - p[1]], d2: CadPoint = [t[0] - r[0], t[1] - r[1]];
+    const det = d1[0] * d2[1] - d1[1] * d2[0];
+    if (Math.abs(det) < 1e-9) throw new Error('An angular CAD dimension between parallel lines cannot be redrawn.');
+    const k = ((r[0] - p[0]) * d2[1] - (r[1] - p[1]) * d2[0]) / det;
+    const c: CadPoint = [p[0] + d1[0] * k, p[1] + d1[1] * k];
+    const far = (x: CadPoint, y: CadPoint): CadPoint => dist(c, x) >= dist(c, y) ? x : y;
+    const f1 = far(p, q), f2 = far(r, t);
+    const a1 = Math.atan2(f1[1] - c[1], f1[0] - c[0]);
+    let sweep = Math.atan2(f2[1] - c[1], f2[0] - c[0]) - a1;
+    while (sweep > Math.PI) sweep -= 2 * Math.PI;
+    while (sweep <= -Math.PI) sweep += 2 * Math.PI;
+    const radius = dist(c, g.arc);
+    const arc: CadPoint[] = Array.from({ length: 25 }, (_, i) => [c[0] + radius * Math.cos(a1 + sweep * i / 24), c[1] + radius * Math.sin(a1 + sweep * i / 24)]);
+    line(...arc); arrow(arc[0]!, arc[1]!); arrow(arc[24]!, arc[23]!);
+    text(`${fmt(Math.abs(sweep) * 180 / Math.PI)}°`);
+  }
+  return out;
+}
+
 /** Supported 2D entities become independent editable objects. Unsupported data refuses the whole import, never silently disappears. */
 export function importCadDxf(text: string, source: string): { doc: DrawingDoc; warnings: string[] } {
   if (text.length > 64 * 1024 * 1024) throw new Error('CAD DXF exceeds 64 MiB.');
@@ -67,6 +129,8 @@ export function importCadDxf(text: string, source: string): { doc: DrawingDoc; w
   };
   const convert = (e: DxfEntity, tr: Transform, stack: string[], inherited?: CadAppearance): CadEntity[] => {
     if (++visited > 100000) throw new Error('CAD import exceeds 100,000 entity visits.');
+    // A paper-space viewport is only the window onto the model (its frame carries no drawing of its own); the model's entities are imported themselves.
+    if (e.type === 'VIEWPORT') { warnings.add('Paper-space viewport frames were not imported (the drawing itself was).'); return []; }
     if (num(e, 48, 1) !== 1) throw new Error('Per-entity CAD linetype scales are not supported.');
     if (e.pairs.some(([c, v]) => c >= 30 && c <= 39 && Number(v) !== 0) || num(e, 210) !== 0 || num(e, 220) !== 0 || num(e, 230, 1) !== 1) throw new Error(`Non-planar CAD entity ${e.type} is not supported.`);
     const a = appearance(e, inherited);
@@ -132,11 +196,6 @@ export function importCadDxf(text: string, source: string): { doc: DrawingDoc; w
         if (unitScale !== 1) warnings.add('Dimension geometry was converted to millimetres; dimension text overrides typed in the source drawing keep their original wording.');
         if (tr.scale !== unitScale || tr.angle !== 0 || tr.x !== 0 || tr.y !== 0) throw new Error('Dimensions inside transformed CAD blocks must be exploded before import.');
         const d = e as DxfDimension;
-        const block = input.blockEntities.get(d.block);
-        if (!block?.length) throw new Error(`Missing dimension graphics ${d.block}.`);
-        const parts = block.flatMap((i) => convert(i, root, [d.block], a));
-        if (parts.some((i) => i.kind === 'dimension')) throw new Error('Nested CAD dimensions are not supported.');
-        const items = parts as (CadItem & { id: string })[];
         const mm = (p: CadPoint): CadPoint => [p[0] * unitScale, p[1] * unitScale];
         const required = (code: number) => { const p = d.points.get(code); if (!p) throw new Error('Missing CAD dimension definition point.'); return mm(p); };
         const def = mm(d.def), leader = (d.leader ?? 0) * unitScale;
@@ -145,7 +204,18 @@ export function importCadDxf(text: string, source: string): { doc: DrawingDoc; w
             : d.kind === 4 ? { kind: 'radius' as const, centre: def, near: required(15), leader }
               : d.kind === 2 ? { kind: 'angular' as const, first: [required(13), required(14)] as [CadPoint, CadPoint], second: [required(15), def] as [CadPoint, CadPoint], arc: required(16) } : null;
         if (!geometry) throw new Error(`Unsupported CAD dimension kind ${d.kind}.`);
-        return [{ ...a, id: id(), kind: 'dimension', text: d.text, textAt: mm(d.textAt), geometry, items: items.map(({ id: _id, ...i }) => i) }];
+        const textAt = d.textAt[0] === 0 && d.textAt[1] === 0 ? defaultTextAt(geometry) : mm(d.textAt);
+        const block = d.block ? input.blockEntities.get(d.block) : undefined;
+        let items: (CadItem & { id: string })[];
+        if (block?.length) {
+          const parts = block.flatMap((i) => convert(i, root, [d.block], a));
+          if (parts.some((i) => i.kind === 'dimension')) throw new Error('Nested CAD dimensions are not supported.');
+          items = parts as (CadItem & { id: string })[];
+        } else {
+          warnings.add('Some dimensions had no stored graphics; they were redrawn in the standard style from their definition points.');
+          items = standardDimensionItems(geometry, textAt, d.text, a).map((i) => ({ ...i, id: '' }));
+        }
+        return [{ ...a, id: id(), kind: 'dimension', text: d.text, textAt, geometry, items: items.map(({ id: _id, ...i }) => i) }];
       }
       default: bad.set(e.type, (bad.get(e.type) ?? 0) + 1); return [];
     }

@@ -105,6 +105,40 @@ describe('editable imported CAD drawings', () => {
     expect(inDim.warnings.join()).toContain('Dimension geometry was converted');
   });
 
+  it('redraws a dimension in the standard style when its graphics block is missing', () => {
+    const source = toDxf(scene());
+    const at = source.search(/\r?\n0\r?\nDIMENSION\r?\n/); // the entity, not the layer that is also called DIMENSION
+    expect(at).toBeGreaterThan(0);
+    const tail = source.slice(at).replace(/(\r?\n2\r?\n)\*D1/, '$1*Dgone');
+    expect(tail).not.toBe(source.slice(at));
+    const { doc, warnings } = importCadDxf(source.slice(0, at) + tail, 'nogfx.dxf');
+    const dim = doc.pages[0]!.cad!.entities.find((e) => e.kind === 'dimension')!;
+    if (dim.kind !== 'dimension') throw new Error('expected a dimension');
+    expect(warnings.join()).toContain('redrawn in the standard style');
+    expect(dim.items.some((i) => i.kind === 'text' && i.text === '100')).toBe(true);
+    const lines = dim.items.filter((i) => i.kind === 'polyline');
+    expect(lines.length).toBeGreaterThanOrEqual(5);
+    expect(() => checkCadDrawing(doc.pages[0]!.cad!)).not.toThrow();
+  });
+
+  it('puts the text of a dimension whose text position was left at (0, 0) on its dimension line', () => {
+    const source = scene(); source.dimensions![0]!.textAt = [0, 0];
+    const { doc } = importCadDxf(toDxf(source), 'unset.dxf');
+    const dim = doc.pages[0]!.cad!.entities.find((e) => e.kind === 'dimension')!;
+    if (dim.kind !== 'dimension' || dim.geometry.kind !== 'linear') throw new Error('expected a linear dimension');
+    const mid = (dim.geometry.a[0] + dim.geometry.b[0]) / 2;
+    expect(Math.abs(dim.textAt[0] - mid)).toBeLessThan(1e-6);
+    expect(dim.textAt[1]).toBeGreaterThan(dim.geometry.line[1]);
+  });
+
+  it('accepts CAD-internal layer names and leaves out paper-space viewport frames', () => {
+    const dxf = ['0', 'SECTION', '2', 'ENTITIES', '0', 'LINE', '8', '*LayerNameForDynamicConstraint', '10', '0', '20', '0', '11', '5', '21', '0',
+      '0', 'VIEWPORT', '8', 'View Port', '67', '1', '0', 'ENDSEC', '0', 'EOF'].join('\n');
+    const { doc, warnings } = importCadDxf(dxf, 'v.dxf');
+    expect(doc.pages.flatMap((p) => p.cad!.entities.map((e) => e.layer))).toContain('*LayerNameForDynamicConstraint');
+    expect(warnings.join()).toContain('viewport frames were not imported');
+  });
+
   it('refuses unsupported entities, cycles and invalid numerical data rather than dropping them', () => {
     const source = toDxf(scene());
     expect(() => importCadDxf(source.replace('LWPOLYLINE', 'SPLINE'), 'unsupported.dwg')).toThrow(/unsupported/i);

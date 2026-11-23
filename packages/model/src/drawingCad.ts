@@ -38,19 +38,20 @@ export function moveCadEntity(entity: CadEntity, dx: number, dy: number): CadEnt
 }
 
 export function checkCadDrawing(value: unknown): asserts value is CadDrawing {
-  const fail = (): never => { throw new Error('Invalid imported CAD drawing: finite coordinates, positive sizes, unique ids and valid colors/layers are required.'); };
+  const fail = (why = ''): never => { throw new Error(`Invalid imported CAD drawing: finite coordinates, positive sizes, unique ids and valid colors/layers are required.${why ? ` [${why}]` : ''}`); };
   const obj = (v: unknown): Record<string, any> => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : fail();
   const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 1e9;
   const positive = (v: unknown) => finite(v) && v > 0;
   const point = (v: unknown) => Array.isArray(v) && v.length === 2 && v.every(finite);
   const color = (v: unknown) => v === undefined || (typeof v === 'string' && /^#[\da-f]{6}$/i.test(v));
   const d = obj(value);
-  if (!positive(d.width) || !positive(d.height) || typeof d.source !== 'string' || !Array.isArray(d.entities) || d.entities.length > 100000 || !Array.isArray(d.layers) || d.layers.length > 10000) fail();
+  if (!positive(d.width) || !positive(d.height)) fail(`size ${String(d.width)} x ${String(d.height)}`);
+  if (typeof d.source !== 'string' || !Array.isArray(d.entities) || d.entities.length > 100000 || !Array.isArray(d.layers) || d.layers.length > 10000) fail();
   if (d.sourceOrigin !== undefined && !point(d.sourceOrigin)) fail();
   const layers = new Set<string>();
   for (const raw of d.layers) {
     const l = obj(raw);
-    if (typeof l.name !== 'string' || !l.name.length || l.name.length > 255 || /[\x00-\x1f<>\/\\":;?*|=]/.test(l.name) || layers.has(l.name) || !color(l.color) || !positive(l.width) || (l.hidden !== undefined && typeof l.hidden !== 'boolean') || (l.dash !== undefined && (!Array.isArray(l.dash) || l.dash.length > 100 || !l.dash.every(positive)))) fail();
+    if (typeof l.name !== 'string' || !l.name.length || l.name.length > 255 || /[\x00-\x1f<>\/\\":;?|=]/.test(l.name) || layers.has(l.name) || !color(l.color) || !positive(l.width) || (l.hidden !== undefined && typeof l.hidden !== 'boolean') || (l.dash !== undefined && (!Array.isArray(l.dash) || l.dash.length > 100 || !l.dash.every(positive)))) fail(`layer ${JSON.stringify(l.name)}`);
     layers.add(l.name);
   }
   let vertices = 0;
@@ -67,6 +68,7 @@ export function checkCadDrawing(value: unknown): asserts value is CadDrawing {
   const ids = new Set<string>();
   for (const raw of d.entities) {
     const e = obj(raw);
+    try {
     if (typeof e.id !== 'string' || !e.id.length || ids.has(e.id)) fail();
     ids.add(e.id);
     if (e.kind !== 'dimension') item(e);
@@ -81,5 +83,6 @@ export function checkCadDrawing(value: unknown): asserts value is CadDrawing {
       else fail();
     }
     if (vertices > 1000000) fail();
+    } catch (err) { throw new Error(`${err instanceof Error ? err.message : String(err)} (entity ${String(e.id)}, ${String(e.kind)}, layer ${String(e.layer)})`); }
   }
 }
