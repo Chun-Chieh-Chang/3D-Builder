@@ -314,3 +314,6 @@
 - **2026-11-20（`.3dbd` 開啟卡死與 MCP 參考草圖圓標註，RSI）**：
   1. **瀏覽器 FileSystemHandle／IndexedDB 非互動呼叫不得無界等待**：Windows Chrome 對 IndexedDB 跨工作階段留存的 `FileSystemDirectoryHandle`／`FileSystemFileHandle` 呼叫 `queryPermission`、`resolve` 或 `indexedDB.open`（`onblocked`）時可能回傳永不 settle 的 Promise，造成無 Console 錯誤、無 UI 提示的靜默卡死。凡非互動的句柄查詢一律須加有界逾時退路（`withTimeout`）與失效率重試，並以永不 settle 的 mock Promise 寫入單元測試硬化（`tests/phase5/files-handle-timeout.test.ts`）。
   2. **MCP 與 Web Worker 的圖元事實分派必須維持對等**：`apps/web/src/worker/kernel.worker.ts` 支援新的 `DrawingRef` 種類（如 `kind: 'sketch'` → `drawingSketchFacts`）時，必須同步檢查 `apps/mcp/src/drawingSession.ts` 的 `getFacts`，避免同一份 `.3dbd` 在 Web 可畫、在無頭 MCP 輸出失敗。
+
+- **2026-11-23（CI #362 `action-icons.test.ts` 紅燈，RSI Layer 1）**：
+  1. **UI 指令與圖示清單的一致性結晶化至 `lint:rules`**：在 `apps/web/src/actions.ts` 新增 `drw-dxf-compat` 時遺漏 `apps/web/src/icons/solidcraft/manifest.json` 登錄，且推送前未跑完整 `repository-integrity.yml` 測試導致三平台 CI 紅燈。已於 `scripts/check-anti-patterns.mjs` 新增 `checkActionIconsParity()` 物理攔截雙向差集，往後 `npm run lint:rules` 即可 100% 擋下。

@@ -531,6 +531,7 @@
     "export-disassembly": "export",
     "drw-pdf": "export",
     "drw-dxf": "export",
+    "drw-dxf-compat": "export",
     "drw-svg": "export",
     "import-step": "import",
     "import-step-assembly": "import",

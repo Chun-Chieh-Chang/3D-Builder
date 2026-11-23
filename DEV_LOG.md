@@ -1,5 +1,13 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-23 — 修復 CI #362 (`action-icons.test.ts`) 紅燈並物理硬化 `lint:rules`（RSI Layer 1）
+
+- **根因分析（RCA）**：commit `b8b8bfa1` 於 `apps/web/src/actions.ts` 新增指令 `drw-dxf-compat`，但未在 `apps/web/src/icons/solidcraft/manifest.json` 登錄對應圖示鍵；且推送前只執行了局部 DXF 測試與既有 `lint:rules`，漏跑 `tests/phase8/action-icons.test.ts`，導致 GitHub Actions `repository-integrity.yml` 三平台全數失敗。
+- **矯正與預防措施（CAPA）**：
+  - 於 `apps/web/src/icons/solidcraft/manifest.json` 補上 `"drw-dxf-compat": "export"`。
+  - **Layer 1 物理剛性硬化**：於 `scripts/check-anti-patterns.mjs` 新增 `checkActionIconsParity()`，在 `npm run lint:rules` 階段即比對 `apps/web/src/actions.ts`（`ACTIONS` + `SKETCH_TOOLS`）與 `manifest.json` 的雙向集合一致性，0.1 秒內直接物理攔截任何遺漏或殘留圖示鍵。
+  - **本地完整確效**：跑完 `repository-integrity.yml` 全套檢查（`typecheck`、`lint:rules`、`lint:deps`、`lint:i18n`、`lint:repo`、22 個 CI smoke 測試檔 307/307 通過、`sketch-pointer-baseline.test.ts` 2/2 通過、`npm run build`）皆 0 錯誤。
+
 ## 2026-11-23 — FreeCAD 1.1.4 工程圖 DXF 相容匯出與預設 AC1021 UTF-8
 
 - **根因分析（RCA）**：以本機 `FreeCADCmd.exe`（FreeCAD 1.1.4）實測 3D-Builder 工程圖 DXF，確認圖面缺字與缺標註來自三項因素：(1) FreeCAD 預設關閉 `dxftext`（匯入文字與尺寸）與 `dxfstarblocks`；(2) 即使開啟 `dxftext`，FreeCAD C++ DXF Importer 明確標記 `Dimension type 2/3/4`（角度／直徑／半徑）與 `Entity type SOLID`（填滿箭頭）為不支援而直接丟棄；(3) 網頁預設 `AC1015` 轉義為 `\U+XXXX`，FreeCAD 1.1.4 不解碼該跳脫碼。

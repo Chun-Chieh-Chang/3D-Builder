@@ -67,7 +67,40 @@ function scanFile(dir) {
   return errors;
 }
 
-if (scanFile('.') > 0) {
+function checkActionIconsParity() {
+  const actionsPath = 'apps/web/src/actions.ts';
+  const manifestPath = 'apps/web/src/icons/solidcraft/manifest.json';
+  if (!fs.existsSync(actionsPath) || !fs.existsSync(manifestPath)) return 0;
+
+  const actionsSrc = fs.readFileSync(actionsPath, 'utf-8');
+  const actionsBlock = actionsSrc.split('export const ACTIONS: UiAction[] = [')[1]?.split('\n];')[0] ?? '';
+  const literalIds = [...actionsBlock.matchAll(/\bid:\s*'([^']+)'/g)].map((m) => m[1]);
+  const toolMatch = actionsSrc.match(/const SKETCH_TOOLS: ToolId\[\] = \[(.*?)\]/);
+  const toolIds = toolMatch ? [...toolMatch[1].matchAll(/'([^']+)'/g)].map((m) => `tool-${m[1]}`) : [];
+  const expected = new Set([...literalIds, ...toolIds]);
+
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  const actual = new Set(Object.keys(manifest.actions ?? {}));
+
+  const missing = [...expected].filter((id) => !actual.has(id));
+  const extra = [...actual].filter((id) => !expected.has(id));
+  let errors = 0;
+  if (missing.length > 0) {
+    console.error(`\x1b[31m[ANTI-PATTERN]\x1b[0m ${manifestPath}`);
+    console.error(`  \x1b[33mUI 指令圖示映射遺漏 (Missing Action Icon Mapping)\x1b[0m: apps/web/src/actions.ts 新增了指令但未在 manifest.json 登錄：${missing.join(', ')}`);
+    console.error(`  \x1b[32mFix: 在 ${manifestPath} 的 "actions" 補上對應圖示鍵，並執行 tests/phase8/action-icons.test.ts\x1b[0m\n`);
+    errors += missing.length;
+  }
+  if (extra.length > 0) {
+    console.error(`\x1b[31m[ANTI-PATTERN]\x1b[0m ${manifestPath}`);
+    console.error(`  \x1b[33m殘留無對應 UI 指令之圖示映射 (Orphan Action Icon Mapping)\x1b[0m: manifest.json 存在 actions.ts 未定義的鍵：${extra.join(', ')}`);
+    console.error(`  \x1b[32mFix: 自 ${manifestPath} 的 "actions" 移除已刪除的鍵\x1b[0m\n`);
+    errors += extra.length;
+  }
+  return errors;
+}
+
+if (scanFile('.') + checkActionIconsParity() > 0) {
   console.error('\x1b[31m💥 反模式檢查失敗，拒絕推進！\x1b[0m');
   process.exit(1);
 } else {
