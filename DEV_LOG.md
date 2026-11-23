@@ -1,5 +1,15 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-23 — R1-8032 A1 剩餘標註干涉歸零
+
+- 以重開前一版 `.3dbd` 的原生場景重現 D5 餘 6 項。按局部位移調四筆文字降至 2 項，再用實際圖元對核：第 1 頁 `18.842` 遭 `20.74` 總高延伸線穿過，調整總高尺寸列並沿列移標籤；第 2 頁 `4×5°` 與 A-A 中心線相交，移開其文字後歸零。
+- 以同一檔案存讀兩次核對 67 筆量測值、文字和尺寸覆蓋；兩頁版面閘門全過、出框 0、最小淨空 6.528 mm。原生匯出另行保留 `PRELIMINARY` 水印，因一般公差仍為暫定。兩頁 PDF 已實際渲染檢視。交付與證據位於 `out/r18032-crossings/` 的 `R1-8032-A1-layout-verified.3dbd`／PDF、`polish-verification.json`、`final-polish-verification.json`，無產品程式變更。
+
+## 2026-11-23 — R1-8032 A1 審閱稿尺寸線避讓
+
+- 從原 `R1-8032-A1-review-final.3dbd` 重現 D5 10 項及三組交叉。第 1 頁把 `dim41` 倒角引線轉到 45°，消除一組交叉及一項文字干涉。第 2 頁單移 `dim54` 就會讓文字碰到其他直徑引線，或耗盡 B-B 上方淨空；合併 B-B 下移 7 mm、`dim54` 上置 19 mm 並微調 `dim37` 的文字後，兩組交叉均消失，沒新增尺寸線交叉。
+- 新版的 D5 為 6，出框 0，兩頁版面閘門通過，最小淨空維持 6.528 mm。以原生場景逐筆比對 67 筆尺寸的值與文字及完整覆蓋報告，存檔重開結果一致；另渲染檢視兩頁 PDF。新版審閱檔與 `verification.json` 在 `out/r18032-crossings/`，原檔不變。D5 是剩餘品質閘門缺口，輸出保留 `PRELIMINARY`。
+
 ## 2026-11-23（午・續）— 引線 × 標註列交叉排列修正（`linearOffsetCandidates` + `steerLeaders`）
 
 - **根因分析（RCA）**：對 `R1-8032-A1-review-final.3dbd` 三組尺寸線交叉（`dim41|dim48`、`dim19|dim54`、`dim21|dim54`）實測診斷，確認三組皆為「引線標註 × 線性／座標標註列」的跨型態交叉，根源在於 `steerLeaders()` 三處限制：
@@ -18,6 +28,7 @@
 - **v0.7.1 正式發佈與 Pages 核對**：
   - 依使用者確認公開發佈 [GitHub Release v0.7.1](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.7.1)（`published_at: 2026-11-23T04:19:12Z`，設為 `Latest`，指向 `a68e9f40`），含 `3D-Builder_0.7.1_x64-setup.exe`（`49,668,006 B`，SHA-256 `628547d016524443429bcef77d58d7caa647b8200d03b635d065dd3d5512516a`）與 `SHA256SUMS.txt`（98 B）。
   - 核對 `apps/web/src/components/AiControlDialog.tsx` 下載入口為 `releases/latest`，並以 GitHub API 確認 `releases/latest` 已指向 `v0.7.1`；同步更新 [桌面版版本履歷](docs/desktop-release-history.md)。
+  - 發行後另以未登入請求核對正式 Pages 部署的 JavaScript、`releases/latest` 的公開轉址及公開安裝檔內容。重新下載的 49,668,006 B 與 SHA-256 均符合發行紀錄，遠端標籤為 `a68e9f40`。
 - **C7 受控幾何附件品質閘門（ADR 0263 增補）**：
   - `packages/drawing/src/qualityGate.ts` 新增 `findControlledAttachmentRefs`、`findCitedStepFaces`、`verifyControlledAttachment` 並接入 `evaluateQualityGate`（五道必要不變量：文件與版次比對、來源 `.3dbx` 比對、密碼學完整性、所有缺標面參照經 `drawing-face-index.json` 對應至圖面明確引用的 `#STEP_ID`、以及 C5 一般公差必備）。
   - `apps/mcp/src/controlledAttachment.ts` 實作 `loadControlledAttachment`（路徑遍歷防呆、驗證 `manifest.json` 的 `original_step_sha256 === regenerated_step_sha256`、核對載入零件 `.3dbx` 的 STEP blob SHA-256、逐一驗證 `members_sha256` 含 `drawing-face-index.json`），並於 `apps/mcp/src/drawingSession.ts` `checks()` 接線。
