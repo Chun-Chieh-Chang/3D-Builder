@@ -2,7 +2,8 @@
 
 ## 2026-11-23 — 目前接續清單
 
-- **下一步：公開發布 v0.7.1**。安裝檔與校驗檔已上傳至 [GitHub 發行草稿](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/untagged-bf7570de65a5c7d75927)，目標提交為 `a68e9f40`。等待使用者確認發行。公開下載目前仍為 v0.7.0；發布後應核對 Pages 安裝入口導向 v0.7.1。
+- **v0.7.1 已公開發佈（Latest）**：[GitHub Release v0.7.1](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.7.1) 已於 `2026-11-23T04:19:12Z` 正式公開並設為 `Latest`（目標提交 `a68e9f40`，安裝檔 `49,668,006 B`，SHA-256 `628547d016524443429bcef77d58d7caa647b8200d03b635d065dd3d5512516a`）。已核對 GitHub Pages 下載入口（`releases/latest`）指向 `v0.7.1`，並更新 [桌面版版本履歷](docs/desktop-release-history.md)。
+- **R1-10226 受控幾何附件 C7 品質閘門已完成**（[ADR 0263 增補](docs/adr/0263-drawing-quality-gate.md)）：`packages/drawing/src/qualityGate.ts` 與 `apps/mcp/src/controlledAttachment.ts` 實作受控附件五道驗證（文件＋版次比對、來源模型比對、`manifest.json` 成員與 STEP SHA-256 及 `.3dbx` 內嵌 STEP blob 核對、缺標面參照經 `drawing-face-index.json` 對應圖面 `#STEP_ID` 引用、以及 C5 一般公差）。實測 `out/approved-20261122/r110226-auto-fixed/R1-10226-geometry-definition.3dbd` ＋ `R1-10226-GEO-01/` 達 **16/16 全過（`status: 'release'`）**，正式匯出 5 頁無 `PRELIMINARY`；5/5 突變測試全紅。
 - **v0.7.1 正式安裝包**：`a68e9f40` 的 [三平台 CI 與 Pages 部署](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45108853270) 通過。[Windows 建置與升級驗收](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45108860093) 通過 0.7.0 → 0.7.1 原地升級、連續兩輪關閉釋放本機埠；正式 Pages 以此安裝包的 MCP 再驗偵測與重新配對。本機檔案與驗收資料在 `out/windows-release-v0.7.1/`。
 - **完整瀏覽器回歸**：以 `58f0d29f` 為基準，2026-11-23 09:54（台北時間）完成，**280／280 項通過**。原先停在 `manual-c22.js` 的 35 項由檢查點保留，其餘 245 項續跑全數通過。最終報告為 `out/ui-handoff-58f0d29f.json`。
 - 尺寸文字偏移、水平／垂直尺寸線吸附、直邊倒角連動及持久交點參照已在主線。草圖互動 P1 第二批、缺面負向測試、瀏覽器專案開檔等待修復、三項慢測試取樣與 Antigravity 組合件驗收也已有完成紀錄。

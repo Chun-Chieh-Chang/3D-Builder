@@ -37,6 +37,39 @@ export interface QualityGateReport {
   failed: QualityRuleCheck[];
 }
 
+export interface ControlledAttachmentRef {
+  /** Controlled attachment document ID (single safe path segment, e.g. "R1-10226-GEO-01"). */
+  document: string;
+  /** Controlled attachment revision (e.g. "01"). */
+  revision: string;
+}
+
+export interface ControlledAttachmentEvidence {
+  /** Document ID read from manifest.json. */
+  document: string;
+  /** Revision read from manifest.json. */
+  revision: string;
+  /** Source model filename read from manifest.json (matched against drawing view source basenames). */
+  source: string;
+  /** True iff cryptographic checks (STEP original/regenerated SHA-256, part STEP blob SHA-256, and every member SHA-256) all passed. */
+  integrityOk: boolean;
+  /** Specific integrity failures when `integrityOk === false`. */
+  integrityErrors?: readonly string[];
+  /** Mapping from 3D-Builder persistent face ref (e.g. "import1:f203") to STEP face ID (e.g. 27739). */
+  faceIndex: ReadonlyMap<string, number> | Readonly<Record<string, number>>;
+}
+
+export interface ControlledAttachmentCheck {
+  /** Cited attachment from drawing notes, if any. */
+  cited: ControlledAttachmentRef | null;
+  /** True iff the cited attachment verified revision, source model, cryptographic integrity, and every missing face ref + STEP citation. */
+  pass: boolean;
+  /** Ordered list of verification failures when `pass === false`. */
+  errors: string[];
+  /** Number of missing face refs resolved through the attachment + STEP citation. */
+  coveredMissingCount: number;
+}
+
 export interface QualityGateInput {
   doc: DrawingDoc;
   overlaps: number;
@@ -48,9 +81,13 @@ export interface QualityGateInput {
   failedDims: readonly { id: string; error: string }[];
   coverage: CoverageReport;
   layout: DrawingLayoutInspection;
+  /** Optional host-verified controlled geometric attachment evidence (rule C7). */
+  controlledAttachment?: ControlledAttachmentEvidence | null;
 }
 
 const MODEL_AUTHORITY_RE = /\u4f9d\s*3D\s*\u6a21\u578b|\u4ee5\s*3D\s*\u6a21\u578b|\u672a\u6a19\u8a3b.*3D|per\s+3D\s+model|refer\s+to\s+3D\s+model|ASME\s*Y14\.41|ISO\s*16792/i;
+const CONTROLLED_ATTACHMENT_RE = /(?:\u53d7\u63a7\u5e7e\u4f55\u9644\u4ef6|controlled\s+geometric\s+attachment)\s+([A-Za-z0-9._-]+)\s+(?:\u7248[\u6b21\u672c]|rev(?:ision)?\.?)\s*([A-Za-z0-9._-]+)/gi;
+const STEP_FACE_CITATION_RE = /#([1-9]\d*)/g;
 
 /** Whether the drawing carries a 3D-model-authority note (rule C7, ASME Y14.41 / ISO 16792). */
 export function hasModelAuthorityNote(doc: DrawingDoc): boolean {
@@ -60,6 +97,147 @@ export function hasModelAuthorityNote(doc: DrawingDoc): boolean {
     }
   }
   return false;
+}
+
+/** Extracts controlled geometric attachment citations (document + revision) from drawing notes. */
+export function findControlledAttachmentRefs(doc: DrawingDoc): ControlledAttachmentRef[] {
+  const out: ControlledAttachmentRef[] = [];
+  const seen = new Set<string>();
+  for (const p of doc.pages) {
+    for (const a of p.annotations ?? []) {
+      if (a.kind !== 'note') continue;
+      CONTROLLED_ATTACHMENT_RE.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = CONTROLLED_ATTACHMENT_RE.exec(a.text)) !== null) {
+        const document = m[1]!;
+        const revision = m[2]!;
+        const key = `${document}@${revision}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ document, revision });
+      }
+    }
+  }
+  return out;
+}
+
+/** Extracts all cited STEP face IDs (e.g. `#27739`) from drawing notes. */
+export function findCitedStepFaces(doc: DrawingDoc): Set<number> {
+  const out = new Set<number>();
+  for (const p of doc.pages) {
+    for (const a of p.annotations ?? []) {
+      if (a.kind !== 'note') continue;
+      STEP_FACE_CITATION_RE.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = STEP_FACE_CITATION_RE.exec(a.text)) !== null) {
+        const id = Number(m[1]);
+        if (Number.isSafeInteger(id) && id > 0) out.add(id);
+      }
+    }
+  }
+  return out;
+}
+
+function sourceBasename(source: string): string {
+  const parts = source.replace(/\\/g, '/').split('/');
+  return parts[parts.length - 1] ?? source;
+}
+
+function lookupFaceStepId(faceIndex: ControlledAttachmentEvidence['faceIndex'], ref: string): number | undefined {
+  if (faceIndex instanceof Map) return faceIndex.get(ref);
+  const v = (faceIndex as Record<string, number>)[ref];
+  return typeof v === 'number' && Number.isSafeInteger(v) && v > 0 ? v : undefined;
+}
+
+/**
+ * Verifies that a controlled geometric attachment satisfies C7 for all missing coverage items:
+ * 1. Drawing note cites a single controlled attachment (document + revision) matching the manifest.
+ * 2. Every model view's source basename matches the attachment manifest's source model.
+ * 3. Host cryptographic integrity checks (STEP SHA-256 and member SHA-256s) passed.
+ * 4. Every missing coverage face ref maps via `drawing-face-index.json` to a STEP face ID explicitly cited (`#<id>`) in drawing notes.
+ */
+export function verifyControlledAttachment(
+  doc: DrawingDoc,
+  coverage: CoverageReport,
+  attachment?: ControlledAttachmentEvidence | null,
+): ControlledAttachmentCheck {
+  const refs = findControlledAttachmentRefs(doc);
+  if (refs.length === 0) return { cited: null, pass: false, errors: [], coveredMissingCount: 0 };
+  const cited = refs[0]!;
+  const errors: string[] = [];
+  if (refs.length > 1) {
+    errors.push(`multiple controlled attachments cited (${refs.map((r) => `${r.document} rev ${r.revision}`).join(', ')})`);
+  }
+  if (!attachment) {
+    errors.push(`controlled attachment ${cited.document} rev ${cited.revision} not loaded or missing`);
+    return { cited, pass: false, errors, coveredMissingCount: 0 };
+  }
+  if (attachment.document !== cited.document) {
+    errors.push(`attachment document mismatch (drawing cites ${cited.document}, manifest has ${attachment.document})`);
+  }
+  if (attachment.revision !== cited.revision) {
+    errors.push(`attachment revision mismatch (drawing cites ${cited.revision}, manifest has ${attachment.revision})`);
+  }
+  const viewSources = new Set<string>();
+  for (const p of doc.pages) {
+    for (const v of p.views) {
+      if ('source' in v && typeof v.source === 'string' && v.source.trim().length > 0) {
+        viewSources.add(sourceBasename(v.source.trim()));
+      }
+    }
+  }
+  const manifestSource = sourceBasename(attachment.source.trim());
+  if (!manifestSource) {
+    errors.push('attachment manifest source is blank');
+  } else if (viewSources.size > 0) {
+    for (const vs of viewSources) {
+      if (vs !== manifestSource) {
+        errors.push(`attachment source mismatch (view uses ${vs}, manifest has ${manifestSource})`);
+      }
+    }
+  }
+  if (!attachment.integrityOk) {
+    if (attachment.integrityErrors && attachment.integrityErrors.length > 0) {
+      errors.push(...attachment.integrityErrors);
+    } else {
+      errors.push(`attachment ${attachment.document} failed integrity verification`);
+    }
+  }
+
+  const citedStepFaces = findCitedStepFaces(doc);
+  let coveredMissingCount = 0;
+
+  const checkFaceRef = (ref: string, kind: string) => {
+    const stepId = lookupFaceStepId(attachment.faceIndex, ref);
+    if (stepId === undefined) {
+      errors.push(`missing ${kind} "${ref}" not found in attachment drawing-face-index`);
+      return false;
+    }
+    if (!citedStepFaces.has(stepId)) {
+      errors.push(`missing ${kind} "${ref}" (STEP #${stepId}) not cited on drawing`);
+      return false;
+    }
+    coveredMissingCount++;
+    return true;
+  };
+
+  for (const ref of coverage.slants.missing) checkFaceRef(ref, 'slant');
+  for (const r of coverage.rounds.missing) checkFaceRef(r.name, 'round');
+  for (const w of coverage.ways) {
+    for (const place of w.missing) {
+      const ok = place.refs.some((ref) => {
+        const stepId = lookupFaceStepId(attachment.faceIndex, ref);
+        return stepId !== undefined && citedStepFaces.has(stepId);
+      });
+      if (!ok) {
+        errors.push(`missing ${w.way} place at ${place.at} (${place.refs.join(', ')}) not indexed and cited via attachment`);
+      } else {
+        coveredMissingCount++;
+      }
+    }
+  }
+
+  return { cited, pass: errors.length === 0, errors, coveredMissingCount };
 }
 
 /** Evaluates all automatable drawing quality rules (ADR 0263, rules Q1, Q2, C5, C7, Q3, P/V/D/C). */
@@ -177,21 +355,25 @@ export function evaluateQualityGate(input: QualityGateInput): QualityGateReport 
       : undefined,
   );
 
-  // Rule C7: Complete dimensions OR (3D model authority note + general tolerance filled)
+  // Rule C7: Complete dimensions OR ((3D model authority note OR verified controlled geometric attachment) + general tolerance filled)
   const modelNote = hasModelAuthorityNote(doc);
-  const c7Pass = coverage.complete || (modelNote && blankTolPages.length === 0);
+  const attachmentCheck = coverage.complete ? null : verifyControlledAttachment(doc, coverage, input.controlledAttachment);
+  const c7Pass = coverage.complete || (blankTolPages.length === 0 && (modelNote || Boolean(attachmentCheck?.pass)));
   const missingSummary: string[] = [];
   for (const w of coverage.ways) if (w.missing.length) missingSummary.push(`${w.way}:${w.missing.length}`);
   if (coverage.rounds.missing.length) missingSummary.push(`rounds:${coverage.rounds.missing.length}`);
   if (coverage.slants.missing.length) missingSummary.push(`slants:${coverage.slants.missing.length}`);
-  push(
-    'C7',
-    'completenessOrModelAuthority',
-    c7Pass,
-    !c7Pass
-      ? `incomplete dimensions (${missingSummary.join(', ') || 'missing'}) without both a 3D model authority note and generalTolerance`
-      : undefined,
-  );
+  let c7Detail: string | undefined;
+  if (!c7Pass) {
+    if (attachmentCheck?.cited && attachmentCheck.errors.length > 0) {
+      c7Detail = `incomplete dimensions (${missingSummary.join(', ') || 'missing'}); controlled attachment ${attachmentCheck.cited.document} rev ${attachmentCheck.cited.revision} failed: ${attachmentCheck.errors.join('; ')}`;
+    } else if (attachmentCheck?.cited && blankTolPages.length > 0) {
+      c7Detail = `incomplete dimensions (${missingSummary.join(', ') || 'missing'}); controlled attachment ${attachmentCheck.cited.document} rev ${attachmentCheck.cited.revision} requires generalTolerance`;
+    } else {
+      c7Detail = `incomplete dimensions (${missingSummary.join(', ') || 'missing'}) without both a 3D model authority note (or verified controlled attachment) and generalTolerance`;
+    }
+  }
+  push('C7', 'completenessOrModelAuthority', c7Pass, c7Detail);
 
   // Rule Q3: Single drafting standard across all pages
   const standards = [...new Set(doc.pages.map((p) => standardOf(p.sheet)))];

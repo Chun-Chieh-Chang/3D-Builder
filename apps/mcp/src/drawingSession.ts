@@ -58,6 +58,7 @@ import {
   encodeShade,
   evaluateQualityGate,
   FILL_RANGE,
+  findControlledAttachmentRefs,
   fitViews,
   itemsBounds,
   layoutMetrics,
@@ -104,6 +105,7 @@ import {
   type SectionAdvice,
 } from '@3db/drawing';
 import { readAnyDocumentFile, writeDrawingFile } from '@3db/io';
+import { loadControlledAttachment } from './controlledAttachment';
 import { drawingSketchFacts, elementFacts, holeFeatures, obliqueHoleAxes, projectDrawingView, sketchTextPrefixes, viewFeatures } from '@3db/regen';
 import { isTrap } from '@3db/kernel';
 import { AgentError, messageOf, type CadSession } from './session';
@@ -1578,6 +1580,10 @@ export class DrawingSession {
     const odd = heights.filter((x) => { const [lo, hi] = x.caption ? TEXT_RANGE.caption : TEXT_RANGE.text; return x.h < lo - 1e-9 || x.h > hi + 1e-9; });
     const textOutOfRange = odd.slice(0, 12).map((x) => `${x.text} (${x.h} mm)`);
     const outsideRounded = Math.round(outside * 10) / 10;
+    const attachmentRefs = coverage.complete ? [] : findControlledAttachmentRefs(doc);
+    const partStepSha256s = (this.source().doc.blobs ?? []).filter((b) => b.kind === 'step' && typeof b.sha256 === 'string').map((b) => b.sha256);
+    const controlledAttachment =
+      attachmentRefs.length > 0 && this.path ? loadControlledAttachment(this.path, attachmentRefs[0]!, partStepSha256s) : null;
     const quality = evaluateQualityGate({
       doc,
       overlaps,
@@ -1589,6 +1595,7 @@ export class DrawingSession {
       failedDims: failed,
       coverage,
       layout,
+      controlledAttachment,
     });
     return {
       overlaps,

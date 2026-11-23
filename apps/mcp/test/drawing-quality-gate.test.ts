@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CadSession } from '../src/session';
 import { callTool } from '../src/server';
 import { PLATE_WITH_HOLE } from '../src/examples';
+import { loadControlledAttachment } from '../src/controlledAttachment';
 
 let s: CadSession;
 const root = mkdtempSync(join(tmpdir(), 'drawing-quality-gate-'));
@@ -71,4 +73,50 @@ it('reports draft & stamps PRELIMINARY when generalTolerance is blank, refuses r
   expect(relSvg.preliminary).toBe(false);
   expect(relSvg.failed).toEqual([]);
   expect(readFileSync(join(root, 'release.svg'), 'utf8')).not.toContain('PRELIMINARY');
+});
+
+it('loadControlledAttachment verifies manifest, member SHA-256, STEP blob SHA-256, and rejects tampering or traversal', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'controlled-att-'));
+  try {
+    const drawingPath = join(dir, 'part-review.3dbd');
+    const attDir = join(dir, 'DOC-GEO-01');
+    mkdirSync(attDir, { recursive: true });
+    const stepSha = '1'.repeat(64);
+    const faceIndexBody = JSON.stringify([{ drawing_face_ref: 'import1:f203', step_face: 27739, surface: 1557, family: 'plane' }]);
+    const faceIndexSha = createHash('sha256').update(faceIndexBody).digest('hex');
+    writeFileSync(join(attDir, 'drawing-face-index.json'), faceIndexBody);
+    const manifest = {
+      document: 'DOC-GEO-01',
+      revision: '01',
+      source: 'part.3dbx',
+      original_step_sha256: stepSha,
+      regenerated_step_sha256: stepSha,
+      members_sha256: { 'drawing-face-index.json': faceIndexSha },
+    };
+    writeFileSync(join(attDir, 'manifest.json'), JSON.stringify(manifest));
+
+    // 1. Valid attachment + matching part STEP blob -> integrityOk: true
+    const ok = loadControlledAttachment(drawingPath, { document: 'DOC-GEO-01', revision: '01' }, [stepSha]);
+    expect(ok).not.toBeNull();
+    expect(ok!.integrityOk, JSON.stringify(ok!.integrityErrors)).toBe(true);
+    expect((ok!.faceIndex as Map<string, number>).get('import1:f203')).toBe(27739);
+
+    // 2. Mismatched part STEP blob SHA-256 -> integrityOk: false
+    const wrongPart = loadControlledAttachment(drawingPath, { document: 'DOC-GEO-01', revision: '01' }, ['2'.repeat(64)]);
+    expect(wrongPart!.integrityOk).toBe(false);
+    expect(wrongPart!.integrityErrors!.join(' ')).toContain('does not match loaded part STEP blob');
+
+    // 3. Path traversal document name -> integrityOk: false
+    const traversal = loadControlledAttachment(drawingPath, { document: '../escape', revision: '01' }, [stepSha]);
+    expect(traversal!.integrityOk).toBe(false);
+    expect(traversal!.integrityErrors!.join(' ')).toContain('unsafe');
+
+    // 4. Tampered drawing-face-index.json (1 byte changed) -> integrityOk: false
+    writeFileSync(join(attDir, 'drawing-face-index.json'), faceIndexBody + ' ');
+    const tampered = loadControlledAttachment(drawingPath, { document: 'DOC-GEO-01', revision: '01' }, [stepSha]);
+    expect(tampered!.integrityOk).toBe(false);
+    expect(tampered!.integrityErrors!.join(' ')).toContain('SHA-256 mismatch');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

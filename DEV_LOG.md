@@ -1,5 +1,19 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-23（午）— v0.7.1 正式公開發佈 + C7 品質閘門支援受控幾何附件驗證（ADR 0263 增補）
+
+- **v0.7.1 正式發佈與 Pages 核對**：
+  - 依使用者確認公開發佈 [GitHub Release v0.7.1](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.7.1)（`published_at: 2026-11-23T04:19:12Z`，設為 `Latest`，指向 `a68e9f40`），含 `3D-Builder_0.7.1_x64-setup.exe`（`49,668,006 B`，SHA-256 `628547d016524443429bcef77d58d7caa647b8200d03b635d065dd3d5512516a`）與 `SHA256SUMS.txt`（98 B）。
+  - 核對 `apps/web/src/components/AiControlDialog.tsx` 下載入口為 `releases/latest`，並以 GitHub API 確認 `releases/latest` 已指向 `v0.7.1`；同步更新 [桌面版版本履歷](docs/desktop-release-history.md)。
+- **C7 受控幾何附件品質閘門（ADR 0263 增補）**：
+  - `packages/drawing/src/qualityGate.ts` 新增 `findControlledAttachmentRefs`、`findCitedStepFaces`、`verifyControlledAttachment` 並接入 `evaluateQualityGate`（五道必要不變量：文件與版次比對、來源 `.3dbx` 比對、密碼學完整性、所有缺標面參照經 `drawing-face-index.json` 對應至圖面明確引用的 `#STEP_ID`、以及 C5 一般公差必備）。
+  - `apps/mcp/src/controlledAttachment.ts` 實作 `loadControlledAttachment`（路徑遍歷防呆、驗證 `manifest.json` 的 `original_step_sha256 === regenerated_step_sha256`、核對載入零件 `.3dbx` 的 STEP blob SHA-256、逐一驗證 `members_sha256` 含 `drawing-face-index.json`），並於 `apps/mcp/src/drawingSession.ts` `checks()` 接線。
+- **紅隊四問與突變測試**：
+  1. **輸入破壞**：非法路徑 `../escape`、竄改 `drawing-face-index.json` 單一位元組、不符之 `.3dbx` STEP blob SHA-256、不符版次與漏引用的 `#STEP_ID` 均顯式失敗並指明原因。
+  2. **真值驗證（R1-10226 實件）**：開啟 `out/approved-20261122/r110226-auto-fixed/R1-10226-geometry-definition.3dbd` 搭配 `R1-10226-GEO-01/`，**16/16 品質閘門全過（`status: 'release'`, `failed: []`）**，`drawing_export({ release: true })` 輸出 5 頁無 `PRELIMINARY` 正式檔。
+  3. **突變測試（5/5 轉紅）**：略過版次比對、略過來源模型比對、略過 `integrityOk`、略過圖面 `#STEP_ID` 引用檢查、略過 `members_sha256` 檔案雜湊核對，5 項突變皆使測試套件轉紅。
+  4. **靜態與單元守門**：`typecheck`、4 項 lint、`mcp:build` 與單元／MCP 測試全數通過。
+
 ## 2026-11-23 — v0.7.1 正式安裝包與發行草稿
 
 - `a68e9f40` 將 Web、Windows 安裝包與 MCP 升為 0.7.1，並加入 Windows 發行包建置與升級驗收。該提交的 [三平台 CI 與 Pages 部署](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45108853270) 全數通過。

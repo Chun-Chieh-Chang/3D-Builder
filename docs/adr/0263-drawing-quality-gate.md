@@ -36,3 +36,16 @@ Prior to Phase 4, `drawing_inspect` and `drawing_create` reported raw metrics (`
   2. `qualityGate.ts`: bypass `C5` (`generalTolerance` check) → failed.
   3. `qualityGate.ts`: bypass `C7` (`completenessOrModelAuthority`) → failed.
   4. `drawingSession.ts`: skip `stampPreliminary(rawScene)` → failed.
+
+## Amendment (2026-11-23): C7 Controlled Geometric Attachment Verification
+
+When a drawing omits 2D dimensions for complex/small-angle geometry and instead cites a controlled geometric attachment (e.g. `受控幾何附件 R1-10226-GEO-01 版次 01` or `Controlled geometric attachment <DOC> Rev <REV>`) rather than a generic `"依 3D 模型"` note, `C7` now verifies the attachment end-to-end across five mandatory invariants (`packages/drawing/src/qualityGate.ts`, `apps/mcp/src/controlledAttachment.ts`, `apps/mcp/src/drawingSession.ts`):
+
+1. **Citation & revision match**: drawing note cites a single `{ document, revision }` matching `manifest.json`.
+2. **Source model match**: every model view's `source` basename matches `manifest.json`'s `source`.
+3. **Cryptographic integrity**: `manifest.json` has equal valid 64-hex `original_step_sha256` and `regenerated_step_sha256`, matching the loaded `.3dbx` part's STEP blob SHA-256, and every file in `members_sha256` (including `drawing-face-index.json`, single safe path segment) exists and matches its SHA-256 on disk.
+4. **Face reference & STEP citation coverage**: every missing `slants`/`rounds`/`ways` face ref maps via `drawing-face-index.json` to a positive integer `step_face`, and `#<step_face>` is explicitly cited in a drawing note.
+5. **General tolerance (`C5`)**: `title.generalTolerance` must still be non-blank on every page.
+
+- **Real-part verification (`R1-10226`)**: opening `out/approved-20261122/r110226-auto-fixed/R1-10226-geometry-definition.3dbd` alongside `R1-10226-GEO-01/` passes **16/16 quality gate rules** (`status: 'release'`, `failed: []`), and `drawing_export({ release: true })` succeeds without `PRELIMINARY`.
+- **Mutation tests (5/5 turned red)**: disabling revision check, source model check, `integrityOk` check, `#STEP_ID` drawing citation check, and `members_sha256` file hash check each fail the test suite.

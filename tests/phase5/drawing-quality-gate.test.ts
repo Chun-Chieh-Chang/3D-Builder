@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyDrawing, type DrawingDoc } from '@3db/model';
-import { evaluateQualityGate, hasModelAuthorityNote, stampPreliminary, toDxf, toSvg, type CoverageReport, type DrawingLayoutInspection, type QualityGateInput, type Scene } from '@3db/drawing';
+import {
+  evaluateQualityGate,
+  findCitedStepFaces,
+  findControlledAttachmentRefs,
+  hasModelAuthorityNote,
+  stampPreliminary,
+  toDxf,
+  toSvg,
+  verifyControlledAttachment,
+  type ControlledAttachmentEvidence,
+  type CoverageReport,
+  type DrawingLayoutInspection,
+  type QualityGateInput,
+  type Scene,
+} from '@3db/drawing';
 
 function cleanDoc(): DrawingDoc {
   const doc = createEmptyDrawing();
@@ -149,5 +163,91 @@ describe('Phase 4: drawing quality gate (ADR 0263, rules Q1, Q2, C5, C7, Q3)', (
     expect(toSvg(stamped)).toContain('PRELIMINARY');
     expect(toDxf(stamped)).toContain('PRELIMINARY');
     expect(toSvg(base)).not.toContain('PRELIMINARY');
+  });
+
+  it('C7 controlled geometric attachment: passes only when revision, source, integrity, face index, STEP citations and generalTolerance all match', () => {
+    const makeAttachmentInput = (): { inp: QualityGateInput; att: ControlledAttachmentEvidence } => {
+      const inp = cleanInput();
+      inp.doc.pages[0]!.views = [
+        { id: 'view1', name: '前視', source: 'R1-10226-step-reference.3dbx', direction: 'front' },
+      ];
+      inp.doc.pages[0]!.annotations = [
+        { id: 'ann9', kind: 'note', view: 'view1', text: '受控幾何附件 R1-10226-GEO-01 版次 01\n本圖與附件共同定義 STEP 基準幾何。', at: [20, 20] },
+        { id: 'ann11', kind: 'note', view: 'view1', text: 'STEP 平面名義角\n#27739、#28575 3.738°', at: [20, 40] },
+      ];
+      inp.coverage = {
+        ways: [{ way: 'X', datum: 0, places: 2, determined: 2, missing: [] }],
+        rounds: { total: 1, determined: 1, missing: [] },
+        slants: { total: 2, determined: 0, missing: ['import1:f203', 'import1:f211'] },
+        complete: false,
+      };
+      const att: ControlledAttachmentEvidence = {
+        document: 'R1-10226-GEO-01',
+        revision: '01',
+        source: 'R1-10226-step-reference.3dbx',
+        integrityOk: true,
+        faceIndex: new Map([
+          ['import1:f203', 27739],
+          ['import1:f211', 28575],
+        ]),
+      };
+      inp.controlledAttachment = att;
+      return { inp, att };
+    };
+
+    // Happy path: all 5 invariants verified -> release
+    const base = makeAttachmentInput();
+    expect(findControlledAttachmentRefs(base.inp.doc)).toEqual([{ document: 'R1-10226-GEO-01', revision: '01' }]);
+    expect([...findCitedStepFaces(base.inp.doc)].sort((a, b) => a - b)).toEqual([27739, 28575]);
+    expect(verifyControlledAttachment(base.inp.doc, base.inp.coverage, base.att).pass).toBe(true);
+    const ok = evaluateQualityGate(base.inp);
+    expect(ok.status, JSON.stringify(ok.failed)).toBe('release');
+    expect(ok.failed).toEqual([]);
+
+    // 1. Attachment not loaded -> fails C7
+    const missingAtt = makeAttachmentInput();
+    missingAtt.inp.controlledAttachment = null;
+    expect(evaluateQualityGate(missingAtt.inp).failed.map((f) => f.rule)).toEqual(['C7']);
+
+    // 2. Revision mismatch -> fails C7
+    const badRev = makeAttachmentInput();
+    badRev.att.revision = '02';
+    const rRev = evaluateQualityGate(badRev.inp);
+    expect(rRev.failed.map((f) => f.rule)).toEqual(['C7']);
+    expect(rRev.failed[0]!.detail).toContain('revision mismatch');
+
+    // 3. Source model mismatch -> fails C7
+    const badSrc = makeAttachmentInput();
+    badSrc.att.source = 'other-part.3dbx';
+    const rSrc = evaluateQualityGate(badSrc.inp);
+    expect(rSrc.failed.map((f) => f.rule)).toEqual(['C7']);
+    expect(rSrc.failed[0]!.detail).toContain('source mismatch');
+
+    // 4. Integrity check failed (tampered SHA-256) -> fails C7
+    const badHash = makeAttachmentInput();
+    badHash.att.integrityOk = false;
+    badHash.att.integrityErrors = ['SHA-256 mismatch for member "drawing-face-index.json"'];
+    const rHash = evaluateQualityGate(badHash.inp);
+    expect(rHash.failed.map((f) => f.rule)).toEqual(['C7']);
+    expect(rHash.failed[0]!.detail).toContain('SHA-256 mismatch');
+
+    // 5. Missing face ref not in drawing-face-index -> fails C7
+    const unindexed = makeAttachmentInput();
+    unindexed.att.faceIndex = new Map([['import1:f203', 27739]]);
+    const rIdx = evaluateQualityGate(unindexed.inp);
+    expect(rIdx.failed.map((f) => f.rule)).toEqual(['C7']);
+    expect(rIdx.failed[0]!.detail).toContain('import1:f211');
+
+    // 6. Face indexed in attachment but its STEP #ID is not cited on drawing -> fails C7
+    const uncited = makeAttachmentInput();
+    uncited.inp.doc.pages[0]!.annotations![1] = { id: 'ann11', kind: 'note', view: 'view1', text: 'STEP #27739 3.738°', at: [20, 40] };
+    const rCite = evaluateQualityGate(uncited.inp);
+    expect(rCite.failed.map((f) => f.rule)).toEqual(['C7']);
+    expect(rCite.failed[0]!.detail).toContain('#28575');
+
+    // 7. Blank generalTolerance -> fails both C5 and C7 even when attachment is valid
+    const blankTol = makeAttachmentInput();
+    blankTol.inp.doc.pages[0]!.title.generalTolerance = '';
+    expect(evaluateQualityGate(blankTol.inp).failed.map((f) => f.rule)).toEqual(['C5', 'C7']);
   });
 });
