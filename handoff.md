@@ -2,8 +2,9 @@
 
 ## 2026-11-23 — 目前接續清單
 
-- 基準為 `main` 的 `58f0d29f`。該版 [Repository integrity](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45086070862) 的 Windows、macOS、Ubuntu 與 Pages 部署皆通過。下方保留各次交接當時的狀態。
-- **完整瀏覽器回歸**：2026-11-23 09:54（台北時間）完成，**280／280 項通過**。原先停在 `manual-c22.js` 的 35 項由檢查點保留，其餘 245 項續跑全數通過。最終報告為 `out/ui-handoff-58f0d29f.json`。
+- **下一步：公開發布 v0.7.1**。安裝檔與校驗檔已上傳至 [GitHub 發行草稿](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/untagged-bf7570de65a5c7d75927)，目標提交為 `a68e9f40`。等待使用者確認發行。公開下載目前仍為 v0.7.0；發布後應核對 Pages 安裝入口導向 v0.7.1。
+- **v0.7.1 正式安裝包**：`a68e9f40` 的 [三平台 CI 與 Pages 部署](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45108853270) 通過。[Windows 建置與升級驗收](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45108860093) 通過 0.7.0 → 0.7.1 原地升級、連續兩輪關閉釋放本機埠；正式 Pages 以此安裝包的 MCP 再驗偵測與重新配對。本機檔案與驗收資料在 `out/windows-release-v0.7.1/`。
+- **完整瀏覽器回歸**：以 `58f0d29f` 為基準，2026-11-23 09:54（台北時間）完成，**280／280 項通過**。原先停在 `manual-c22.js` 的 35 項由檢查點保留，其餘 245 項續跑全數通過。最終報告為 `out/ui-handoff-58f0d29f.json`。
 - 尺寸文字偏移、水平／垂直尺寸線吸附、直邊倒角連動及持久交點參照已在主線。草圖互動 P1 第二批、缺面負向測試、瀏覽器專案開檔等待修復、三項慢測試取樣與 Antigravity 組合件驗收也已有完成紀錄。
 - **R1-10226**：本機五頁 A3 審閱包的 SHA-256 已比對一致。依原圖補標的五筆角度與 STEP 附件中的五個名義角分開處理。審閱稿 D5 為 0，C7 仍回報五個斜面，維持 PRELIMINARY。後續若要讓品質閘門判讀受控附件，須先定義如何核對附件版次、模型及面參照，再以實件驗證。
 - **R1-8032**：選紙修復已在主線。已接受的 A1 審閱稿剩 D5 10 項，交製圖者微調。三組尺寸線互交屬排列演算法另案。正式公差仍須與原圖核對。

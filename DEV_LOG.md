@@ -1,5 +1,12 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-23 — v0.7.1 正式安裝包與發行草稿
+
+- `a68e9f40` 將 Web、Windows 安裝包與 MCP 升為 0.7.1，並加入 Windows 發行包建置與升級驗收。該提交的 [三平台 CI 與 Pages 部署](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45108853270) 全數通過。
+- [Windows runner](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45108860093) 先以 SHA-256 核對官方 v0.7.0，再實際安裝並於原路徑升級至 0.7.1。升級後的 MCP 用同一埠 `38923` 啟閉兩輪，每次在客戶端退出後均釋放埠。版本、來源提交、雜湊與驗收資料存於 `out/windows-release-v0.7.1/`。
+- 用正式安裝包解出的 MCP 連到正式 Pages v0.7.1，驗證權限提示、自動偵測、配對、關閉後未就緒以及重啟後重新配對，報告為 `out/pages-mcp/run-LiNHmg/verification.json`。
+- [v0.7.1 發行草稿](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/untagged-bf7570de65a5c7d75927) 指向 `a68e9f40`，已上傳 `3D-Builder_0.7.1_x64-setup.exe`（49,668,006 B）及 `SHA256SUMS.txt`。GitHub 回報安裝檔 SHA-256 `628547d016524443429bcef77d58d7caa647b8200d03b635d065dd3d5512516a`，與 Windows runner 和本機檔案一致。驗收完成，等待確認公開發行。
+
 ## 2026-11-23 — Windows 0.7.1 候選包驗收
 
 - MCP 關閉修正 `8f40a416` 已推送，三平台 CI 與 Pages 成功。建立隔離分支 `codex/windows-mcp-candidate`，使用 [Windows runner](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45105655680) 建置 NSIS 及試裝；未改本機工具鏈、未發布正式 Release。
