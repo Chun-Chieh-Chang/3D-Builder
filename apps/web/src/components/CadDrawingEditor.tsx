@@ -107,6 +107,18 @@ export function CadDrawingViewport() {
   const [drag, setDrag] = useState<{ entity: CadEntity; from: CadPoint; delta: CadPoint } | null>(null);
   const scene = useMemo(() => cadScene(cad), [cad]);
   const bounds = useMemo(() => cadDrawingBounds(cad), [cad]);
+  // A real lineweight (0.25 mm) shrinks below one pixel when a large drawing is fitted to the window and the lines all but vanish.
+  // The shown line is therefore never thinner than about a pixel; the drawing's own widths (and the exported file) are not touched.
+  const [pxPerUnit, setPxPerUnit] = useState(1);
+  useEffect(() => {
+    const el = svg.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = () => { const w = el.getBoundingClientRect().width; if (w > 0 && bounds.width > 0) setPxPerUnit(w / bounds.width); };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [bounds.width, zoom]);
   const pointAt = (e: React.PointerEvent): CadPoint => {
     const matrix = svg.current?.getScreenCTM();
     if (!matrix) return [0, 0];
@@ -136,7 +148,7 @@ export function CadDrawingViewport() {
         const ink = selected.has(i.owner ?? '') ? '#1687e8' : i.color ?? '#000000';
         return <g key={n} data-cad-id={i.owner} transform={drag && drag.entity.id === i.owner ? `translate(${drag.delta.join(' ')})` : undefined}>{i.kind === 'polyline' ? <>
           <polyline points={i.points.join(' ')} fill="none" stroke="transparent" strokeWidth={12} vectorEffect="non-scaling-stroke" pointerEvents="stroke" />
-          <polyline points={(i.closed ? [...i.points, i.points[0]!, i.points[1]!] : i.points).join(' ')} fill={i.filled ? ink : 'none'} stroke={ink} strokeWidth={i.width ?? 0.25} strokeDasharray={cad.layers.find((l) => l.name === i.layer)?.dash?.join(' ')} pointerEvents="visiblePainted" />
+          <polyline points={(i.closed ? [...i.points, i.points[0]!, i.points[1]!] : i.points).join(' ')} fill={i.filled ? ink : 'none'} stroke={ink} strokeWidth={Math.max(i.width ?? 0.25, 1.25 / pxPerUnit)} strokeDasharray={cad.layers.find((l) => l.name === i.layer)?.dash?.join(' ')} pointerEvents="visiblePainted" />
         </> : <text transform={`translate(${i.at[0]} ${i.at[1]}) rotate(${i.angle ?? 0}) scale(1 -1)`} fontFamily="Arial, sans-serif" fontSize={i.height * 1.4} textAnchor={i.anchor === 'center' ? 'middle' : i.anchor === 'right' ? 'end' : 'start'} fill={ink} style={{ userSelect: 'none', cursor: 'move' }}>{i.text}</text>}</g>;
       })}</g>
     </svg>

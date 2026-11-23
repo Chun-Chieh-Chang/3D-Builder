@@ -24,14 +24,19 @@ function ink(e: { pairs: [number, string][] }): string | undefined {
   return cadIndexedColor(index);
 }
 
+/** DXF $INSUNITS code → millimetres per drawing unit. Codes not listed here are refused; 0 (unitless) is read as millimetres with a notice. */
+const CAD_UNIT_MM: Record<number, number | undefined> = { 1: 25.4, 2: 304.8, 4: 1, 5: 10, 6: 1000, 9: 0.0254, 10: 914.4, 13: 0.001, 14: 100 };
+
 /** Supported 2D entities become independent editable objects. Unsupported data refuses the whole import, never silently disappears. */
 export function importCadDxf(text: string, source: string): { doc: DrawingDoc; warnings: string[] } {
   if (text.length > 64 * 1024 * 1024) throw new Error('CAD DXF exceeds 64 MiB.');
   const input = readDxf(text);
   const warnings = new Set<string>();
   const unit = Number(input.header.get('$INSUNITS')?.[0]?.[1] ?? 0);
-  if (unit !== 0 && unit !== 4) throw new Error('CAD drawing import currently requires millimetres. Convert drawing units to mm in the source CAD before importing.');
+  const unitScale = unit === 0 ? 1 : CAD_UNIT_MM[unit];
+  if (unitScale === undefined) throw new Error(`CAD drawing unit code ${unit} (DXF $INSUNITS) is not supported. Supported: millimetre, centimetre, decimetre, metre, inch, foot, yard, mil, micron. Convert the drawing in the source CAD first.`);
   if (unit === 0) warnings.add('Source drawing has no unit definition; coordinates are interpreted as millimetres.');
+  else if (unitScale !== 1) warnings.add(`Source drawing units were converted to millimetres (×${unitScale}).`);
   const bad = new Map<string, number>();
   const layers: CadLayer[] = (input.tables.get('LAYER')?.entries ?? []).map((l) => {
     const lt = input.tables.get('LTYPE')?.entries.find((e) => e.name === val(l, 6));
@@ -52,6 +57,7 @@ export function importCadDxf(text: string, source: string): { doc: DrawingDoc; w
   };
   type Transform = { scale: number; angle: number; x: number; y: number };
   const identity: Transform = { scale: 1, angle: 0, x: 0, y: 0 };
+  const root: Transform = { ...identity, scale: unitScale }; // The whole drawing is brought to millimetres here; block, text and arc handling already honour the scale.
   const transformPoint = (p: CadPoint, tr: Transform): CadPoint => [tr.x + tr.scale * (p[0] * Math.cos(tr.angle) - p[1] * Math.sin(tr.angle)), tr.y + tr.scale * (p[0] * Math.sin(tr.angle) + p[1] * Math.cos(tr.angle))];
   const transformItem = (i: CadItem, tr: Transform): CadItem => {
     if (i.kind === 'text') return { ...i, at: transformPoint(i.at, tr), height: i.height * tr.scale, angle: (i.angle ?? 0) + tr.angle * 180 / Math.PI };
@@ -123,20 +129,23 @@ export function importCadDxf(text: string, source: string): { doc: DrawingDoc; w
       case 'DIMENSION': {
         if (num(e, 52) !== 0 || num(e, 53) !== 0) throw new Error('Oblique or rotated-text CAD dimensions are not supported.');
         warnings.add('Imported dimensions retain 2D definition points and graphics; re-export uses the app’s standard CAD font/dimension style and has no 3D associations.');
-        if (tr.scale !== 1 || tr.angle !== 0 || tr.x !== 0 || tr.y !== 0) throw new Error('Dimensions inside transformed CAD blocks must be exploded before import.');
+        if (unitScale !== 1) warnings.add('Dimension geometry was converted to millimetres; dimension text overrides typed in the source drawing keep their original wording.');
+        if (tr.scale !== unitScale || tr.angle !== 0 || tr.x !== 0 || tr.y !== 0) throw new Error('Dimensions inside transformed CAD blocks must be exploded before import.');
         const d = e as DxfDimension;
         const block = input.blockEntities.get(d.block);
         if (!block?.length) throw new Error(`Missing dimension graphics ${d.block}.`);
-        const parts = block.flatMap((i) => convert(i, identity, [d.block], a));
+        const parts = block.flatMap((i) => convert(i, root, [d.block], a));
         if (parts.some((i) => i.kind === 'dimension')) throw new Error('Nested CAD dimensions are not supported.');
         const items = parts as (CadItem & { id: string })[];
-        const required = (code: number) => { const p = d.points.get(code); if (!p) throw new Error('Missing CAD dimension definition point.'); return p; };
-        const geometry = d.kind === 0 || d.kind === 1 ? { kind: 'linear' as const, a: required(13), b: required(14), line: d.def, ...(d.kind === 0 ? { rotation: d.rotation ?? 0 } : {}) }
-          : d.kind === 3 ? { kind: 'diameter' as const, far: d.def, near: required(15), leader: d.leader ?? 0 }
-            : d.kind === 4 ? { kind: 'radius' as const, centre: d.def, near: required(15), leader: d.leader ?? 0 }
-              : d.kind === 2 ? { kind: 'angular' as const, first: [required(13), required(14)] as [CadPoint, CadPoint], second: [required(15), d.def] as [CadPoint, CadPoint], arc: required(16) } : null;
+        const mm = (p: CadPoint): CadPoint => [p[0] * unitScale, p[1] * unitScale];
+        const required = (code: number) => { const p = d.points.get(code); if (!p) throw new Error('Missing CAD dimension definition point.'); return mm(p); };
+        const def = mm(d.def), leader = (d.leader ?? 0) * unitScale;
+        const geometry = d.kind === 0 || d.kind === 1 ? { kind: 'linear' as const, a: required(13), b: required(14), line: def, ...(d.kind === 0 ? { rotation: d.rotation ?? 0 } : {}) }
+          : d.kind === 3 ? { kind: 'diameter' as const, far: def, near: required(15), leader }
+            : d.kind === 4 ? { kind: 'radius' as const, centre: def, near: required(15), leader }
+              : d.kind === 2 ? { kind: 'angular' as const, first: [required(13), required(14)] as [CadPoint, CadPoint], second: [required(15), def] as [CadPoint, CadPoint], arc: required(16) } : null;
         if (!geometry) throw new Error(`Unsupported CAD dimension kind ${d.kind}.`);
-        return [{ ...a, id: id(), kind: 'dimension', text: d.text, textAt: d.textAt, geometry, items: items.map(({ id: _id, ...i }) => i) }];
+        return [{ ...a, id: id(), kind: 'dimension', text: d.text, textAt: mm(d.textAt), geometry, items: items.map(({ id: _id, ...i }) => i) }];
       }
       default: bad.set(e.type, (bad.get(e.type) ?? 0) + 1); return [];
     }
@@ -149,7 +158,7 @@ export function importCadDxf(text: string, source: string): { doc: DrawingDoc; w
   }
   const doc = createEmptyDrawing();
   doc.pages = [...groups].map(([name, entries], pageIndex) => {
-    const entities = entries.flatMap((e) => convert(e, identity, []));
+    const entities = entries.flatMap((e) => convert(e, root, []));
     const points = entities.flatMap((e) => e.kind === 'dimension' ? e.items : [e]).flatMap((i) => i.kind === 'text' ? [i.at[0], i.at[1], i.at[0] + i.text.length * i.height, i.at[1] + i.height * 2] : i.points);
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (let k = 0; k < points.length; k += 2) { minX = Math.min(minX, points[k]!); minY = Math.min(minY, points[k + 1]!); maxX = Math.max(maxX, points[k]!); maxY = Math.max(maxY, points[k + 1]!); }

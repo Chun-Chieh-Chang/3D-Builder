@@ -70,6 +70,41 @@ describe('editable imported CAD drawings', () => {
     expect(raw).toMatchObject({ points: [-200 + origin[0], -100 + origin[1], 900 + origin[0], 700 + origin[1]] });
   });
 
+  it('converts supported drawing units to millimetres, refuses unknown units, and states what it did', () => {
+    const dxf = (unit: number | null) => ['0', 'SECTION', '2', 'HEADER', ...(unit === null ? [] : ['9', '$INSUNITS', '70', String(unit)]), '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LINE', '8', '0', '10', '0', '20', '0', '11', '2', '21', '0', '0', 'TEXT', '8', '0', '10', '1', '20', '1', '40', '0.5', '1', 'Hi', '0', 'ENDSEC', '0', 'EOF'].join('\n');
+    const measure = (unit: number | null) => {
+      const { doc, warnings } = importCadDxf(dxf(unit), 'u.dxf');
+      const entities = doc.pages[0]!.cad!.entities;
+      const line = entities.find((e) => e.kind === 'polyline')!, text = entities.find((e) => e.kind === 'text')!;
+      return { length: line.kind === 'polyline' ? Math.hypot(line.points[2]! - line.points[0]!, line.points[3]! - line.points[1]!) : NaN, height: text.kind === 'text' ? text.height : NaN, warnings };
+    };
+    expect(measure(4)).toMatchObject({ length: 2, height: 0.5 });
+    expect(measure(null).warnings.join()).toContain('interpreted as millimetres');
+    for (const [unit, factor] of [[1, 25.4], [2, 304.8], [5, 10], [6, 1000]] as const) {
+      const m = measure(unit);
+      expect(m.length).toBeCloseTo(2 * factor, 9);
+      expect(m.height).toBeCloseTo(0.5 * factor, 9);
+      expect(m.warnings.join()).toContain('converted to millimetres');
+    }
+    expect(() => importCadDxf(dxf(99), 'u.dxf')).toThrow(/not supported/);
+  });
+
+  it('converts native dimensions in a non-millimetre drawing together with their graphics', () => {
+    const source = toDxf(scene());
+    const inch = source.replace(/(\$INSUNITS\r?\n\s*70\r?\n)\s*4/, '$11');
+    expect(inch).not.toBe(source);
+    const dim = (text: string) => importCadDxf(text, 'd.dxf');
+    const mmDim = dim(source).doc.pages[0]!.cad!.entities.find((e) => e.kind === 'dimension')!;
+    const inDim = dim(inch);
+    const converted = inDim.doc.pages[0]!.cad!.entities.find((e) => e.kind === 'dimension')!;
+    if (mmDim.kind !== 'dimension' || converted.kind !== 'dimension' || mmDim.geometry.kind !== 'linear' || converted.geometry.kind !== 'linear') throw new Error('expected linear dimensions');
+    const span = (g: typeof mmDim.geometry) => g.kind === 'linear' ? Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1]) : NaN;
+    expect(span(converted.geometry)).toBeCloseTo(span(mmDim.geometry) * 25.4, 6);
+    expect(inDim.warnings.join()).toContain('converted to millimetres');
+    expect(inDim.warnings.join()).toContain('Dimension geometry was converted');
+  });
+
   it('refuses unsupported entities, cycles and invalid numerical data rather than dropping them', () => {
     const source = toDxf(scene());
     expect(() => importCadDxf(source.replace('LWPOLYLINE', 'SPLINE'), 'unsupported.dwg')).toThrow(/unsupported/i);

@@ -61,7 +61,7 @@ import { drawingFileName, writeDrawingFile } from '@3db/io';
 import { alignCollinear, arrangeDimensions, attachedAnnotations, FontError, SHADE_SHEET_PX, readTrueType, resolveLines, revisionTableOverlaps, sectionMissed, toDxf, toPdf, turnLines, visibleElements, type DxfMode, type TrueTypeFont, type VisibleElements } from '@3db/drawing';
 import { autoDimensions, buildScene, type DimensionDraft, type DimensionMode, type Pickable, FIRST_OFFSET, OFFSET_STEP, ratio, scaleOf, STANDARD_SCALES, centreViews, fitViews, toSvg, type AutoDimensionOptions, type DimensionOutcome, type ElementsResult, type HoleRow, type PlacedView, type ViewBom, type Scene, type ViewLines } from '@3db/drawing';
 import type { Remote } from 'comlink';
-import { download, fileIn, pathIn, pickDrawingSaveTarget, pickFontFile, writeFile } from '../files';
+import { download, fileIn, pathIn, pickDrawingSaveTarget, pickDwgExportTarget, pickFontFile, writeFile } from '../files';
 import type { KernelApi } from '../worker/protocol';
 import type { AssemblyData } from './assemblySource';
 import { buildSource, type SourceStatus } from './partSource';
@@ -1664,11 +1664,16 @@ export class DrawingStore {
   async exportDwg(): Promise<void> {
     try {
       const pi = this.state.activePageIndex;
-      const file = `${this.name()}${this.state.doc.pages.length > 1 ? `-${pi + 1}` : ''}.dwg`;
+      const suggested = `${this.name()}${this.state.doc.pages.length > 1 ? `-${pi + 1}` : ''}.dwg`;
+      // Asked first, while the click is still fresh: the save dialog needs it. The user decides where the file goes, so it is never left in a folder they do not know.
+      const target = await pickDwgExportTarget(suggested);
+      if (target === null) return;
       const dxf = toDxf(this.scene(pi).scene);
       this.host.notify(t('drawingUi.dwgWorking'));
       const bytes = await exportDwg(dxf);
-      download(file, bytes as BlobPart, 'image/vnd.dwg');
+      if (target === 'download') download(suggested, bytes as BlobPart, 'image/vnd.dwg');
+      else await writeFile(target, bytes);
+      const file = target === 'download' ? suggested : target.name;
       this.host.notify(this.state.doc.pages.length > 1 ? t('drawing.exportedPage', { name: file, page: pi + 1, pages: this.state.doc.pages.length }) : t('drawing.exported', { name: file }));
     } catch (e) { this.host.notify(t('drawing.exportFailed', { why: e instanceof Error ? e.message : String(e) }), 'error'); }
   }

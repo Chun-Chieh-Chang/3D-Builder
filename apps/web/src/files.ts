@@ -280,6 +280,17 @@ export async function pickDrawingSaveTarget(folder: FileSystemDirectoryHandle, s
   }
 }
 
+/** Where to put an exported DWG: the user chooses the folder and name; 'download' where the browser cannot write files; null when the user cancels. */
+export async function pickDwgExportTarget(suggestedName: string): Promise<FileSystemFileHandle | 'download' | null> {
+  if (!window.showSaveFilePicker) return 'download';
+  try {
+    return await window.showSaveFilePicker({ id: 'dwg-export', suggestedName, types: [{ description: 'DWG', accept: { 'image/vnd.dwg': ['.dwg'] } }] });
+  } catch (e) {
+    if (cancelled(e)) return null;
+    throw e;
+  }
+}
+
 export const foldersUnsupported = () => t('files.foldersUnsupported');
 
 /** The project folder (B9.4): the folder picker; null when the user cancels. */
