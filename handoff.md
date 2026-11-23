@@ -1,5 +1,14 @@
 # 交接與接續工作
 
+## 2026-11-23 — 目前接續清單
+
+- 基準為 `main` 的 `58f0d29f`。該版 [Repository integrity](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45086070862) 的 Windows、macOS、Ubuntu 與 Pages 部署皆通過。下方保留各次交接當時的狀態。
+- **完整瀏覽器回歸**：35／280 項通過，程序已停止，最後完成 `manual-c22.js`。可用 `out/ui-handoff-58f0d29f.jsonl` 續跑其餘 245 項。另一次定向回歸 5／5 通過。
+- 尺寸文字偏移、水平／垂直尺寸線吸附、直邊倒角連動及持久交點參照已在主線。草圖互動 P1 第二批、缺面負向測試、瀏覽器專案開檔等待修復、三項慢測試取樣與 Antigravity 組合件驗收也已有完成紀錄。
+- **R1-10226**：本機五頁 A3 審閱包的 SHA-256 已比對一致。依原圖補標的五筆角度與 STEP 附件中的五個名義角分開處理。審閱稿 D5 為 0，C7 仍回報五個斜面，維持 PRELIMINARY。後續若要讓品質閘門判讀受控附件，須先定義如何核對附件版次、模型及面參照，再以實件驗證。
+- **R1-8032**：選紙修復已在主線。已接受的 A1 審閱稿剩 D5 10 項，交製圖者微調。三組尺寸線互交屬排列演算法另案。正式公差仍須與原圖核對。
+- **仍待驗證**：其餘 MCP 客戶端逐一依[組合件驗收矩陣](docs/design/ai-cad-control/assembly-mcp-plan.md)補證據。Hosted Pages → 本機 MCP 的瀏覽器端連線仍待實測。照片建模維持暫緩，CNS 原文缺口依 11 月 22 日裁決保留。
+
 ## 2026-11-22（23:55）— R1-10226 幾何定義與五張審閱圖
 
 - **交付**為 `out/approved-20261122/r110226-auto-fixed/R1-10226-geometry-review-bundle.zip`，內含 PDF、可編輯 .3dbd、原尺寸所參照的 .3dbx、使用者同意納入的受控幾何附件 R1-10226-GEO-01 版次 01，以及 `R1-10226-geometry-verification.json`。應一起查閱圖面與附件。
