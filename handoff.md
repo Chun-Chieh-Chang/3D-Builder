@@ -806,3 +806,8 @@ npm run build
     - 刪除 `scratch/worktree-0256`（已移除 worktree 留下的空殼；其 `node_modules/@3db/*` junction 指向自身不存在的 `packages/*`，先以 `cmd /c rmdir` 逐一移除連結，再刪資料夾；主資料夾的 `packages/` 與 `apps/mcp/dist` 確認仍在）與 `scratch/mcp-dist-20261117`（11-17 的 MCP 舊建置備份；新建置已在連線中驗證）。
     - 保留 `out/agent/part3-use`（工程圖問題清單指向它，ADR 0260 工作線要用）、`scratch/claude-takeover`（多台電腦共用的進度頁）、根目錄 `Claude outputs/`（非本輪產生，來源不明，未動）。
     - 背景進度儀表板 `plan-dashboard.mjs` 已停止；part-3 進度頁標為「本輪結束」，e1～e7 標「不適用」（ADR 0259 Decision 4／5）。
+
+### 2026-11-23（深夜）— DWG 匯入修正與實機驗證（6a1f26fc 已推送）
+- 已實機驗證（安裝版 v0.7.1）：英制 `mechanical_example-imperial.dwg` 匯入成功（88 圖元、17 標註、×25.4 換算）；缺圖形區塊的標註以標準樣式重畫；文字位置 (0,0) 視為未設定、改放尺寸線中央；`*` 開頭的 CAD 內建圖層可匯入；紙張空間 VIEWPORT 略過並提示；紅/綠提示框（NoticeToast）兩種都出現。
+- 文字編輯（自造 `3DB實機確認\text-test-mm.dxf`）：改文字內容、字高、復原皆正常。
+- 待追：(1) 每次編輯都跳「選擇專案資料夾」對話框，干擾操作；(2) 第一次同時改文字與字高再按套用，只有字高生效（原因未確認）；(3) 換算後標註字高固定 3.5 mm，大圖幾乎看不到；(4) 輸出 DWG 的 dwg2dxf ERROR 待使用者用 DWG TrueView 確認；(5) full-suite CI 待使用者手動觸發。

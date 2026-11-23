@@ -237,7 +237,8 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
   table('LAYER', H.layerTable, layers.length, () => {
     for (const l of layers) {
       o.g(0, 'LAYER').g(5, handle()).g(330, H.layerTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbLayerTableRecord').g(2, l.name).int(70, 0).int(62, l.hidden ? -7 : 7).g(6, l.linetype).int(370, l.weight);
-      if (l.color && version !== 'AC1015') o.int(420, parseInt(l.color.slice(1), 16));
+      // Black stays color 7 (black on paper, white on a dark CAD screen) rather than a fixed RGB black that disappears on dark backgrounds.
+      if (l.color && l.color.toUpperCase() !== '#000000' && version !== 'AC1015') o.int(420, parseInt(l.color.slice(1), 16));
     }
   });
   table('STYLE', H.styleTable, 1, () => {
@@ -271,7 +272,7 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
       const r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, b = rgb & 255;
       const aci = r === g && g === b ? (r < 128 ? 7 : 8) : r >= g && r >= b ? (g > r / 2 ? 2 : b > r / 2 ? 6 : 1) : g >= b ? (b > g / 2 ? 4 : 3) : 5;
       o.int(62, aci);
-      if (version !== 'AC1015') o.int(420, rgb);
+      if (version !== 'AC1015' && rgb !== 0) o.int(420, rgb); // black is written as color 7 alone: it follows the CAD background
     }
     // a line of its own width (a dimension's style, ADR 0146): DXF knows only its standard lineweights (1/100 mm), so the nearest of them
     if (width !== undefined) o.int(370, LINEWEIGHTS.reduce((best, w) => (Math.abs(w - width * 100) < Math.abs(best - width * 100) ? w : best)));

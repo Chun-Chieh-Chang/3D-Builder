@@ -631,13 +631,17 @@ export class DrawingStore {
 
   private loadSources(): void {
     const project = this.project;
-    if (!project) {
-      void this.askProject();
-      return;
-    }
     const wanted = new Set(this.history.doc.pages.flatMap((p) => p.views.flatMap((v) => this.pathOf(v, p.views) ?? [])));
     // the part of an empty drawing, for its palette
     if (this.initialSource && this.history.doc.pages.every((p) => p.views.length === 0)) wanted.add(joinPath(this.folder, this.initialSource));
+    // Nothing to read (an imported 2D CAD drawing, an empty sheet): no project folder is needed, so none is asked for.
+    if (wanted.size === 0) return;
+    if (!project) {
+      // Asked once: after a cancel the question is not repeated on every edit; it comes back when a view needs a part.
+      if (this.projectDeclined === wanted.size) return;
+      void this.askProject(wanted.size);
+      return;
+    }
     for (const path of wanted) {
       if (this.state.sources.has(path)) continue;
       this.set({ sources: new Map(this.state.sources).set(path, { status: 'loading' }) });
@@ -657,9 +661,13 @@ export class DrawingStore {
     }
   }
 
-  private async askProject(): Promise<void> {
+  /** How many parts were wanted when the project-folder question was last cancelled. */
+  private projectDeclined = -1;
+
+  private async askProject(wanted = 0): Promise<void> {
     const project = await this.host.projectFolder(t('drawing.askProject'));
-    if (!project || this.closed) return;
+    if (!project) { this.projectDeclined = wanted; return; }
+    if (this.closed) return;
     this.project = project;
     this.loadSources();
   }

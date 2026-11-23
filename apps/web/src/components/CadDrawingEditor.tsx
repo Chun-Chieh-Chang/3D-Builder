@@ -23,10 +23,11 @@ function EntityFields({ entity }: { entity: CadEntity }) {
   const d = store.drawingStore!;
   const [points, setPoints] = useState('');
   const [text, setText] = useState('');
-  useEffect(() => {
-    setPoints(entity.kind === 'polyline' ? entity.points.reduce<string[]>((lines, v, i, all) => { if (i % 2 === 0) lines.push(`${v}, ${all[i + 1]}`); return lines; }, []).join('\n') : '');
-    setText(entity.kind === 'text' || entity.kind === 'dimension' ? entity.text : '');
-  }, [entity]);
+  // Each draft is reset only when its own stored value changes (undo, another edit of it): saving the height or color must not throw away text being typed.
+  const storedPoints = entity.kind === 'polyline' ? entity.points.reduce<string[]>((lines, v, i, all) => { if (i % 2 === 0) lines.push(`${v}, ${all[i + 1]}`); return lines; }, []).join('\n') : '';
+  const storedText = entity.kind === 'text' || entity.kind === 'dimension' ? entity.text : '';
+  useEffect(() => { setPoints(storedPoints); }, [storedPoints]);
+  useEffect(() => { setText(storedText); }, [storedText]);
   const save = (next: CadEntity) => {
     if (next.kind === 'dimension' && (next.layer !== entity.layer || next.color !== entity.color)) {
       next = { ...next, items: next.items.map((i) => ({ ...i, layer: next.layer, color: next.color })) };

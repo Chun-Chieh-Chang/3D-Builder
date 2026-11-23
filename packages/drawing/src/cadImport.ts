@@ -49,14 +49,14 @@ function defaultTextAt(g: DimGeometry): CadPoint {
   return g.arc;
 }
 
-function standardDimensionItems(g: DimGeometry, textAt: CadPoint, override: string, a: CadAppearance): CadItem[] {
+function standardDimensionItems(g: DimGeometry, textAt: CadPoint, override: string, a: CadAppearance, size: { text: number; arrow: number } = { text: 3.5, arrow: 2.5 }): CadItem[] {
   const out: CadItem[] = [];
   const line = (...pts: CadPoint[]) => { out.push({ ...a, kind: 'polyline', points: pts.flatMap((p) => p) }); };
   const arrow = (tip: CadPoint, toward: CadPoint) => {
-    const len = Math.hypot(toward[0] - tip[0], toward[1] - tip[1]) || 1, ux = (toward[0] - tip[0]) / len, uy = (toward[1] - tip[1]) / len, s = 2.5, w = 0.8;
+    const len = Math.hypot(toward[0] - tip[0], toward[1] - tip[1]) || 1, ux = (toward[0] - tip[0]) / len, uy = (toward[1] - tip[1]) / len, s = size.arrow, w = size.arrow / 3;
     line([tip[0] + ux * s - uy * w, tip[1] + uy * s + ux * w], tip, [tip[0] + ux * s + uy * w, tip[1] + uy * s - ux * w]);
   };
-  const text = (measured: string) => { out.push({ ...a, kind: 'text', at: textAt, text: override && override !== '<>' ? override.replace('<>', measured) : measured, height: 3.5, angle: 0, anchor: 'center' }); };
+  const text = (measured: string) => { out.push({ ...a, kind: 'text', at: textAt, text: override && override !== '<>' ? override.replace('<>', measured) : measured, height: size.text, angle: 0, anchor: 'center' }); };
   const dist = (p: CadPoint, q: CadPoint) => Math.hypot(q[0] - p[0], q[1] - p[1]);
   if (g.kind === 'linear') {
     const { u, p1, p2 } = linearDimensionLine(g);
@@ -119,6 +119,10 @@ export function importCadDxf(text: string, source: string): { doc: DrawingDoc; w
   };
   type Transform = { scale: number; angle: number; x: number; y: number };
   const identity: Transform = { scale: 1, angle: 0, x: 0, y: 0 };
+  // The drawing's own dimension style sizes a redrawn dimension (DIMTXT, DIMASZ times DIMSCALE), in millimetres; 3.5 / 2.5 mm when the file gives none.
+  const headerNumber = (name: string) => { const v = Number(input.header.get(name)?.[0]?.[1]); return Number.isFinite(v) && v > 0 ? v : undefined; };
+  const dimScale = headerNumber('$DIMSCALE') ?? 1;
+  const dimSize = { text: (headerNumber('$DIMTXT') ?? 3.5 / unitScale) * dimScale * unitScale, arrow: (headerNumber('$DIMASZ') ?? 2.5 / unitScale) * dimScale * unitScale };
   const root: Transform = { ...identity, scale: unitScale }; // The whole drawing is brought to millimetres here; block, text and arc handling already honour the scale.
   const transformPoint = (p: CadPoint, tr: Transform): CadPoint => [tr.x + tr.scale * (p[0] * Math.cos(tr.angle) - p[1] * Math.sin(tr.angle)), tr.y + tr.scale * (p[0] * Math.sin(tr.angle) + p[1] * Math.cos(tr.angle))];
   const transformItem = (i: CadItem, tr: Transform): CadItem => {
@@ -213,7 +217,7 @@ export function importCadDxf(text: string, source: string): { doc: DrawingDoc; w
           items = parts as (CadItem & { id: string })[];
         } else {
           warnings.add('Some dimensions had no stored graphics; they were redrawn in the standard style from their definition points.');
-          items = standardDimensionItems(geometry, textAt, d.text, a).map((i) => ({ ...i, id: '' }));
+          items = standardDimensionItems(geometry, textAt, d.text, a, dimSize).map((i) => ({ ...i, id: '' }));
         }
         return [{ ...a, id: id(), kind: 'dimension', text: d.text, textAt, geometry, items: items.map(({ id: _id, ...i }) => i) }];
       }

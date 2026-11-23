@@ -121,6 +121,17 @@ describe('editable imported CAD drawings', () => {
     expect(() => checkCadDrawing(doc.pages[0]!.cad!)).not.toThrow();
   });
 
+  it('sizes a redrawn dimension from the drawing\'s own dimension style', () => {
+    const source = toDxf(scene());
+    const at = source.search(/\r?\n0\r?\nDIMENSION\r?\n/);
+    const gone = source.slice(0, at) + source.slice(at).replace(/(\r?\n2\r?\n)\*D1/, '$1*Dgone');
+    const styled = gone.replace(/(\r?\n\s*9\r?\n\$INSUNITS\r?\n)/, '\n9\n$DIMTXT\n40\n5\n9\n$DIMSCALE\n40\n2$1');
+    expect(styled).not.toBe(gone);
+    const dim = importCadDxf(styled, 's.dxf').doc.pages[0]!.cad!.entities.find((e) => e.kind === 'dimension')!;
+    if (dim.kind !== 'dimension') throw new Error('expected a dimension');
+    expect(dim.items.find((i) => i.kind === 'text')).toMatchObject({ height: 10 });
+  });
+
   it('puts the text of a dimension whose text position was left at (0, 0) on its dimension line', () => {
     const source = scene(); source.dimensions![0]!.textAt = [0, 0];
     const { doc } = importCadDxf(toDxf(source), 'unset.dxf');
@@ -129,6 +140,14 @@ describe('editable imported CAD drawings', () => {
     const mid = (dim.geometry.a[0] + dim.geometry.b[0]) / 2;
     expect(Math.abs(dim.textAt[0] - mid)).toBeLessThan(1e-6);
     expect(dim.textAt[1]).toBeGreaterThan(dim.geometry.line[1]);
+  });
+
+  it('writes black as CAD color 7 so it stays visible on a dark CAD screen, and reads it back as black', () => {
+    const black = toDxf({ width: 50, height: 50, items: [{ kind: 'polyline', style: 'visible', points: [0, 0, 10, 0], color: '#000000' }] } as Scene);
+    const line = readDxf(black).entities.find((e) => e.type === 'LWPOLYLINE' || e.type === 'LINE')!;
+    expect(line.pairs.some(([c]) => c === 420)).toBe(false);
+    expect(line.pairs).toContainEqual([62, '7']);
+    expect(importCadDxf(black, 'b.dxf').doc.pages[0]!.cad!.entities[0]!.color).toBe('#000000');
   });
 
   it('accepts CAD-internal layer names and leaves out paper-space viewport frames', () => {
