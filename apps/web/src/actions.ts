@@ -1,4 +1,5 @@
 import { activeSheetUnfold } from '@3db/model';
+import { dwgAvailable } from './dwg';
 import { initialLoftSections } from './state/loftSections';
 import { absorbedSketches, bodyKey, bodyFeature, canBeSeed, explosionSteps, isDatumPlaneName, isHideable, isShown, page, type DatumPlaneName, type Feature, type Id, type PlaneFrame, type Ref } from '@3db/model';
 import { ownerFeatures } from '@3db/naming';
@@ -395,6 +396,9 @@ export const ACTIONS: UiAction[] = [
   // 檔案: what a drawing is written out as
   { id: 'drw-pdf', get label() { return t('drawingUi.exportPdf'); }, group: 'file', enabled: drawingOn, run: () => store.drawingStore?.exportPdf() },
   { id: 'drw-dxf', get label() { return t('drawingUi.exportDxf'); }, group: 'file', enabled: drawingOn, run: () => store.drawingStore?.exportDxf() },
+  { id: 'drw-dwg', get label() { return t('drawingUi.exportDwg'); }, group: 'file', enabled: (s) => drawingOn(s) && dwgAvailable(), run: () => void store.drawingStore?.exportDwg() },
+  { id: 'drw-import-cad', get label() { return t('drawingUi.importCad'); }, group: 'file', enabled: idle, run: () => store.importCadDrawing() },
+  { id: 'drw-dwg-setup', get label() { return t('drawingUi.dwgInstall'); }, group: 'file', enabled: () => dwgAvailable(), run: () => void store.setupDwg() },
   { id: 'drw-dxf-compat', get label() { return t('drawingUi.exportDxfCompat'); }, group: 'file', enabled: drawingOn, run: () => store.drawingStore?.exportDxf('compat') },
   { id: 'drw-svg', get label() { return t('drawingUi.exportSvg'); }, group: 'file', enabled: drawingOn, run: () => store.drawingStore?.exportSvg() },
 

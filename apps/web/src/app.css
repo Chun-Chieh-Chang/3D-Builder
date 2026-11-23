@@ -822,6 +822,14 @@ html[lang="en"] .view-cube .cube-label { font-size: 13px; }
 .sw-panel .pm-row > span:first-child { color: var(--text-2); }
 .sw-panel .pm-row.end { justify-content: flex-end; gap: 6px; }
 .sw-panel .pm-row.wrap, .sw-panel .pm-wrap { flex-wrap: wrap; justify-content: flex-start; gap: 4px; }
+.cad-editor { display: block; overflow: auto; padding: 12px; }
+.cad-editor > * { margin-bottom: 12px; }
+.cad-editor > label { display: block; }
+.cad-editor select[size] { height: 150px; max-width: 100%; }
+.cad-editor .pm-row.wrap { height: auto; min-height: 28px; }
+.cad-editor [data-cad-properties] > label:not(.pm-row) { display: block; margin-top: 10px; }
+.cad-editor [data-cad-properties] > button { margin-top: 6px; }
+.cad-editor fieldset { min-width: 0; }
 .sw-panel select, .sw-panel input:not([type="checkbox"]), .sw-panel textarea { font: inherit; height: 26px; padding: 2px 6px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--card); color: var(--text); }
 .sw-panel textarea { height: auto; min-height: 56px; width: 100%; resize: vertical; }
 .sw-panel select { max-width: 60%; }

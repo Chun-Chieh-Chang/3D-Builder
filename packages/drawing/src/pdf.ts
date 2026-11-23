@@ -162,12 +162,13 @@ export function toPdf(sceneOrScenes: Scene | readonly Scene[], options: PdfOptio
       const col = colorPrefix(item.color);
       if (item.kind === 'polyline') {
         const s = sceneLines(sc)[item.style] ?? LINE_STYLES.visible;
+        const dash = sc.cadLayers?.find((l) => l.name === item.layer)?.dash ?? s.dash;
         const pts: string[] = [];
         for (let i = 0; i + 1 < item.points.length; i += 2) pts.push(`${num(item.points[i]! * PT)} ${num(item.points[i + 1]! * PT)} ${i === 0 ? 'm' : 'l'}`);
         if (pts.length < 2) continue;
         const draw = item.filled
           ? `${pts.join(' ')} h f`
-          : `${num((item.width ?? s.width) * PT)} w ${s.dash ? `[${s.dash.map((d) => num(d * PT)).join(' ')}] 0 d` : '[] 0 d'} ${pts.join(' ')}${item.closed ? ' h' : ''} S`;
+          : `${num((item.width ?? s.width) * PT)} w ${dash ? `[${dash.map((d) => num(d * PT)).join(' ')}] 0 d` : '[] 0 d'} ${pts.join(' ')}${item.closed ? ' h' : ''} S`;
         ops.push(col ? `q ${col}${draw} Q` : draw);
       } else if (item.text !== '') {
         const run = plan(item.text, font, used);

@@ -274,6 +274,9 @@
   ],
   "F6": [
     "drw-pdf",
+    "drw-dwg",
+    "drw-dwg-setup",
+    "drw-import-cad",
     "drw-dxf",
     "drw-svg"
   ],

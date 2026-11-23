@@ -1,4 +1,6 @@
 import { entranceFeatures } from '../entrance';
+import { importCadDxf } from '@3db/drawing';
+import { importDwg, installDwgEngine } from '../dwg';
 import { activeSheetUnfold } from '@3db/model';
 import { initialLoftSections } from './loftSections';
 import * as Comlink from 'comlink';
@@ -123,6 +125,7 @@ import {
   rememberFolder,
   writeFile,
   pickDxfFile,
+  pickCadDrawingFile,
   pickImageFile,
   isStlFile,
   type OpenedFile,
@@ -319,7 +322,7 @@ export interface UnpackState {
   different: { path: string; replace: boolean }[];
 }
 
-export type PendingFileAction = 'new-part' | 'new-demo' | 'new-assembly' | 'open' | 'open-part' | 'return-assembly' | 'import-step-assembly';
+export type PendingFileAction = 'new-part' | 'new-demo' | 'new-assembly' | 'open' | 'open-part' | 'return-assembly' | 'import-step-assembly' | 'import-cad-drawing';
 
 /** One document is open at a time (2026-09-28 decision): a part or an assembly. */
 export type DocumentKind = 'part' | 'assembly' | 'drawing';
@@ -3810,6 +3813,11 @@ class AppStore {
   }
 
   private async perform(action: PendingFileAction): Promise<void> {
+    if (action === 'import-cad-drawing') {
+      try { const picked = await pickCadDrawingFile(); if (picked) await this.openPicked(picked); }
+      catch (e) { this.notify(t('file.openFailed', { why: e instanceof Error ? e.message : String(e) }), 'error'); }
+      return;
+    }
     if (action === 'open') return this.openFile();
     if (action === 'open-part') return this.openPartFile();
     if (action === 'return-assembly') return this.reopenAssembly();
@@ -3842,6 +3850,15 @@ class AppStore {
   /** A file chosen to open (or the main file of a package just unpacked): a part, an assembly, a drawing, or a STEP, IGES or STL file to start a part from. */
   private async openPicked(picked: OpenedFile): Promise<void> {
     {
+      if (/\.(dwg|dxf)$/i.test(picked.name)) {
+        this.notify(t('drawingUi.dwgWorking'));
+        const text = /\.dwg$/i.test(picked.name) ? await importDwg(picked.bytes) : dxfText(picked.bytes);
+        const imported = importCadDxf(text, picked.name);
+        this.showDrawing({ doc: imported.doc, handle: null, fileName: null, folder: '', untitled: picked.name, project: null });
+        this.notify(t('drawingUi.cadImported', { n: imported.doc.pages.reduce((n, p) => n + (p.cad?.entities.length ?? 0), 0) }));
+        for (const warning of imported.warnings) this.notify(warning);
+        return;
+      }
       if (isStepFile(picked) || isIgesFile(picked) || isStlFile(picked)) {
         // Like SolidWorks: a new, unsaved part named after the file, holding the imported body (or, from an STL, the mesh).
         this.load(createEmptyPart(), null, null, new Map(), picked.name.replace(/\.(step|stp|igs|iges|stl)$/i, ''));
@@ -4175,6 +4192,14 @@ class AppStore {
   /** The open drawing's store, for the components that show it. */
   get drawingStore(): DrawingStore | null {
     return this.drawing;
+  }
+
+  importCadDrawing(): void { this.guard('import-cad-drawing'); }
+
+  async setupDwg(): Promise<void> {
+    this.notify(t('drawingUi.dwgWorking'));
+    try { await installDwgEngine(); this.notify(t('drawingUi.dwgInstalled')); }
+    catch (e) { this.notify(t('file.openFailed', { why: e instanceof Error ? e.message : String(e) }), 'error'); }
   }
 
   /** The drawing becomes the open document; the part (or assembly) is put away (one document at a time). */

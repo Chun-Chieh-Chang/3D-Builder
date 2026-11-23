@@ -429,3 +429,9 @@
 - 作者：Copyright (c) 2026 SolidCraft contributors；依上游逐檔 `ATTRIBUTION.md`，使用其原創 UI SVG 素材，選用 **MIT** 授權。
 - 125 份原始 SVG 保存在 `apps/web/src/icons/solidcraft/`，來源路徑及 SHA-256 見該目錄 `manifest.json`。執行時的配色及除料／部分展開等提示由 3D-Builder 衍生。
 - 完整 MIT 聲明放在 `apps/web/public/licenses/solidcraft-icons-MIT.txt`，建置會隨網頁成品散佈。未使用上游品牌標誌。
+
+## DWG／DXF 索引色表（2026-11-23）
+
+- `packages/drawing/src/aciColors.ts` 的 ACI 色表來自 [gdsestimating/dxf-parser](https://github.com/gdsestimating/dxf-parser/blob/master/src/AutoCadColorIndex.ts)，MIT，Copyright (c) 2015 GDS Storefront Estimating。
+- 完整聲明保留在來源與 `apps/web/public/licenses/dxf-parser-MIT.txt`，隨網頁成品提供。
+- LibreDWG 為使用者另行下載的外部程式（GPL-3.0-or-later），不包含於本程式安裝包；下載保留官方檔案與聲明，固定版本來源見 [ADR 0264](docs/adr/0264-dwg-editable-drawing-import-export.md)。

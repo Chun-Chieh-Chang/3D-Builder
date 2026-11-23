@@ -2,6 +2,7 @@ import { produce, type Draft } from 'immer';
 import { LOCALES, t, type Locale } from '@3db/i18n';
 import { countersFor, type Id } from './ids';
 import { CommandError } from './commands';
+import { checkCadDrawing, type CadDrawing, type CadEntity } from './drawingCad';
 import { isFilePath, joinPath, relativePath } from './paths';
 import { parseFit } from './tolerance';
 import type { Ref } from './schema';
@@ -13,7 +14,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, DRAWING_TEXT_WIDTH, framesUsing, va
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 43;
+export const DRAWING_SCHEMA_VERSION = 44;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -978,6 +979,8 @@ export interface SurfaceFinish {
  * holds one or more pages; while there is only one, the rest of the program reads it through `page(doc)`.
  */
 export interface DrawingPage {
+  /** Editable detached 2D content imported from DWG/DXF. A page with this content uses its own frame. */
+  cad?: CadDrawing;
   id: Id;
   /** The tab's name; empty is the default for its place (「圖頁 1」). */
   name: string;
@@ -1082,9 +1085,12 @@ export function createEmptyDrawing(standard: DrawingStandard = DEFAULT_DRAWING_S
 }
 
 export const drawingIdsInUse = (doc: DrawingDoc): Id[] =>
-  doc.pages.flatMap((p) => [...p.views.map((v) => v.id), ...p.dimensions.map((d) => d.id), ...p.tables.map((x) => x.id), ...p.surfaceFinishes.map((f) => f.id), ...(p.annotations ?? []).map((a) => a.id)]);
+  doc.pages.flatMap((p) => [...(p.cad?.entities ?? []).map((e) => e.id), ...p.views.map((v) => v.id), ...p.dimensions.map((d) => d.id), ...p.tables.map((x) => x.id), ...p.surfaceFinishes.map((f) => f.id), ...(p.annotations ?? []).map((a) => a.id)]);
 
 export type DrawingCommand =
+  | { type: 'setCadDrawing'; pageIndex?: number; cad: CadDrawing }
+  | { type: 'setCadEntity'; pageIndex?: number; entity: CadEntity }
+  | { type: 'deleteCadEntities'; pageIndex?: number; ids: Id[] }
   /** Changes the sheet: its size, orientation, projection, scale or (`shift: null`: take it back) the shift of the arrangement (C16.1). */
   | { type: 'setSheet'; pageIndex?: number; pageId?: Id; sheet: Partial<Omit<DrawingSheet, 'shift' | 'language' | 'dimStyle' | 'titleStyle' | 'pdfFont'>> & { shift?: [number, number] | null; language?: Locale | null; dimStyle?: DimStyle | null; titleStyle?: TitleStyle | null; pdfFont?: string | null } }
   /** Writes a field of the title block; an empty text takes it away (C16.1). */
@@ -1560,6 +1566,28 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       : 0;
   const pg = draft.pages[pageIdx] ?? draft.pages[0]!;
   switch (cmd.type) {
+    case 'setCadDrawing': {
+      try { checkCadDrawing(cmd.cad); } catch (e) { throw new CommandError(e instanceof Error ? e.message : String(e)); }
+      const otherIds = new Set(drawingIdsInUse({ ...draft, pages: draft.pages.filter((p) => p !== pg) }));
+      if (cmd.cad.entities.some((e) => otherIds.has(e.id))) throw new CommandError('Imported CAD entity ids must be unique across drawing pages.');
+      if (pg.views.length || pg.dimensions.length || pg.annotations.length || pg.tables.length || pg.surfaceFinishes.length) throw new CommandError('Import CAD into an empty drawing page.');
+      pg.cad = cmd.cad;
+      return;
+    }
+    case 'setCadEntity': {
+      if (!pg.cad) throw new CommandError('No imported CAD drawing.');
+      const at = pg.cad.entities.findIndex((e) => e.id === cmd.entity.id);
+      if (at < 0) throw new CommandError(`No imported CAD entity ${cmd.entity.id}.`);
+      const cad = { ...pg.cad, entities: pg.cad.entities.map((e, i) => i === at ? cmd.entity : e) };
+      try { checkCadDrawing(cad); } catch (e) { throw new CommandError(e instanceof Error ? e.message : String(e)); }
+      pg.cad = cad;
+      return;
+    }
+    case 'deleteCadEntities': {
+      if (!pg.cad) throw new CommandError('No imported CAD drawing.');
+      pg.cad.entities = pg.cad.entities.filter((e) => !cmd.ids.includes(e.id));
+      return;
+    }
     case 'setSheet': {
       const s = cmd.sheet;
       if (s.size !== undefined && !SHEET_SIZES.includes(s.size)) throw new CommandError(t('drawing.badSheet', { size: String(s.size) }));

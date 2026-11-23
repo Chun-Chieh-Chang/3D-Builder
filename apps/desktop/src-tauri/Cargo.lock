@@ -571,6 +571,7 @@ name = "desktop"
 version = "0.7.1"
 dependencies = [
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
 ]

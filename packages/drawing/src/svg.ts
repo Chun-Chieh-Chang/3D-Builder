@@ -25,9 +25,10 @@ export function toSvg(scene: Scene, options: { font?: string; /** Screen zoom co
     const ink = item.color ?? '#000000';
     if (item.kind === 'polyline') {
       const s = sceneLines(scene)[item.style];
+      const dash = scene.cadLayers?.find((l) => l.name === item.layer)?.dash ?? s.dash;
       const pts: string[] = [];
       for (let i = 0; i < item.points.length; i += 2) pts.push(`${num(item.points[i]!)},${y(item.points[i + 1]!)}`);
-      const attrs = `fill="${item.filled ? ink : 'none'}" stroke="${ink}" stroke-width="${strokeWidth(item.width ?? s.width)}" stroke-linecap="round" stroke-linejoin="round"${s.dash ? ` stroke-dasharray="${s.dash.join(' ')}"` : ''}`;
+      const attrs = `fill="${item.filled ? ink : 'none'}" stroke="${ink}" stroke-width="${strokeWidth(item.width ?? s.width)}" stroke-linecap="round" stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash.join(' ')}"` : ''}`;
       out.push(item.closed ? `<polygon points="${pts.join(' ')}" ${attrs}/>` : `<polyline points="${pts.join(' ')}" ${attrs}/>`);
     } else {
       // the text of a dimension has a white edge: what is drawn under it does not strike through it

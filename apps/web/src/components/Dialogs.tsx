@@ -135,7 +135,7 @@ export function WhatsWrongDialog() {
 }
 
 /** 「要儲存變更嗎？」 before a new or opened part replaces a modified one (SolidWorks asks the same). */
-const PENDING_VERB = labelsOf({ open: 'unsaved.open', 'new-assembly': 'unsaved.newAssembly', 'new-part': 'unsaved.newPart', 'new-demo': 'unsaved.newPart', 'open-part': 'unsaved.openPart', 'return-assembly': 'unsaved.returnAssembly', 'import-step-assembly': 'unsaved.importStepAssembly' });
+const PENDING_VERB = labelsOf({ open: 'unsaved.open', 'new-assembly': 'unsaved.newAssembly', 'new-part': 'unsaved.newPart', 'new-demo': 'unsaved.newPart', 'open-part': 'unsaved.openPart', 'return-assembly': 'unsaved.returnAssembly', 'import-step-assembly': 'unsaved.importStepAssembly', 'import-cad-drawing': 'unsaved.open' });
 
 export function UnsavedDialog() {
   const action = useStore((s) => s.unsaved);

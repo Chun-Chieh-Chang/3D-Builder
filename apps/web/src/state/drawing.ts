@@ -66,6 +66,7 @@ import type { KernelApi } from '../worker/protocol';
 import type { AssemblyData } from './assemblySource';
 import { buildSource, type SourceStatus } from './partSource';
 import { fontManager } from '../fonts/fontManager';
+import { exportDwg, installDwgEngine } from '../dwg';
 
 /**
  * One open drawing (B1.1, C16): the document, the parts its views show (read from the project folder and built in the worker, once per content), and the
@@ -107,7 +108,7 @@ export interface DrawingSource {
  * One thing chosen on the sheet (D-I1a, ADR 0130). Several can be chosen at once (Ctrl and a click, or a box dragged over the paper); what is done to the
  * choice — a tolerance, deleting it — is one step of the history.
  */
-export type DrawingPick = { kind: 'view' | 'dimension' | 'finish' | 'table' | 'annotation'; id: Id };
+export type DrawingPick = { kind: 'view' | 'dimension' | 'finish' | 'table' | 'annotation' | 'cad'; id: Id };
 export type PickMode = 'replace' | 'toggle' | 'add';
 
 const samePick = (a: DrawingPick, b: DrawingPick) => a.kind === b.kind && a.id === b.id;
@@ -115,6 +116,7 @@ const samePick = (a: DrawingPick, b: DrawingPick) => a.kind === b.kind && a.id =
 /** Whether what a pick names is in the document. */
 const pickExists = (doc: DrawingDoc, p: DrawingPick, pageIndex = 0): boolean => {
   const pg = page(doc, pageIndex);
+  if (p.kind === 'cad') return !!pg.cad?.entities.some((e) => e.id === p.id);
   return p.kind === 'view'
     ? pg.views.some((v) => v.id === p.id)
     : p.kind === 'dimension'
@@ -490,7 +492,7 @@ export class DrawingStore {
    */
   pick(items: readonly DrawingPick[], mode: PickMode): void {
     const doc = this.history.doc;
-    const real = items.filter((p) => pickExists(doc, p));
+    const real = items.filter((p) => pickExists(doc, p, this.state.activePageIndex));
     let next: DrawingPick[];
     if (mode === 'replace') next = real.filter((p, i) => real.findIndex((q) => samePick(p, q)) === i);
     else {
@@ -545,6 +547,8 @@ export class DrawingStore {
     const annotations = onKept(this.chosen('annotation'), curPage.annotations ?? []);
     const views = this.chosen('view');
     const commands: DrawingCommand[] = [];
+    const cad = this.chosen('cad');
+    if (cad.length) commands.push({ type: 'deleteCadEntities', pageIndex: this.state.activePageIndex, ids: cad });
     // the annotations before the views: a datum deleted with the frames that refer to it goes, which deleting its view first would refuse
     if (annotations.length) commands.push({ type: 'deleteAnnotations', annotationIds: annotations });
     if (dims.length) commands.push({ type: 'deleteDimensions', dimensionIds: dims });
@@ -1654,6 +1658,25 @@ export class DrawingStore {
       'application/dxf',
       mode === 'compat' ? '-compat' : '',
     );
+  }
+
+  /** Native desktop conversion, with read-back verification before offering any download. */
+  async exportDwg(): Promise<void> {
+    try {
+      const pi = this.state.activePageIndex;
+      const file = `${this.name()}${this.state.doc.pages.length > 1 ? `-${pi + 1}` : ''}.dwg`;
+      const dxf = toDxf(this.scene(pi).scene);
+      this.host.notify(t('drawingUi.dwgWorking'));
+      const bytes = await exportDwg(dxf);
+      download(file, bytes as BlobPart, 'image/vnd.dwg');
+      this.host.notify(this.state.doc.pages.length > 1 ? t('drawing.exportedPage', { name: file, page: pi + 1, pages: this.state.doc.pages.length }) : t('drawing.exported', { name: file }));
+    } catch (e) { this.host.notify(t('drawing.exportFailed', { why: e instanceof Error ? e.message : String(e) }), 'error'); }
+  }
+
+  async setupDwg(): Promise<void> {
+    this.host.notify(t('drawingUi.dwgWorking'));
+    try { await installDwgEngine(); this.host.notify(t('drawingUi.dwgInstalled')); }
+    catch (e) { this.host.notify(t('drawing.exportFailed', { why: e instanceof Error ? e.message : String(e) }), 'error'); }
   }
 
   /**

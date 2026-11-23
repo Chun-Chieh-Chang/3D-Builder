@@ -1,4 +1,5 @@
 import { t } from '@3db/i18n';
+import { CadDrawingViewport } from './CadDrawingEditor';
 import { DrawingMenu, type DrawingMenuAt } from './DrawingViewMenu';
 import { SheetTabs } from './SheetTabs';
 import {
@@ -170,6 +171,11 @@ function Highlight({ items, height, color, pixel }: { items: readonly SceneItem[
  * dimension from the elements pointed at in the view and put it where the pointer is, a section from a line drawn on a view, a detail from a circle drawn on one.
  */
 export function DrawingViewport() {
+  const drw = useStore((s) => s.drw)!;
+  return page(drw.doc, drw.activePageIndex).cad ? <CadDrawingViewport /> : <ModelDrawingViewport />;
+}
+
+function ModelDrawingViewport() {
   const drw = useStore((s) => s.drw)!;
   const bootMs = useStore((s) => s.bootMs);
   const d = store.drawingStore!;

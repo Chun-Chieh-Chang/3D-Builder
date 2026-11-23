@@ -1,5 +1,5 @@
 import { t } from '@3db/i18n';
-import { DRAWING_REVISION_FIELDS, page, type DrawingDoc } from '@3db/model';
+import { cadDrawingBounds, DRAWING_REVISION_FIELDS, page, type DrawingDoc } from '@3db/model';
 import type { SceneItem } from './scene';
 import { sheetMetrics, textWidthMm, wrapPaperText, type Rect } from './sheet';
 
@@ -37,6 +37,8 @@ function tableLayout(doc: DrawingDoc, frame: Rect) {
 
 export function drawingSheetMetrics(doc: DrawingDoc) {
   const metrics = sheetMetrics(page(doc).sheet);
+  const cad = page(doc).cad;
+  if (cad) { const bounds = cadDrawingBounds(cad); return { ...metrics, width: bounds.width, height: bounds.height, area: { x: 0, y: 0, w: bounds.width, h: bounds.height } }; }
   const revisionTable = tableLayout(doc, metrics.frame);
   if (!revisionTable) return metrics;
   return { ...metrics, area: { ...metrics.area, h: revisionTable.box.y - INSET - metrics.area.y } };

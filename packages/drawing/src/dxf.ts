@@ -1,4 +1,6 @@
 import { CALLOUT_SYMBOL_FALLBACKS } from './calloutSymbols';
+import { moveCadEntity } from '@3db/model';
+import { cadScene } from './cadScene';
 import { ARROW, DIM_TEXT, GAP, OVERSHOOT, STACK_SCALE } from './dimension';
 import { sceneLines, type LineStyle, type Scene, type SceneDimension, type SceneItem } from './scene';
 import { textWidthMm } from './sheet';
@@ -129,6 +131,20 @@ function splitByDimension(scene: Scene): { loose: SceneItem[]; blocks: SceneItem
 
 /** The scene as a DXF (AC1021 UTF-8 by default; optional AC1015 ASCII and FreeCAD-compatible exploded mode). */
 export function toDxf(scene: Scene, extras?: DxfExtras): string {
+  if (scene.cadSource) {
+    const imported = cadScene(scene.cadSource, true);
+    scene = { ...imported, items: [...imported.items, ...scene.items.filter((i) => i.owner === undefined)] };
+  }
+  if (scene.cadOrigin) {
+    const [dx, dy] = scene.cadOrigin;
+    scene = { ...scene, cadOrigin: undefined,
+      items: scene.items.map((i) => i.kind === 'text' ? { ...i, at: [i.at[0] + dx, i.at[1] + dy] } : { ...i, points: i.points.map((v, k) => v + (k % 2 ? dy : dx)) }),
+      dimensions: scene.dimensions?.map((d) => {
+        const moved = moveCadEntity({ ...d, kind: 'dimension', layer: d.layer ?? 'DIMENSION', items: [] }, dx, dy);
+        return moved.kind === 'dimension' ? { ...d, geometry: moved.geometry, textAt: moved.textAt } : d;
+      }),
+    };
+  }
   const version: DxfVersion = extras?.version ?? DXF_VERSION;
   const compat = extras?.mode === 'compat';
   let next = 0x30;
@@ -143,19 +159,29 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
 
   // standard mode: each dimension gets an anonymous block; compat mode: explode all dimension items directly into model space
   const dims = compat ? [] : (scene.dimensions ?? []);
+  const dimensionInk = new Map<string, string>();
+  for (const item of scene.items) if (item.group && item.color && !dimensionInk.has(item.group)) dimensionInk.set(item.group, item.color);
   const { loose, blocks: blockItems } = compat ? { loose: scene.items, blocks: [] as SceneItem[][] } : splitByDimension(scene);
   const blockRecords = dims.map(() => handle());
 
   // the sheet's own line styles (ADR 0260); a linetype of theirs that the standard list does not have (CNS 3's centre line) is written after it, from its dashes
   const styles = sceneLines(scene);
   const linetypes = [...DXF_LINETYPES];
+  for (const [i, layer] of (scene.cadLayers ?? []).entries()) {
+    if (layer.dash?.length) linetypes.push({ name: `CAD_${i}`, description: layer.name, pattern: layer.dash.map((v, n) => n % 2 ? -v : v) });
+  }
   for (const st of Object.values(styles))
     if (st.dash && !linetypes.some((lt) => lt.name === st.linetype)) linetypes.push({ name: st.linetype, description: st.linetype, pattern: st.dash.map((d, i) => (i % 2 === 0 ? d : -d)) });
-  const layers: { name: string; linetype: string; weight: number }[] = [
+  const layers: { name: string; linetype: string; weight: number; color?: string; hidden?: boolean }[] = [
     { name: '0', linetype: 'CONTINUOUS', weight: 25 },
     ...(extras?.layers ?? (Object.keys(styles) as LineStyle[]).map((k) => ({ name: styles[k].layer, linetype: styles[k].linetype, weight: Math.round(styles[k].width * 100) }))),
     { name: TEXT_LAYER, linetype: 'CONTINUOUS', weight: 25 },
   ];
+  for (const [i, l] of (scene.cadLayers ?? []).entries()) {
+    const at = layers.findIndex((existing) => existing.name === l.name);
+    const layer = { name: l.name, linetype: l.dash?.length ? `CAD_${i}` : 'CONTINUOUS', weight: Math.round(l.width * 100), color: l.color, hidden: l.hidden };
+    if (at >= 0) layers[at] = layer; else layers.push(layer);
+  }
 
   // the extent of what is drawn
   let minX = 0;
@@ -209,7 +235,10 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
     for (const lt of linetypes) record(handle(), lt.name, lt.description, lt.pattern);
   });
   table('LAYER', H.layerTable, layers.length, () => {
-    for (const l of layers) o.g(0, 'LAYER').g(5, handle()).g(330, H.layerTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbLayerTableRecord').g(2, l.name).int(70, 0).int(62, 7).g(6, l.linetype).int(370, l.weight);
+    for (const l of layers) {
+      o.g(0, 'LAYER').g(5, handle()).g(330, H.layerTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbLayerTableRecord').g(2, l.name).int(70, 0).int(62, l.hidden ? -7 : 7).g(6, l.linetype).int(370, l.weight);
+      if (l.color && version !== 'AC1015') o.int(420, parseInt(l.color.slice(1), 16));
+    }
   });
   table('STYLE', H.styleTable, 1, () => {
     o.g(0, 'STYLE').g(5, H.standardStyle).g(330, H.styleTable).g(100, 'AcDbSymbolTableRecord').g(100, 'AcDbTextStyleTableRecord').g(2, 'STANDARD').int(70, 0).g(40, 0).g(41, 1).g(50, 0).int(71, 0).g(42, 2.5).g(3, 'arial.ttf').g(4, '');
@@ -234,8 +263,16 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
 
   // ---- what is drawn: an entity of an owner (model space, or the block of a dimension), written from the scene's items
   let owner = H.modelRecord;
-  const entity = (type: string, layer: string, sub: string, width?: number) => {
+  const entity = (type: string, layer: string, sub: string, width?: number, color?: string) => {
     o.g(0, type).g(5, handle()).g(330, owner).g(100, 'AcDbEntity').g(8, layer);
+    if (color && /^#[0-9a-f]{6}$/i.test(color)) {
+      // R2007+ stores the exact RGB; the indexed color remains a usable fallback for older readers.
+      const rgb = parseInt(color.slice(1), 16);
+      const r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, b = rgb & 255;
+      const aci = r === g && g === b ? (r < 128 ? 7 : 8) : r >= g && r >= b ? (g > r / 2 ? 2 : b > r / 2 ? 6 : 1) : g >= b ? (b > g / 2 ? 4 : 3) : 5;
+      o.int(62, aci);
+      if (version !== 'AC1015') o.int(420, rgb);
+    }
     // a line of its own width (a dimension's style, ADR 0146): DXF knows only its standard lineweights (1/100 mm), so the nearest of them
     if (width !== undefined) o.int(370, LINEWEIGHTS.reduce((best, w) => (Math.abs(w - width * 100) < Math.abs(best - width * 100) ? w : best)));
     return o.g(100, sub);
@@ -253,17 +290,17 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
       if (item.filled && !compat) {
         // a filled polygon: a fan of triangles from its first corner (a SOLID of three corners repeats the third)
         for (let k = 1; k + 1 < n; k++) {
-          entity('SOLID', styles[item.style].layer, 'AcDbTrace', item.width);
+          entity('SOLID', item.layer ?? styles[item.style].layer, 'AcDbTrace', item.width, item.byLayer ? undefined : item.color);
           const p = [0, k, k + 1].map((j) => [item.points[2 * j]!, item.points[2 * j + 1]!] as const);
           o.g(10, p[0]![0]).g(20, p[0]![1]).g(30, 0).g(11, p[1]![0]).g(21, p[1]![1]).g(31, 0).g(12, p[2]![0]).g(22, p[2]![1]).g(32, 0).g(13, p[2]![0]).g(23, p[2]![1]).g(33, 0);
         }
         return;
       }
-      entity('LWPOLYLINE', styles[item.style].layer, 'AcDbPolyline', item.width);
+      entity('LWPOLYLINE', item.layer ?? styles[item.style].layer, 'AcDbPolyline', item.width, item.byLayer ? undefined : item.color);
       o.int(90, n).int(70, item.closed || item.filled ? 1 : 0);
       for (let i = 0; i < item.points.length; i += 2) o.g(10, item.points[i]!).g(20, item.points[i + 1]!);
     } else if (item.text !== '') {
-      entity('TEXT', TEXT_LAYER, 'AcDbText');
+      entity('TEXT', item.layer ?? TEXT_LAYER, 'AcDbText', undefined, item.byLayer ? undefined : item.color);
       const anchor = item.anchor === 'center' ? 1 : item.anchor === 'right' ? 2 : 0;
       // 10 is where the text starts, 11 the point it is aligned at: a reader that only takes 10 (eDrawings) writes it from there, so a centred or right-aligned
       // text starts its own width (Helvetica's, as laid out; the style's font is Arial, of the same widths) before the point, along its angle
@@ -288,7 +325,8 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
     // 0 rotated (horizontal or vertical), 1 aligned, 2 angular between two lines, 3 diameter, 4 radius; 32 says the block is this dimension's own, 128 that the text is where it is given
     const kind = gm.kind === 'linear' ? (gm.rotation === undefined ? 1 : 0) : gm.kind === 'diameter' ? 3 : gm.kind === 'radius' ? 4 : 2;
     const def = gm.kind === 'linear' ? gm.line : gm.kind === 'diameter' ? gm.far : gm.kind === 'radius' ? gm.centre : gm.second[1];
-    entity('DIMENSION', styles.dimension.layer, 'AcDbDimension');
+    const ink = d.byLayer ? undefined : d.color ?? dimensionInk.get(d.id);
+    entity('DIMENSION', d.layer ?? styles.dimension.layer, 'AcDbDimension', undefined, ink);
     o.g(2, block).g(10, def[0]).g(20, def[1]).g(30, 0).g(11, d.textAt[0]).g(21, d.textAt[1]).g(31, 0).int(70, kind + 32 + 128).int(71, 5).g(3, 'STANDARD').g(1, dimensionOverride(d, version));
     const point = (code: number, p: readonly [number, number]) => o.g(code, p[0]).g(code + 10, p[1]).g(code + 20, 0);
     if (gm.kind === 'linear') {
@@ -296,8 +334,8 @@ export function toDxf(scene: Scene, extras?: DxfExtras): string {
       point(13, gm.a);
       point(14, gm.b);
       if (gm.rotation !== undefined) {
-        o.g(50, gm.rotation);
         o.g(100, 'AcDbRotatedDimension');
+        o.g(50, gm.rotation);
       }
     } else if (gm.kind === 'diameter') {
       o.g(100, 'AcDbDiametricDimension');

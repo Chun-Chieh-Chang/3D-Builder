@@ -7231,3 +7231,11 @@ Schema 93 記錄來源本體、基準面或模型平面、帶符號的平面偏�
      - 現象：在 3D 模型建立檢具量測基準面與量測圓草圖，並於工程圖局部放大視圖直接以 `kind: 'sketch'`（`sketchPositive`／`sketchNegative`）標註高度與直徑時，Web 端 `kernel.worker.ts` 支援，但 MCP `apps/mcp/src/drawingSession.ts` 回傳「正在讀取尺寸指的元素…」。
      - 根因（RCA）：`apps/mcp/src/drawingSession.ts` 的兩處 `getFacts` 僅呼叫 `elementFacts(...)`，未比照 `apps/web/src/worker/kernel.worker.ts:743` 將 `r.kind === 'sketch'` 分派給 `drawingSketchFacts(s.built.sketches, r)`。
      - 矯正措施（CAPA）：補齊 `apps/mcp/src/drawingSession.ts` 兩處 `r.kind === 'sketch' ? drawingSketchFacts(...) : elementFacts(...)` 分派並重建 `@3db/mcp`，使局部放大圖 `B (6:1)` 的 6 個量測基準尺寸全部由真實幾何計算通過（`failed: []`）。
+
+## 2026-11-23 — DWG 匯出、匯入與可編輯 2D 工程圖（ADR 0264）
+
+- 使用者範圍：DWG 輸出、顏色移轉及編輯、DWG 匯入後在工程圖內編輯線／文字／尺寸／顏色。整合共用 LibreDWG 外部轉檔 adapter、桌面 stdin/stdout 橋接及 MCP；新增 Schema 44 的獨立 CAD 頁與編輯器。未更改原始 DWG。
+- 紅隊四問：① 非法數值、壞 RGB、重複 id、壞檔頭、超量／循環圖塊、非平面內容、未支援圖元顯式拒絕；不取整或默改。② 不新增 OCCT 布林；圖塊深度／拜訪量／頂點量／版面量有前置上限，圓弧近似按 0.001 mm 弦誤差決定。③ model → commands → serialization → scene → UI／MCP → CAD 輸出完整接線；2D CAD 不冒充 3D 模型參照。④ 真實定位板 DXF→DWG→讀回→匯入→修改→.3dbd重開→DWG 驗證；顏色及尺寸定義取自實際二進位 DWG 讀回，無假資料；沒有宣稱 AutoCAD 外部認證。
+- 實測抓到：舊 LibreDWG 0.14 成功碼＋有效檔頭仍讀回零圖元；改用 0.14.9228 並把讀回內容比對接進產品側。另修正 DXF 垂直尺寸的 group 50 子類別位置，避免被解成斜角。原 DXF 未寫顏色，本次補齊 AC1021 RGB。
+- 已完成驗證（2026-11-23 17:29）：新增模型／解析 8 項（含 150 組確定性 fuzz）＋ MCP 1 項通過；`npm run verify:dwg` 真實引擎轉檔、匯入、修改中文字／RGB、.3dbd 重開與再輸出通過；`typecheck`、`lint:rules`、`lint:deps`、`lint:i18n`、`lint:repo`、`cargo check`、Windows release 編譯（首輪 4m47s；最終資產重建 2m03s，`out/dwg-engine/native-build.log`）均通過。畫面 `manual-drawing-cad.js` 5 步驟通過，含 DOM 編輯、undo／redo、存檔重開與實際座標拖曳 5、6 mm。截圖檢查抓到移出原圖框會裁切，已補畫布範圍擴張；使用者輸入座標與原始 CAD 原點不被改寫，另有負座標／大位移回歸。完整 **281／281 項** `verify:ui` 瀏覽器回歸全數通過（0 失敗，累計 3240s，報告 `out/dwg-full-ui.json`）。
+- 延後／待追蹤項目（2026-11-23 經使用者同意於 `verify:ui` 281/281 結束後先提交推送至 `main`）：本機首輪 `npm run check`（`out/dwg-check.log`）因與 `verify:ui`／`cargo build` 並行且早於最後畫布修正啟動，在 `tests/phase6/section-offset-cost.test.ts` 逾時失敗（219s），須由遠端 CI 或本機無負載重跑最終工作樹確認全綠；另待補 `apps/desktop/scripts/stage-mcp.mjs` 複製 `dxf-parser-MIT.txt` 至 runtime `licenses`，以及正式安裝版封裝與 WebView2 實機橋接驗收。細節同步於 handoff 的 DWG 節。

@@ -1,6 +1,7 @@
 import { t } from '@3db/i18n';
 import { DRAWING_TEXT_WIDTH, validDrawingTextWidth } from './drawingAnnotations';
 import { countersFor } from './ids';
+import { checkCadDrawing } from './drawingCad';
 import { checkViewCaption, dimensionRefs, normalizeDrawingRevision, validDimensionTextOffset, validTriangleSizePercent, validDrawingPointRef, validProjectionRef, DRAWING_SCHEMA_VERSION, DRAWING_STANDARDS, type Dimension, type DrawingDoc, type DrawingStandard } from './drawing';
 import { ASSEMBLY_SCHEMA_VERSION, SCHEMA_VERSION, type AssemblyDoc, type PartDoc } from './schema';
 
@@ -488,6 +489,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   41: (doc) => doc,
   // v43 adds persistent intersections of two model edges.
   42: (doc) => doc,
+  // v44: detached editable 2D CAD pages; old drawings have no CAD content.
+  43: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {
@@ -513,6 +516,9 @@ export function parseDrawing(text: string): DrawingDoc {
   const pages = raw.pages as Json[] | undefined;
   if (!Array.isArray(pages) || pages.length === 0) throw new FormatError(t('format.noViews'));
   for (const p of pages) {
+    if (p.cad !== undefined) {
+      try { checkCadDrawing(p.cad); } catch (e) { throw new FormatError(e instanceof Error ? e.message : String(e)); }
+    }
     if (!p.sheet || typeof p.sheet !== 'object') throw new FormatError(t('format.noViews'));
     const standard = (p.sheet as Json).standard;
     if (standard !== undefined && !DRAWING_STANDARDS.includes(standard as DrawingStandard)) throw new FormatError(t('drawing.badStandard', { standard: String(standard) }));
@@ -528,6 +534,7 @@ export function parseDrawing(text: string): DrawingDoc {
       if (finish?.triangleSizePercent !== undefined && !validTriangleSizePercent(finish.triangleSizePercent)) throw new FormatError(t('drawing.badFinishTriangleSize'));
     }
     p.annotations ??= [];
+    if (p.cad && [p.views, p.dimensions, p.tables, p.surfaceFinishes, p.annotations].some((a) => (a as Json[]).length > 0)) throw new FormatError('Imported CAD content must be on its own drawing page.');
     for (const entry of [...(p.annotations as Json[]), ...(p.dimensions as Json[])]) {
       if (entry?.wrapWidth !== undefined && ((entry.kind !== 'note' && entry.kind !== 'diameter') || !validDrawingTextWidth(entry.wrapWidth))) {
         throw new FormatError(t('drawing.badTextWidth', DRAWING_TEXT_WIDTH));
@@ -544,7 +551,7 @@ export function parseDrawing(text: string): DrawingDoc {
     for (const d of p.dimensions as unknown as Dimension[]) for (const ref of dimensionRefs(d)) if ((ref?.point !== undefined || ref?.crossing !== undefined) && !validDrawingPointRef(ref)) throw new FormatError(t('drawing.dimBadRef'));
   }
   // As for parts: counters cover every id in the file, even one edited by hand or by a script.
-  const ids = pages.flatMap((p) => [...(p.views as Json[]), ...(p.dimensions as Json[]), ...(p.tables as Json[]), ...(p.surfaceFinishes as Json[]), ...(p.annotations as Json[])].map((v) => v.id as string));
+  const ids = pages.flatMap((p) => [...(p.views as Json[]), ...(p.dimensions as Json[]), ...(p.tables as Json[]), ...(p.surfaceFinishes as Json[]), ...(p.annotations as Json[]), ...((p.cad as unknown as { entities: Json[] } | undefined)?.entities ?? [])].map((v) => v.id as string));
   raw.idCounters = countersFor(ids, { ...((raw.idCounters as Record<string, number> | undefined) ?? {}) });
   raw.properties ??= {};
   return raw as unknown as DrawingDoc;

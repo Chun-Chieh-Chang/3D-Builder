@@ -1,4 +1,6 @@
 import { projectionReferenceLines } from './projectionRefs';
+import { cadScene } from './cadScene';
+import type { CadDrawing, CadLayer } from '@3db/model';
 import { bendTableItems } from './bendTable';
 import { getLocale, t, withLocale } from '@3db/i18n';
 import { axesOf, baseDimStyle, DIM_STYLE_DEFAULT, hatchStyleOf, displayOf, isCorner, isDerived, isShaded, lineGroupOf, page, profileOf, DRAWING_PROFILES, type DrawingProfile, type LineGroup, resolveDimStyle, resolveTitleStyle, sectionEndDirections, standardOf, type HatchStyle, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
@@ -51,6 +53,8 @@ export function lineStylesFor(sheet: Pick<DrawingSheet, 'size' | 'standard'>): L
 }
 
 export interface ScenePolyline {
+  layer?: string;
+  byLayer?: boolean;
   kind: 'polyline';
   /** What on the sheet drew it, when it is not a dimension (`group`): 「view:<id>」 for a view's own lines, an annotation's or a finish's id (ADR 0256). Only checks read it. */
   owner?: string;
@@ -82,6 +86,8 @@ export interface SceneImage {
 }
 
 export interface SceneText {
+  layer?: string;
+  byLayer?: boolean;
   viewCaption?: Id;
   detailLabel?: Id;
   kind: 'text';
@@ -120,6 +126,9 @@ export type SceneDimensionGeometry =
   | { kind: 'angular'; first: [P2, P2]; second: [P2, P2]; arc: P2 };
 
 export interface SceneDimension {
+  layer?: string;
+  color?: string;
+  byLayer?: boolean;
   id: string;
   text: string;
   /** The text's parts when it stacks deviations (`DimensionOutcome.parts`): a DXF writes them stacked. */
@@ -130,6 +139,9 @@ export interface SceneDimension {
 }
 
 export interface Scene {
+  cadSource?: CadDrawing;
+  cadLayers?: CadLayer[];
+  cadOrigin?: [number, number];
   width: number;
   height: number;
   items: SceneItem[];
@@ -395,6 +407,7 @@ function buildSceneIn(
   boms: ReadonlyMap<Id, ViewBom>,
 ): { scene: Scene; placed: Map<Id, PlacedView>; dimensions: Map<Id, DimensionOutcome>; tables: Map<Id, HoleRow[]>; tableBoxes: Map<Id, Rect>; balloons: Map<Id, BalloonSpot[]> } {
   const pg = page(doc);
+  if (pg.cad) return { scene: cadScene(pg.cad), placed: new Map(), dimensions: new Map(), tables: new Map(), tableBoxes: new Map(), balloons: new Map() };
   const m = drawingSheetMetrics(doc);
   const placed = layoutViews(doc, lines);
   const resolved = resolveLines(doc, lines);

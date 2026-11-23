@@ -112,6 +112,8 @@ import { drawingSketchFacts, elementFacts, holeFeatures, obliqueHoleAxes, projec
 import { isTrap } from '@3db/kernel';
 import { AgentError, messageOf, type CadSession } from './session';
 import { renderView } from './render';
+import { dxfToDwg, dwgToDxf } from './dwg';
+import { dxfText, importCadDxf } from '@3db/drawing';
 
 const ORTHO: ViewName[] = ['front', 'back', 'top', 'bottom', 'left', 'right'];
 const AUTO_SHEETS: SheetSize[] = ['A4', 'A3'];
@@ -1416,9 +1418,13 @@ export class DrawingSession {
 
   /** Everything a picture, a check or an export of `doc` needs for `pageIndex`. */
   build(doc: DrawingDoc = this.need(), pageIndex = 0): Built {
-    const s = this.source();
     const pg = page(doc, pageIndex);
     const single = drawingPageForOutput(doc, pageIndex);
+    if (pg.cad) {
+      const built = buildScene(single, new Map(), new Map());
+      return { lines: new Map(), features: new Map(), elements: new Map(), scene: built.scene, placed: built.placed, outcomes: built.dimensions };
+    }
+    const s = this.source();
     const lines = new Map<Id, ViewLines | null>();
     const features = new Map<Id, ViewFeature[]>();
     for (const v of pg.views) {
@@ -1653,6 +1659,7 @@ export class DrawingSession {
    */
   inspect(): unknown {
     const doc = this.need();
+    if (doc.pages.some((p) => p.cad)) return { imported2D: true, modelAssociative: false, pages: doc.pages.map((p, i) => ({ page: i, name: p.name, cad: p.cad })), note: 'Detached 2D CAD entities; edit with drawing_apply setCadEntity/setCadDrawing. Model-based manufacturing quality is not certified.' };
     const pages = doc.pages.map((_, pi) => this.inspectPage(doc, pi));
     const report = this.report();
     return {
@@ -1665,6 +1672,10 @@ export class DrawingSession {
       views: pages.flatMap((p) => p.views),
     };
   }
+
+  imported2D(): boolean { return !!this.doc?.pages.some((p) => p.cad); }
+
+  async saveIfNamed(): Promise<void> { if (this.path) await this.save(); }
 
   /** What `inspect` lists of one page, each item with its page (0-based, as drawing_picture's pageIndex). */
   private inspectPage(doc: DrawingDoc, pageIndex: number) {
@@ -2012,9 +2023,21 @@ export class DrawingSession {
 
   async open(path: string): Promise<void> {
     const full = await this.part.inside(path);
+    if (/\.(dwg|dxf)$/i.test(path)) {
+      const bytes = new Uint8Array(await readFile(full));
+      const text = /\.dwg$/i.test(path) ? await dwgToDxf(bytes) : dxfText(bytes);
+      const imported = importCadDxf(text, basename(path));
+      this.doc = imported.doc;
+      this.path = null;
+      this.undoStack.length = 0;
+      return;
+    }
     const file = await readAnyDocumentFile(new Uint8Array(await readFile(full)));
     if (file.kind !== 'drawing') throw new AgentError(`${path} is a ${file.kind}, not a drawing`);
     const sources = new Set(file.doc.pages.flatMap((p) => p.views.flatMap((v) => (isDerived(v) ? [] : [v.source]))));
+    if (sources.size === 0 && file.doc.pages.every((p) => !!p.cad)) {
+      this.doc = file.doc; this.path = full; this.undoStack.length = 0; return;
+    }
     if (sources.size !== 1) throw new AgentError('only a drawing of one part can be opened here');
     const partPath = relative(this.part.root, `${dirname(full)}${sep}${[...sources][0]!}`);
     await this.part.open(partPath);
@@ -2042,7 +2065,7 @@ export class DrawingSession {
    */
   async export(
     path: string,
-    format: 'pdf' | 'dxf' | 'svg',
+    format: 'pdf' | 'dxf' | 'svg' | 'dwg',
     options?: { release?: boolean; dxfVersion?: DxfVersion; dxfMode?: DxfMode },
   ): Promise<{
     path: string;
@@ -2055,7 +2078,11 @@ export class DrawingSession {
   }> {
     const doc = this.need();
     const full = await this.part.inside(path);
-    const quality = this.checks(doc).quality;
+    const imported = doc.pages.some((p) => p.cad);
+    if (format === 'dwg' && extname(full).toLowerCase() !== '.dwg') throw new AgentError('DWG export requires a .dwg filename.');
+    if (imported && options?.release) throw new AgentError('Imported 2D drawings have no model-based manufacturing quality certification; release export refused.');
+    if (format === 'dwg' && (options?.dxfMode || options?.dxfVersion)) throw new AgentError('DWG uses native dimensions and R2018 true color; DXF-specific options are not accepted.');
+    const quality = imported ? { pass: false, status: 'draft' as const, failed: [] } : this.checks(doc).quality;
     if (options?.release && !quality.pass) {
       const reasons = quality.failed.map((r) => `${r.rule} (${r.name}${r.detail ? `: ${r.detail}` : ''})`).join('; ');
       throw new AgentError(`drawing_export refused (release): drawing is draft — failed rules: ${reasons}`);
@@ -2063,6 +2090,7 @@ export class DrawingSession {
     const preliminary = !quality.pass;
     const f = font();
     const warnings: string[] = [];
+    if (imported) warnings.push('Imported 2D drawing: no associative 3D model; manufacturing quality is unverified.');
     const outputs: { page: number; full: string; data: Uint8Array | string }[] = [];
     const exportScene = (i: number) => {
       const scene = this.build(doc, i).scene;
@@ -2083,7 +2111,7 @@ export class DrawingSession {
         outputs.push({
           page: pi,
           full: at,
-          data: format === 'dxf'
+            data: format === 'dwg' ? await dxfToDwg(toDxf(scene)) : format === 'dxf'
             ? toDxf(scene, {
                 ...(options?.dxfVersion ? { version: options.dxfVersion } : {}),
                 ...(options?.dxfMode ? { mode: options.dxfMode } : {}),

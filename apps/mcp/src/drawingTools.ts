@@ -74,7 +74,7 @@ const schemas = {
   drawing_save: z.strictObject({ path: z.string().min(1).optional() }),
   drawing_export: z.strictObject({
     path: z.string().min(1),
-    format: z.enum(['pdf', 'dxf', 'svg']),
+    format: z.enum(['pdf', 'dxf', 'svg', 'dwg']),
     dxfVersion: z.enum(['AC1015', 'AC1021']).optional().describe('DXF version when format is dxf: AC1021 (R2007 UTF-8, default) or AC1015 (R2000 ASCII).'),
     dxfMode: z.enum(['standard', 'compat']).optional().describe('DXF output mode: standard (default, native DIMENSION + SOLID arrowheads) or compat (FreeCAD-compatible: explodes dimensions to Model Space polylines/texts and writes arrowheads as closed LWPOLYLINEs).'),
     release: z.boolean().optional().describe('When true, refuses export unless every quality gate rule passes (status === "release"). Default false: draft drawings export stamped PRELIMINARY.'),
@@ -94,8 +94,8 @@ const DESCRIPTIONS: Record<keyof typeof schemas, string> = {
   drawing_undo: 'Takes back the last change to the drawing.',
   drawing_picture: 'A PNG of the sheet, or of one view enlarged.',
   drawing_save: 'Saves the drawing (it is saved after every change already; a path saves a copy in the same folder).',
-  drawing_export: 'Exports the drawing as PDF (one file, every page), DXF or SVG (one file per page: page n of a drawing of several beside the first as name-n.dxf; files lists them).',
-  drawing_open: 'Opens a .3dbd drawing of one part (and that part) to go on with it.',
+  drawing_export: 'Exports PDF (all pages), DXF, SVG or R2018 DWG (one file per page). DWG requires LibreDWG 0.14.9228+ and verifies geometry, text, dimensions and RGB by reading the DWG back before writing any output.',
+  drawing_open: 'Opens a .3dbd drawing or imports a 2D DWG/DXF as editable detached entities (lines, text, dimensions and colors). DWG requires LibreDWG. Save imported drawings with drawing_save to a new .3dbd path. Unsupported entity types refuse the import without discarding them.',
 };
 
 export const DRAWING_TOOLS: Tool[] = (Object.keys(schemas) as (keyof typeof schemas)[]).map((name) => ({ name, description: DESCRIPTIONS[name], inputSchema: z.toJSONSchema(schemas[name]) as Tool['inputSchema'] }));
@@ -111,6 +111,11 @@ export const drawingOf = (s: CadSession): DrawingSession => {
 const png = (bytes: Uint8Array) => ({ type: 'image' as const, data: Buffer.from(bytes).toString('base64'), mimeType: 'image/png' });
 
 async function answer(d: DrawingSession, detail: object, withPicture = true): Promise<CallToolResult> {
+  if (d.imported2D()) {
+    const content: CallToolResult['content'] = [{ type: 'text', text: JSON.stringify({ ...detail, drawing: d.inspect() }) }];
+    if (withPicture) for (let i = 0; i < (d.doc?.pages.length ?? 0); i++) content.push(png((await d.picture({ pageIndex: i })).png));
+    return { content };
+  }
   const report = d.report();
   const content: CallToolResult['content'] = [{ type: 'text', text: JSON.stringify({ ...detail, drawing: report }, null, 1) }];
   if (withPicture) {
@@ -188,13 +193,13 @@ export async function callDrawingTool(session: CadSession, name: string, raw: un
     case 'drawing_apply': {
       const a = parse('drawing_apply');
       d.apply(a.commands as unknown as DrawingCommand[], a.pageIndex ?? 0);
-      await d.save();
+      await d.saveIfNamed();
       return answer(d, { applied: a.commands.length }, a.picture ?? true);
     }
     case 'drawing_undo': {
       const a = parse('drawing_undo');
       d.undo();
-      await d.save();
+      await d.saveIfNamed();
       return answer(d, { undone: true }, a.picture ?? true);
     }
     case 'drawing_picture': {
@@ -218,6 +223,7 @@ export async function callDrawingTool(session: CadSession, name: string, raw: un
     case 'drawing_open': {
       const a = parse('drawing_open');
       await d.open(a.path);
+      if (d.imported2D()) return { content: [{ type: 'text', text: JSON.stringify({ opened: true, drawing: d.inspect() }) }] };
       return answer(d, { opened: true });
     }
   }

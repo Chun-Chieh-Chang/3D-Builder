@@ -1,4 +1,6 @@
 import { t, type Locale } from '@3db/i18n';
+import { CadDrawingPanel } from './CadDrawingEditor';
+import { dwgAvailable } from '../dwg';
 import { BREAK_GAP, DRAWING_STANDARDS, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, VIEW_ORIENTATION_PRESETS, axesOf, axesToOrientation, baseName, canHatch, hatchStyleOf, displayOf, isCorner, isDerived, isShaded, baseDimStyle, page, resolveDimStyle, standardOf, type DrawingStandard, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewOrientation, type ViewSide } from '@3db/model';
 import { STANDARD_SCALES, viewCaptionTemplate, arrangementBase, lineAcrossBox, scaleText, type ViewLines } from '@3db/drawing';
 import { ACTIONS, openDrawingPart, shortcutOf } from '../actions';
@@ -139,6 +141,7 @@ const paneClosed = (): boolean => {
  * sheet gets the room.
  */
 export function DrawingTaskPane() {
+  const drw = useStore((s) => s.drw);
   const [closed, setClosed] = useState(paneClosed);
   const set = (c: boolean) => {
     setClosed(c);
@@ -148,6 +151,7 @@ export function DrawingTaskPane() {
       // nothing kept: it opens again next time
     }
   };
+  if (drw && page(drw.doc, drw.activePageIndex).cad) return null;
   if (closed)
     return (
       <aside className="task-pane closed">
@@ -360,6 +364,11 @@ function DrawingTree({ onFormat, onPick }: { onFormat: () => void; onPick: () =>
  */
 export function DrawingPanel() {
   const drw = useStore((s) => s.drw)!;
+  return page(drw.doc, drw.activePageIndex).cad ? <CadDrawingPanel /> : <ModelDrawingPanel />;
+}
+
+function ModelDrawingPanel() {
+  const drw = useStore((s) => s.drw)!;
   const d = store.drawingStore!;
   const doc = drw.doc;
   const [tab, setTab] = useState<'tree' | 'props' | 'tools'>('props');
@@ -383,7 +392,7 @@ export function DrawingPanel() {
   const standard = STANDARD_SCALES.some((s) => same(s, curPage.sheet.scale));
   const view = curPage.views.find((x) => x.id === drw.selected);
   const tail = drw.selection[drw.selection.length - 1];
-  const context: Context = tail ? (tail.kind === 'view' ? 'view' : tail.kind) : view ? 'view' : format ? 'format' : 'sheet';
+  const context: Context = tail && tail.kind !== 'cad' ? (tail.kind === 'view' ? 'view' : tail.kind) : view ? 'view' : format ? 'format' : 'sheet';
   // what is chosen on the sheet brings the properties forward, as clicking something in the graphics area of SolidWorks does; a click in the tree stays in the tree
   const fromTree = useRef(false);
   const selectionKey = drw.selection.map((x) => `${x.kind}:${x.id}`).join(',');
@@ -955,6 +964,10 @@ export function DrawingPanel() {
             <button className="pm-button" data-action="exportDxf" onClick={() => d.exportDxf()}>
               {t('drawingUi.exportDxf')}
             </button>
+            <button className="pm-button" data-action="exportDwg" disabled={!dwgAvailable()} title={dwgAvailable() ? '' : t('drawingUi.dwgDesktopOnly')} onClick={() => void d.exportDwg()}>
+              {t('drawingUi.exportDwg')}
+            </button>
+            {dwgAvailable() && <button className="pm-button" data-action="setupDwg" onClick={() => void d.setupDwg()}>{t('drawingUi.dwgInstall')}</button>}
             <button className="pm-button" data-action="exportDxfCompat" onClick={() => d.exportDxf('compat')}>
               {t('drawingUi.exportDxfCompat')}
             </button>

@@ -1,5 +1,23 @@
 # 交接與接續工作
 
+## 2026-11-23 — DWG 匯入／匯出與可編輯工程圖（281/281 UI 回歸通過，已提交主線）
+
+- **使用者範圍已確認**：除 DWG 匯出外，須保留顏色並可編輯；DWG 匯入的目的為「工程圖內編輯線條、文字、尺寸與顏色」，不是匯入草圖。設計及能力邊界見 [ADR 0264](docs/adr/0264-dwg-editable-drawing-import-export.md)。
+- **已實作**：共用 LibreDWG 0.14.9228 外部轉檔引擎、R2018／AC1032 DWG、桌面 Rust → bundled Node stdin/stdout 橋接、檔案選單「安裝 DWG 引擎／匯入 DWG／DXF 工程圖／輸出 DWG」、MCP `drawing_open`／`drawing_export(format: dwg)`。每次 DWG 匯出均讀回實際二進位並核對圖元、文字、尺寸定義及圖塊、RGB、圖層／線寬／線型，通過後才交付。桌面安裝流程下載固定官方檔案並驗 SHA-256；本機引擎已安裝在 `%LOCALAPPDATA%/3D-Builder/converters/libredwg`。
+- **編輯與持久化**：Drawing Schema **44** 的 `DrawingPage.cad`，與 3D 投影視圖分開。可選取／拖曳、改文字與尺寸文字覆寫、線條座標、RGB／ByLayer、圖層顏色／線寬／顯示、刪除、undo／redo、存 .3dbd 後重開再匯出。圖元移到原畫布外時，顯示範圍會擴張，使用者座標及原 CAD 原點仍保留。
+- **同輪修正**：現有 DXF 原本未寫自訂顏色，已補 AC1021 group 420；垂直尺寸的 group 50 原放錯子類別，已移到 `AcDbRotatedDimension` 之後。另補既有 `drw-dxf-compat` 遺漏的 help summary，並同步工具圖示、help 映射與手冊。
+- **已通過的證據**：
+  - 靜態守門：`npm run typecheck`、`lint:rules`、`lint:deps`、`lint:i18n`、`lint:repo`（338 文件／281 呼叫）全數通過。
+  - 原生建置：`cargo check`、Windows release 原生編譯（首輪 4m47s；最後資產重建 **2m03s**，見 `out/dwg-engine/native-build.log`）。
+  - 專項與實檔：`tests/phase5/drawing-cad.test.ts`＋`apps/mcp/test/drawing-cad.test.ts` 共 **9 項**（含 **150 組**確定性 fuzz）；`npm run verify:dwg` 真實定位板轉檔／匯入／編輯／存檔重開／再輸出；`manual-drawing-cad.js` **5 步驟通過**（含螢幕座標拖曳實際移動 5、6 mm）。
+  - 全量瀏覽器回歸：完整 **281／281 項** `verify:ui` 全數通過（**0 失敗**，累計 3240s，2026-11-23 17:29 台北時間完成，報告 `out/dwg-full-ui.json`、檢查點 `out/dwg-full-ui-checkpoint.json`）。
+  - UI 報告／截圖：`out/dwg-ui/report.json`、`out/dwg-ui/manual-drawing-cad/__manualDrawingCad_run/`。實檔：`out/dwg-acceptance/plate.dwg`、`plate-edited.dwg`、`plate-edited.3dbd`。
+- **待接續／延後項目（2026-11-23 經使用者指示於 281/281 UI 回歸結束後先提交推送）**：
+  - 本機首輪 `npm run check`（`out/dwg-check.log`）因與 `verify:ui`／`cargo build` 並行且啟動於最後畫布修正之前，在 `tests/phase6/section-offset-cost.test.ts` 逾時失敗（219s）；須以本次推送觸發的遠端 CI 或本機空閒時重跑最終工作樹的完整 `npm run check` 驗證全綠。
+  - MCP 桌面 staging（`apps/desktop/scripts/stage-mcp.mjs`）尚需補上將 `apps/web/public/licenses/dxf-parser-MIT.txt` 複製到 `resources/mcp/licenses/`，確保獨立 MCP 發佈亦附上色表授權。
+  - 暫存工具鏈／重跑入口 `node out/dwg-engine/native-run.cjs check|stage|build --release`；尚待正式安裝版封裝與真實 WebView2 → Rust → bundled Node 橋接驗收，尚未發行新版。
+- **明確限制**：瀏覽器版能匯入 DXF、編輯 .3dbd、輸出 DXF／PDF／SVG；DWG 轉檔需桌面版或 MCP。匯入為獨立 2D 尺寸，不會重建 3D 模型關聯；毫米以外單位先在來源 CAD 轉換。圓／圓弧以弦誤差 ≤0.001 mm 的聚合線表示；MTEXT、HATCH、SPLINE、代理圖元、部分圖塊／尺寸等未支援內容會**拒絕整份匯入並列原因**，不靜默略過。重輸出採本程式標準 CAD 字型／尺寸樣式。尚未做使用者指定 AutoCAD 等外部讀取器的顯示／再生裁定。
+
 ## 2026-11-23 — 目前接續清單
 
 - **v0.7.1 已公開發佈（Latest）**：[GitHub Release v0.7.1](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.7.1) 已於 `2026-11-23T04:19:12Z` 公開。已從正式 Pages 的 JavaScript 核對下載入口，並以未登入請求確認 `releases/latest` 導向 `v0.7.1`。重新下載公開安裝檔，核對大小 49,668,006 B 和 SHA-256 `628547d016524443429bcef77d58d7caa647b8200d03b635d065dd3d5512516a`；遠端標籤指向 `a68e9f40`。發行後的工程圖變更在較新的主線提交。見 [桌面版版本履歷](docs/desktop-release-history.md)。
@@ -8,7 +26,7 @@
 - **完整瀏覽器回歸**：以 `58f0d29f` 為基準，2026-11-23 09:54（台北時間）完成，**280／280 項通過**。原先停在 `manual-c22.js` 的 35 項由檢查點保留，其餘 245 項續跑全數通過。最終報告為 `out/ui-handoff-58f0d29f.json`。
 - 尺寸文字偏移、水平／垂直尺寸線吸附、直邊倒角連動及持久交點參照已在主線。草圖互動 P1 第二批、缺面負向測試、瀏覽器專案開檔等待修復、三項慢測試取樣與 Antigravity 組合件驗收也已有完成紀錄。
 - **R1-10226 審閱稿追溯**：原五頁 A3 包的 SHA-256 已比對一致，原圖補標角與 STEP 附件名義角各自追溯。原審閱包標為 `PRELIMINARY`；完成上述 C7 受控附件驗證後，已另行輸出五頁正式圖。
-- **R1-8032**：A1 審閱稿 D5 `10 → 8 → 6 → 2 → 0`，三組尺寸線交叉均排除。兩頁版面閘門全過，出框 0，最小淨空維持 6.528 mm；重開後核對 67 筆尺寸值與文字、尺寸覆蓋均不變。最新 `R1-8032-A1-layout-verified.3dbd`／PDF 與兩份整理驗證報告在 `out/r18032-crossings/`，來源 `.3dbx` 同資料夾。**PDF 仍蓋 `PRELIMINARY`**：自動品質閘門已全過，但 ISO 2768-m 仍為審閱稿暫定值，正式公差和設計要求須對讀 Rev. 08 原圖。
+- **R1-8032**：A1 審閱稿 D5 `10 → 8 → 6 → 2 → 0`，出框 0，最小淨空 6.528 mm。`out/r18032-crossings/R1-8032-A1-layout-verified.3dbd`／PDF 仍為 `PRELIMINARY`。已核對 Rev. 08 原圖及簽認附件，原圖採英吋與 ASME Y14.5-2009，兩頁 A1 的暫定 ISO 2768-m 待逐項映射後替換。重算 67 筆尺寸發現總長 `dim66` 的大口端參照偏離原圖端面，重建實體在該端亦未達名義站位。後續取同版受控 3D，核對大口端幾何、F 尺寸鏈與 A–D 檢查點後再驗收。來源指紋、原圖公差換算與量測證據存於 `out/r18032-tolerance-audit/`。
 - **Hosted Pages → 本機 MCP**：已用實際網站與 Chrome 158 驗證。Chrome 須允許網站存取本機回送位址，MCP 須明確允許對應網站來源，再以連線碼配對。已核對 UI、MCP 狀態與斷線。設定見 [MCP 說明](apps/mcp/README.md)。
 - **網頁 MCP 部署引導**：`bbee3860` 已[部署至 Pages](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45102847404)。正式站 Chrome 驗收通過。客戶端關閉後釋放本機埠的修正已以 `8f40a416` 推送，[三平台 CI 與 Pages 通過](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45105306065)。
 - **Windows 0.7.1 候選包**：獨立分支 `codex/windows-mcp-candidate` 的 [Windows runner](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45105655680) 已建置並實際安裝，內建 MCP 同埠啟閉兩輪通過。正式 Pages 以候選包的 MCP 驗證權限、偵測、配對、關掉後未就緒、重啟與再配對。候選包存放在 `out/windows-mcp-candidate/`，尚未發行。

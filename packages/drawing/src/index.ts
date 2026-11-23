@@ -34,3 +34,5 @@ export * from './fonts';
 export * from './projectionRefs';
 export * from './sheetRaster';
 export * from './qualityGate';
+export * from './cadScene';
+export * from './cadImport';

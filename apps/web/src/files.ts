@@ -97,7 +97,7 @@ const cancelled = (e: unknown) => e instanceof DOMException && e.name === 'Abort
 
 /** 「開啟舊檔」: a part, an assembly, or a STEP or IGES file to start a part from; null when the user cancels. */
 export function pickFileToOpen(project: FileSystemDirectoryHandle | null = null): Promise<OpenedFile | null> {
-  return pick([ANY_TYPE, PART_TYPE, ASSEMBLY_TYPE, DRAWING_TYPE, PACKAGE_TYPE, STEP_TYPE, IGES_TYPE, STL_TYPE, OLD_PART_TYPE], project, 'open', OPEN_PICKER_ID);
+  return pick([ANY_TYPE, PART_TYPE, ASSEMBLY_TYPE, DRAWING_TYPE, PACKAGE_TYPE, { description: 'DWG / DXF', accept: { 'image/vnd.dwg': ['.dwg'], 'image/vnd.dxf': ['.dxf'] } }, STEP_TYPE, IGES_TYPE, STL_TYPE, OLD_PART_TYPE], project, 'open', OPEN_PICKER_ID);
 }
 
 /** 「輸入 STEP 組合件」: a STEP file. */
@@ -121,6 +121,10 @@ export function pickImageFile(): Promise<OpenedFile | null> {
 export function pickDxfFile(): Promise<OpenedFile | null> {
   const dxf: PickerType = { get description() { return t('picker.dxf'); }, accept: { 'image/vnd.dxf': ['.dxf'] } };
   return pick([dxf]);
+}
+
+export function pickCadDrawingFile(): Promise<OpenedFile | null> {
+  return pick([{ description: 'DWG / DXF', accept: { 'image/vnd.dwg': ['.dwg'], 'image/vnd.dxf': ['.dxf'] } }]);
 }
 
 /** 「PDF 字型」: a TrueType font file (.ttf, or .ttc such as Microsoft JhengHei) to embed in the PDF for the characters the standard font does not have. */

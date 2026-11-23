@@ -6,9 +6,9 @@
 
 | 項目 | 程式來源值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 96／7／43 |
-| ADR 文件 | 262 |
-| 瀏覽器檔案／可執行腳本／呼叫 | 233／228／280 |
+| 零件／組合件／工程圖 Schema | 96／7／44 |
+| ADR 文件 | 263 |
+| 瀏覽器檔案／可執行腳本／呼叫 | 234／229／281 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
 
@@ -57,6 +57,8 @@
 | `verify:external-acceptance` | `node scripts/verify-external-acceptance.mjs` |
 | `verify:freecad-sheet-metal` | `node scripts/verify-freecad-sheet-metal.mjs` |
 | `verify:drawing-export` | `node scripts/verify-drawing-export.mjs` |
+| `setup:dwg` | `node scripts/setup-dwg.mjs` |
+| `verify:dwg` | `vitest run --config tests/acceptance/vitest.dwg.config.ts` |
 | `check:perf` | `node scripts/check-perf.mjs` |
 | `check` | `npm run typecheck && npm run lint:rules && npm run lint:deps && npm run lint:i18n && npm run lint:repo && npm test` |
 | `docs:sync` | `node scripts/check-repository.mjs --write` |
@@ -608,6 +610,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0261: measured view layout for automatic drawings (clearance, detail placement, turned-part main view, multi-page sheet consistency and layout self-check)](<adr/0261-drawing-view-layout.md>)
 - [ADR 0262: drawing dimension placement and content (hatch avoidance, surface clustering, side-on Ø, blind-hole detection, centre axes and leader accuracy)](<adr/0262-drawing-dimension-placement-and-content.md>)
 - [ADR 0263: drawing quality gate (draft vs release status, PRELIMINARY stamp, general tolerance and 3D model authority checks)](<adr/0263-drawing-quality-gate.md>)
+- [ADR 0264: DWG conversion and editable detached 2D drawings](<adr/0264-dwg-editable-drawing-import-export.md>)
 
 ### 歷史驗證
 
