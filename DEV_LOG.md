@@ -1,5 +1,12 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-23 — Windows 0.7.1 候選包驗收
+
+- MCP 關閉修正 `8f40a416` 已推送，三平台 CI 與 Pages 成功。建立隔離分支 `codex/windows-mcp-candidate`，使用 [Windows runner](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45105655680) 建置 NSIS 及試裝；未改本機工具鏈、未發布正式 Release。
+- `3D-Builder_0.7.1_x64-setup.exe` 49,665,212 B，SHA-256 `49f742ad2bbef8bbcc6e683f3e458c92edd9b96dd726faef01913be6b4dfcf2e`。Windows runner 的已安裝啟動器在 `38923` 連續兩次啟閉皆釋放埠；正式站以候選包解出的相同啟動器驗證重啟後自動偵測與再次配對。報告 `out/windows-mcp-candidate/install-verification.json` 與 `out/pages-mcp/run-cwkB4J/verification.json`。
+- 透過 MCP SDK 用相同候選包完成兩金樣的試組、預覽、正式組立、STEP／BOM、獨立重開。兩配合均 `ok`，自由度 `0/1`，干涉 `405.396352 mm³`。證據 `out/windows-mcp-candidate/protocol-verification.json`。
+- Cline CLI 3.0.74 使用同一個候選包的 Sidecar。先確認自由規劃的本機 Llama 3.2 能呼叫並查詢兩組實體面，但把布林值轉成文字而被 MCP 拒絕。改用本機 Ollama 結構化輸出，每步以固定 QA 參數限制模型輸出，讓 Cline 走原生工具呼叫。已驗證 10 次實際工具事件、PNG 預覽與正式套用。Cline 寫出 `jig.3dba`、`jig.step`、`jig.csv`，在獨立 MCP 程序重開，兩配合 `ok`、自由度 `0/1`、干涉與 SDK 路徑一致。證據 `out/windows-mcp-candidate/cline/cline-event-verification.json` 與 `out/windows-mcp-candidate/cline-reopen-verification.json`。
+
 ## 2026-11-23 — 正式 Pages 驗收與 MCP 關閉修正
 
 - `bbee3860` 三平台 CI 與 Pages 均通過。正式站 `index-2FY23ZPI.js` 以全新的 Chrome 158 工作階段驗證首次提示、拒絕回送權限、只授權該站後重載自動偵測、MCP 配對與斷線、關閉後顯示未就緒，並在 390 px 開啟安裝說明無橫向溢出。權限狀態由 DevTools 在隔離環境設定。證據 `out/pages-mcp/run-LjxPMo/verification.json`。

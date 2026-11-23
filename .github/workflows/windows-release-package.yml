@@ -1,0 +1,79 @@
+name: Windows release package
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous_version:
+        description: Previous release version to upgrade in the test
+        required: true
+        default: '0.7.0'
+      previous_sha256:
+        description: SHA-256 of the previous Windows installer
+        required: true
+        default: '509d5851986624a43dd70eaaf597da5847f4b6e93d3e0b11e75a089977da443d'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+      - name: Prepare Rust
+        run: rustup toolchain install stable --profile minimal
+      - run: rustup default stable
+      - run: npm ci
+      - name: Build Windows installer
+        run: npm run build -w @3db/desktop -- --ci
+      - name: Verify upgrade and installed MCP restart
+        shell: pwsh
+        env:
+          PREVIOUS_VERSION: ${{ inputs.previous_version }}
+          PREVIOUS_SHA256: ${{ inputs.previous_sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content -LiteralPath 'apps/desktop/src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json).version
+          if ($env:PREVIOUS_VERSION -notmatch '^\d+\.\d+\.\d+$' -or $env:PREVIOUS_SHA256 -notmatch '^[a-fA-F0-9]{64}$') {
+            throw 'Invalid previous release version or checksum'
+          }
+          if ([version]$env:PREVIOUS_VERSION -ge [version]$version) { throw 'Previous release must be older' }
+          $installer = Get-Item -LiteralPath "apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_${version}_x64-setup.exe"
+          $oldName = "3D-Builder_$($env:PREVIOUS_VERSION)_x64-setup.exe"
+          $oldInstaller = Join-Path $env:RUNNER_TEMP $oldName
+          $oldUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/v$($env:PREVIOUS_VERSION)/$oldName"
+          Invoke-WebRequest -Uri $oldUrl -OutFile $oldInstaller
+          if ((Get-FileHash -LiteralPath $oldInstaller -Algorithm SHA256).Hash -ne $env:PREVIOUS_SHA256) {
+            throw 'Previous installer SHA-256 mismatch'
+          }
+          function Install-Desktop($path, $expectedVersion) {
+            $install = Start-Process -FilePath $path -ArgumentList '/S' -WindowStyle Hidden -Wait -PassThru
+            if ($install.ExitCode -ne 0) { throw "Installer exit code: $($install.ExitCode)" }
+            $app = Get-Item -LiteralPath (Join-Path $env:LOCALAPPDATA '3D-Builder/desktop.exe')
+            if ($app.VersionInfo.ProductVersion -ne $expectedVersion) {
+              throw "Installed version $($app.VersionInfo.ProductVersion) does not match $expectedVersion"
+            }
+            Write-Output $app
+          }
+          $previousApp = Install-Desktop $oldInstaller $env:PREVIOUS_VERSION
+          $app = Install-Desktop $installer.FullName $version
+          if ($previousApp.FullName -ne $app.FullName) { throw 'Upgrade did not reuse the existing installation path' }
+          $launcher = Get-Item -LiteralPath (Join-Path $app.DirectoryName '3d-builder-mcp.exe')
+          New-Item -ItemType Directory -Path out/windows-release -Force | Out-Null
+          node scripts/verify-windows-release-mcp.mjs $launcher.FullName $version $env:PREVIOUS_VERSION
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item -LiteralPath $installer.FullName -Destination out/windows-release
+          (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $installer.Name |
+            Set-Content -LiteralPath out/windows-release/SHA256SUMS.txt -Encoding utf8
+          $env:GITHUB_SHA | Set-Content -LiteralPath out/windows-release/SOURCE_COMMIT.txt -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-package
+          path: out/windows-release/
+          if-no-files-found: error
+          retention-days: 14

@@ -8,7 +8,9 @@
 - **R1-10226**：本機五頁 A3 審閱包的 SHA-256 已比對一致。依原圖補標的五筆角度與 STEP 附件中的五個名義角分開處理。審閱稿 D5 為 0，C7 仍回報五個斜面，維持 PRELIMINARY。後續若要讓品質閘門判讀受控附件，須先定義如何核對附件版次、模型及面參照，再以實件驗證。
 - **R1-8032**：選紙修復已在主線。已接受的 A1 審閱稿剩 D5 10 項，交製圖者微調。三組尺寸線互交屬排列演算法另案。正式公差仍須與原圖核對。
 - **Hosted Pages → 本機 MCP**：已用實際網站與 Chrome 158 驗證。Chrome 須允許網站存取本機回送位址，MCP 須明確允許對應網站來源，再以連線碼配對。已核對 UI、MCP 狀態與斷線。設定見 [MCP 說明](apps/mcp/README.md)。
-- **網頁 MCP 部署引導**：`bbee3860` 已[部署至 Pages](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45102847404)。在正式站以隔離的 Chrome 完成權限拒絕、自動偵測、配對與斷線驗收。附帶發現 v0.7.0 的本機啟動器在客戶端關閉時可能留下監聽埠。工作樹已修正，並用原 Windows 啟動器搭配新版伺服器驗證退出後釋放連接埠。修正仍待隨桌面版本出包。
+- **網頁 MCP 部署引導**：`bbee3860` 已[部署至 Pages](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45102847404)。正式站 Chrome 驗收通過。客戶端關閉後釋放本機埠的修正已以 `8f40a416` 推送，[三平台 CI 與 Pages 通過](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45105306065)。
+- **Windows 0.7.1 候選包**：獨立分支 `codex/windows-mcp-candidate` 的 [Windows runner](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45105655680) 已建置並實際安裝，內建 MCP 同埠啟閉兩輪通過。正式 Pages 以候選包的 MCP 驗證權限、偵測、配對、關掉後未就緒、重啟與再配對。候選包存放在 `out/windows-mcp-candidate/`，尚未發行。
+- **Cline 0.7.1 候選包驗收**：隔離 Cline CLI 3.0.74 使用本機 Llama 3.2 結構化輸出執行固定案例，10 次真實 MCP 呼叫全過。獨立程序重開 Cline 產生的檔案，驗證兩配合 `ok` 和自由度 `0/1`。自由規劃試跑因模型參數不合規被 MCP 拒絕。
 - **仍待驗證**：其餘 MCP 客戶端逐一依[組合件驗收矩陣](docs/design/ai-cad-control/assembly-mcp-plan.md)補證據。照片建模維持暫緩，CNS 原文缺口依 11 月 22 日裁決保留。
 
 ## 2026-11-22（23:55）— R1-10226 幾何定義與五張審閱圖

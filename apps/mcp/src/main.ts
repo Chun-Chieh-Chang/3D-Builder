@@ -11,7 +11,7 @@ import { CadSession } from './session';
 import { createServer, serial } from './server';
 import { LiveBridge } from './bridge';
 
-const VERSION = '0.7.0';
+const VERSION = '0.7.1';
 
 function parseCliArgs(argv: readonly string[]): { workspace?: string; locale?: string } {
   const out: { workspace?: string; locale?: string } = {};
