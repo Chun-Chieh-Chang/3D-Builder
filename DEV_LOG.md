@@ -4,7 +4,8 @@
 
 - **結果**：自 main 建置並安裝 0.7.1 後，DWG 匯入／編輯／存檔重開／輸出 DWG 全流程在真實桌面版通過；輸出檔（AC1032）可在 Autodesk Viewer 開啟。安裝包含 `mcp\licenses\dxf-parser-MIT.txt`。
 - **CI**：排程執行 #365（`66399fa`）8 個 `full-suite` 分片與 `section-offset-cost` 全綠，本機逾時未在 CI 重現。
-- **未驗證／待查**：文字編輯（測試檔無文字）；平移值寫入輸出檔的轉回比對（`1600` 搜尋無命中，原因未明）；`dwg2dxf` 讀輸出檔時報 `Invalid max class number 499`、`Invalid morehandles size 1 … DIMSTYLE_CONTROL`，需以 AutoCAD／DWG TrueView 嚴格驗證。
+- **平移值已確認寫入輸出 DWG**（轉回 DXF 比對；匯出會加上來源原點與頁面位移，故 DXF 座標≠編輯器顯示值，詳見 handoff）。
+- **未驗證／待查**：文字編輯（測試檔無文字）；`dwg2dxf` 讀輸出檔時報 `Invalid max class number 499`、`Invalid morehandles size 1 … DIMSTYLE_CONTROL`，需以 AutoCAD／DWG TrueView 嚴格驗證。
 - **發現**：匯入圖面線寬過細（不隨縮放）、結果提示只在狀態列、非 mm 拒絕訊息不夠清楚、輸出位置未告知。細節與建議修法見 `handoff.md` 同日（晚）區段。
 - **自我更正**：首次 Viewer 驗證誤用輸入檔，已以 AC1018／AC1032 版本標頭區分並重驗，詳見 handoff。
 
