@@ -10,7 +10,7 @@ import { readPartFile } from '@3db/io';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel } from '@3db/kernel';
 import { elementFacts, Regenerator, viewFeatures } from '@3db/regen';
-import { alignCollinear, arrangeDimensions, autoDimensions, evaluateDimension, overlappingDimensions, FIRST_OFFSET, OFFSET_STEP, type DimensionOutcome, type ElementsResult, type PlacedView, type SceneItem } from '@3db/drawing';
+import { alignCollinear, arrangeDimensions, autoDimensions, evaluateDimension, linearOffsetCandidates, overlappingDimensions, FIRST_OFFSET, OFFSET_STEP, type DimensionOutcome, type ElementsResult, type PlacedView, type SceneItem } from '@3db/drawing';
 
 let kernel: Kernel;
 let regen: Regenerator;
@@ -162,5 +162,15 @@ describe('arranging the dimensions of a view', () => {
       // a second arranging is the first
       expect(arrangeDimensions(arranged, after.outcomes, ids), `run ${k}`).toEqual([]);
     }
+  });
+
+  it('linearOffsetCandidates explores the opposite side starting from its own first row, not only from |currentOffset|', () => {
+    const cands = linearOffsetCandidates(-24, { first: 10, step: 7 });
+    const opp = cands.filter((x) => x > 0);
+    expect(opp.slice(0, 4)).toEqual([10, 17, 24, 31]);
+    expect(cands.slice(0, 4)).toEqual([-24, -31, -38, -45]);
+    expect(cands).toContain(-10);
+    expect(cands).toContain(-17);
+    expect(new Set(cands).size).toBe(cands.length);
   });
 });

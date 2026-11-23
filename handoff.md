@@ -8,7 +8,7 @@
 - **完整瀏覽器回歸**：以 `58f0d29f` 為基準，2026-11-23 09:54（台北時間）完成，**280／280 項通過**。原先停在 `manual-c22.js` 的 35 項由檢查點保留，其餘 245 項續跑全數通過。最終報告為 `out/ui-handoff-58f0d29f.json`。
 - 尺寸文字偏移、水平／垂直尺寸線吸附、直邊倒角連動及持久交點參照已在主線。草圖互動 P1 第二批、缺面負向測試、瀏覽器專案開檔等待修復、三項慢測試取樣與 Antigravity 組合件驗收也已有完成紀錄。
 - **R1-10226**：本機五頁 A3 審閱包的 SHA-256 已比對一致。依原圖補標的五筆角度與 STEP 附件中的五個名義角分開處理。審閱稿 D5 為 0，C7 仍回報五個斜面，維持 PRELIMINARY。後續若要讓品質閘門判讀受控附件，須先定義如何核對附件版次、模型及面參照，再以實件驗證。
-- **R1-8032**：選紙修復已在主線。已接受的 A1 審閱稿剩 D5 10 項，交製圖者微調。三組尺寸線互交屬排列演算法另案。正式公差仍須與原圖核對。
+- **R1-8032**：選紙修復已在主線；已修正 `steerLeaders()` 三處引線×標註列交叉限制（`linearOffsetCandidates` 對側自首列起試、`!hitsNow` 允許倒角／圓弧旋轉、`ordinate` 納入避讓），實測 `R1-8032-A1-review-final.3dbd` 第 1 頁 `dim41|dim48` 與 `"0.51 × 44.57°"` 歸零（總雜亂 `10 → 8`，`layout.pass: true`）；第 2 頁 `dim19|dim54`、`dim21|dim54` 受限於 `view7` 上方鄰視圖淨空 `6.528 mm`（須連同視圖平移處理）。正式公差仍須與原圖核對。
 - **Hosted Pages → 本機 MCP**：已用實際網站與 Chrome 158 驗證。Chrome 須允許網站存取本機回送位址，MCP 須明確允許對應網站來源，再以連線碼配對。已核對 UI、MCP 狀態與斷線。設定見 [MCP 說明](apps/mcp/README.md)。
 - **網頁 MCP 部署引導**：`bbee3860` 已[部署至 Pages](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45102847404)。正式站 Chrome 驗收通過。客戶端關閉後釋放本機埠的修正已以 `8f40a416` 推送，[三平台 CI 與 Pages 通過](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45105306065)。
 - **Windows 0.7.1 候選包**：獨立分支 `codex/windows-mcp-candidate` 的 [Windows runner](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45105655680) 已建置並實際安裝，內建 MCP 同埠啟閉兩輪通過。正式 Pages 以候選包的 MCP 驗證權限、偵測、配對、關掉後未就緒、重啟與再配對。候選包存放在 `out/windows-mcp-candidate/`，尚未發行。

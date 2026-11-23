@@ -89,3 +89,31 @@ export function alignCollinear(dimensions: readonly Dimension[], ids: readonly I
   }
   return { changes, skipped };
 }
+
+/**
+ * Candidate offsets for steering a linear or ordinate dimension out of clutter or line crossings:
+ * tries the current side outward, then the opposite side starting from its OWN first row (`spacing.first`,
+ * not `|currentOffset|`, since the opposite side may have free inner rows even when the current side is deep),
+ * and finally any unused inner rows on the current side.
+ */
+export function linearOffsetCandidates(
+  currentOffset: number,
+  spacing: { first: number; step: number } = { first: FIRST_OFFSET, step: OFFSET_STEP },
+): number[] {
+  const curSign = Math.sign(currentOffset) || 1;
+  const baseOff = Math.abs(currentOffset) || spacing.first;
+  const out: number[] = [];
+  const push = (v: number) => {
+    const r = Math.round(v * 100) / 100;
+    if (!out.some((x) => Math.abs(x - r) < 1e-6)) out.push(r);
+  };
+  // 1. Current side outward from current row
+  for (let k = 0; k <= 3; k++) push(curSign * (baseOff + k * spacing.step));
+  // 2. Opposite side starting from its own first row (first, first + step, ...) up to baseOff + 3*step
+  const oppMax = Math.max(baseOff + 2 * spacing.step, spacing.first + 4 * spacing.step);
+  for (let off = spacing.first; off <= oppMax + 1e-6; off += spacing.step) push(-curSign * off);
+  push(-curSign * baseOff);
+  // 3. Unused inner rows on the current side
+  for (let off = spacing.first; off < baseOff - 1e-6; off += spacing.step) push(curSign * off);
+  return out;
+}

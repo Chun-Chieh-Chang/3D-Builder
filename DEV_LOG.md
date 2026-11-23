@@ -1,5 +1,18 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-23（午・續）— 引線 × 標註列交叉排列修正（`linearOffsetCandidates` + `steerLeaders`）
+
+- **根因分析（RCA）**：對 `R1-8032-A1-review-final.3dbd` 三組尺寸線交叉（`dim41|dim48`、`dim19|dim54`、`dim21|dim54`）實測診斷，確認三組皆為「引線標註 × 線性／座標標註列」的跨型態交叉，根源在於 `steerLeaders()` 三處限制：
+  1. `linear` 換到對側時只從 `|currentOffset|`（如 `24`）起試，漏掉對側自己的內側空列（`10, 17`）。
+  2. `diameter`/`radius`/`chamfer` 在 `!hitsNow` 時將候選角度鎖死為 `[d.angle]`，導致 `dim41`（`chamfer`, `angle=145`）完全未嘗試旋轉避讓（實測轉至 `45°` 即消除 `dim41|dim48` 與 `"0.51 × 44.57°"`）。
+  3. `ordinate` 標註在 `steerLeaders()` 無調整分支。
+- **矯正措施（CAPA）**：
+  - `packages/drawing/src/arrange.ts` 新增純函式 `linearOffsetCandidates(currentOffset, spacing)`，同側外推後對側由 `spacing.first` 起序試，再試同側未用內側列。
+  - `apps/mcp/src/drawingSession.ts` `steerLeaders()` 改用 `linearOffsetCandidates` 處理 `linear` 與 `ordinate`，並在 `!hitsNow` 時仍允許旋轉至 `candidateAngles`（維持 `requireHit = hitsNow` 不劣化已命中箭頭）。
+- **驗證與突變**：
+  - `R1-8032-A1-review-final.3dbd` 記憶體內實測：第 1 頁 `dim41|dim48` 交叉與 `"0.51 × 44.57°"` 同步歸零（總雜亂 `10 → 8`、`layout.pass: true`）；第 2 頁 `dim19|dim54`／`dim21|dim54` 受限於 `view7` 上方鄰視圖淨空 `6.528 mm`（不移視圖無法將 `dim54` 置於上方而不碰撞既有標註），屬已量測之物理約束。
+  - 新增 `linearOffsetCandidates` 單元測試（`tests/phase5/drawing-arrange.test.ts` 5/5 過），突變測試（對側改由 `baseOff` 起算）轉紅；`typecheck`、4 項 lint、`mcp:build` 與 5 檔工程圖回歸測試（19/19，含 3 件黃金零件 `drawing-clearance`）全數通過。
+
 ## 2026-11-23（午）— v0.7.1 正式公開發佈 + C7 品質閘門支援受控幾何附件驗證（ADR 0263 增補）
 
 - **v0.7.1 正式發佈與 Pages 核對**：

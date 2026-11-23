@@ -62,6 +62,7 @@ import {
   fitViews,
   itemsBounds,
   layoutMetrics,
+  linearOffsetCandidates,
   MIN_DETAIL_INK,
   minViewClearance,
   nearestFreeSpot,
@@ -1082,7 +1083,8 @@ export class DrawingSession {
         if (d.kind === 'diameter' || d.kind === 'radius' || d.kind === 'chamfer') {
           const hitsNow = this.arrowHitsView(this.build(doc, pageIndex), page(doc, pageIndex), d.id);
           // longer leaders last: at a large scale (or with large text) the part is wider on the sheet than the first four reach across (ADR 0261)
-          const angles = hitsNow ? [d.angle, ...candidateAngles.filter((a) => Math.abs(a - d.angle) > 1e-3)] : [d.angle];
+          // Always allow rotating to candidateAngles even when !hitsNow (requireHit=hitsNow prevents degrading a hitting arrow while letting chamfers/rounds uncross).
+          const angles = [d.angle, ...candidateAngles.filter((a) => Math.abs(a - d.angle) > 1e-3)];
           const missedAngles = new Set<number>();
           outer: for (const leader of [8, 14, 22, 32, 46, 64]) {
             for (const angle of angles) {
@@ -1106,16 +1108,22 @@ export class DrawingSession {
             }
           }
         } else if (d.kind === 'linear') {
-          const baseOff = Math.abs(d.offset) || 10;
-          const curSign = Math.sign(d.offset) || 1;
-          outerLinear: for (const sgn of [curSign, -curSign]) {
-            for (const off of [baseOff, baseOff + 7, baseOff + 14, baseOff + 21]) {
-              const slides = slideNumbers ? [0, -6, 6, -12, 12, -20, 20, -32, 32] : [0];
-              for (const slide of slides) {
-                if (sgn === curSign && off === baseOff && slide === (d.slide ?? 0)) continue;
-                if (try_({ offset: sgn * off, ...(slide === 0 ? { slide: null } : { slide }) }, d.id, false) && !info.groups.has(d.id)) break outerLinear;
-              }
+          const h = page(doc, pageIndex).sheet.dimStyle?.text ?? 3.5;
+          const spacing = { first: Math.max(10, Math.round(h * (10 / 3.5) * 10) / 10), step: Math.max(7, h * 2) };
+          const offsets = linearOffsetCandidates(d.offset, spacing);
+          outerLinear: for (const offset of offsets) {
+            const slides = slideNumbers ? [0, -6, 6, -12, 12, -20, 20, -32, 32] : [0];
+            for (const slide of slides) {
+              if (Math.abs(offset - d.offset) < 1e-6 && slide === (d.slide ?? 0)) continue;
+              if (try_({ offset, ...(slide === 0 ? { slide: null } : { slide }) }, d.id, false) && !info.groups.has(d.id)) break outerLinear;
             }
+          }
+        } else if (d.kind === 'ordinate') {
+          const h = page(doc, pageIndex).sheet.dimStyle?.text ?? 3.5;
+          const spacing = { first: Math.max(10, Math.round(h * (10 / 3.5) * 10) / 10), step: Math.max(7, h * 2) };
+          for (const offset of linearOffsetCandidates(d.offset, spacing)) {
+            if (Math.abs(offset - d.offset) < 1e-6) continue;
+            if (try_({ offset }, d.id, false) && !info.groups.has(d.id)) break;
           }
         }
       }
