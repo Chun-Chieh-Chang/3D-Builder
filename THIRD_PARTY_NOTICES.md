@@ -433,5 +433,5 @@
 ## DWG／DXF 索引色表（2026-11-23）
 
 - `packages/drawing/src/aciColors.ts` 的 ACI 色表來自 [gdsestimating/dxf-parser](https://github.com/gdsestimating/dxf-parser/blob/master/src/AutoCadColorIndex.ts)，MIT，Copyright (c) 2015 GDS Storefront Estimating。
-- 完整聲明保留在來源與 `apps/web/public/licenses/dxf-parser-MIT.txt`，隨網頁成品提供。
+- 完整聲明保留在來源與 `apps/web/public/licenses/dxf-parser-MIT.txt`，隨網頁成品提供；桌面版的獨立 MCP 執行檔另附 `resources/mcp/licenses/dxf-parser-MIT.txt`（`apps/desktop/scripts/stage-mcp.mjs` 第 4b 步複製，來源檔不存在時停止打包）。
 - LibreDWG 為使用者另行下載的外部程式（GPL-3.0-or-later），不包含於本程式安裝包；下載保留官方檔案與聲明，固定版本來源見 [ADR 0264](docs/adr/0264-dwg-editable-drawing-import-export.md)。

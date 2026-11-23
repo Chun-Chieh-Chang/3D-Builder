@@ -14,7 +14,7 @@
   - UI 報告／截圖：`out/dwg-ui/report.json`、`out/dwg-ui/manual-drawing-cad/__manualDrawingCad_run/`。實檔：`out/dwg-acceptance/plate.dwg`、`plate-edited.dwg`、`plate-edited.3dbd`。
 - **待接續／延後項目（2026-11-23 經使用者指示於 281/281 UI 回歸結束後先提交推送）**：
   - 本機首輪 `npm run check`（`out/dwg-check.log`）因與 `verify:ui`／`cargo build` 並行且啟動於最後畫布修正之前，在 `tests/phase6/section-offset-cost.test.ts` 逾時失敗（219s）；須以本次推送觸發的遠端 CI 或本機空閒時重跑最終工作樹的完整 `npm run check` 驗證全綠。
-  - MCP 桌面 staging（`apps/desktop/scripts/stage-mcp.mjs`）尚需補上將 `apps/web/public/licenses/dxf-parser-MIT.txt` 複製到 `resources/mcp/licenses/`，確保獨立 MCP 發佈亦附上色表授權。
+  - ~~MCP 桌面 staging 補複製 `dxf-parser-MIT.txt`~~：已完成（2026-11-23）。`stage-mcp.mjs` 第 4b 步複製到 `resources/mcp/licenses/`，來源檔不存在時停止打包；`tauri.conf.json` 已整個打包 `resources/mcp/`。只測了該區塊（複製內容一致、缺檔報錯），**完整 staging（npm 建置、Rust 編譯、Tauri 打包）尚未重跑**，下次正式打包時在 `resources/mcp/licenses/` 確認檔案存在。
   - 暫存工具鏈／重跑入口 `node out/dwg-engine/native-run.cjs check|stage|build --release`；尚待正式安裝版封裝與真實 WebView2 → Rust → bundled Node 橋接驗收，尚未發行新版。
 - **明確限制**：瀏覽器版能匯入 DXF、編輯 .3dbd、輸出 DXF／PDF／SVG；DWG 轉檔需桌面版或 MCP。匯入為獨立 2D 尺寸，不會重建 3D 模型關聯；毫米以外單位先在來源 CAD 轉換。圓／圓弧以弦誤差 ≤0.001 mm 的聚合線表示；MTEXT、HATCH、SPLINE、代理圖元、部分圖塊／尺寸等未支援內容會**拒絕整份匯入並列原因**，不靜默略過。重輸出採本程式標準 CAD 字型／尺寸樣式。尚未做使用者指定 AutoCAD 等外部讀取器的顯示／再生裁定。
 

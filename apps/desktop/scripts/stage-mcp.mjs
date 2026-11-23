@@ -2,7 +2,7 @@
  * Stages the self-contained MCP server runtime and native launcher for Tauri desktop bundling:
  *   - Builds `@3db/mcp` (`apps/mcp/dist/`)
  *   - Compiles the tiny Rust launcher `3d-builder-mcp.exe` into `src-tauri/binaries/3d-builder-mcp-x86_64-pc-windows-msvc.exe`
- *   - Populates `src-tauri/resources/mcp/` with `node.exe`, `dist/`, `package.json`, and the stripped runtime `node_modules/`
+ *   - Populates `src-tauri/resources/mcp/` with `node.exe`, `dist/`, `package.json`, `licenses/dxf-parser-MIT.txt`, and the stripped runtime `node_modules/`
  *     (only `opencascade_single.wasm` from `libcascade`, no multi-thread WASM, symbols, `.d.ts`, or docs).
  */
 import { execFileSync } from 'node:child_process';
@@ -44,6 +44,13 @@ mkdirSync(join(stageDir, 'node_modules'), { recursive: true });
 copyFileSync(process.execPath, join(stageDir, `node${exeExt}`));
 cpSync(join(mcpSrcDir, 'dist'), join(stageDir, 'dist'), { recursive: true });
 writeFileSync(join(stageDir, 'package.json'), JSON.stringify({ name: '@3db/mcp-runtime', private: true, type: 'module' }, null, 2) + '\n');
+
+// 4b. Third-party licence texts the standalone MCP package must carry: the DXF/DWG colour table in the drawing export comes from dxf-parser (MIT).
+// A missing file stops the staging; a package without its licence text must not be built.
+const licenseSrc = join(repoRoot, 'apps', 'web', 'public', 'licenses', 'dxf-parser-MIT.txt');
+if (!existsSync(licenseSrc)) throw new Error(`Licence text missing, cannot stage the MCP runtime: ${licenseSrc}`);
+mkdirSync(join(stageDir, 'licenses'), { recursive: true });
+copyFileSync(licenseSrc, join(stageDir, 'licenses', 'dxf-parser-MIT.txt'));
 
 // 5. Trace full runtime npm dependency closure across @3db/mcp and every @3db/* workspace package it bundles
 const workspacePkgs = new Map();
