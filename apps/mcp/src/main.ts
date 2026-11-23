@@ -47,6 +47,14 @@ async function main(): Promise<void> {
   }
   const server = createServer(session, VERSION, live, run);
   await server.connect(new StdioServerTransport());
+  process.stdin.once('end', () => {
+    // Closing the client pipe must also release the loopback listener. Otherwise the desktop
+    // launcher can be killed by the client timeout while its Node child keeps the port.
+    void Promise.all([live?.stop(), server.close()]).catch((error) => {
+      log(`3d-builder MCP shutdown failed: ${String(error)}`);
+      process.exitCode = 1;
+    });
+  });
   log(`3d-builder MCP ${VERSION}: kernel ready in ${Date.now() - began} ms, workspace ${root}${live ? `, live link code ${live.code}` : ''}`);
 }
 

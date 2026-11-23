@@ -103,6 +103,7 @@
 | **DeepSeek Harness** | `deepseek v0.8.16` | **受阻（餘額不足）** | 成功載入 `3d-builder-mcp.exe`，呼叫模型回傳 `HTTP 402 Insufficient Balance`。 |
 | **Qoder** | `qodercli 1.0.25` | **受阻（未登入）** | 已備妥 `out/mcp-client-qa/qoder/mcp.json`，執行回傳 `Not logged in · Please run /login`。 |
 | **Antigravity** | `agy 1.5.14`／Gemini 3.8 Flash (Medium) | **CLI 已驗證通過** | 在隔離工作區註冊 Sidecar，僅開放本次所需的組合件工具。完成六步驟，產出 `.3dba`（769 B）、STEP（118,835 B）、BOM CSV（124 B）。獨立重開確認兩配合 `ok`、0／1 DOF，干涉為 405.396 mm³。證據在 `out/mcp-client-qa/antigravity/`。 |
-| **Agnes Code、KiroCrew、TRAE／TRAE SOLO、WorkBuddy AI、Cline、ChatGPT Classic、Eigent、MiniMax Code** | 桌面 GUI／Web／無獨立 CLI | **待 GUI 互動驗收** | 本機已檢出 AgnesCode、KiroCrew、Trae／TRAE SOLO、WorkBuddyAI 桌面安裝目錄；均無自動化 CLI，須於各 GUI 介面加入 `3d-builder-mcp.exe` 並以相同提示詞實測。 |
+| **Cline** | CLI `3.0.74`／Ollama 本機模型 | **已驗證設定及 Sidecar 啟動；組合件端對端待驗** | 2026-11-23 在隔離設定目錄以 `cline mcp add --yes` 註冊官方 v0.7.0 安裝包解出的 Sidecar。實際 Cline 工作階段啟動該執行檔。Gemma 完整案例和 Llama 單工具重試均在首輪模型回應等待過久後停止，兩輪均無工具結果或組合件產物。日誌 `out/mcp-client-qa/cline-cli/{session,smoke}.log`。 |
+| **Agnes Code、KiroCrew、TRAE／TRAE SOLO、WorkBuddy AI、ChatGPT Classic、Eigent、MiniMax Code** | 桌面 GUI／Web | **待 GUI 互動驗收** | 依各客戶端支援的 MCP 方式加入 `3d-builder-mcp.exe`，用同一組合件案例實測。 |
 
 - **共通 UX 觀察**：在 Codex（無推理模式）與 OpenCode（`agnes-3.0-flash`）皆觀察到模型初次呼叫 `insertComponent` 時易將 `file` 誤放入 `component` 內而非頂層欄位；後續可視需求於 `assembly_apply_commands` 錯誤訊息補上明確範例提示。

@@ -4,7 +4,8 @@
  * so that `vite build` (which empties `dist`) runs once: two files building at once would delete each other's output while it is in use.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -39,6 +40,27 @@ it('tells the client how to work, and lists its tools', async () => {
   expect(client.getInstructions()).toMatch(/apply_commands/);
   const { tools } = await client.listTools();
   expect(tools.map((t) => t.name).sort()).toEqual(['apply_commands', 'assembly_apply_commands', 'assembly_export', 'assembly_inspect', 'assembly_new', 'assembly_open', 'assembly_query_elements', 'assembly_save', 'cad_execute_feature', 'cad_export_manufacturing', 'cad_get_viewport_screenshot', 'cad_inspect_geometry', 'command_reference', 'drawing_annotate', 'drawing_apply', 'drawing_complete', 'drawing_create', 'drawing_export', 'drawing_inspect', 'drawing_open', 'drawing_picture', 'drawing_plan', 'drawing_save', 'drawing_text_size', 'drawing_tolerance', 'drawing_undo', 'export_file', 'live_status', 'part_new', 'part_open', 'part_save', 'part_summary', 'part_verify_against_2d', 'query_elements', 'rebuild_events', 'recognize_features', 'render_view', 'session_status', 'undo']);
+});
+
+it('releases the live listener when the MCP client closes its input pipe', async () => {
+  const child = spawn(process.execPath, [join(here, 'dist', 'server.mjs')], {
+    env: { ...process.env, THREEDB_WORKSPACE: root, THREEDB_LIVE: 'on', THREEDB_LIVE_PORT: '0' },
+    stdio: ['pipe', 'ignore', 'pipe'],
+  });
+  let socket: WebSocket | undefined;
+  try {
+    const [ready] = await once(child.stderr, 'data', { signal: AbortSignal.timeout(5000) });
+    const port = /live link code (\d+)-/.exec(String(ready))?.[1];
+    expect(port).toBeDefined();
+    socket = new WebSocket(`ws://127.0.0.1:${port}`);
+    await once(socket, 'open', { signal: AbortSignal.timeout(5000) });
+    const exited = once(child, 'exit', { signal: AbortSignal.timeout(1500) });
+    child.stdin.end();
+    expect(await exited).toEqual([0, null]);
+  } finally {
+    socket?.close();
+    child.kill();
+  }
 });
 
 it('serves the four standard CAD tools over the real stdio transport', async () => {

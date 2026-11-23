@@ -115,9 +115,14 @@ export class LiveBridge {
       w.reject(new Error('the live link closed'));
     }
     this.waiting.clear();
-    this.app?.close();
+    const wss = this.wss;
+    this.wss = null;
     this.app = null;
-    return new Promise((resolve) => (this.wss ? this.wss.close(() => resolve()) : resolve()));
+    if (!wss) return Promise.resolve();
+    return new Promise((resolve) => {
+      wss.close(() => resolve());
+      for (const socket of wss.clients) socket.terminate();
+    });
   }
 
   private accept(ws: WebSocket, req: IncomingMessage): void {
@@ -130,6 +135,7 @@ export class LiveBridge {
     let greeted = false;
     // the first message must be the hello, soon
     const deadline = setTimeout(() => !greeted && ws.close(LIVE_CLOSE.badMessage, 'no hello'), 10_000);
+    ws.once('close', () => clearTimeout(deadline));
     ws.on('message', (data) => {
       let msg: AppMessage;
       try {

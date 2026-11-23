@@ -1,5 +1,11 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-23 — 正式 Pages 驗收與 MCP 關閉修正
+
+- `bbee3860` 三平台 CI 與 Pages 均通過。正式站 `index-2FY23ZPI.js` 以全新的 Chrome 158 工作階段驗證首次提示、拒絕回送權限、只授權該站後重載自動偵測、MCP 配對與斷線、關閉後顯示未就緒，並在 390 px 開啟安裝說明無橫向溢出。權限狀態由 DevTools 在隔離環境設定。證據 `out/pages-mcp/run-LjxPMo/verification.json`。
+- 查驗官方 v0.7.0 安裝包 SHA-256 後，解出 MCP 執行檔做相同正式站驗收。配對與斷線通過，但 SDK 客戶端關閉 stdin 後，伺服器保留 loopback listener，SDK 逾時終止 launcher，Node 子程序仍佔埠。以實際子程序與待驗證 WebSocket 寫出紅燈，確認 stdin EOF 後未正常退出。改成 EOF 關閉 SDK 與 listener，清理所有 WebSocket 及 hello 計時器。修正後 Vitest 兩檔 20 項全過；以原 Windows 啟動器搭配修正版伺服器再驗正式站，客戶端退出後埠已釋放，證據 `out/pages-mcp/run-pqhGNP/verification.json`。官方 v0.7.0 安裝檔未更新。
+- R1-10226 附件版次 01 已獨立核對 7 個 manifest 成員雜湊、重建 STEP 與 `.3dbx` 內嵌 STEP 逐位元組相同，以及 227 個面索引。C7 缺標的五個面對應 STEP `#27739`、`#28575`、`#28785`、`#16397`、`#22449`，皆為附件列出的平面。此為附件資料核對，品質閘門與審閱稿狀態維持原樣。
+
 ## 2026-11-23 — 網頁 MCP 自動偵測與安裝引導
 
 - 「AI 控制」在瀏覽器已授予回送權限時自動檢查使用者設定的本機埠 `38923`。無既有授權時提供明確的偵測操作。引導連到包含 MCP 的桌面安裝程式，並提供目前來源與埠號供使用者合併到 AI 客戶端設定。
