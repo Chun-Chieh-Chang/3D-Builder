@@ -1,5 +1,12 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-23 — DWG 匯入擴充（單位、標註、CAD 內建圖層）、醒目提示與 Autodesk 相容修正
+
+- **範圍**（`49872f24`、`6a1f26fc`、`176c7405`）：DWG／DXF 匯入支援 mm 以外單位（in、ft、yd、mil、µm、cm、dm、m 換算成 mm，含尺寸標註）；缺圖形區塊的標註依定義點以標準樣式重畫，字高與箭頭取原檔 `$DIMTXT`／`$DIMASZ`×`$DIMSCALE`；標註文字位置 (0,0) 視為未設定；`*` 開頭的 CAD 內建圖層可匯入；紙張空間 VIEWPORT 略過並提示；驗證失敗訊息附出錯的圖層或圖元。輸出 DWG 可自選位置；匯入圖面線條最少約 1 px；全域紅／綠提示框（NoticeToast）。
+- **使用性修正**：2D CAD 圖編輯不再每次跳「選擇專案資料夾」；改字高等欄位不再清掉未套用的文字草稿；黑色以 CAD 色號 7 輸出，Autodesk 深色背景下可見。
+- **確效**：安裝版 v0.7.1 實機匯入英制 `mechanical_example-imperial.dwg`（88 圖元、17 標註、×25.4）；自造 `text-test-mm.dxf` 驗證文字內容／字高同時套用、復原、輸出 DWG；DWG TrueView 2027 開啟輸出檔正常且白線清楚。`tests/phase5` 892 通過、1 skipped；`typecheck`、`lint:rules` 通過。
+- **待**：full-suite CI 手動觸發涵蓋 `176c7405`；完整 `verify:ui` 未跑。細節見 `handoff.md` 同日（深夜）兩節。
+
 ## 2026-11-23 — DWG 橋接安裝版實機驗證與完整測試 CI 確認
 
 - **結果**：自 main 建置並安裝 0.7.1 後，DWG 匯入／編輯／存檔重開／輸出 DWG 全流程在真實桌面版通過；輸出檔（AC1032）可在 Autodesk Viewer 開啟。安裝包含 `mcp\licenses\dxf-parser-MIT.txt`。

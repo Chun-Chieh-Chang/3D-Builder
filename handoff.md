@@ -810,4 +810,13 @@ npm run build
 ### 2026-11-23（深夜）— DWG 匯入修正與實機驗證（6a1f26fc 已推送）
 - 已實機驗證（安裝版 v0.7.1）：英制 `mechanical_example-imperial.dwg` 匯入成功（88 圖元、17 標註、×25.4 換算）；缺圖形區塊的標註以標準樣式重畫；文字位置 (0,0) 視為未設定、改放尺寸線中央；`*` 開頭的 CAD 內建圖層可匯入；紙張空間 VIEWPORT 略過並提示；紅/綠提示框（NoticeToast）兩種都出現。
 - 文字編輯（自造 `3DB實機確認\text-test-mm.dxf`）：改文字內容、字高、復原皆正常。
-- 待追：(1) 每次編輯都跳「選擇專案資料夾」對話框，干擾操作；(2) 第一次同時改文字與字高再按套用，只有字高生效（原因未確認）；(3) 換算後標註字高固定 3.5 mm，大圖幾乎看不到；(4) 輸出 DWG 的 dwg2dxf ERROR 待使用者用 DWG TrueView 確認；(5) full-suite CI 待使用者手動觸發。
+- 上列待追事項（當時記錄）已在 `176c7405` 處理，見下一節。
+
+### 2026-11-23（深夜，續）— 待追事項修正（176c7405 已推送）與 Autodesk 相容確認
+- **專案資料夾對話框每次編輯都跳**：根因是 `DrawingStore.loadSources()` 每次編輯都在沒有專案時呼叫 `askProject()`。修正：沒有要讀的 3D 零件（2D CAD 圖、空白圖）時不問；使用者取消後，零件需求數沒變就不再問（`projectDeclined`）。實機確認：匯入、選取、改字、套用全程不再跳出。
+- **同時改文字與字高只有字高生效**：根因是字高欄位 blur 時先存檔，`EntityFields` 的 `useEffect([entity])` 把文字草稿重設成舊值。修正：文字與座標草稿只在各自的「已存值」改變時重設。實機確認：先打字、改字高 8、再按套用，兩者都生效。
+- **標註字高**：查原檔 `$DIMTXT` = 0.125 in（3.175 mm），原本 3.5 mm 其實已接近原圖；改為重畫標註依原檔 `$DIMTXT`／`$DIMASZ` × `$DIMSCALE` × 單位換算定字高與箭頭（無設定時 3.5／2.5 mm）。未做「只影響顯示的最小字高」，大圖縮小時字仍小，屬原圖比例。
+- **Autodesk 相容（第 5 題）**：DWG TrueView 2027 可開我們輸出的 `bed-in-mm-export-v2.dwg`（會出現所有非 Autodesk 軟體都有的 Foreign DWG 提示）；開啟時停在空白的 Layout1，切到 Model 才有圖。先前 `dwg2dxf` 報的兩個 ERROR 不影響 Autodesk 讀取。
+- **黑線在 CAD 深色背景看不到**：原本黑色寫成真彩色 RGB 0。修正 `packages/drawing/src/dxf.ts`：黑色圖元與圖層只寫色號 7（深色畫面顯示白、白紙列印為黑），其他顏色維持真彩色；匯入時色號 7 仍讀回 `#000000`。使用者以 TrueView 開 `text-test-mm-export.dwg` 確認白線清楚。此改動也影響由 3D 模型產生的工程圖 DXF／DWG（黑線改色號 7，符合 CAD 慣例）。
+- **測試**：`tests/phase5` 86 檔 892 通過、1 skipped；`typecheck` 通過。新增 drawing-cad 測試：原檔標註樣式決定字高、黑色寫成色號 7 且讀回黑色。
+- **仍待**：full-suite CI 尚未對 `176c7405` 之後的提交手動觸發（排程 #365 跑的是 `66399fa`）；未跑完整 `npm run verify:ui`（改了 NoticeToast、CadDrawingEditor）；匯入後會多一個 0 圖元的「Paper」頁；自動化輸入時「-」被輸入法吃掉一次（判斷為測試工具問題，未確認）。
