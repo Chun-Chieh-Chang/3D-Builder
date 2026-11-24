@@ -7285,3 +7285,11 @@ Schema 93 記錄來源本體、基準面或模型平面、帶符號的平面偏�
   - `opencascade_single.js.symbols` 與 wasm 的函式索引不對齊（差 24），取樣出來的 OCCT 函式名不可信。
   - OCCT 試做圓角會改動輸入本體的容差（原件 1.1e-5 → 1e-4），既有行為，未處理。
   - vitest 在非 TTY 下不逐檔輸出，進度頁只能依時間估計；CI 日誌的 console 輸出沒有檔案標頭，同格式的 kit 列印無法分辨來源。
+
+## 2026-11-24 — seed 96 的根因：圓角跨過 C1 接縫（ADR 0265 草案）
+
+- seed 96 的時間全在測試做輸入零件的圓角：OCCT 三種形狀各 49～77 秒後失敗，件沒做成。`Simulate` 0.00 秒、`Build` 48 秒，`ChFiDS_Error`、0 個面；半徑 0.3～1.7 全失敗，2.0 成功但 68 秒——與尺寸無關。
+- 排除：凹彎半徑（seed 96 是圓角的 8.6 倍）、兩端轉角（做得成與做不成同分布）。
+- 確認：Catmull-Rom 牆面內部節點重數 2（C1）。同一輪廓換成 C2 插值（差 3e-6～1e-3 mm），會失敗的 7 組全在 0.02～0.15 秒成功；凹處真的太彎的 seed 92 照樣 `TwistedSurface`。不改幾何、先在接縫切開（`ShapeUpgrade_ShapeDivideContinuity`），100 組成功 84 → 94，體積相對差 ≤ 4.3e-8，單組最慢 3.5 秒；切開後仍失敗的是 5 組幾何上做不到的與 seed 39（退步，需退路）。精確滾球圓角在切開後反而成功（seed 46／1／19／7）。
+- wasm 符號表（74573 項）與 wasm（74549 個函式）不是同一次建置，函式名不可信；改用 `BRepFilletAPI_MakeFillet` 自己的 `StripeStatus`／`NbComputedSurfaces`／`Simulate` 拆解失敗階段，比取樣有效。
+- 修法、影響範圍、驗收標準寫成 `docs/adr/0265-fillet-across-c1-joints.md`（草案，未實作）。探針：`scratch/prof/{t96,curv,ends,diag,c2,split100,s39}.test.ts`。

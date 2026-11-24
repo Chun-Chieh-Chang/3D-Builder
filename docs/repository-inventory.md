@@ -7,7 +7,7 @@
 | 項目 | 程式來源值 |
 |---|---|
 | 零件／組合件／工程圖 Schema | 96／7／44 |
-| ADR 文件 | 263 |
+| ADR 文件 | 264 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 234／229／281 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -611,6 +611,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0262: drawing dimension placement and content (hatch avoidance, surface clustering, side-on Ø, blind-hole detection, centre axes and leader accuracy)](<adr/0262-drawing-dimension-placement-and-content.md>)
 - [ADR 0263: drawing quality gate (draft vs release status, PRELIMINARY stamp, general tolerance and 3D model authority checks)](<adr/0263-drawing-quality-gate.md>)
 - [ADR 0264: DWG conversion and editable detached 2D drawings](<adr/0264-dwg-editable-drawing-import-export.md>)
+- [ADR 0265：圓角跨過 C1 接縫——先在接縫切開再做圓角](<adr/0265-fillet-across-c1-joints.md>)
 
 ### 歷史驗證
 
