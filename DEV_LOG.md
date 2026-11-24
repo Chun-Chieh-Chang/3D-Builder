@@ -7255,3 +7255,11 @@ Schema 93 記錄來源本體、基準面或模型平面、帶符號的平面偏�
 - 實測抓到：舊 LibreDWG 0.14 成功碼＋有效檔頭仍讀回零圖元；改用 0.14.9228 並把讀回內容比對接進產品側。另修正 DXF 垂直尺寸的 group 50 子類別位置，避免被解成斜角。原 DXF 未寫顏色，本次補齊 AC1021 RGB。
 - 已完成驗證（2026-11-23 17:29）：新增模型／解析 8 項（含 150 組確定性 fuzz）＋ MCP 1 項通過；`npm run verify:dwg` 真實引擎轉檔、匯入、修改中文字／RGB、.3dbd 重開與再輸出通過；`typecheck`、`lint:rules`、`lint:deps`、`lint:i18n`、`lint:repo`、`cargo check`、Windows release 編譯（首輪 4m47s；最終資產重建 2m03s，`out/dwg-engine/native-build.log`）均通過。畫面 `manual-drawing-cad.js` 5 步驟通過，含 DOM 編輯、undo／redo、存檔重開與實際座標拖曳 5、6 mm。截圖檢查抓到移出原圖框會裁切，已補畫布範圍擴張；使用者輸入座標與原始 CAD 原點不被改寫，另有負座標／大位移回歸。完整 **281／281 項** `verify:ui` 瀏覽器回歸全數通過（0 失敗，累計 3240s，報告 `out/dwg-full-ui.json`）。
 - 延後／待追蹤項目（2026-11-23 經使用者同意於 `verify:ui` 281/281 結束後先提交推送至 `main`）：本機首輪 `npm run check`（`out/dwg-check.log`）因與 `verify:ui`／`cargo build` 並行且早於最後畫布修正啟動，在 `tests/phase6/section-offset-cost.test.ts` 逾時失敗（219s），須由遠端 CI 或本機無負載重跑最終工作樹確認全綠；另待補 `apps/desktop/scripts/stage-mcp.mjs` 複製 `dxf-parser-MIT.txt` 至 runtime `licenses`，以及正式安裝版封裝與 WebView2 實機橋接驗收。細節同步於 handoff 的 DWG 節。
+
+## 2026-11-24 — DWG 匯入的空白「Paper」頁（`ec0cb5e9`）
+
+- 現象：匯入 DWG 後多一個 0 圖元的「Paper」頁（2026-11-23 實機記錄）。
+- 根因：匯入依配置（group 410／67）分頁；圖紙空間配置只有 VIEWPORT，而 VIEWPORT 轉成 0 個圖元，該配置仍被做成頁面。
+- 修正：轉換後沒有圖元的配置不做成頁面並加警告；有圖元的圖紙空間配置照常成頁；全部皆空時維持「No editable 2D entities」拒絕。
+- 紅隊：① 輸入：只有視埠、視埠加真圖元、全部皆空三種皆有明確行為，不默默改值。② 不涉及幾何布林。③ 頁面 id 依保留後順序連號（`page1`…），測試斷言 id 與名稱。④ 測試以真實 DXF 文字匯入，突變（不過濾）轉紅。
+- 驗證：phase5＋MCP 106 檔 997 通過；`typecheck` 通過；完整 `verify:ui` 第 1 輪 275/281（6 項單跑皆通過，未經過匯入路徑，原因未確認），使用者指示整輪重跑，第 2 輪 281/281。

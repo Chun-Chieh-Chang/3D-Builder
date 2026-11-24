@@ -1,5 +1,15 @@
 # 交接與接續工作
 
+## 2026-11-24 — DWG 匯入不再產生空白「Paper」頁；完整 `verify:ui` 281/281（已推送）
+
+- **修正（`ec0cb5e9`）**：只有視埠框（VIEWPORT）的圖紙空間配置，匯入後沒有任何可編輯圖元，以前仍會成為一個 0 圖元的頁面。`packages/drawing/src/cadImport.ts` 改為不把這類配置做成頁面，並加一條警告列出被略過的配置名稱；有自己圖元的圖紙空間配置照常成為一頁；全部都沒有圖元時仍拒絕匯入。測試 `tests/phase5/drawing-cad.test.ts` 加兩種情境（只有視埠／有自己的線）；突變（不過濾）使該項轉紅。`tests/phase5`＋`apps/mcp/test` 106 檔 997 通過、1 略過；`typecheck` 通過。
+- **完整 `verify:ui`**（同時涵蓋 `176c7405` 的 NoticeToast／CadDrawingEditor 改動）：
+  - 第 1 輪 **275/281**（`out/ui-ec0cb5e9.log`）：`manual-asm-silhouettes`、`manual-design-mating`、`manual-drawing-sw-parity`、`phase3-step-import`、`phase3-worker-crash`、`phase5-assembly` 失敗（逾時或後續步驟的 `undefined`）。
+  - 單跑：整輪剛結束時 5 項仍全失敗；暫時還原 `cadImport.ts` 到 `51d7f8d7` 時 5/5 通過；放回本次修改後 4/5（`phase3-worker-crash` 逾時），再單跑兩次皆通過；`manual-asm-silhouettes` 單跑通過。同一份程式結果不同，且這些腳本都不經過 DXF／DWG 匯入，判斷為長時間整輪後的環境狀態，**原因未確認**。
+  - 依使用者指示整輪重跑，第 2 輪 **281/281**（`out/ui-ec0cb5e9-r2.log`，exit 0），之後推送。
+  - 若之後整輪又出現這組失敗，先查整輪結束時殘留的瀏覽器／dev server 狀態（本次開跑前已確認 9333／5391／5393 沒有殘留監聽）。
+- **仍待**：full-suite CI 尚未對 `176c7405` 之後的提交觸發；自動化輸入「-」被輸入法吃掉一次（未確認）。
+
 ## 2026-11-23（晚）— DWG 橋接安裝版實機驗證（0.7.1，使用者機器）
 
 - **建置與安裝**：自 main（`76243ab4`）`npm ci` → `cd apps/desktop; npm run build`（tauri build，Rust 編譯 1m35s）產出 `3D-Builder_0.7.1_x64-setup.exe`（47.04 MiB），安裝到 `D:\軟體資料夾\3D-Builder`。`desktop.exe`、`3d-builder-mcp.exe`、`mcp\node.exe`、`mcp\dist\server.mjs`、`mcp\licenses\dxf-parser-MIT.txt` 五項全在 → 「dxf-parser 授權檔隨安裝包出貨」已在實際封裝確認，結案。
