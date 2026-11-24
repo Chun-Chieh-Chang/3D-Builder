@@ -317,3 +317,9 @@
 
 - **2026-11-23（CI #362 `action-icons.test.ts` 紅燈，RSI Layer 1）**：
   1. **UI 指令與圖示清單的一致性結晶化至 `lint:rules`**：在 `apps/web/src/actions.ts` 新增 `drw-dxf-compat` 時遺漏 `apps/web/src/icons/solidcraft/manifest.json` 登錄，且推送前未跑完整 `repository-integrity.yml` 測試導致三平台 CI 紅燈。已於 `scripts/check-anti-patterns.mjs` 新增 `checkActionIconsParity()` 物理攔截雙向差集，往後 `npm run lint:rules` 即可 100% 擋下。
+
+- **2026-11-24（長測試效能：圓角三種形狀與最大半徑二分法）**：
+  1. **「依序試幾種做法」的退路要用全套件探針量它救回過什麼，再決定哪一種失敗可以就此停**：`Kernel.fillet` 三種圓角形狀在容差被拒後從未救回（189／189），在建失敗或 BRepCheck 不過後救回過 8 次。據此只砍前者。只看單一零件或 ADR 的一句話（「三種形狀都一樣」）不足以改所有圓角的行為。
+  2. **只為訊息服務的額外計算，要問呼叫端用不用得到**：最大半徑二分法對手動建模有用，對辨識（半徑來自檔案）沒用，卻佔全套件 355 秒。用選項關掉（`RebuildOptions.largestFilletRadius`），預設不變，並以測試鎖住兩邊。
+  3. **探針設定檔不得用 `mergeConfig` 加 `include`**：它會把陣列串接，結果跑全部測試；直接覆寫並以 `vitest list` 核對檔數。worker 內取樣用 `node:inspector/promises`，不用 `--cpu-prof`（worker 被結束時不寫檔）。
+  4. **比對修改前後的 fuzz 結果，鍵值要唯一**：CI 日誌沒有檔案標頭，`#種子 rebuilt` 這類列印在不同 kit 之間撞號；只能比到可唯一識別的總結行時，照實寫明比對的粒度。
