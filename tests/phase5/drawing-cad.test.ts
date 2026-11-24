@@ -156,6 +156,14 @@ describe('editable imported CAD drawings', () => {
     const { doc, warnings } = importCadDxf(dxf, 'v.dxf');
     expect(doc.pages.flatMap((p) => p.cad!.entities.map((e) => e.layer))).toContain('*LayerNameForDynamicConstraint');
     expect(warnings.join()).toContain('viewport frames were not imported');
+    // The paper-space layout held only the viewport: it is not made into an empty page.
+    expect(doc.pages.map((p) => [p.id, p.name, p.cad!.entities.length])).toEqual([['page1', 'Model', 1]]);
+    expect(warnings.join()).toContain('nothing editable were not made into pages: Paper');
+    // A paper-space layout that has its own drawing keeps its page.
+    const drawn = dxf.replace('0\nENDSEC', '0\nLINE\n8\n0\n67\n1\n10\n0\n20\n0\n11\n9\n21\n9\n0\nENDSEC');
+    const both = importCadDxf(drawn, 'v.dxf');
+    expect(both.doc.pages.map((p) => [p.id, p.name, p.cad!.entities.length])).toEqual([['page1', 'Model', 1], ['page2', 'Paper', 1]]);
+    expect(both.warnings.join()).not.toContain('nothing editable');
   });
 
   it('refuses unsupported entities, cycles and invalid numerical data rather than dropping them', () => {

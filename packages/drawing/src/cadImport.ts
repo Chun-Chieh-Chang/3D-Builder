@@ -231,8 +231,12 @@ export function importCadDxf(text: string, source: string): { doc: DrawingDoc; w
     if (groups.size > 64) throw new Error('CAD import supports at most 64 layouts.');
   }
   const doc = createEmptyDrawing();
-  doc.pages = [...groups].map(([name, entries], pageIndex) => {
-    const entities = entries.flatMap((e) => convert(e, root, []));
+  // A layout with nothing left to edit (in practice a paper-space layout holding only viewport frames) is not made into an empty page.
+  const converted = [...groups].map(([name, entries]) => ({ name, entities: entries.flatMap((e) => convert(e, root, [])) }));
+  const empty = converted.filter((g) => !g.entities.length).map((g) => g.name);
+  const kept = converted.filter((g) => g.entities.length);
+  if (empty.length && kept.length) warnings.add(`Layouts with nothing editable were not made into pages: ${empty.join(', ')}.`);
+  doc.pages = kept.map(({ name, entities }, pageIndex) => {
     const points = entities.flatMap((e) => e.kind === 'dimension' ? e.items : [e]).flatMap((i) => i.kind === 'text' ? [i.at[0], i.at[1], i.at[0] + i.text.length * i.height, i.at[1] + i.height * 2] : i.points);
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (let k = 0; k < points.length; k += 2) { minX = Math.min(minX, points[k]!); minY = Math.min(minY, points[k + 1]!); maxX = Math.max(maxX, points[k]!); maxY = Math.max(maxY, points[k + 1]!); }
