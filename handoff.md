@@ -8,7 +8,8 @@
   - 單跑：整輪剛結束時 5 項仍全失敗；暫時還原 `cadImport.ts` 到 `51d7f8d7` 時 5/5 通過；放回本次修改後 4/5（`phase3-worker-crash` 逾時），再單跑兩次皆通過；`manual-asm-silhouettes` 單跑通過。同一份程式結果不同，且這些腳本都不經過 DXF／DWG 匯入，判斷為長時間整輪後的環境狀態，**原因未確認**。
   - 依使用者指示整輪重跑，第 2 輪 **281/281**（`out/ui-ec0cb5e9-r2.log`，exit 0），之後推送。
   - 若之後整輪又出現這組失敗，先查整輪結束時殘留的瀏覽器／dev server 狀態（本次開跑前已確認 9333／5391／5393 沒有殘留監聽）。
-- **仍待**：full-suite CI 尚未對 `176c7405` 之後的提交觸發；自動化輸入「-」被輸入法吃掉一次（未確認）。
+- **full-suite CI**：手動觸發 [run 45323057609](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45323057609)（`3daa186b`）全數成功：8 個 `full-suite` 分片、`section-offset-cost`、三平台 integrity；`deploy-pages` 依設定略過。更正：`176c7405` 已有 2026-11-23 的手動完整執行 [run 45198472781](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45198472781) 全數成功，上一節「尚未觸發」為過時記錄。
+- **仍待**：自動化輸入「-」被輸入法吃掉一次（未確認）。
 
 ## 2026-11-23（晚）— DWG 橋接安裝版實機驗證（0.7.1，使用者機器）
 
