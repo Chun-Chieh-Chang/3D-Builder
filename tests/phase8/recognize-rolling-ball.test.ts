@@ -9,7 +9,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { Kernel, KernelError, type ShapeId } from '@3db/kernel';
-import { ROLLING_BALL_TOLERANCE } from '@3db/regen';
+import { Regenerator, ROLLING_BALL_TOLERANCE } from '@3db/regen';
 import { recognizeStep, splineBoss } from './recognize-rolling-ball.kit';
 
 let kernel: Kernel;
@@ -98,6 +98,27 @@ describe('recognized through a STEP file', () => {
       expect(out.doc.features.some((f) => f.type === 'sketch' && f.entities.some((x) => x.type === 'spline' && x.nurbs))).toBe(true);
     }, 120_000);
   }
+
+  // A fillet recognition makes and cannot rebuild refuses the whole; its radius is the file's, so looking for the largest one that works (up to eight
+  // more fillets) only costs time (2026-11-24: 355 s of the test suite)
+  it('every rebuild of what recognition made, a fillet among it, asks for no largest radius', async () => {
+    const plain = splineBoss(kernel);
+    const exact = kernel.fillet(plain.shape, plain.edges, 0.5, undefined, undefined, true);
+    const seen: { fillet: boolean; largest: boolean }[] = [];
+    const rebuild = Regenerator.prototype.rebuild;
+    Regenerator.prototype.rebuild = function (this: Regenerator, ...a: Parameters<Regenerator['rebuild']>) {
+      seen.push({ fillet: a[0].features.some((f) => f.type === 'fillet'), largest: a[1]?.largestFilletRadius ?? true });
+      return rebuild.apply(this, a);
+    };
+    try {
+      await recognizeStep(kernel, solver, exact.shape);
+    } finally {
+      Regenerator.prototype.rebuild = rebuild;
+    }
+    const withFillet = seen.filter((s) => s.fillet);
+    expect(withFillet.length).toBeGreaterThan(0);
+    expect(withFillet.every((s) => !s.largest)).toBe(true);
+  }, 120_000);
 
   // Until ADR 0249 this was refused: off the ball by more than ROLLING_BALL_TOLERANCE, it was not nominated. Nominated now (within 1e-3 of its radius),
   // it is rebuilt as an exact round, and that is the same solid to 2e-9 to 6e-9 of the volume before any allowance is taken off: the comparison, not the

@@ -77,6 +77,24 @@ describe('the part of the report', () => {
     expect(fillet.message).toMatch(/0\.5 mm/); // against the radius
   });
 
+  it('refused for its tolerance on the first fillet shape, the other two are not tried (they never came through in the test suite, 2026-11-24)', async () => {
+    // the tolerance is read once for each shape that builds and passes BRepCheck: counted inside the kernel's fillets only
+    const k = kernel as unknown as { fillet: Kernel['fillet']; maxTolerance(...a: unknown[]): number };
+    const [fillet, maxTol] = [k.fillet, k.maxTolerance];
+    const reads: number[] = [];
+    k.fillet = function (this: unknown, ...a: Parameters<Kernel['fillet']>) { reads.push(0); return fillet.apply(this, a); };
+    k.maxTolerance = function (this: unknown, ...a: unknown[]) { if (reads.length) reads[reads.length - 1]!++; return maxTol.apply(this, a); };
+    try {
+      const doc = structuredClone(await fixture());
+      const r = regen.rebuild(doc as never, { largestFilletRadius: false });
+      expect(r.features.find((f) => f.id === 'fillet1')!.message).toMatch(/18\.1/);
+    } finally {
+      k.fillet = fillet;
+      k.maxTolerance = maxTol;
+    }
+    expect(reads).toEqual([1]);
+  });
+
   it('the shape before the fillet is sound: tolerances of 1e-7, a closed mesh (the fault is the fillet\'s)', async () => {
     const doc = structuredClone(await fixture()) as unknown as { features: Feature[] };
     doc.features = doc.features.filter((f) => f.id !== 'fillet1');

@@ -2363,7 +2363,13 @@ export class Kernel {
           // BRepCheck says nothing of how far apart the things an edge joins are allowed to be: a fillet that ends where it meets an edge of another feature at
           // exactly the same place can come back with an edge of tolerance 18 mm on a 20 mm part, "valid", and meshing then leaves holes in the fillet (ADR 0214)
           const tolerance = this.maxTolerance(built);
-          if (tolerance > FILLET_TOLERANCE_RATIO * smallest) throw new KernelError(t('feature.filletTolerance', { tolerance: tolerance.toPrecision(3), radius: String(+smallest.toPrecision(6)) }));
+          if (tolerance > FILLET_TOLERANCE_RATIO * smallest) {
+            // The other fillet shapes are not tried: of 189 fillets of the test suite refused here on the first shape, the other two were refused here
+            // too every time (none came through), and each can take as long as the first — 75 s apiece on rolling-ball fuzz seed 46's rebuilt edge
+            // (2026-11-24). A shape that fails to build or fails BRepCheck is still followed by the next: that rescued 8 of the suite's fillets.
+            lastErr = new KernelError(t('feature.filletTolerance', { tolerance: tolerance.toPrecision(3), radius: String(+smallest.toPrecision(6)) }));
+            break;
+          }
           out = built;
           usedMk = mk;
           break;

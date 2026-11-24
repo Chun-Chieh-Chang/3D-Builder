@@ -192,6 +192,30 @@ describe('a fillet that cannot be made says why and how big it can be', () => {
     expect(statuses(rebuild(build(...holed(String(max))))).at(-1)).toBe('f1=ok');
     expect(statuses(rebuild(build(...holed('5')))).at(-1)).toBe('f1=ok');
   });
+
+  // recognition rebuilds with `largestFilletRadius: false`: the radius is the file's, and the tries for the figure are what a refused rebuild spends
+  // its time on (2026-11-24)
+  it('a rebuild asked not to look for it is refused the same, without the figure and without trying other radii; an edit still gets the figure', () => {
+    const calls = (options?: Parameters<Regenerator['rebuild']>[1]) => {
+      const radii: number[] = [];
+      const fillet = kernel.fillet;
+      kernel.fillet = function (this: Kernel, ...a: Parameters<Kernel['fillet']>) { radii.push(a[2]); return fillet.apply(this, a); };
+      try {
+        const f1 = new Regenerator(kernel, solver, new Map()).rebuild(build(...holed('8')), options).features.find((f) => f.id === 'f1')!;
+        return { f1, radii };
+      } finally {
+        kernel.fillet = fillet;
+      }
+    };
+    const quiet = calls({ largestFilletRadius: false });
+    expect(quiet.f1.status).toBe('error');
+    expect(quiet.f1.message).not.toMatch(/以下可以/);
+    expect(quiet.radii).toEqual([8]);
+    const edit = calls();
+    expect(edit.f1.status).toBe('error');
+    expect(edit.f1.message).toMatch(/半徑 [\d.]+ 以下可以/);
+    expect(edit.radii.length).toBe(9); // 8, 8/64 and seven halvings
+  });
 });
 
 describe('the document with faces in a fillet', () => {

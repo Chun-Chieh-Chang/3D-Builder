@@ -396,6 +396,12 @@ export interface RebuildOptions {
   until?: number;
   /** Observe single-tool subtraction while both operands and the resulting faces are still alive. */
   inspectSubtract?: (feature: CombineFeature, before: BodyState, tool: BodyState, after: BodyState, walls: readonly number[]) => void;
+  /**
+   * A fillet or face fillet that is refused says the largest radius that does work for the same edges (default true), found by trying up to eight
+   * more fillets. Recognition turns it off: its radius comes from the file, so the figure helps no one, and the tries are where the time of a refused
+   * rebuild goes (46 s of rolling-ball fuzz seed 46; 355 s of the test suite, 2026-11-24). The refusal is the same, without the figure.
+   */
+  largestFilletRadius?: boolean;
 }
 
 class FeatureError extends Error {
@@ -616,6 +622,8 @@ export class Regenerator {
   /** STL files read (F2.3), by content and unit: a rebuild reads each once. A file no feature reads any more is dropped. */
   private stls = new Map<string, StlMesh | { error: string }>();
   private meshes: ImportedMeshInfo[] = [];
+  /** `RebuildOptions.largestFilletRadius` of the rebuild under way. */
+  private largestFilletRadius = true;
 
   constructor(
     private readonly kernel: Kernel,
@@ -648,6 +656,7 @@ export class Regenerator {
 
   rebuild(doc: PartDoc, options: RebuildOptions = {}): RebuildResult {
     this.releaseResult();
+    this.largestFilletRadius = options.largestFilletRadius ?? true;
     const t0 = performance.now();
     const requestedLimit = Math.min(options.until ?? doc.features.length, doc.rollbackIndex ?? doc.features.length);
     const stopped = doc.features.findIndex((feature) => feature.type === 'sectionClearance' && feature.incomplete && !feature.suppressed);
@@ -5096,6 +5105,7 @@ export class Regenerator {
       return this.kernel.fillet(shape, edges, radius, undefined, undefined, exact);
     } catch (e) {
       if (!(e instanceof KernelError)) throw e;
+      if (!this.largestFilletRadius) throw e;
       const works = (r: number): boolean => {
         try {
           this.kernel.release(this.kernel.fillet(shape, edges, r).shape);

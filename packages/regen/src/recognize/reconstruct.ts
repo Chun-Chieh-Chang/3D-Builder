@@ -29,7 +29,7 @@ import {
 import { edgeFingerprint, faceFingerprint, ownerFeatures } from '@3db/naming';
 import { sketchSystemSize, SOLVER_SAFE_SIZE, type SketchSolver } from '@3db/sketch';
 import { RECOGNIZE_LIMITS, startBudget, type BudgetLimits } from '../budget';
-import type { Regenerator, RebuildResult } from '../engine';
+import type { Regenerator, RebuildOptions, RebuildResult } from '../engine';
 import { addv, distanceToSharp, dot, len, recognize, RecognizeError, sub, TOL, unit, type BlendRecord, type BaseRecord, type SectionsRecord, type FreeRoundsOption, type HoleRecord, type Recognition, type SharpEdge, type SplineApproximation } from './analyze';
 import { compareSections, sectionsClose } from './compareSections';
 import type { Loop, P2 } from '../section/loops';
@@ -589,6 +589,12 @@ function failedOf(r: RebuildResult, ids: Iterable<Id>): string | null {
 }
 
 /**
+ * The rebuilds of what recognition made: a fillet refused there is a refusal of the whole, and its radius is the file's, so the largest radius that
+ * would work is not looked for (`RebuildOptions.largestFilletRadius`).
+ */
+const REFUSALS: RebuildOptions = { largestFilletRadius: false };
+
+/**
  * Replaces imported body `featureId` of `doc` by the features that build it (F2.4). `regen` is the regenerator of the document (its kernel and the
  * document's blobs); with `solver`, every sketch made is fully defined (`Builder.define`). Returns the new document; throws `RecognizeError` and leaves nothing changed when the body cannot be rebuilt the same.
  */
@@ -641,7 +647,7 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
       const made = b.features.map((f) => f.id);
       for (const blend of rec.blends) {
         budget.check();
-        const r = regen.rebuild(next, { until: end });
+        const r = regen.rebuild(next, { until: end, ...REFUSALS });
         const failed = failedOf(r, made);
         if (failed) throw new RecognizeError(whyFailed(failed));
         for (const f of blendFeature(kernel, blend, r, ids, b)) {
@@ -651,7 +657,7 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
         }
       }
       budget.check();
-      const after = regen.rebuild(next);
+      const after = regen.rebuild(next, REFUSALS);
       const failed = failedOf(after, [...made, ...okBefore.filter((id) => id !== featureId)]);
       if (failed) throw new RecognizeError(whyFailed(failed));
       if (!after.body) throw new RecognizeError(t('recognize.featureFailed', { why: '—' }));
@@ -706,7 +712,7 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
           const id = ids.take('deleteFace');
           const cmd: Command = { type: 'insertFeature', index: end, feature: { id, type: 'deleteFace', name: freeFeatureName(next, t('feature.deleteFace')), suppressed: false, faces } };
           const candidate = applyCommand(next, cmd);
-          const rebuilt = regen.rebuild(candidate);
+          const rebuilt = regen.rebuild(candidate, REFUSALS);
           if (rebuilt.body && !failedOf(rebuilt, [...made, id, ...okBefore.filter((f) => f !== featureId)])) {
             const repaired = compare(rebuilt.body);
             if (matches(repaired)) return { doc: candidate, commands: [...commands, cmd], report: repaired };
