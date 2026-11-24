@@ -1,0 +1,802 @@
+[
+ {
+  "seed": 1,
+  "r": 1.181,
+  "h": 6.811,
+  "startTurn": 47.52,
+  "endTurn": 48.06,
+  "forward": true
+ },
+ {
+  "seed": 2,
+  "r": 1.209,
+  "h": 12.753,
+  "startTurn": 78.58,
+  "endTurn": 78.58,
+  "forward": true
+ },
+ {
+  "seed": 3,
+  "r": 0.979,
+  "h": 8.812,
+  "startTurn": 106.09,
+  "endTurn": 59.31,
+  "forward": true
+ },
+ {
+  "seed": 4,
+  "r": 1.014,
+  "h": 6.34,
+  "startTurn": 99.61,
+  "endTurn": 99.61,
+  "forward": true
+ },
+ {
+  "seed": 5,
+  "r": 1.147,
+  "h": 4.851,
+  "startTurn": 74.33,
+  "endTurn": 74.34,
+  "forward": true
+ },
+ {
+  "seed": 6,
+  "r": 0.207,
+  "h": 4.708,
+  "startTurn": 97.91,
+  "endTurn": 71.03,
+  "forward": true
+ },
+ {
+  "seed": 7,
+  "r": 0.584,
+  "h": 8.662,
+  "startTurn": 43.48,
+  "endTurn": 74.42,
+  "forward": true
+ },
+ {
+  "seed": 8,
+  "r": 0.919,
+  "h": 9.85,
+  "startTurn": 64.79,
+  "endTurn": 64.79,
+  "forward": true
+ },
+ {
+  "seed": 9,
+  "r": 1.302,
+  "h": 11.238,
+  "startTurn": 58.93,
+  "endTurn": 58.93,
+  "forward": true
+ },
+ {
+  "seed": 10,
+  "r": 0.334,
+  "h": 6.023,
+  "startTurn": 46.08,
+  "endTurn": 74.12,
+  "forward": true
+ },
+ {
+  "seed": 11,
+  "r": 0.328,
+  "h": 9.38,
+  "startTurn": 67.45,
+  "endTurn": 51.76,
+  "forward": true
+ },
+ {
+  "seed": 12,
+  "r": 1.314,
+  "h": 4.137,
+  "startTurn": 43.66,
+  "endTurn": 103.53,
+  "forward": true
+ },
+ {
+  "seed": 13,
+  "r": 0.211,
+  "h": 4.368,
+  "startTurn": 103.12,
+  "endTurn": 103.12,
+  "forward": true
+ },
+ {
+  "seed": 14,
+  "r": 1.276,
+  "h": 8.255,
+  "startTurn": 85.43,
+  "endTurn": 98.91,
+  "forward": true
+ },
+ {
+  "seed": 15,
+  "r": 1.703,
+  "h": 10.611,
+  "startTurn": 76.14,
+  "endTurn": 97.43,
+  "forward": true
+ },
+ {
+  "seed": 16,
+  "r": 1.021,
+  "h": 13.379,
+  "startTurn": 81.03,
+  "endTurn": 116.63,
+  "forward": true
+ },
+ {
+  "seed": 17,
+  "r": 0.651,
+  "h": 11.608,
+  "startTurn": 99.99,
+  "endTurn": 105.54,
+  "forward": true
+ },
+ {
+  "seed": 18,
+  "r": 1.343,
+  "h": 9.322,
+  "startTurn": 98.78,
+  "endTurn": 52.43,
+  "forward": true
+ },
+ {
+  "seed": 19,
+  "r": 1.246,
+  "h": 7.225,
+  "startTurn": 48.84,
+  "endTurn": 37.28,
+  "forward": true
+ },
+ {
+  "seed": 20,
+  "r": 1.364,
+  "h": 5.918,
+  "startTurn": 90.93,
+  "endTurn": 80.87,
+  "forward": true
+ },
+ {
+  "seed": 21,
+  "r": 1.627,
+  "h": 8.767,
+  "startTurn": 85.3,
+  "endTurn": 85.3,
+  "forward": true
+ },
+ {
+  "seed": 22,
+  "r": 1.635,
+  "h": 7.646,
+  "startTurn": 94.86,
+  "endTurn": 94.86,
+  "forward": true
+ },
+ {
+  "seed": 23,
+  "r": 1.019,
+  "h": 6.143,
+  "startTurn": 89.41,
+  "endTurn": 87.44,
+  "forward": true
+ },
+ {
+  "seed": 24,
+  "r": 0.387,
+  "h": 9.252,
+  "startTurn": 102.68,
+  "endTurn": 102.68,
+  "forward": true
+ },
+ {
+  "seed": 25,
+  "r": 0.884,
+  "h": 5.055,
+  "startTurn": 58.8,
+  "endTurn": 92.07,
+  "forward": true
+ },
+ {
+  "seed": 26,
+  "r": 1.784,
+  "h": 9.393,
+  "startTurn": 113.12,
+  "endTurn": 53.23,
+  "forward": true
+ },
+ {
+  "seed": 27,
+  "r": 0.585,
+  "h": 12.312,
+  "startTurn": 97.57,
+  "endTurn": 97.57,
+  "forward": true
+ },
+ {
+  "seed": 28,
+  "r": 0.331,
+  "h": 8.302,
+  "startTurn": 48.19,
+  "endTurn": 91.84,
+  "forward": true
+ },
+ {
+  "seed": 29,
+  "r": 0.754,
+  "h": 7.872,
+  "startTurn": 93.33,
+  "endTurn": 93.33,
+  "forward": true
+ },
+ {
+  "seed": 30,
+  "r": 1.592,
+  "h": 8.342,
+  "startTurn": 98.06,
+  "endTurn": 99.61,
+  "forward": true
+ },
+ {
+  "seed": 31,
+  "r": 1.69,
+  "h": 4.753,
+  "startTurn": 113.73,
+  "endTurn": 85.43,
+  "forward": true
+ },
+ {
+  "seed": 32,
+  "r": 0.94,
+  "h": 9.592,
+  "startTurn": 60.02,
+  "endTurn": 60.03,
+  "forward": true
+ },
+ {
+  "seed": 33,
+  "r": 0.626,
+  "h": 12.189,
+  "startTurn": 111.66,
+  "endTurn": 78.41,
+  "forward": true
+ },
+ {
+  "seed": 34,
+  "r": 1.432,
+  "h": 5.366,
+  "startTurn": 86.24,
+  "endTurn": 86.24,
+  "forward": true
+ },
+ {
+  "seed": 35,
+  "r": 1.392,
+  "h": 7.819,
+  "startTurn": 32.97,
+  "endTurn": 92.38,
+  "forward": true
+ },
+ {
+  "seed": 36,
+  "r": 1.564,
+  "h": 12.151,
+  "startTurn": 95.98,
+  "endTurn": 95.98,
+  "forward": true
+ },
+ {
+  "seed": 37,
+  "r": 1.141,
+  "h": 5.98,
+  "startTurn": 67.31,
+  "endTurn": 67.31,
+  "forward": true
+ },
+ {
+  "seed": 38,
+  "r": 0.746,
+  "h": 12.164,
+  "startTurn": 66.93,
+  "endTurn": 66.93,
+  "forward": true
+ },
+ {
+  "seed": 39,
+  "r": 0.205,
+  "h": 10.039,
+  "startTurn": 116.4,
+  "endTurn": 43.9,
+  "forward": true
+ },
+ {
+  "seed": 40,
+  "r": 1.417,
+  "h": 7.475,
+  "startTurn": 70.71,
+  "endTurn": 70.71,
+  "forward": true
+ },
+ {
+  "seed": 41,
+  "r": 1.663,
+  "h": 8.919,
+  "startTurn": 73.82,
+  "endTurn": 56.4,
+  "forward": true
+ },
+ {
+  "seed": 42,
+  "r": 1.2,
+  "h": 6.732,
+  "startTurn": 56.1,
+  "endTurn": 67.62,
+  "forward": true
+ },
+ {
+  "seed": 43,
+  "r": 0.27,
+  "h": 11.444,
+  "startTurn": 105.17,
+  "endTurn": 104.91,
+  "forward": true
+ },
+ {
+  "seed": 44,
+  "r": 0.993,
+  "h": 10.363,
+  "startTurn": 67.96,
+  "endTurn": 67.96,
+  "forward": true
+ },
+ {
+  "seed": 45,
+  "r": 1.363,
+  "h": 4.287,
+  "startTurn": 79.05,
+  "endTurn": 64.76,
+  "forward": true
+ },
+ {
+  "seed": 46,
+  "r": 1.184,
+  "h": 6.734,
+  "startTurn": 46.63,
+  "endTurn": 98.15,
+  "forward": true
+ },
+ {
+  "seed": 47,
+  "r": 1.278,
+  "h": 10.561,
+  "startTurn": 71.83,
+  "endTurn": 74.93,
+  "forward": true
+ },
+ {
+  "seed": 48,
+  "r": 1.487,
+  "h": 8.637,
+  "startTurn": 100.49,
+  "endTurn": 100.49,
+  "forward": true
+ },
+ {
+  "seed": 49,
+  "r": 1.576,
+  "h": 8.336,
+  "startTurn": 111.04,
+  "endTurn": 100.68,
+  "forward": true
+ },
+ {
+  "seed": 50,
+  "r": 0.469,
+  "h": 13.785,
+  "startTurn": 107.65,
+  "endTurn": 107.09,
+  "forward": true
+ },
+ {
+  "seed": 51,
+  "r": 0.95,
+  "h": 6.786,
+  "startTurn": 110.84,
+  "endTurn": 93.57,
+  "forward": true
+ },
+ {
+  "seed": 52,
+  "r": 0.325,
+  "h": 9.153,
+  "startTurn": 47.82,
+  "endTurn": 66.95,
+  "forward": true
+ },
+ {
+  "seed": 53,
+  "r": 1.052,
+  "h": 4.826,
+  "startTurn": 49.79,
+  "endTurn": 49.79,
+  "forward": true
+ },
+ {
+  "seed": 54,
+  "r": 1.31,
+  "h": 7.125,
+  "startTurn": 77.98,
+  "endTurn": 77.98,
+  "forward": true
+ },
+ {
+  "seed": 55,
+  "r": 0.733,
+  "h": 9.032,
+  "startTurn": 48.36,
+  "endTurn": 98.88,
+  "forward": true
+ },
+ {
+  "seed": 56,
+  "r": 0.896,
+  "h": 12.997,
+  "startTurn": 90.31,
+  "endTurn": 55.27,
+  "forward": true
+ },
+ {
+  "seed": 57,
+  "r": 1.169,
+  "h": 8.667,
+  "startTurn": 74.37,
+  "endTurn": 74.37,
+  "forward": true
+ },
+ {
+  "seed": 58,
+  "r": 1.645,
+  "h": 8.654,
+  "startTurn": 119.46,
+  "endTurn": 69.43,
+  "forward": true
+ },
+ {
+  "seed": 59,
+  "r": 1.219,
+  "h": 5.355,
+  "startTurn": 98.24,
+  "endTurn": 98.24,
+  "forward": true
+ },
+ {
+  "seed": 60,
+  "r": 1.423,
+  "h": 10.174,
+  "startTurn": 70.9,
+  "endTurn": 70.9,
+  "forward": true
+ },
+ {
+  "seed": 61,
+  "r": 0.874,
+  "h": 9.728,
+  "startTurn": 51.11,
+  "endTurn": 100.53,
+  "forward": true
+ },
+ {
+  "seed": 62,
+  "r": 0.645,
+  "h": 4.458,
+  "startTurn": 84.26,
+  "endTurn": 84.26,
+  "forward": true
+ },
+ {
+  "seed": 63,
+  "r": 1.549,
+  "h": 7.971,
+  "startTurn": 105.56,
+  "endTurn": 105.56,
+  "forward": true
+ },
+ {
+  "seed": 64,
+  "r": 1.458,
+  "h": 13.927,
+  "startTurn": 89.53,
+  "endTurn": 54.57,
+  "forward": true
+ },
+ {
+  "seed": 65,
+  "r": 1.786,
+  "h": 6.005,
+  "startTurn": 51.58,
+  "endTurn": 85.87,
+  "forward": true
+ },
+ {
+  "seed": 66,
+  "r": 1.582,
+  "h": 9.88,
+  "startTurn": 62.56,
+  "endTurn": 62.56,
+  "forward": true
+ },
+ {
+  "seed": 67,
+  "r": 1.025,
+  "h": 11.597,
+  "startTurn": 79.94,
+  "endTurn": 88.67,
+  "forward": true
+ },
+ {
+  "seed": 68,
+  "r": 1.039,
+  "h": 5.262,
+  "startTurn": 55.06,
+  "endTurn": 55.06,
+  "forward": true
+ },
+ {
+  "seed": 69,
+  "r": 0.484,
+  "h": 10.508,
+  "startTurn": 49.02,
+  "endTurn": 72.82,
+  "forward": true
+ },
+ {
+  "seed": 70,
+  "r": 1.565,
+  "h": 13.842,
+  "startTurn": 81.19,
+  "endTurn": 81.19,
+  "forward": true
+ },
+ {
+  "seed": 71,
+  "r": 0.513,
+  "h": 5.589,
+  "startTurn": 64.59,
+  "endTurn": 76.64,
+  "forward": true
+ },
+ {
+  "seed": 72,
+  "r": 0.731,
+  "h": 4.703,
+  "startTurn": 101.59,
+  "endTurn": 101.59,
+  "forward": true
+ },
+ {
+  "seed": 73,
+  "r": 0.394,
+  "h": 6.266,
+  "startTurn": 100.4,
+  "endTurn": 111.79,
+  "forward": true
+ },
+ {
+  "seed": 74,
+  "r": 0.316,
+  "h": 12.785,
+  "startTurn": 64.26,
+  "endTurn": 86.35,
+  "forward": true
+ },
+ {
+  "seed": 75,
+  "r": 1.692,
+  "h": 13.958,
+  "startTurn": 123.94,
+  "endTurn": 54.72,
+  "forward": true
+ },
+ {
+  "seed": 76,
+  "r": 1.726,
+  "h": 9.738,
+  "startTurn": 101.72,
+  "endTurn": 67.12,
+  "forward": true
+ },
+ {
+  "seed": 77,
+  "r": 1.454,
+  "h": 12.831,
+  "startTurn": 69.57,
+  "endTurn": 43.5,
+  "forward": true
+ },
+ {
+  "seed": 78,
+  "r": 0.645,
+  "h": 13.7,
+  "startTurn": 65.8,
+  "endTurn": 46.03,
+  "forward": true
+ },
+ {
+  "seed": 79,
+  "r": 0.505,
+  "h": 4.448,
+  "startTurn": 76.36,
+  "endTurn": 97.77,
+  "forward": true
+ },
+ {
+  "seed": 80,
+  "r": 1.262,
+  "h": 10.419,
+  "startTurn": 108.17,
+  "endTurn": 45.96,
+  "forward": true
+ },
+ {
+  "seed": 81,
+  "r": 1.74,
+  "h": 5.952,
+  "startTurn": 72.83,
+  "endTurn": 109.55,
+  "forward": true
+ },
+ {
+  "seed": 82,
+  "r": 1.68,
+  "h": 7.662,
+  "startTurn": 66.89,
+  "endTurn": 75.54,
+  "forward": true
+ },
+ {
+  "seed": 83,
+  "r": 0.535,
+  "h": 7.718,
+  "startTurn": 69.71,
+  "endTurn": 64.3,
+  "forward": true
+ },
+ {
+  "seed": 84,
+  "r": 0.663,
+  "h": 9.024,
+  "startTurn": 62.42,
+  "endTurn": 116.94,
+  "forward": true
+ },
+ {
+  "seed": 85,
+  "r": 0.32,
+  "h": 7.71,
+  "startTurn": 100.32,
+  "endTurn": 80.52,
+  "forward": true
+ },
+ {
+  "seed": 86,
+  "r": 1.454,
+  "h": 8.077,
+  "startTurn": 36.55,
+  "endTurn": 125.73,
+  "forward": true
+ },
+ {
+  "seed": 87,
+  "r": 0.862,
+  "h": 9.881,
+  "startTurn": 54.77,
+  "endTurn": 116.68,
+  "forward": true
+ },
+ {
+  "seed": 88,
+  "r": 1.032,
+  "h": 5.857,
+  "startTurn": 85.03,
+  "endTurn": 85.03,
+  "forward": true
+ },
+ {
+  "seed": 89,
+  "r": 1.445,
+  "h": 13.098,
+  "startTurn": 55.02,
+  "endTurn": 107,
+  "forward": true
+ },
+ {
+  "seed": 90,
+  "r": 1.293,
+  "h": 11.597,
+  "startTurn": 85.73,
+  "endTurn": 85.73,
+  "forward": true
+ },
+ {
+  "seed": 91,
+  "r": 0.465,
+  "h": 8.693,
+  "startTurn": 76.94,
+  "endTurn": 49.93,
+  "forward": true
+ },
+ {
+  "seed": 92,
+  "r": 1.501,
+  "h": 13.546,
+  "startTurn": 59.13,
+  "endTurn": 49.67,
+  "forward": true
+ },
+ {
+  "seed": 93,
+  "r": 0.704,
+  "h": 9.319,
+  "startTurn": 49.15,
+  "endTurn": 54.56,
+  "forward": true
+ },
+ {
+  "seed": 94,
+  "r": 1.151,
+  "h": 7.495,
+  "startTurn": 54.18,
+  "endTurn": 43.56,
+  "forward": true
+ },
+ {
+  "seed": 95,
+  "r": 1.738,
+  "h": 6.856,
+  "startTurn": 58.73,
+  "endTurn": 58.73,
+  "forward": true
+ },
+ {
+  "seed": 96,
+  "r": 1.43,
+  "h": 11.994,
+  "startTurn": 56.24,
+  "endTurn": 56.24,
+  "forward": true
+ },
+ {
+  "seed": 97,
+  "r": 1.077,
+  "h": 7.246,
+  "startTurn": 66.12,
+  "endTurn": 71.12,
+  "forward": true
+ },
+ {
+  "seed": 98,
+  "r": 1.251,
+  "h": 9.302,
+  "startTurn": 101.93,
+  "endTurn": 107.34,
+  "forward": true
+ },
+ {
+  "seed": 99,
+  "r": 0.218,
+  "h": 12.175,
+  "startTurn": 57.02,
+  "endTurn": 116.43,
+  "forward": true
+ },
+ {
+  "seed": 100,
+  "r": 0.222,
+  "h": 10.865,
+  "startTurn": 44.56,
+  "endTurn": 66.48,
+  "forward": true
+ }
+]

@@ -1,6 +1,6 @@
 # ADR 0265：圓角跨過 C1 接縫——先在接縫切開再做圓角
 
-日期：2026-11-24。狀態：**草案，未實作**。檔案格式不變（不升 Schema）。本文的量測都可由 `scratch/prof/` 的探針重現，原始輸出在 `out/prof46/`（不入庫）。
+日期：2026-11-24。狀態：**草案，未實作**。檔案格式不變（不升 Schema）。本文的量測都可由 [`spikes/0265-fillet-c1-joints/`](../../spikes/0265-fillet-c1-joints/README.md) 的探針重現（怎麼跑見該處 README），當時的原始輸出在同處的 `data/`。
 
 ## 1. 問題
 
@@ -13,7 +13,7 @@
 ### 2.1 失敗與快慢都和 C1 接縫有關
 
 1. **草圖樣條只有 C1**：草圖樣條是 Catmull-Rom 曲線（ADR 0244），轉成三次 B-spline 後，內部節點的重數是 2，所以在節點處只有 C1，曲率會跳。牆面（這條曲線的伸長面），以及牆面與底板布林求出的交線，都帶著這些接縫。
-2. **OCCT 的診斷**（`BRepFilletAPI_MakeFillet` 自己回報的狀態，`scratch/prof/diag.test.ts`）：
+2. **OCCT 的診斷**（`BRepFilletAPI_MakeFillet` 自己回報的狀態，`diag.test.ts`）：
    - seed 96 只走滾球的 `Simulate` 花 0.00 秒；`Build` 花 48 秒，回報 `ChFiDS_Error`，算出 0 個面。
    - seed 91／95／53／68 也都是 `ChFiDS_Error`、0 個面，各花 9～21 秒。
    - 對照：seed 92 的凹處真的比圓角還彎，回報的是 `ChFiDS_TwistedSurface`，0.08 秒就停了。

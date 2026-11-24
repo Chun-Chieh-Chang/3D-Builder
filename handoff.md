@@ -11,7 +11,7 @@
 - **仍待**：
   - seed 96 仍需 140 秒：OCCT 在精確邊上三種形狀都建不出圓角，根因未量。
   - 兩個剖面測試（`section-spline-isolation` 18.5 秒、`section-clearance-probe` 30.7 秒）的時間在測試自己的 `isValid`（BRepCheck 對 48 條一次 B-spline），只記錄，未改。
-  - **seed 96 根因已查明，修法寫成 [ADR 0265 草案](docs/adr/0265-fillet-across-c1-joints.md)（未實作）**：草圖樣條（Catmull-Rom）在內部節點只有 C1，OCCT 滾球圓角走到接縫回報 `ChFiDS_Error`，有時要 10～75 秒才放棄；換成 C2 曲線或先在接縫切開（`ShapeUpgrade_ShapeDivideContinuity`），就在 0.02～3.5 秒內成功。100 組中成功由 84 組增為 94 組，唯一退步是 seed 39（需退路）。實作與否待使用者決定。
+  - **seed 96 根因已查明，修法寫成 [ADR 0265 草案](docs/adr/0265-fillet-across-c1-joints.md)（未實作）**：草圖樣條（Catmull-Rom）在內部節點只有 C1，OCCT 滾球圓角走到接縫回報 `ChFiDS_Error`，有時要 10～75 秒才放棄；換成 C2 曲線或先在接縫切開（`ShapeUpgrade_ShapeDivideContinuity`），就在 0.02～3.5 秒內成功。100 組中成功由 84 組增為 94 組，唯一退步是 seed 39（需退路）。實作與否待使用者決定。探針與當時的量測輸出已入庫於 `spikes/0265-fillet-c1-joints/`（README 寫了怎麼跑；驗收標準第 1 項的全套件圓角探針是其中的 `vitest.fillet.mts`）。
   - **seed 96 在 CI 上更接近時限**：[run 45358480253](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45358480253) 中 shard 3 的 seed 96 為 215 秒（修改前 run 45323057609 為 173 秒；本次修改不碰它走的路，差異應是 runner 起伏，未驗證），時限 300 秒。這是下一個要查的。
 - **full-suite CI**：[run 45358480253](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45358480253)（`908ca3b6`）全數成功：8 個分片、`section-offset-cost`、三平台 integrity；`deploy-pages` 依設定略過。CI 上各檔耗時（修改前 → 後）：rolling-ball fuzz-5 252 → 156 秒、fuzz-2 187 → 112、fuzz-4 170 → 74、fuzz-7 177 → 104、fuzz-6 145 → 88、fuzz-10 336 → 367（seed 96）、fuzz（1–10）68 → 111。單次 CI 起伏大，只能看趨勢。
 
