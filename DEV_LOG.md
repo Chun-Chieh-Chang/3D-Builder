@@ -7293,3 +7293,29 @@ Schema 93 記錄來源本體、基準面或模型平面、帶符號的平面偏�
 - 確認：Catmull-Rom 牆面內部節點重數 2（C1）。同一輪廓換成 C2 插值（差 3e-6～1e-3 mm），會失敗的 7 組全在 0.02～0.15 秒成功；凹處真的太彎的 seed 92 照樣 `TwistedSurface`。不改幾何、先在接縫切開（`ShapeUpgrade_ShapeDivideContinuity`），100 組成功 84 → 94，體積相對差 ≤ 4.3e-8，單組最慢 3.5 秒；切開後仍失敗的是 5 組幾何上做不到的與 seed 39（退步，需退路）。精確滾球圓角在切開後反而成功（seed 46／1／19／7）。
 - wasm 符號表（74573 項）與 wasm（74549 個函式）不是同一次建置，函式名不可信；改用 `BRepFilletAPI_MakeFillet` 自己的 `StripeStatus`／`NbComputedSurfaces`／`Simulate` 拆解失敗階段，比取樣有效。
 - 修法、影響範圍、驗收標準寫成 `docs/adr/0265-fillet-across-c1-joints.md`（草案，未實作）。探針：`scratch/prof/{t96,curv,ends,diag,c2,split100,s39}.test.ts`。
+
+## 2026-11-25 — ADR 0265 實作：圓角跨過 C1 接縫，先切開再做圓角
+
+- **做法**（`Kernel.fillet`；細節見 ADR 0265 §9）：
+  - 圓角邊兩側有非分析曲面、或邊不是直線圓弧時，用 `ShapeDivideContinuity`（C2）只切兩側的面。
+  - 切開後，若有新面落在分析曲面上卻通不過 BRepCheck，就不切。
+  - 在切開的形狀上只試第一種圓角形狀，失敗就退回原本的三種。
+  - 容差超過 2e-4 時，另做不切開的版本，取較緊的那個。
+  - 歷史換回原形狀的編號。
+  - 牆片合回一面、邊段合回一條邊：在原曲面上用 `BRep_Builder` 直接組線框；不用 `MakeWire`，也不用 `UnifySameDomain`。
+  - `rollingBall` 的支撐投影器每面只建一次。
+- **紅隊四問**：
+  1. **輸入**：有變半徑 `laws` 時不切；沒有接縫、或切了面數邊數不變時不切。
+  2. **相交**：切開壞掉的形狀（窗口邊緣的圓柱）在做圓角前就攔下，有測試，突變轉紅。
+  3. **依賴鏈**：名稱的消費端（草圖貼面、後續圓角倒角、參照解析）逐一有測試（`fillet-c1-names.test.ts`）。
+  4. **真值**：
+     - 體積對照 HEAD 量到的數字（`split100.json`）；
+     - 合併後的體積用 `massProps`，GProp 在 C1 節點不準；
+     - 記憶體以 wasm heap 量，附對照。
+- **證據**：
+  - 逐件分類（520 個種子，對 HEAD）：rolling-ball 重建 77 → 92，唯一變差 seed 9；window-rounds 重建 25 → 31，HEAD 重建的沒有變差；drafted-spline、drafted-rounds 全同。
+  - 160 個呼叫圓角的測試檔全過（1911 項），另加牆 fuzz 5 檔（130 項）；突變 10 項全紅；`verify:ui` 281/281 ×3；`typecheck`、四項 lint 全過。
+  - 堆積：300 次切開圓角 +815.6 MiB，盒子 +0.0，對照 +320.2；`liveShapes` 嚴格相等。
+  - 過程中全量比對抓到兩個自己引入的問題：短圓角片在牆盡頭的量法（6 組被拒）、無界參數 ±2e100 被當成盡頭（window-rounds 固定測試全紅）。兩者都已修，各有測試與突變。
+  - 使用者 2026-11-26 裁決接受 seed 73 的 kit 新分類、記憶體與時間（ADR §9.6）。
+- **教訓**：寫入 AGENTS §4 2026-11-25。
