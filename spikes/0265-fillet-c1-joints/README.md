@@ -41,5 +41,6 @@ node spikes/0265-fillet-c1-joints/summarize.mjs out/fillet-probe
 | `fillet-setup.ts`、`vitest.fillet.mts`、`summarize.mjs` | 全套件圓角探針與彙總（2026-11-24 的證據：189 次容差被拒、救回 0） | `data/fillet-calls.jsonl`（3353 次） |
 | `compare.mjs` | 本機 fuzz 輸出與 CI 日誌的逐件比對（注意：CI 日誌沒有檔案標頭，`#種子` 的列印在不同 kit 間撞號） | — |
 | `mutate.mjs` | 提交 `b49a50e6` 的三項突變檢查（每項比對須恰好一次，跑完逐位元組還原） | — |
+| `mutate-0265.mjs` | ADR 0265 實作的八項突變（§9.5）：先確認目標測試未突變時全綠，每項比對須恰好一次，跑完逐位元組還原；可只跑一項：`node spikes/0265-fillet-c1-joints/mutate-0265.mjs no-cut` | `out/mutate-0265.log` |
 
 量測當時的提交：`908ca3b6`（探針本身與產品程式無關，只讀）。

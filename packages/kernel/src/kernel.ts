@@ -12,7 +12,7 @@ import { loopPoints, sweepVolumeFloor } from './sweepFloor';
 import { chainBoundary, signedLoopArea, type Seg } from './section-loops';
 import { certifyOffset, type Seg2 } from './section-envelope';
 import { approximateSection } from './section-approximation';
-import { chainCurve, deviation, exactify, setRoundDeadline, supportOf } from './exactRound';
+import { chainCurve, deviation, exactify, setRoundDeadline, supportOf, type Support } from './exactRound';
 import { distancesToEdge, rollingBall, sharpCurve } from './roundRecognition';
 import { surfaceDeviation, type Deviation } from './surfaceDeviation';
 import { coaxialRails, stripSurfaces } from './coaxialStrip';
@@ -268,6 +268,47 @@ const LAW_STRETCH_SAMPLES = 64;
 const EXACT_ROUND_MS = 20_000;
 const FILLET_TOLERANCE_RATIO = 0.25;
 
+/**
+ * How loose a fillet made on a body cut at its joints (ADR 0265) may be before the uncut body's fillet is made too and the tighter one kept. OCCT's
+ * pieces of one round, each approximated on its own, meet with gaps: over the rolling-ball fuzz's 95 cut rounds, 39 came out above 1.5e-4 (edge
+ * tolerances 5e-4 to 1.2e-2, vertices ten times that), where the uncut rounds of the same edges were 1e-4 (2026-11-24). Twice OCCT's own 1e-4.
+ */
+const CUT_FILLET_TOLERANCE = 2e-4;
+
+/** A body cut at its joints below C2 before a fillet (ADR 0265), with each of its faces, edges and vertices followed back to the uncut body's (-1: new). */
+interface FilletCut {
+  shape: TopoDS_Shape;
+  faces: ShapeIndex;
+  edges: ShapeIndex;
+  verts: ShapeIndex;
+  /** The pieces of the edges to fillet, on the cut body. */
+  pieces: TopoDS_Shape[];
+  faceFrom: number[];
+  edgeFrom: number[];
+  vertFrom: number[];
+}
+
+/**
+ * The history of a fillet made on a cut body, told in the uncut body's faces, edges and vertices (ADR 0265 §3.4): a face kept or modified from a piece
+ * is kept or modified from the face the piece was cut from (a face cut in two is "modified" either way), a face generated from an edge's piece is
+ * generated from that edge. An origin in something the cut itself made (a vertex where it cut an edge, the line where it cut a face) is left out:
+ * it was not in the body the fillet was asked of.
+ */
+function composeOrigins(raw: FaceOrigin[][], cut: FilletCut): FaceOrigin[][] {
+  return raw.map((list) => {
+    const out: FaceOrigin[] = [];
+    for (const o of list) {
+      if (!('kind' in o) || !('index' in o) || (o.kind !== 'face' && o.kind !== 'edge' && o.kind !== 'vertex')) { out.push(o); continue; }
+      const index = (o.kind === 'face' ? cut.faceFrom : o.kind === 'edge' ? cut.edgeFrom : cut.vertFrom)[o.index] ?? -1;
+      if (index < 0) continue;
+      const rel = o.rel === 'same' && o.kind === 'face' && cut.faceFrom.filter((i) => i === index).length > 1 ? 'modified' : o.rel;
+      const next = { ...o, rel, index } as FaceOrigin;
+      if (!out.some((x) => JSON.stringify(x) === JSON.stringify(next))) out.push(next);
+    }
+    return out;
+  });
+}
+
 const add = (a: Vec3, b: Vec3, s = 1): Vec3 => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -377,10 +418,15 @@ export class Kernel {
   }
 
   release(id: ShapeId): void {
+    for (const s of this.supports.get(id)?.values() ?? []) s.release();
+    this.supports.delete(id);
     this.shapes.get(id)?.delete();
     this.shapes.delete(id);
     this.meshedTo.delete(id);
   }
+
+  /** The supports `rollingBall` set up on the faces of each shape, kept until the shape is released. */
+  private supports = new Map<ShapeId, Map<number, Support>>();
 
   get liveShapes(): number {
     return this.shapes.size;
@@ -2333,62 +2379,395 @@ export class Kernel {
     const faces = ShapeIndex.of(oc, shape, T.FACE, arena);
     const edges = ShapeIndex.of(oc, shape, T.EDGE, arena);
     const verts = ShapeIndex.of(oc, shape, T.VERTEX, arena);
+    let cut: FilletCut | null = null;
     // the smallest radius the fillets take, which the tolerance of the result is measured against
     const smallest = Math.min(...edgeIndices.map((i) => { const law = laws?.get(i); return law && law.length > 0 ? Math.min(...law.map((p) => p.r)) : radius; }));
     try {
-      let out: TopoDS_Shape | null = null;
-      let lastErr: any = null;
-      let usedMk: any = null;
-      for (const filletShape of [oc.ChFi3d_FilletShape.ChFi3d_Rational, oc.ChFi3d_FilletShape.ChFi3d_QuasiAngular, oc.ChFi3d_FilletShape.ChFi3d_Polynomial]) {
-        try {
-          const mk = arena.own(new oc.BRepFilletAPI_MakeFillet(shape, filletShape));
-          if (approximation !== undefined) {
-            if (!(approximation > 0 && Number.isFinite(approximation))) throw new KernelError(t('kernel.opFailed', { label: t('feature.fillet') }));
-            // angular, spine, 2D, 3D approximation, 2D approximation and sag tolerances: the 3D ones at what is asked, the others in the same proportion
-            // to it as OCCT's defaults are to its 1e-4
-            mk.SetParams(1e-2, approximation, approximation / 10, approximation, approximation / 10, approximation / 10);
-          }
-          for (const i of edgeIndices) {
-            const e = edges.keys[i];
-            if (!e) throw new KernelError(t('kernel.edgeOutOfRange', { index: i }));
-            const law = laws?.get(i);
-            if (law && law.length > 0) mk.Add(this.radiusLaw(law, e, arena), arena.own(oc.TopoDS.Edge(e)));
-            else mk.Add(radius, arena.own(oc.TopoDS.Edge(e)));
-          }
-          const built = this.build(mk, t('feature.fillet'), arena);
-          // A fillet OCCT reports as done may still be a body that fails BRepCheck — common on the wavy edges of knurls and threads, where three fillet
-          // shapes are tried and the last one comes back "done" but corrupt. Refuse it here: handing a body that fails BRepCheck to whatever runs next is
-          // what produces the downstream WASM crashes (AGENTS.md §3.5); a clear refusal is the honest outcome.
-          if (!this.valid(built)) throw new KernelError(t('feature.filletInvalid'));
-          // BRepCheck says nothing of how far apart the things an edge joins are allowed to be: a fillet that ends where it meets an edge of another feature at
-          // exactly the same place can come back with an edge of tolerance 18 mm on a 20 mm part, "valid", and meshing then leaves holes in the fillet (ADR 0214)
-          const tolerance = this.maxTolerance(built);
-          if (tolerance > FILLET_TOLERANCE_RATIO * smallest) {
-            // The other fillet shapes are not tried: of 189 fillets of the test suite refused here on the first shape, the other two were refused here
-            // too every time (none came through), and each can take as long as the first — 75 s apiece on rolling-ball fuzz seed 46's rebuilt edge
-            // (2026-11-24). A shape that fails to build or fails BRepCheck is still followed by the next: that rescued 8 of the suite's fillets.
-            lastErr = new KernelError(t('feature.filletTolerance', { tolerance: tolerance.toPrecision(3), radius: String(+smallest.toPrecision(6)) }));
-            break;
-          }
-          out = built;
-          usedMk = mk;
-          break;
-        } catch (err) {
-          rethrowTrap(err);
-          lastErr = err;
-        }
+      const picked = edgeIndices.map((i) => {
+        const e = edges.keys[i];
+        if (!e) throw new KernelError(t('kernel.edgeOutOfRange', { index: i }));
+        return { edge: e, law: laws?.get(i) };
+      });
+      // ADR 0265: first on the body cut at the joints below C2 of these edges and the faces on their two sides; where nothing is cut, or the cut body
+      // gets no fillet, the body as it is (the way it always was)
+      cut = laws && laws.size > 0 ? null : this.cutAtJoints(shape, picked.map((p) => p.edge), faces, edges, verts, arena);
+      this.lastFilletCut = cut ? 'cut' : 'none';
+      this.lastFilletMerge = 'none';
+      let fromCut: { shape: TopoDS_Shape; faceOrigins: FaceOrigin[][]; tolerance: number; log: { outcome: string }[] } | null = null;
+      if (cut) {
+        // one fillet shape on the cut body: over the whole suite none came through on the second or third after the first failed, and those two took
+        // 888 s of the 1243 s spent on cut bodies that got no round (most of them a window's rim, invalid every time; 2026-11-25)
+        const made = this.filletTries(cut.shape, cut.pieces.map((edge) => ({ edge })), radius, approximation, smallest, arena, 1);
+        if (made.out) {
+          const raw = this.history(made.mk, { faces: cut.faces.keys, edges: cut.edges.keys, verts: cut.verts.keys }, made.out, arena);
+          const rounded = exact ? this.exactRounds(cut.shape, made.out, made.mk, radius, arena) : made.out;
+          const pieced = this.mergePieces(rounded, composeOrigins(raw, cut), cut, faces, arena);
+          const whole = this.mergeEdgePieces(pieced.shape, pieced.faceOrigins, pieced.edgeFrom, faces, edges, verts, arena);
+          // each step's body, once the next has replaced it, is let go (kept, they held what the next replaced: 816 MiB over 300 cut fillets)
+          for (const s of new Set([made.out, rounded, pieced.shape])) if (s !== whole.shape) s.delete();
+          fromCut = { shape: whole.shape, faceOrigins: whole.faceOrigins, tolerance: this.maxTolerance(whole.shape), log: [...this.exactRoundLog] };
+          if (fromCut.tolerance <= CUT_FILLET_TOLERANCE) return { shape: this.put(fromCut.shape), faceOrigins: fromCut.faceOrigins };
+          this.lastFilletCut = 'compared';
+        } else this.lastFilletCut = 'fallback';
       }
-      if (!out || !usedMk) throw lastErr;
-      const faceOrigins = this.history(usedMk, { faces: faces.keys, edges: edges.keys, verts: verts.keys }, out, arena);
+      const made = this.filletTries(shape, picked, radius, approximation, smallest, arena);
+      if (!made.out) {
+        if (fromCut) { this.lastFilletCut = 'cut'; this.exactRoundLog = fromCut.log as typeof this.exactRoundLog; return { shape: this.put(fromCut.shape), faceOrigins: fromCut.faceOrigins }; }
+        throw made.err;
+      }
+      const faceOrigins = this.history(made.mk, { faces: faces.keys, edges: edges.keys, verts: verts.keys }, made.out, arena);
       // the exact rounds keep every face where it was (same order, same count), so the history read off OCCT's body holds for theirs
-      const final = exact && !(laws && laws.size > 0) ? this.exactRounds(shape, out, usedMk, radius, arena) : out;
+      const final = exact && !(laws && laws.size > 0) ? this.exactRounds(shape, made.out, made.mk, radius, arena) : made.out;
+      // the cut body's round is kept only where it is the tighter of the two
+      if (fromCut && fromCut.tolerance < this.maxTolerance(final)) {
+        this.lastFilletCut = 'cut';
+        this.exactRoundLog = fromCut.log as typeof this.exactRoundLog;
+        return { shape: this.put(fromCut.shape), faceOrigins: fromCut.faceOrigins };
+      }
+      if (fromCut) { this.lastFilletCut = 'uncut tighter'; fromCut.shape.delete(); }
       return { shape: this.put(final), faceOrigins };
     } finally {
+      cut?.faces.dispose();
+      cut?.edges.dispose();
+      cut?.verts.dispose();
       faces.dispose();
       edges.dispose();
       verts.dispose();
       arena.dispose();
     }
+  }
+
+  /**
+   * How the last `fillet` went with ADR 0265's cut (for tests and diagnosis): nothing to cut; kept the cut body's round; the cut body got no round and the
+   * uncut one was made ('fallback'); the cut body's round was looser than CUT_FILLET_TOLERANCE and the uncut one, also made, was tighter ('uncut tighter').
+   */
+  lastFilletCut: 'none' | 'cut' | 'compared' | 'fallback' | 'uncut tighter' = 'none';
+
+  /** Whether the last fillet made on a cut body put the pieces of its faces back together (`mergePieces`), and if not, why. */
+  lastFilletMerge = 'none';
+
+  /**
+   * OCCT's fillet of `picked` on `shape`, its three fillet shapes in turn, with the checks every fillet result has to pass (BRepCheck, the tolerance gate
+   * of ADR 0214). `out` is null when none came through, and `err` then says why the last one failed.
+   */
+  private filletTries(shape: TopoDS_Shape, picked: { edge: TopoDS_Shape; law?: { t: number; r: number }[] }[], radius: number, approximation: number | undefined, smallest: number, arena: Arena, shapes = 3): { out: TopoDS_Shape | null; mk: any; err: any } {
+    const oc = this.oc;
+    let lastErr: any = null;
+    for (const filletShape of [oc.ChFi3d_FilletShape.ChFi3d_Rational, oc.ChFi3d_FilletShape.ChFi3d_QuasiAngular, oc.ChFi3d_FilletShape.ChFi3d_Polynomial].slice(0, shapes)) {
+      try {
+        const mk = arena.own(new oc.BRepFilletAPI_MakeFillet(shape, filletShape));
+        if (approximation !== undefined) {
+          if (!(approximation > 0 && Number.isFinite(approximation))) throw new KernelError(t('kernel.opFailed', { label: t('feature.fillet') }));
+          // angular, spine, 2D, 3D approximation, 2D approximation and sag tolerances: the 3D ones at what is asked, the others in the same proportion
+          // to it as OCCT's defaults are to its 1e-4
+          mk.SetParams(1e-2, approximation, approximation / 10, approximation, approximation / 10, approximation / 10);
+        }
+        for (const { edge, law } of picked) {
+          if (law && law.length > 0) mk.Add(this.radiusLaw(law, edge, arena), arena.own(oc.TopoDS.Edge(edge)));
+          else mk.Add(radius, arena.own(oc.TopoDS.Edge(edge)));
+        }
+        const built = this.build(mk, t('feature.fillet'), arena);
+        // A fillet OCCT reports as done may still be a body that fails BRepCheck — common on the wavy edges of knurls and threads, where three fillet
+        // shapes are tried and the last one comes back "done" but corrupt. Refuse it here: handing a body that fails BRepCheck to whatever runs next is
+        // what produces the downstream WASM crashes (AGENTS.md §3.5); a clear refusal is the honest outcome.
+        if (!this.valid(built)) throw new KernelError(t('feature.filletInvalid'));
+        // BRepCheck says nothing of how far apart the things an edge joins are allowed to be: a fillet that ends where it meets an edge of another feature at
+        // exactly the same place can come back with an edge of tolerance 18 mm on a 20 mm part, "valid", and meshing then leaves holes in the fillet (ADR 0214)
+        const tolerance = this.maxTolerance(built);
+        if (tolerance > FILLET_TOLERANCE_RATIO * smallest) {
+          // The other fillet shapes are not tried: of 189 fillets of the test suite refused here on the first shape, the other two were refused here
+          // too every time (none came through), and each can take as long as the first — 75 s apiece on rolling-ball fuzz seed 46's rebuilt edge
+          // (2026-11-24). A shape that fails to build or fails BRepCheck is still followed by the next: that rescued 8 of the suite's fillets.
+          return { out: null, mk: null, err: new KernelError(t('feature.filletTolerance', { tolerance: tolerance.toPrecision(3), radius: String(+smallest.toPrecision(6)) })) };
+        }
+        return { out: built, mk, err: null };
+      } catch (err) {
+        rethrowTrap(err);
+        lastErr = err;
+      }
+    }
+    return { out: null, mk: null, err: lastErr };
+  }
+
+  /**
+   * ADR 0265 §3.5: the pieces the cut made of a face, put back together after the fillet. A piece of a B-spline surface cut at its knots keeps the
+   * surface's parameters, so each piece is put back on the uncut face's own surface (its edges' pcurves moved over with it), and the pieces become one
+   * face on that surface, bounded by their outer edges. The face is then the face it was before the fillet — its name, and what recognition reads of
+   * it (a drafted spline wall in pieces was recognized as freeform faces; drafted-spline rounds fuzz seeds 33, 35, 39, 2026-11-25). ShapeUpgrade_
+   * UnifySameDomain cannot do it: the pieces are different surfaces, and put on one, it rebuilt the boundary off the face (a wall 0.036 mm² short).
+   * The edges the cut made along the face's boundary stay in pieces. Where the result fails BRepCheck, the pieces are kept as they were.
+   */
+  private mergePieces(shape: TopoDS_Shape, faceOrigins: FaceOrigin[][], cut: FilletCut, uncut: ShapeIndex, arena: Arena): { shape: TopoDS_Shape; faceOrigins: FaceOrigin[][]; edgeFrom: (e: TopoDS_Shape) => number } {
+    const oc = this.oc as any;
+    const FWD = oc.TopAbs_Orientation.TopAbs_FORWARD;
+    // the uncut edge an edge of the result is a piece of: the cut's own edges, which the fillet left as they were
+    const direct = (e: TopoDS_Shape) => { const j = cut.edges.indexOf(e); return j >= 0 ? (cut.edgeFrom[j] ?? -1) : -1; };
+    const kept = () => ({ shape, faceOrigins, edgeFrom: direct });
+    const outF = ShapeIndex.of(this.oc, shape, T.FACE, arena);
+    try {
+      // the output faces that are pieces of one uncut face the cut split, by that face
+      const split = new Set(cut.faceFrom.filter((i, k) => cut.faceFrom.indexOf(i) !== k));
+      const groups = new Map<number, number[]>();
+      faceOrigins.forEach((list, j) => {
+        if (list.length !== 1) return;
+        const o = list[0]!;
+        if (!('kind' in o) || o.kind !== 'face' || o.rel !== 'modified' || !split.has(o.index)) return;
+        groups.set(o.index, [...(groups.get(o.index) ?? []), j]);
+      });
+      const todo = [...groups].filter(([, js]) => js.length > 1);
+      if (todo.length === 0) { this.lastFilletMerge = 'none'; return kept(); }
+      const copy = arena.own(new oc.BRepBuilderAPI_Copy(shape, true, false));
+      const work: TopoDS_Shape = arena.own(copy.Shape());
+      const workF = ShapeIndex.of(this.oc, work, T.FACE, arena);
+      const B = arena.own(new oc.BRep_Builder());
+      const loc = arena.own(new oc.TopLoc_Location());
+      const rs = arena.own(new oc.BRepTools_ReShape());
+      const list = (s: TopoDS_Shape, kind: string): any[] => { const out: any[] = []; for (const ex = arena.own(new oc.TopExp_Explorer(s, oc.TopAbs_ShapeEnum[kind], oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) out.push(arena.own(ex.Current())); return out; };
+      const mergedAs = new Map<number, number>();
+      try {
+        for (const [i, js] of todo) {
+          // the copy keeps the faces in the same order
+          const pieces = js.map((j) => arena.own(oc.TopoDS.Face(workF.keys[j])));
+          const surface = arena.own(oc.BRep_Tool.Surface(arena.own(oc.TopoDS.Face(uncut.keys[i]))));
+          for (const F of pieces) {
+            const pcs = list(F, 'TopAbs_EDGE').map((e) => {
+              const E = arena.own(oc.TopoDS.Edge(e));
+              const seam = oc.BRep_Tool.IsClosed(E, F);
+              const c1 = arena.own(arena.own(new oc.BRepAdaptor_Curve2d(E, F)).Curve());
+              const c2 = seam ? arena.own(arena.own(new oc.BRepAdaptor_Curve2d(arena.own(oc.TopoDS.Edge(E.Reversed())), F)).Curve()) : null;
+              return { E, c1, c2, tol: oc.BRep_Tool.Tolerance(E) };
+            });
+            B.UpdateFace(F, surface, loc, oc.BRep_Tool.Tolerance(F));
+            for (const p of pcs) { if (p.c2) B.UpdateEdge(p.E, p.c1, p.c2, F, p.tol); else B.UpdateEdge(p.E, p.c1, F, p.tol); }
+          }
+          // the outer edges (those of one piece only) as they are, in wires joined end to start: BRepBuilderAPI_MakeWire copies an edge it joins
+          // where it sees fit, and a copy is no longer the edge the next face shares (the body failed BRepCheck: drafted-spline rounds seed 33)
+          const all = pieces.flatMap((F) => list(F.Oriented(FWD), 'TopAbs_EDGE'));
+          const left = all.filter((e) => all.filter((x) => x.IsSame(e)).length === 1);
+          const end = (e: any, last: boolean) => arena.own(last ? oc.TopExp.LastVertex(oc.TopoDS.Edge(e), true) : oc.TopExp.FirstVertex(oc.TopoDS.Edge(e), true));
+          const face = arena.own(new oc.TopoDS_Face());
+          B.MakeFace(face, surface, loc, oc.BRep_Tool.Tolerance(pieces[0]));
+          while (left.length) {
+            const wire = arena.own(new oc.TopoDS_Wire());
+            B.MakeWire(wire);
+            const first = left.shift();
+            B.Add(wire, first);
+            const start = end(first, false);
+            let tail = end(first, true);
+            while (!tail.IsSame(start)) {
+              const at = left.findIndex((e) => end(e, false).IsSame(tail));
+              if (at < 0) throw new Error('pieces: their outer edges do not close');
+              const [e] = left.splice(at, 1);
+              B.Add(wire, e);
+              tail = end(e, true);
+            }
+            wire.Closed(true);
+            B.Add(face, wire);
+          }
+          rs.Replace(pieces[0], arena.own(face.Oriented(pieces[0].Orientation())));
+          for (const F of pieces.slice(1)) rs.Remove(F);
+          mergedAs.set(i, js[0]!);
+        }
+      } catch (e) {
+        rethrowTrap(e);
+        this.lastFilletMerge = `kept: ${String((e as any)?.message ?? e)}`;
+        return kept();
+      }
+      const merged: TopoDS_Shape = rs.Apply(work, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+      if (!this.valid(merged)) { merged.delete(); this.lastFilletMerge = 'kept: BRepCheck'; return kept(); }
+      // each face of the merged body: a face of the copy it still is, or the face its pieces became
+      const mf = ShapeIndex.of(this.oc, merged, T.FACE, arena);
+      const origins = mf.keys.map((f) => {
+        const j = workF.indexOf(f);
+        if (j >= 0) return faceOrigins[j]!;
+        const i = [...mergedAs].find(([, j0]) => { const v = rs.Value(workF.keys[j0]); const same = v.IsSame(f); v.delete(); return same; })?.[0];
+        return i === undefined ? [] : [{ rel: 'modified', kind: 'face', index: i } as FaceOrigin];
+      });
+      mf.dispose();
+      workF.dispose();
+      if (origins.some((l) => l.length === 0)) { merged.delete(); this.lastFilletMerge = 'kept: history'; return kept(); }
+      this.lastFilletMerge = 'merged';
+      // the copy's image of each of the cut's edges the fillet left
+      const re = ShapeIndex.of(this.oc, shape, T.EDGE, arena);
+      const images = re.keys.map((k) => { const m = this.list(copy.Modified(k)); for (const x of m) arena.own(x); return { img: m[0] ?? null, from: direct(k) }; });
+      re.dispose();
+      return { shape: merged, faceOrigins: origins, edgeFrom: (e) => images.find((x) => x.img !== null && x.img.IsSame(e))?.from ?? -1 };
+    } finally {
+      outF.dispose();
+    }
+  }
+
+  /**
+   * ADR 0265: the pieces the cut made of an edge, put back together after the fillet where the fillet left them: at a vertex the cut made, where two
+   * edges between the same two faces meet that are pieces of one edge of the uncut body, the two become one edge on that edge's own curve, with its
+   * pcurves on the faces (the cut keeps the parameters of a curve it splits, as of a surface). The cut left the edge along a spline wall in as many
+   * pieces as the spline has knots, and recognition's rebuild did not find a round's edge across them (drafted-spline rounds seeds 35 and 39,
+   * 2026-11-25); their names were `#k` too. Where a chain's faces are not on the uncut edge's own surfaces, or a plane, the chain is left as it is;
+   * where the result fails BRepCheck, all of them are.
+   */
+  private mergeEdgePieces(shape: TopoDS_Shape, faceOrigins: FaceOrigin[][], edgeFrom: (e: TopoDS_Shape) => number, uncutFaces: ShapeIndex, uncutEdges: ShapeIndex, uncutVerts: ShapeIndex, arena: Arena): { shape: TopoDS_Shape; faceOrigins: FaceOrigin[][] } {
+    const oc = this.oc as any;
+    const FWD = oc.TopAbs_Orientation.TopAbs_FORWARD, REV = oc.TopAbs_Orientation.TopAbs_REVERSED;
+    const S = oc.GeomAbs_SurfaceType;
+    const sf = ShapeIndex.of(this.oc, shape, T.FACE, arena);
+    const se = ShapeIndex.of(this.oc, shape, T.EDGE, arena);
+    const sv = ShapeIndex.of(this.oc, shape, T.VERTEX, arena);
+    const list = (s: TopoDS_Shape, kind: string): any[] => { const out: any[] = []; for (const ex = arena.own(new oc.TopExp_Explorer(s, oc.TopAbs_ShapeEnum[kind], oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) out.push(arena.own(ex.Current())); return out; };
+    try {
+      const facesOfEdge = se.keys.map((e) => sf.keys.flatMap((f, i) => (list(f, 'TopAbs_EDGE').some((x) => x.IsSame(e)) ? [i] : [])));
+      const edgesOfVert = sv.keys.map((v) => se.keys.flatMap((e, i) => (list(e, 'TopAbs_VERTEX').some((x) => x.IsSame(v)) ? [i] : [])));
+      // the uncut edge each edge is a piece of (an edge the fillet changed is no longer the cut's)
+      const from = se.keys.map((e) => edgeFrom(e));
+      const parent = se.keys.map((_, i) => i);
+      const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
+      sv.keys.forEach((v, k) => {
+        if (uncutVerts.indexOf(v) >= 0) return;
+        const es = edgesOfVert[k]!;
+        if (es.length !== 2) return;
+        const [a, b] = es as [number, number];
+        if (from[a]! < 0 || from[a] !== from[b]) return;
+        const fa = facesOfEdge[a]!, fb = facesOfEdge[b]!;
+        if (fa.length !== 2 || fb.length !== 2 || !fa.every((f) => fb.includes(f))) return;
+        parent[find(a)] = find(b);
+      });
+      const chains = new Map<number, number[]>();
+      se.keys.forEach((_, i) => { const r = find(i); chains.set(r, [...(chains.get(r) ?? []), i]); });
+      const todo = [...chains.values()].filter((c) => c.length > 1);
+      if (todo.length === 0) return { shape, faceOrigins };
+      const B = arena.own(new oc.BRep_Builder());
+      const rs = arena.own(new oc.BRepTools_ReShape());
+      let merged = 0;
+      for (const chain of todo) {
+        const orig = arena.own(oc.TopoDS.Edge(uncutEdges.keys[from[chain[0]!]!]));
+        const fs = facesOfEdge[chain[0]!]!.map((i) => arena.own(oc.TopoDS.Face(sf.keys[i])));
+        // each face: on the uncut edge's own surface (its pcurve there holds), or a plane (one is made)
+        const origFaces = uncutFaces.keys.filter((f) => list(f, 'TopAbs_EDGE').some((x) => x.IsSame(orig))).map((f) => arena.own(oc.TopoDS.Face(f)));
+        const crv = oc.BRep_Tool.Curve(orig, 0, 0);
+        const curve = arena.own(crv.returnValue ?? crv);
+        const at = (t2: number): number[] => { const p = arena.own(curve.Value(t2)); return [p.X(), p.Y(), p.Z()]; };
+        const dist = (a: number[], b: number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
+        const r0 = oc.BRep_Tool.Range(orig, 0, 0);
+        const [t0, t1] = [r0.First ?? r0[0], r0.Last ?? r0[1]] as [number, number];
+        const pcFor = fs.map((F) => {
+          // the uncut edge's pcurve on a face it bounded, where it lies on this face's surface too (the same surface, or one parametrized as it)
+          const ad = arena.own(new oc.BRepAdaptor_Surface(F, false));
+          for (const g of origFaces) {
+            const pc = arena.own(arena.own(new oc.BRepAdaptor_Curve2d(orig, g)).Curve());
+            const fits = [0, 0.25, 0.5, 0.75, 1].every((q) => { const t2 = t0 + (t1 - t0) * q; const uv = arena.own(pc.Value(t2)); const p = arena.own(ad.Value(uv.X(), uv.Y())); return dist([p.X(), p.Y(), p.Z()], at(t2)) <= 10 * Math.max(1e-7, oc.BRep_Tool.Tolerance(orig)); });
+            if (fits) return { F, pc };
+          }
+          return ad.GetType() === S.GeomAbs_Plane ? { F, pc: null } : null;
+        });
+        if (pcFor.some((x) => !x)) continue;
+        // the chain's ends (vertices of one piece only) and its range on the uncut edge's curve
+        const pieceEdges = chain.map((i) => arena.own(oc.TopoDS.Edge(se.keys[i])));
+        const ends = sv.keys.filter((v, k) => edgesOfVert[k]!.filter((e) => chain.includes(e)).length === 1);
+        if (ends.length !== 2) continue;
+        const ranges = pieceEdges.map((E) => { const r = oc.BRep_Tool.Range(E, 0, 0); return [r.First ?? r[0], r.Last ?? r[1]] as [number, number]; });
+        const lo = Math.min(...ranges.map((r) => r[0])), hi = Math.max(...ranges.map((r) => r[1]));
+        const pt = (v: any): number[] => { const p = arena.own(oc.BRep_Tool.Pnt(oc.TopoDS.Vertex(v))); return [p.X(), p.Y(), p.Z()]; };
+        const [v0, v1] = dist(pt(ends[0]), at(lo)) <= dist(pt(ends[1]), at(lo)) ? [ends[0]!, ends[1]!] : [ends[1]!, ends[0]!];
+        const tol = Math.max(...pieceEdges.map((E) => oc.BRep_Tool.Tolerance(E)));
+        const E = arena.own(new oc.TopoDS_Edge());
+        B.MakeEdge(E, curve, tol);
+        B.Add(E, arena.own(v0.Oriented(FWD)));
+        B.Add(E, arena.own(v1.Oriented(REV)));
+        B.Range(E, lo, hi);
+        for (const p of pcFor) {
+          if (p!.pc) B.UpdateEdge(E, p!.pc, p!.F, tol);
+          else oc.BRepLib.BuildPCurveForEdgeOnPlane(E, p!.F);
+        }
+        oc.BRepLib.SameParameter(E, tol);
+        // a piece is the uncut curve run the same way (FORWARD), and so is the new edge
+        rs.Replace(arena.own(pieceEdges[0]!.Oriented(FWD)), E);
+        for (const P of pieceEdges.slice(1)) rs.Remove(P);
+        merged++;
+      }
+      if (merged === 0) return { shape, faceOrigins };
+      const out: TopoDS_Shape = rs.Apply(shape, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+      if (!this.valid(out)) { out.delete(); this.lastFilletMerge += ', edges kept: BRepCheck'; return { shape, faceOrigins }; }
+      // the faces are those of the shape, rebuilt where an edge of theirs was replaced
+      const of = ShapeIndex.of(this.oc, out, T.FACE, arena);
+      const origins = of.keys.map((f) => { const i = sf.keys.findIndex((g) => { const v = rs.Value(g); const same = v.IsSame(f); v.delete(); return same; }); return i >= 0 ? faceOrigins[i]! : []; });
+      of.dispose();
+      if (origins.some((l) => l.length === 0)) { out.delete(); this.lastFilletMerge += ', edges kept: history'; return { shape, faceOrigins }; }
+      this.lastFilletMerge += `, ${merged} edges`;
+      return { shape: out, faceOrigins: origins };
+    } catch (e) {
+      rethrowTrap(e);
+      this.lastFilletMerge += `, edges kept: ${String((e as any)?.message ?? e)}`;
+      return { shape, faceOrigins };
+    } finally {
+      sf.dispose();
+      se.dispose();
+      sv.dispose();
+    }
+  }
+
+  /**
+   * ADR 0265: `shape` cut at the joints below C2 of the faces on both sides of `filletEdges` (and of those edges), with ShapeUpgrade_ShapeDivideContinuity
+   * (boundary, pcurve and surface criteria all C2), so OCCT's fillet does not run over a joint where the curvature jumps. A sketch spline is C1 at its
+   * knots (ADR 0244), and OCCT's rolling ball across such a joint gave up with ChFiDS_Error after up to 75 s per fillet shape, where the same edge cut there
+   * filleted in under 4 s (spikes/0265-fillet-c1-joints).
+   *
+   * Null where there is nothing to cut — every face beside the edges analytic and every edge a line or circle (the cut is not even tried), or the cut
+   * leaves the faces and edges as they were — and where the cut body cannot be followed back to the uncut one face by face (its history is then not
+   * to be trusted for naming). Faces the cut does not reach keep their own shape, so their names do not change.
+   */
+  private cutAtJoints(shape: TopoDS_Shape, filletEdges: TopoDS_Shape[], faces: ShapeIndex, edges: ShapeIndex, verts: ShapeIndex, arena: Arena): FilletCut | null {
+    const oc = this.oc as any;
+    const S = oc.GeomAbs_SurfaceType, C = oc.GeomAbs_CurveType;
+    const ANALYTIC = [S.GeomAbs_Plane, S.GeomAbs_Cylinder, S.GeomAbs_Cone, S.GeomAbs_Sphere, S.GeomAbs_Torus];
+    const beside = faces.keys.filter((f) => {
+      for (const ex = arena.own(new oc.TopExp_Explorer(f, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)); ex.More(); ex.Next()) {
+        const e = arena.own(ex.Current());
+        if (filletEdges.some((x) => x.IsSame(e))) return true;
+      }
+      return false;
+    });
+    const freeform = beside.some((f) => { const ty = arena.own(new oc.BRepAdaptor_Surface(oc.TopoDS.Face(f), false)).GetType(); return !ANALYTIC.some((a) => a === ty); }) ||
+      filletEdges.some((e) => { const ty = arena.own(new oc.BRepAdaptor_Curve(oc.TopoDS.Edge(e))).GetType(); return ty !== C.GeomAbs_Line && ty !== C.GeomAbs_Circle; });
+    if (!freeform) return null;
+    const C2 = oc.GeomAbs_Shape.GeomAbs_C2;
+    const div = arena.own(new oc.ShapeUpgrade_ShapeDivideContinuity());
+    div.SetBoundaryCriterion(C2);
+    div.SetPCurveCriterion(C2);
+    div.SetSurfaceCriterion(C2);
+    const ctx = arena.own(new oc.ShapeBuild_ReShape());
+    div.SetContext(ctx);
+    // face by face on one context: an edge cut for one face is cut in its other face too when the context is applied to the whole body
+    for (const f of beside) {
+      div.Init(f);
+      div.Perform(false);
+    }
+    const cutShape: TopoDS_Shape = arena.own(ctx.Apply(shape, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
+    const cf = ShapeIndex.of(this.oc, cutShape, T.FACE, arena);
+    const ce = ShapeIndex.of(this.oc, cutShape, T.EDGE, arena);
+    const cv = ShapeIndex.of(this.oc, cutShape, T.VERTEX, arena);
+    const drop = () => { cf.dispose(); ce.dispose(); cv.dispose(); return null; };
+    if (cf.size === faces.size && ce.size === edges.size) return drop();
+    // The analytic faces the cut changed BRepCheck'd (not the body, nor its B-spline pieces: BRepCheck of a new body or piece kept it alive, 93 MiB
+    // over 300 cut fillets; none when the same body was checked 300 times, 2026-11-25). A cup's cylinder cut along a window's drafted spline came out
+    // invalid every time (window-rounds fuzz 20: 40 of 48 such faces, in every one of its 24 fillets), and the fillet on it failed — after up to 24 s.
+    if (cf.keys.some((f) => faces.indexOf(f) < 0 && ANALYTIC.some((a) => a === arena.own(new oc.BRepAdaptor_Surface(oc.TopoDS.Face(f), false)).GetType()) && !this.valid(f))) return drop();
+    const history = arena.own(ctx.History());
+    // where each shape of the uncut body went: the pieces the cut made of it, or itself where it was left alone
+    const images = (s: TopoDS_Shape): TopoDS_Shape[] => { if (history.IsRemoved(s)) return []; const m = this.list(history.Modified(s)); for (const x of m) arena.own(x); return m.length > 0 ? m : [s]; };
+    const from = (index: ShapeIndex, cutIndex: ShapeIndex): number[] => {
+      const back = cutIndex.keys.map(() => -1);
+      index.keys.forEach((s, i) => { for (const img of images(s)) { const j = cutIndex.indexOf(img); if (j >= 0) back[j] = i; } });
+      return back;
+    };
+    const faceFrom = from(faces, cf), edgeFrom = from(edges, ce), vertFrom = from(verts, cv);
+    // every face of the cut body has to be a piece of one of the uncut body's, or the names read off its history would be guesses
+    if (faceFrom.some((i) => i < 0)) return drop();
+    const pieces: TopoDS_Shape[] = [];
+    for (const e of filletEdges) {
+      const own = images(e).filter((img) => ce.indexOf(img) >= 0);
+      if (own.length === 0) return drop();
+      for (const p of own) if (!pieces.some((q) => q.IsSame(p))) pieces.push(p);
+    }
+    return { shape: cutShape, faces: cf, edges: ce, verts: cv, pieces, faceFrom, edgeFrom, vertFrom };
   }
 
   /** What became of each contour of the last fillet asked for exact rounds (for tests and diagnosis: exact, or why OCCT's round was kept). */
@@ -4879,7 +5258,19 @@ export class Kernel {
         if (!x) throw new KernelError(t('edit.faceOutOfRange', { index: i }));
         return arena.own(this.oc.TopoDS.Face(x));
       });
-      return rollingBall(this.oc, f, a, b, tol);
+      // one support per face of this shape, kept until it is released: recognition asks each tangent pair of faces, and a projector set up anew on a
+      // B-spline keeps heap each time — on a wall cut at its joints (ADR 0265), whose pieces and their rounds are each other's supports, freeRounds grew
+      // the heap 665 MiB in 22 s (rolling-ball fuzz seed 42, 2026-11-25)
+      const kept = this.supports.get(target) ?? new Map<number, Support>();
+      this.supports.set(target, kept);
+      const byFace = new Map([[supports[0], a], [supports[1], b]]);
+      const supportFor = (face: any) => {
+        const i = [...byFace].find(([, g]) => g === face)![0];
+        let s = kept.get(i);
+        if (!s) { s = supportOf(this.oc, face); kept.set(i, s); }
+        return s;
+      };
+      return rollingBall(this.oc, f, a, b, tol, supportFor);
     } finally {
       arena.dispose();
     }

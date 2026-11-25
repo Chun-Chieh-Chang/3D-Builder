@@ -5,7 +5,7 @@
  * Every native object made here is deleted where it is read (the bindings' objects are not garbage collected), and derivatives are read through
  * `sD1` into reused outputs, not EvalD1 (C2.14d).
  */
-import { sD1, supportOf } from './exactRound';
+import { sD1, supportOf, type Support } from './exactRound';
 
 type V3 = [number, number, number];
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -86,11 +86,12 @@ export function arcSections(oc: any, face: any): { radius: number; across: 'u' |
  * the centre r along the normal, on one side for the whole face, is r from both supports (their surfaces, not only the trimmed faces) to within `tol`.
  * `convex`: the centre is inside the material (a round on an outside edge). Else null.
  */
-export function rollingBall(oc: any, face: any, a: any, b: any, tol: number): { radius: number; convex: boolean; deviation: number } | null {
+export function rollingBall(oc: any, face: any, a: any, b: any, tol: number, supportFor?: (face: any) => Support): { radius: number; convex: boolean; deviation: number } | null {
   const arc = arcSections(oc, face);
   if (!arc) return null;
   const r = arc.radius;
-  const sup = [supportOf(oc, a), supportOf(oc, b)];
+  // supports the caller keeps (and releases) are not released here
+  const sup = supportFor ? [supportFor(a), supportFor(b)] : [supportOf(oc, a), supportOf(oc, b)];
   const ad = new oc.BRepAdaptor_Surface(face, true);
   const inside = insideOf(oc, face);
   try {
@@ -98,6 +99,7 @@ export function rollingBall(oc: any, face: any, a: any, b: any, tol: number): { 
     const u0 = ad.FirstUParameter(), u1 = ad.LastUParameter(), v0 = ad.FirstVParameter(), v1 = ad.LastVParameter();
     // the centre off the outward normal by -r (inside: convex) or +r (outside: concave), its worst distance error over the face
     const worst = [0, 0];
+    const counted = [0, 0];
     let seen = 0;
     for (let i = 0; i <= 24; i++) for (let j = 1; j < 8; j++) {
       const [u, v] = [u0 + ((u1 - u0) * i) / 24, v0 + ((v1 - v0) * j) / 8];
@@ -108,20 +110,29 @@ export function rollingBall(oc: any, face: any, a: any, b: any, tol: number): { 
       const l = len(n);
       if (!(l > 0)) return null;
       const nOut: V3 = [(out * n[0]) / l, (out * n[1]) / l, (out * n[2]) / l];
+      // A centre whose nearest point on a support is that support's own end is past where the support stops: no distance to it there says whether the
+      // ball rolls on it carried on, so the point is not counted (the end of a round where its spline wall ends: 6.1e-2 at the very end, rolling-ball
+      // fuzz seed 51; a short piece of a round made on a wall cut at its joints, ADR 0265, gets points that near its end, 2026-11-25)
       [-1, 1].forEach((sg, k) => {
         const c: V3 = [d.p[0] + sg * r * nOut[0], d.p[1] + sg * r * nOut[1], d.p[2] + sg * r * nOut[2]];
-        worst[k] = Math.max(worst[k]!, ...sup.map((S) => Math.abs(S.dist(c) - r)));
+        const ds = sup.map((S) => S.distWithin(c));
+        if (ds.some((x) => x === null)) return;
+        counted[k]!++;
+        worst[k] = Math.max(worst[k]!, ...ds.map((x) => Math.abs(x! - r)));
       });
     }
     // too few points on the face to say (a sliver): not read as a round
     if (seen < 20) return null;
-    const k = worst[0]! <= worst[1]! ? 0 : 1;
+    // each side read off at least 20 points too (a side whose centres are all past a support's end has said nothing)
+    const ok = counted.map((n) => n >= 20);
+    if (!ok[0] && !ok[1]) return null;
+    const k = ok[0] && (!ok[1] || worst[0]! <= worst[1]!) ? 0 : 1;
     const deviation = worst[k]!;
     return deviation <= tol ? { radius: r, convex: k === 0, deviation } : null;
   } finally {
     inside.release();
     ad.delete();
-    for (const S of sup) S.release();
+    if (!supportFor) for (const S of sup) S.release();
   }
 }
 
@@ -192,8 +203,16 @@ export function sharpCurve(oc: any, round: any, a: any, b: any, n = 33): { point
       if (!(hi > lo)) return null;
       const pr = curveProjector(oc, curve, best.t0, best.t1);
       try {
-        const e0 = pr.run(at(lo + 0.02 * (hi - lo)));
-        const e1 = pr.run(at(hi - 0.02 * (hi - lo)));
+        const p0 = at(lo + 0.02 * (hi - lo)), p1 = at(hi - 0.02 * (hi - lo));
+        // A point past the curve's own end has no foot square to it: the round runs on past where its supports meet, as one ending where its spline
+        // wall ends does (the round's end is cut on a slant). That end of the edge is the curve's end nearer to it (a short piece of a round made on
+        // a wall cut at its joints, ADR 0265, has its 2% that near: rolling-ball fuzz seed 26, 2026-11-25).
+        const endNear = (p: V3) => { const q0 = take(curve.Value(best!.t0)), q1 = take(curve.Value(best!.t1)); return { t: len(sub(q0, p)) <= len(sub(q1, p)) ? best!.t0 : best!.t1, d: Infinity }; };
+        const r0 = pr.run(p0), r1 = pr.run(p1);
+        // ...and like the round's own ends, 2% in from it (a point on the end itself has no foot inside the rebuilt edge either)
+        const inward = (end: { t: number; d: number }, other: { t: number; d: number }) => ({ t: end.t + 0.02 * (other.t - end.t), d: end.d });
+        const e0 = r0 ?? (r1 ? inward(endNear(p0), r1) : null);
+        const e1 = r1 ?? (r0 ? inward(endNear(p1), r0) : null);
         if (!e0 || !e1) return null;
         [ta, tb] = e0.t <= e1.t ? [e0.t, e1.t] : [e1.t, e0.t];
       } finally {

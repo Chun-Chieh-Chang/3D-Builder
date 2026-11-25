@@ -3,8 +3,9 @@
  * outline has a spline, on a plate, the spline wall's foot rounded with the exact rolling ball. `deleteFaces` cannot take that round off (the wall
  * cannot be stretched back down to the plate), which is why the sharp edge comes from the supports' surfaces met (C2.8), is kept as points (C2.9) and
  * is found on the rebuilt body by those points lying on it (C2.10). Each claim has its control: OCCT's own round of the same edge is no rolling ball
- * to ROLLING_BALL_TOLERANCE (nominated within 1e-3 of its radius, it is the comparison that accepts its exact rebuild), a corner near a ball that is
- * no round is still rebuilt without one (ADR 0249), and a point past an edge or off it is not on it.
+ * to the exact round's 1e-7 (on the wall cut at its joints, ADR 0265, it is within ROLLING_BALL_TOLERANCE; nominated within 1e-3 of its radius, it is
+ * the comparison that accepts its exact rebuild), a corner near a ball that is no round is still rebuilt without one (ADR 0249), and a point past an
+ * edge or off it is not on it.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PlaneGcsSolver } from '@3db/sketch';
@@ -30,7 +31,7 @@ function roundOf(made: { shape: ShapeId; faceOrigins: { rel: string; kind?: stri
 }
 
 describe('a round that is no simple surface, read as a rolling ball (C2)', () => {
-  it('the exact round of a spline wall on a plate: its radius, on an inside edge, on the ball to 1e-7; OCCT\'s own round of that edge is not one', () => {
+  it('the exact round of a spline wall on a plate: its radius, on an inside edge, on the ball to 1e-7; OCCT\'s own round of that edge is not, to that', () => {
     for (const r of [0.5, 1.2]) {
       const plain = splineBoss(kernel);
       const exact = kernel.fillet(plain.shape, plain.edges, r, undefined, undefined, true);
@@ -43,11 +44,13 @@ describe('a round that is no simple surface, read as a rolling ball (C2)', () =>
       expect(ball.convex).toBe(false);
       // the exact round's surface is itself a B-spline fitted to the ball's sweep: measured 4e-13 to 1.5e-8 on these, OCCT's 1.3e-5 and up
       expect(ball.deviation).toBeLessThan(1e-7);
-      // the control: OCCT's round of the same edge is off the ball by more than the tolerance (measured 1.3e-5 and 2.3e-5), so it is not read as one
+      // the control: OCCT's round of the same edge is off the ball by more than the exact round's 1e-7, so it is not read as one to that. Made on the wall
+      // cut at its spline's joints (ADR 0265) it is 8.1e-7 and 1.3e-6 off (uncut it was 1.3e-5 and 2.3e-5, past ROLLING_BALL_TOLERANCE as well)
       const occt = kernel.fillet(plain.shape, plain.edges, r, undefined, undefined, false);
+      expect(kernel.lastFilletCut).toBe('cut');
       const o = roundOf(occt);
-      expect(kernel.rollingBall(occt.shape, o.round, o.supports, ROLLING_BALL_TOLERANCE)).toBeNull();
-      expect(kernel.rollingBall(occt.shape, o.round, o.supports, 1)!.deviation).toBeGreaterThan(ROLLING_BALL_TOLERANCE);
+      expect(kernel.rollingBall(occt.shape, o.round, o.supports, 1e-7)).toBeNull();
+      expect(kernel.rollingBall(occt.shape, o.round, o.supports, 1)!.deviation).toBeGreaterThan(1e-7);
     }
   });
 

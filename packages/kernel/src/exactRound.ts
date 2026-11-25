@@ -62,6 +62,11 @@ export interface Support {
   ev(u: number, v: number): { p: V3; n: V3; du: V3; dv: V3 };
   proj(q: V3): [number, number];
   dist(q: V3): number;
+  /**
+   * distance from q to the surface where its nearest point is square to it, null where that point is on the surface's own end (q is past where the
+   * surface stops: a non-periodic B-spline or a swept curve's end), so that no distance there says how far q is from the surface carried on
+   */
+  distWithin(q: V3): number | null;
   /** distance from q to the surface, by Newton from the parameters `guess` (no global search: for points known to be near that foot) */
   foot(q: V3, guess: [number, number]): number;
   period: [number, number];
@@ -76,8 +81,23 @@ export interface Support {
  */
 export function projector(oc: any, S: any) {
   let pr: any = null;
-  const init = () => { pr = new oc.GeomAPI_ProjectPointOnSurf(); const b = S.Bounds(0, 0, 0, 0); pr.Init(S, b.U1, b.U2, b.V1, b.V2, oc.Extrema_ExtAlgo.Extrema_ExtAlgo_Grad); };
-  const run = (q: V3) => { if (!pr) init(); const g = new oc.gp_Pnt(q[0], q[1], q[2]); pr.Perform(g); g.delete(); if (pr.NbPoints() === 0) return null; const uv = pr.LowerDistanceParameters(0, 0); return { uv: [uv.U, uv.V] as [number, number], d: pr.LowerDistance() }; };
+  // the surface's own bounds in each direction that is not periodic, where a foot on them is where the surface stops (not a foot square to it)
+  let ends: [number, number][] = [];
+  const init = () => {
+    pr = new oc.GeomAPI_ProjectPointOnSurf(); const b = S.Bounds(0, 0, 0, 0); pr.Init(S, b.U1, b.U2, b.V1, b.V2, oc.Extrema_ExtAlgo.Extrema_ExtAlgo_Grad);
+    ends = [S.IsUPeriodic() ? [-Infinity, Infinity] : [b.U1, b.U2], S.IsVPeriodic() ? [-Infinity, Infinity] : [b.V1, b.V2]];
+  };
+  const run = (q: V3) => {
+    if (!pr) init(); const g = new oc.gp_Pnt(q[0], q[1], q[2]); pr.Perform(g); g.delete(); if (pr.NbPoints() === 0) return null;
+    const uv = pr.LowerDistanceParameters(0, 0); const at: [number, number] = [uv.U, uv.V];
+    // (OCCT gives an unbounded direction as ±2e100: no end there)
+    const border = at.some((x, k) => {
+      const [lo, hi] = ends[k]!; const finite = (e: number) => Math.abs(e) < 1e99;
+      const tol = 1e-9 * Math.max(1, finite(lo) && finite(hi) ? hi - lo : Math.abs(x));
+      return (finite(lo) && Math.abs(x - lo) <= tol) || (finite(hi) && Math.abs(x - hi) <= tol);
+    });
+    return { uv: at, d: pr.LowerDistance(), border };
+  };
   return { run, release: () => { if (pr) { pr.delete(); pr = null; } } };
 }
 
@@ -125,6 +145,7 @@ export function supportOf(oc: any, face: any): Support {
   const P = projector(oc, S);
   const proj = (q: V3) => { const o = P.run(q); if (!o) throw new Error('no projection onto a support'); return o.uv; };
   const dist = (q: V3) => { const o = P.run(q); return o ? o.d : Infinity; };
+  const distWithin = (q: V3) => { const o = P.run(q); return o && !o.border ? o.d : null; };
   const foot = (q: V3, guess: [number, number]) => {
     let [a, b] = guess;
     for (let it = 0; it < 12; it++) {
@@ -139,7 +160,7 @@ export function supportOf(oc: any, face: any): Support {
     return len(sub(ev(a, b).p, q));
   };
   const period: [number, number] = [ad.IsUPeriodic() ? ad.UPeriod() : 0, ad.IsVPeriodic() ? ad.VPeriod() : 0];
-  return { ev, proj, dist, foot, period, release: () => {
+  return { ev, proj, dist, distWithin, foot, period, release: () => {
     try { P.release(); } finally { arena.dispose(); }
   } };
 }

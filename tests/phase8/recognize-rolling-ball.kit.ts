@@ -59,7 +59,7 @@ export function sample(seed: number) {
  */
 export function fuzzFile(from: number, to: number) {
   let kernel: Kernel; let solver: PlaneGcsSolver; let h0 = 0;
-  const outcomes = () => ({ cases: 0, rebuilt: [] as number[], freeform: [] as number[], differs: [] as number[], filletOnRebuild: [] as number[] });
+  const outcomes = () => ({ cases: 0, rebuilt: [] as number[], freeform: [] as number[], differs: [] as number[], filletOnRebuild: [] as number[], rebuiltOcct: [] as number[] });
   const stats = { cases: 0, notMade: 0, exact: outcomes(), occt: outcomes(), worst: 0 };
   it('loads with a heap to measure', async () => {
     kernel = await Kernel.load(); solver = await PlaneGcsSolver.create();
@@ -80,7 +80,8 @@ export function fuzzFile(from: number, to: number) {
         if (e instanceof KernelError) { stats.notMade++; return; }
         throw e;
       }
-      const exact = ((kernel as unknown as { exactRoundLog: { outcome: string }[] }).exactRoundLog ?? []).every((x) => x.outcome === 'exact');
+      // 'stretches' only says the chain was taken in several stretches (a wall cut at its spline's joints, ADR 0265), each then logged on its own
+      const exact = ((kernel as unknown as { exactRoundLog: { outcome: string }[] }).exactRoundLog ?? []).filter((x) => x.outcome !== 'stretches').every((x) => x.outcome === 'exact');
       if (exact) stats.exact.cases++; else stats.occt.cases++;
       // a trap is no outcome: it fails the case (ADR 0242)
       let r: Awaited<ReturnType<typeof recognizeStep>> | RecognizeError;
@@ -103,6 +104,16 @@ export function fuzzFile(from: number, to: number) {
       const fillets = r.doc.features.filter((f) => f.type === 'fillet');
       expect(fillets.length, what).toBe(1);
       expect(fillets[0]!.type === 'fillet' && fillets[0]!.exact, what).toBe(true);
+      // A known gap, like seed 52's: the rebuild's own exact round refused (thrown or invalid in OCCT), so it keeps OCCT's round, the same solid to the
+      // recognition tolerance but not to 1e-9 (seed 73, 2.8e-8: the rebuilt wall is the recognized spline, C2, nothing to cut; its input was not made
+      // uncut, ADR 0265). Where OCCT's round reads back to 1e-9 all the same (seed 3, 1.9e-10), the case is checked as any other.
+      const back = (kernel as unknown as { exactRoundLog: { outcome: string }[] }).exactRoundLog.map((x) => x.outcome).filter((x) => x !== 'stretches');
+      if (exact && r.report.volumeError >= 1e-9 && !back.every((x) => x === 'exact')) {
+        expect(back.some((x) => x === 'threw' || x === 'invalid'), `${what}: ${back.join(',')}`).toBe(true);
+        stats.exact.rebuiltOcct.push(seed);
+        stats.worst = Math.max(stats.worst, r.report.volumeError);
+        return;
+      }
       if (exact) {
         // the kernel's own round, read back: its radius and the solid to 1e-9
         expect(r.report.volumeError, what).toBeLessThan(1e-9);
