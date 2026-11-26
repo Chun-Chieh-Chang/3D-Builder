@@ -1,0 +1,12 @@
+make #0 edges=5 r=0.362 ok cut=none merge=none 395ms heap 128.0->153.6
+seed 54.0 made, 4 windows R 0.362
+recog54 REBUILD until=1/1 449ms heap 153.6->153.6
+recog54 REBUILD until=1/1 52ms heap 153.6->153.6
+recog54 REBUILD until=18/18 3599ms heap 221.3->318.6
+recog54 #1 edges=1 r=0.3620007697 ok cut=cut merge=merged, 4 edges 1386ms heap 382.4->550.7
+recog54 #2 edges=1 r=0.3620004482 ok cut=none merge=none 738ms heap 550.7->550.7
+recog54 #3 edges=1 r=0.361999861 ok cut=none merge=none 2797ms heap 550.7->550.7
+recog54 #4 edges=1 r=0.3619992192 ok cut=none merge=none 3074ms heap 550.7->550.7
+recog54 REBUILD until=22/22 11450ms heap 318.6->550.7
+seed 54 rebuilt
+seed 54 recognition 26286ms heap 153.6->550.7

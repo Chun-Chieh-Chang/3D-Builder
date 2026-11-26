@@ -1,0 +1,14 @@
+make #0 edges=5 r=0.362 ok cut=none merge=none 286ms heap 128.0->153.6
+seed 54.0 made, 4 windows R 0.362
+recog54 #1 edges=1 r=0.3620007697 ok cut=none merge=none 547ms heap 382.4->458.9
+recog54 #2 edges=1 r=0.3620007697 ok cut=none merge=none 517ms heap 550.7->550.7
+recog54 #3 edges=1 r=0.3620004482 ok cut=none merge=none 675ms heap 550.7->550.7
+recog54 #4 edges=1 r=0.3620007697 ok cut=none merge=none 506ms heap 660.9->660.9
+recog54 #5 edges=1 r=0.3620004482 ok cut=none merge=none 656ms heap 660.9->660.9
+recog54 #6 edges=1 r=0.361999861 ok cut=none merge=none 2738ms heap 660.9->660.9
+recog54 #7 edges=1 r=0.3620007697 ok cut=none merge=none 494ms heap 793.1->793.1
+recog54 #8 edges=1 r=0.3620004482 ok cut=none merge=none 642ms heap 793.1->793.1
+recog54 #9 edges=1 r=0.361999861 ok cut=none merge=none 2742ms heap 793.1->793.1
+recog54 #10 edges=1 r=0.3619992192 ok cut=none merge=none 2985ms heap 793.1->793.1
+seed 54 BUDGET: 計算用掉的記憶體超過 512 MiB，已停止，模型沒有變更
+seed 54 recognition 32958ms heap 153.6->793.1

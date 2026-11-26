@@ -1,0 +1,4 @@
+make #0 edges=5 r=0.362 ok cut=undefined merge=undefined 275ms heap 128.0->153.6
+seed 54.0 made, 4 windows R 0.362
+seed 54 refused: 有 4 個面是自由曲面，無法辨識：#13 bsplinesurface (20.47, 8.80, -0.23); #15 bsplinesurface (0.00, 6.57, -20.50); #
+seed 54 recognition 3378ms heap 153.6->221.3

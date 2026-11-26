@@ -1,0 +1,34 @@
+rollingBall +30.8 -> 184.4
+sharpEdge +36.9 -> 221.3
+boolean +44.3 -> 265.5
+extrude +53.1 -> 318.6
+boolean +63.8 -> 382.4
+fillet +168.3 -> 550.7
+fillet +110.2 -> 660.9
+boolean +132.2 -> 793.1
+
+BudgetError: 計算用掉的記憶體超過 512 MiB，已停止，模型沒有變更
+heap 153.6 -> 793.1
+fillet	6	+278.5 MiB	7940 ms
+boolean	16	+240.2 MiB	2495 ms
+extrude	16	+53.1 MiB	4162 ms
+sharpEdge	5	+36.9 MiB	300 ms
+rollingBall	10	+30.8 MiB	1849 ms
+massProps	32	+0.0 MiB	5083 ms
+smoothEdges	4	+0.0 MiB	636 ms
+topology	45	+0.0 MiB	572 ms
+importStep	1	+0.0 MiB	347 ms
+distancesToEdge	45	+0.0 MiB	268 ms
+exportStep	1	+0.0 MiB	115 ms
+fileTolerance	2	+0.0 MiB	96 ms
+sectionCurves	1	+0.0 MiB	41 ms
+faceDraftedAlong	11	+0.0 MiB	35 ms
+wallRail	4	+0.0 MiB	35 ms
+analyticFace	4	+0.0 MiB	6 ms
+revolve	4	+0.0 MiB	4 ms
+flatFace	8	+0.0 MiB	2 ms
+solidCount	19	+0.0 MiB	1 ms
+release	47	+0.0 MiB	1 ms
+faceExtrudedAlong	11	+0.0 MiB	1 ms
+copy	4	+0.0 MiB	0 ms
+bounds	1	+0.0 MiB	0 ms

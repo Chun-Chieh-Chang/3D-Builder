@@ -1,0 +1,23 @@
+make #0 edges=5 r=0.362 ok cut=none merge=none 672ms heap 128.0->153.6
+seed 54.0 made, 4 windows R 0.362
+recog54 REBUILD until=1/1 814ms heap 153.6->153.6
+recog54 REBUILD until=1/1 82ms heap 153.6->153.6
+recog54 REBUILD until=18/18 5950ms heap 221.3->318.6
+recog54 #1 edges=1 r=0.3620007697 ok cut=cut merge=merged, 4 edges 2647ms heap 382.4->550.7
+recog54 REBUILD until=19/19 8383ms heap 318.6->550.7
+recog54 #2 edges=1 r=0.3620007697 ok cut=cut merge=merged, 4 edges 1287ms heap 550.7->660.9
+recog54 #3 edges=1 r=0.3620004482 ok cut=none merge=none 715ms heap 660.9->660.9
+recog54 REBUILD until=20/20 5803ms heap 550.7->660.9
+recog54 #4 edges=1 r=0.3620007697 ok cut=cut merge=merged, 4 edges 2567ms heap 793.1->793.1
+recog54 #5 edges=1 r=0.3620004482 ok cut=none merge=none 1280ms heap 793.1->793.1
+recog54 #6 edges=1 r=0.361999861 ok cut=none merge=none 5392ms heap 793.1->793.1
+recog54 REBUILD until=21/21 13642ms heap 660.9->793.1
+recog54 #7 edges=1 r=0.3620007697 ok cut=cut merge=merged, 4 edges 2156ms heap 943.6->943.6
+recog54 #8 edges=1 r=0.3620004482 ok cut=none merge=none 769ms heap 943.6->1132.4
+recog54 #9 edges=1 r=0.361999861 ok cut=none merge=none 2736ms heap 1132.4->1132.4
+recog54 #10 edges=1 r=0.3619992192 ok cut=none merge=none 3125ms heap 1132.4->1132.4
+recog54 REBUILD until=22/22 14478ms heap 793.1->1132.4
+seed 54 rebuilt
+recog54 REBUILD until=22/22 11309ms heap 1132.4->1132.4
+fresh rebuild of the result: 0 not ok, 11309ms heap 128.0->265.5
+seed 54 recognition 74174ms heap 153.6->1132.4

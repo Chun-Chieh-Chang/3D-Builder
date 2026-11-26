@@ -1,0 +1,16 @@
+seed 55.0 not made
+seed 55.1 not made
+make #0 edges=3 r=0.285 FAIL cut=none 476ms heap 184.4->221.3 圓角後的結果不是有效的實體(在壓花、螺牙這類自由曲面的波浪邊上倒圓角時常見):改小半徑,或用圓角以外的做法
+seed 55.2 not made
+make #1 edges=4 r=0.206 FAIL cut=none 510ms heap 265.5->318.6 圓角後的結果不是有效的實體(在壓花、螺牙這類自由曲面的波浪邊上倒圓角時常見):改小半徑,或用圓角以外的做法
+seed 55.3 not made
+make #2 edges=4 r=0.287 ok cut=none merge=none 172ms heap 318.6->382.4
+seed 55.4 made, 3 windows R 0.287
+recog55 #3 edges=1 r=0.2870001953 ok cut=none merge=none 3583ms heap 660.9->660.9
+recog55 #4 edges=1 r=0.2870001953 ok cut=none merge=none 3529ms heap 660.9->793.1
+recog55 #5 edges=1 r=0.2869999013 ok cut=none merge=none 887ms heap 793.1->793.1
+recog55 #6 edges=1 r=0.2870001953 ok cut=none merge=none 3563ms heap 793.1->943.6
+recog55 #7 edges=1 r=0.2869999013 ok cut=none merge=none 840ms heap 943.6->943.6
+recog55 #8 edges=1 r=0.2869996302 ok cut=none merge=none 882ms heap 943.6->943.6
+seed 55 rebuilt
+seed 55 recognition 40562ms heap 382.4->943.6

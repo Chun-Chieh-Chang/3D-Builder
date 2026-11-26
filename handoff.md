@@ -1,5 +1,15 @@
 # 交接與接續工作
 
+## 2026-11-26 — ADR 0265 推送後 CI 紅燈的修正：遠離的圓角共用一次重建
+
+- **起因**：`51d55cfc` 的 full-suite CI（run 45725052381）`recognize-window-rounds-fuzz-14` 紅燈，seed 54、55 撞 512 MiB 預算。本機逐字重現；`464366fa` 綠，依 AGENTS §3.6 是 ADR 0265 的退步。
+- **根因**：不是切開。辨識修正後窗口邊緣的圓角認得出來，件走到重建；而辨識每放一個圓角就整件重建一次，Heap 隨圓角數平方成長（seed 54：+979 MiB；只重建一次結果 +137）。
+- **修正**：`packages/regen/src/recognize/reconstruct.ts` 的 `blendsApart` 與 `ReconstructOptions.shareBlendRebuilds`（預設 true）。門檻、預算不變。
+- **結果**：window-rounds 100 組（本機）重建 55／拒絕 28／撞預算 0（`464366fa` CI 31／37／15）；任一版本能重建的全部仍重建。新測試 `tests/phase8/recognize-shared-blend-rebuild.test.ts`；辨識相關 99 檔全過；突變 4 項全紅；typecheck、四項 lint 全過。細節 ADR 0265 §10。
+- **探針**：`spikes/0265-fillet-c1-joints/w54.test.ts`、`w54heap.test.ts`、`window-outcomes.mjs`、`mutate-shared.mjs`。
+- **未跑**：完整 `verify:ui`（本次只改辨識的重建次數，不動繪圖、檢視或點選）。full-suite CI 於推送後觸發，結果待填。
+- **仍待**（沿用上一節）：倒角是否比照；seed 73、52 精確圓角例外；window-rounds 切開失敗退回的原因。
+
 ## 2026-11-26 — ADR 0265 實作：圓角跨過 C1 接縫，先切開再做圓角（已推送）
 
 - **做了什麼**（細節見 [ADR 0265](docs/adr/0265-fillet-across-c1-joints.md) §9、DEV_LOG 同日）：
@@ -27,7 +37,7 @@
   - 突變 10 項全部轉紅（`spikes/0265-fillet-c1-joints/mutate-0265.mjs`）。
   - 完整 `verify:ui` 281/281，跑了三次，最後一次就是最終程式碼（使用者的電腦）。
   - `typecheck`、四項 lint 全過。
-  - full-suite CI：{{CI}}。
+  - full-suite CI：run 45725052381 **紅**（window-rounds fuzz-14 撞記憶體預算），2026-11-26 修正，見上一節。
 - **仍待**：
   - 倒角是否比照辦理（ADR §7.3）；
   - seed 73、seed 52 重建時精確圓角拋例外的根因；
