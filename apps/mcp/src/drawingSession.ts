@@ -118,6 +118,8 @@ import { dxfText, importCadDxf } from '@3db/drawing';
 const ORTHO: ViewName[] = ['front', 'back', 'top', 'bottom', 'left', 'right'];
 const AUTO_SHEETS: SheetSize[] = ['A4', 'A3'];
 const SIDES: ViewSide[] = ['up', 'down', 'left', 'right'];
+/** The leader of an angle dimension written with one (ADR 0266), mm on the sheet: a chamfer's. */
+const LEADER_ANGLE_LENGTH = 8;
 const IDENTITY = { position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number] };
 
 function onPage(doc: DrawingDoc, pageIndex: number, fn: (single: DrawingDoc) => DrawingDoc): DrawingDoc {
@@ -595,6 +597,7 @@ export class DrawingSession {
     const { placed, outcomes } = this.build(draft);
     const commands: DrawingCommand[] = [];
     const detached: Id[] = [];
+    const leadered: Id[] = [];
     for (const d of dimensions) {
       if (d.kind !== 'angle') continue;
       const view = placed.get(d.view);
@@ -605,14 +608,36 @@ export class DrawingSession {
       const outsideX = Math.max(0, Math.abs(x - view.at[0]) - view.w / 2);
       const outsideY = Math.max(0, Math.abs(y - view.at[1]) - view.h / 2);
       const acute = Math.min(result.value, 180 - result.value);
-      if (Math.hypot(outsideX, outsideY) > 8 * view.scale || acute >= 87) {
+      const supplementary = result.value > 120 ? { supplementary: true } : {};
+      if (acute >= 87) {
         detached.push(d.id);
+      } else if (Math.hypot(outsideX, outsideY) > 8 * view.scale) {
+        // a small slant meets its plane far off the view (1°–8° drafts of R1-10226: 12–279 mm): written with a leader from the slant, not dropped (ADR 0266)
+        commands.push({ type: 'setDimension', dimensionId: d.id, patch: { leader: LEADER_ANGLE_LENGTH, angle: 45, ...supplementary } });
+        leadered.push(d.id);
       } else if (result.value > 120) {
         commands.push({ type: 'setDimension', dimensionId: d.id, patch: { supplementary: true } });
       }
     }
     if (detached.length) commands.push({ type: 'deleteDimensions', dimensionIds: detached });
-    return commands.length ? applyDrawingCommand(draft, { type: 'batch', commands }) : draft;
+    if (!commands.length) return draft;
+    const done = applyDrawingCommand(draft, { type: 'batch', commands });
+    if (!leadered.length) return done;
+    // each leader points away from the middle of its view, where the slant is, so that its text is off the part
+    const again = this.build(done);
+    const turns: DrawingCommand[] = [];
+    for (const id of leadered) {
+      const d = page(done).dimensions.find((x) => x.id === id);
+      const view = d && again.placed.get(d.view);
+      const result = again.outcomes.get(id);
+      if (!view || !result || 'error' in result || result.handle?.kind !== 'round') continue;
+      const [tx, ty] = result.handle.centre;
+      const away = Math.atan2(ty - view.at[1], tx - view.at[0]);
+      // the nearer of the four diagonals: a leader at 45° off the axes clears the view's lines
+      const angle = ((Math.floor((away * 180) / Math.PI / 90) * 90 + 45) % 360 + 360) % 360;
+      if (angle !== 45) turns.push({ type: 'setDimension', dimensionId: id, patch: { angle } });
+    }
+    return turns.length ? applyDrawingCommand(done, { type: 'batch', commands: turns }) : done;
   }
 
   /**
@@ -1083,11 +1108,13 @@ export class DrawingSession {
       for (const d of page(doc, pageIndex).dimensions) {
         if (info.score === 0) break;
         if (!targets.has(d.id)) continue;
-        if (d.kind === 'diameter' || d.kind === 'radius' || d.kind === 'chamfer') {
+        // an angle written with a leader (ADR 0266) is steered as a chamfer is: its leader's direction and length
+        if (d.kind === 'diameter' || d.kind === 'radius' || d.kind === 'chamfer' || (d.kind === 'angle' && d.angle !== undefined)) {
+          const dAngle = d.angle!;
           const hitsNow = this.arrowHitsView(this.build(doc, pageIndex), page(doc, pageIndex), d.id);
           // longer leaders last: at a large scale (or with large text) the part is wider on the sheet than the first four reach across (ADR 0261)
           // Always allow rotating to candidateAngles even when !hitsNow (requireHit=hitsNow prevents degrading a hitting arrow while letting chamfers/rounds uncross).
-          const angles = [d.angle, ...candidateAngles.filter((a) => Math.abs(a - d.angle) > 1e-3)];
+          const angles = [dAngle, ...candidateAngles.filter((a) => Math.abs(a - dAngle) > 1e-3)];
           const missedAngles = new Set<number>();
           outer: for (const leader of [8, 14, 22, 32, 46, 64]) {
             for (const angle of angles) {

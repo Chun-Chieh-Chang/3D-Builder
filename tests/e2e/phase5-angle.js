@@ -71,5 +71,37 @@ a.run = async () => {
   panel('[data-field="dimSupplementary"]').click();
   await H.waitFor(() => texts().includes('45°') && !texts().includes('135°'), 10000, 'back to the first angle');
   H.check(!('supplementary' in page()?.dimensions[0]), 'and taken out of the dimension');
+
+  // written with a leader (ADR 0266): the same value at the end of a leader from the first element; its length in the panel; dragged by its text with the
+  // pointer, the leader turns and stretches and the value stays; unticked, the arc is back
+  const id = page()?.dimensions[0].id;
+  const outcome = () => store.drawingStore.scene().dimensions.get(id);
+  panel('[data-field="dimAngleLeader"]').click();
+  await H.waitFor(() => page()?.dimensions[0].leader === 8 && outcome()?.handle?.kind === 'round', 10000, 'the leader');
+  H.check(page()?.dimensions[0].angle === 45, `its direction: ${page()?.dimensions[0].angle}`);
+  H.check(outcome().text === '45°', `the same value with a leader: ${outcome().text}`);
+  H.check(!panel('[data-field="dimArc"]'), 'the arc radius is not offered for a leader');
+  const length = panel('[data-field="dimAngleLeaderLength"]');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(length, '14');
+  length.dispatchEvent(new Event('input', { bubbles: true }));
+  length.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await H.waitFor(() => page()?.dimensions[0].leader === 14, 5000, 'the leader length');
+  const client = (p) => { const svg = document.querySelector('[data-svg] svg'), r = svg.getBoundingClientRect(), box = svg.viewBox.baseVal; return [r.left + (p[0] / box.width) * r.width, r.top + ((box.height - p[1]) / box.height) * r.height]; };
+  const canvas = () => document.querySelector('[data-drawing-canvas]');
+  const send = (type, p) => canvas().dispatchEvent(new PointerEvent(type, { clientX: p[0], clientY: p[1], button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerId: 23, bubbles: true }));
+  const before = { ...page()?.dimensions[0] };
+  const label = outcome().items.find((x) => x.kind === 'text');
+  H.check(!!label, 'the value is drawn');
+  const a = client(label.at), b = client([label.at[0] - 12, label.at[1] + 9]);
+  send('pointerdown', a);
+  for (let i = 1; i <= 5; i++) { send('pointermove', [a[0] + ((b[0] - a[0]) * i) / 5, a[1] + ((b[1] - a[1]) * i) / 5]); await H.wait(25); }
+  send('pointerup', b);
+  await H.waitFor(() => page()?.dimensions[0].angle !== before.angle || page()?.dimensions[0].leader !== before.leader, 5000, 'the leader dragged');
+  H.check(Number.isFinite(page()?.dimensions[0].angle) && page()?.dimensions[0].leader > 0, `dragged: ${page()?.dimensions[0].angle}° ${page()?.dimensions[0].leader} mm`);
+  H.check(outcome().text === '45°', `the value unchanged by the drag: ${outcome().text}`);
+  panel('[data-field="dimAngleLeader"]').click();
+  await H.waitFor(() => page()?.dimensions[0].leader === undefined && outcome()?.handle?.kind === 'angle', 10000, 'the arc again');
+  H.check(!('angle' in page()?.dimensions[0]), 'its direction taken away with it');
+  H.check(outcome().text === '45°', `the arc writes the same: ${outcome().text}`);
   return { texts: texts() };
 };

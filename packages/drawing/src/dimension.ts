@@ -666,6 +666,20 @@ function angle(d: Extract<Dimension, { kind: 'angle' }>, ea: ElementFacts, eb: E
   const sweep = Math.atan2(r1[0] * r2[1] - r1[1] * r2[0], r1[0] * r2[0] + r1[1] * r2[1]); // signed, -π..π
   const value = (Math.abs(sweep) * 180) / Math.PI;
   const { text, parts } = dimensionWords(d, value);
+  if (d.leader !== undefined && d.angle !== undefined) {
+    // with a leader (v45, ADR 0266): from the middle of the first element, as a chamfer's, the same value the arc would write
+    const tip = toSheet(placed, la.c[0], la.c[1]);
+    const th = (d.angle * Math.PI) / 180;
+    const u: P = [Math.cos(th), Math.sin(th)];
+    const outer = add(tip, u, d.leader);
+    const dir = u[0] >= 0 ? 1 : -1;
+    const textAt: P = [outer[0] + dir * 1, outer[1] + 1];
+    const label = dimensionTextItems(parts, textAt, DIM_TEXT, dir > 0 ? 'left' : 'right');
+    const shelfEnd: P = [outer[0] + dir * (label.width + 2), outer[1]];
+    const items: SceneItem[] = [line(shelfEnd, outer, tip), ...arrowhead(tip, [-u[0], -u[1]]), ...label.items];
+    const middle: P = [textAt[0] + (dir * label.width) / 2, textAt[1] + DIM_TEXT / 2];
+    return { value, text, ...stackedParts(parts), items, handle: { kind: 'round', centre: tip, radius: 0 }, dxf: { textAt: middle, geometry: { kind: 'radius', centre: tip, near: tip, leader: d.leader } } };
+  }
   const centre = toSheet(placed, meet[0], meet[1]);
   const R = d.arc;
   const a1 = Math.atan2(r1[1], r1[0]);

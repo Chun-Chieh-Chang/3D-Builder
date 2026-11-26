@@ -14,7 +14,7 @@ import { ANNOTATION_FIELDS, checkAnnotation, DRAWING_TEXT_WIDTH, framesUsing, va
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 44;
+export const DRAWING_SCHEMA_VERSION = 45;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
@@ -706,6 +706,13 @@ export interface AngleDimension extends DimensionCommon {
   arc: number;
   supplementary?: boolean;
   count?: number;
+  /**
+   * Written with a leader (v45, ADR 0266): no arc and no extension lines, a line with an arrow from the middle of `a` (the slanted face) `leader` mm long in the
+   * direction `angle` (degrees counter-clockwise from the sheet's x), and the value at its end — for a small angle whose two lines meet far off the view. The
+   * value is the same one the arc would write. Both or neither.
+   */
+  leader?: number;
+  angle?: number;
 }
 
 /**
@@ -1179,7 +1186,7 @@ export type DimensionPatch = {
   /** `null` (or 0) puts the text back in the middle. */
   slide?: number | null;
   textOffset?: [number, number] | null;
-  /** A diameter or a radius: the length of the leader; `null` puts it back to 8. */
+  /** A diameter or a radius: the length of the leader; `null` puts it back to 8. An angle (v45): written with a leader this long; `null` back to its arc. */
   leader?: number | null;
   supplementary?: boolean | null;
   a?: DrawingRef;
@@ -1475,6 +1482,9 @@ function checkDimension(d: Dimension, views: readonly DrawingView[]): void {
   } else if (d.kind === 'angle') {
     if (!isRefValue(d.a) || !isRefValue(d.b) || d.a.kind === 'vertex' || d.b.kind === 'vertex' || d.a.kind === 'sketch' || d.b.kind === 'sketch' || d.a.point || d.b.point) throw new CommandError(t('drawing.dimBadRef'));
     if (!Number.isFinite(d.arc) || !(d.arc > 0)) throw new CommandError(t('drawing.dimBadArc'));
+    if ((d.leader === undefined) !== (d.angle === undefined)) throw new CommandError(t('drawing.dimLeaderPair'));
+    if (d.leader !== undefined && !(Number.isFinite(d.leader) && d.leader > 0)) throw new CommandError(t('drawing.dimBadLeader'));
+    if (d.angle !== undefined && !Number.isFinite(d.angle)) throw new CommandError(t('drawing.dimBadAngle'));
     // an angle has no size for an ISO 286 fit to come from, so it takes limits or a one-sided limit, never a fit
     if (d.tolerance && d.tolerance.type === 'fit') throw new CommandError(t('drawing.dimAngleFit'));
   } else if (d.kind === 'diameter' || d.kind === 'radius') {
@@ -1802,13 +1812,13 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
         linear: ['offset', 'orientation', 'a', 'b'],
         diameter: ['angle', 'ref'],
         radius: ['angle', 'ref'],
-        angle: ['arc', 'a', 'b'],
+        angle: ['arc', 'a', 'b', 'angle'],
         ordinate: ['offset', 'axis', 'origin', 'refs'],
         chamfer: ['angle', 'ref', 'size', 'chamferAngle', 'chamferFormat', 'coneSide'],
       };
       if (insideAt !== undefined && targetKind !== 'linear') throw new CommandError(t('drawing.notForKind', { field: 'insideAt', kind: targetKind }));
       if (slide !== undefined && targetKind !== 'linear' && targetKind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'slide', kind: targetKind }));
-      if (leader !== undefined && targetKind !== 'diameter' && targetKind !== 'radius' && targetKind !== 'chamfer') throw new CommandError(t('drawing.notForKind', { field: 'leader', kind: targetKind }));
+      if (leader !== undefined && targetKind !== 'diameter' && targetKind !== 'radius' && targetKind !== 'chamfer' && targetKind !== 'angle') throw new CommandError(t('drawing.notForKind', { field: 'leader', kind: targetKind }));
       if (calloutStyle !== undefined && targetKind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'calloutStyle', kind: targetKind }));
       if (wrapWidth !== undefined && targetKind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'wrapWidth', kind: targetKind }));
       if (callout !== undefined && targetKind !== 'diameter') throw new CommandError(t('drawing.notForKind', { field: 'callout', kind: targetKind }));
@@ -1850,6 +1860,11 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       for (const [k, v] of [['precision', precision], ['prefix', prefix], ['suffix', suffix], ['text', text], ['leader', leader]] as const) {
         if (v === null || v === '') delete loose[k];
         else if (v !== undefined) loose[k] = v;
+      }
+      // an angle dimension with a leader (v45): the leader and its direction come and go together; given a leader alone, it points up and to the right
+      if (next.kind === 'angle') {
+        if (leader === null) delete loose.angle;
+        else if (next.leader !== undefined && next.angle === undefined) next.angle = 45;
       }
       if (slide === null || slide === 0) delete loose.slide;
       else if (slide !== undefined) loose.slide = slide;

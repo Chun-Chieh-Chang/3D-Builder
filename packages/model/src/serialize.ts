@@ -491,6 +491,9 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   42: (doc) => doc,
   // v44: detached editable 2D CAD pages; old drawings have no CAD content.
   43: (doc) => doc,
+  // v45: an angle dimension may be written with a leader (`leader`, `angle`; ADR 0266). Absent means its arc, as before; nothing to convert, the version keeps
+  // an older program from drawing an arc whose lines meet far off the view.
+  44: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {

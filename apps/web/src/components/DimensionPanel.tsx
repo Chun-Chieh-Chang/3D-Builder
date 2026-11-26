@@ -406,10 +406,21 @@ export function DimensionPanel() {
                 </>
               ) : current.kind === 'angle' ? (
                 <>
-                  <label className="pm-row">
-                    <span>{t('drawingUi.dimArc')}</span>
-                    <NumberBox field="dimArc" value={current.arc} onCommit={(v) => v > 0 && d.setDimension(current.id, { arc: v })} />
+                  <label className="pm-row checkbox">
+                    <input type="checkbox" data-field="dimAngleLeader" checked={current.leader !== undefined} onChange={(e) => d.setDimension(current.id, { leader: e.target.checked ? 8 : null })} />
+                    <span>{t('drawingUi.dimAngleLeader')}</span>
                   </label>
+                  {current.leader !== undefined ? (
+                    <label className="pm-row">
+                      <span>{t('drawingUi.dimLeader')}</span>
+                      <NumberBox field="dimAngleLeaderLength" value={current.leader} onCommit={(v) => v > 0 && d.setDimension(current.id, { leader: v })} />
+                    </label>
+                  ) : (
+                    <label className="pm-row">
+                      <span>{t('drawingUi.dimArc')}</span>
+                      <NumberBox field="dimArc" value={current.arc} onCommit={(v) => v > 0 && d.setDimension(current.id, { arc: v })} />
+                    </label>
+                  )}
                   <label className="pm-row checkbox">
                     <input type="checkbox" data-field="dimSupplementary" checked={!!current.supplementary} onChange={(e) => d.setDimension(current.id, { supplementary: e.target.checked })} />
                     <span>{t('drawingUi.dimSupplementary')}</span>
