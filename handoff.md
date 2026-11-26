@@ -4,6 +4,7 @@
 
 - **做了什麼**：小角度斜面的角度尺寸，交點太遠時改以引線標註，不再被自動標註刪掉。工程圖格式 v45。細節見 [ADR 0266](docs/adr/0266-angle-dimension-leader.md)、DEV_LOG 同日。
 - **驗證**：合成零件 1°～8° 斜面覆蓋率由 1/2 升到 2/2；突變 6 項全紅；工程圖相關的 156 個測試檔全過；e2e `phase5-angle` 通過；完整 `verify:ui` **276/281，未全過**。5 支失敗，經對照都與本次修改無關：`phase3-component-pattern`、`phase3-step-import`、`phase3-worker-crash` 在不含本次修改的 `4d31b21f`、核心換回 ADR 0265 前（`464366fa`），以及 11-24 曾 281/281 的 `ec0cb5e9` 上都一樣失敗；`phase5-assembly`（本次修改 5/5 失敗，`4d31b21f` 1/4 通過，`ec0cb5e9` 通過）與 `phase3-explode`（整輪失敗、單獨通過）時好時壞，失敗都在開啟組合件那一步。推測是這台電腦的環境問題（未查明）。**使用者 2026-11-26 同意延後**（AGENTS §3.6），先提交推送，再另查。本次的 e2e `phase5-angle`（含真實指標拖曳）通過。
+- **full-suite CI**：[run 45770751941](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45770751941)（`94952560`）全綠：8 個 shard 共 547 個測試檔通過、5 個略過，6594 項通過、29 項略過；三平台 integrity 與 `section-offset-cost` 通過。前一輪 run 45768345729（`77bf9969`）shard 4 紅燈：`help.drwDimAngle.summary` 107 字超過 80 字上限（`tests/phase8/help.test.ts`），由 `94952560` 改為 63 字修正。
 - **仍待**：
   - R1-10226 實件驗證：需要它的 3D 檔（或同意從 `組合圖(R1-10226+R1-10134).STEP` 抽出），再以 `drawing_create` 重跑，看原本缺標的 5 面（`f203`、`f211`、`f218`、`f92`、`f125`）是否都標上。原圖 PDF 在 `D:\Self-developed_Apps\3DB實機確認\R1-10226-MC_04_mdx.pdf`，可核對數值（0.25°、0.5°、1.718°、2.0°、8.0° 等）。
   - 合成零件上，排開重疊把一條引線轉向零件內側，文字落在輪廓內，可讀但不理想。

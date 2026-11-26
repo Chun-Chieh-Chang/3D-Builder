@@ -53,6 +53,8 @@
 - **完整 `verify:ui`**：**276/281，未全過**。5 支失敗，經對照都與本次修改無關：`phase3-component-pattern`、`phase3-step-import`、`phase3-worker-crash` 在不含本次修改的 `4d31b21f`、核心換回 ADR 0265 前（`464366fa`），以及 11-24 曾 281/281 的 `ec0cb5e9` 上都一樣失敗；`phase5-assembly`（本次修改 5/5 失敗，`4d31b21f` 1/4 通過，`ec0cb5e9` 通過）與 `phase3-explode`（整輪失敗、單獨通過）時好時壞，失敗都在開啟組合件那一步。推測是這台電腦的環境問題（未查明）。**使用者 2026-11-26 同意延後**（AGENTS §3.6），先提交推送，再另查。本次的 e2e `phase5-angle`（含真實指標拖曳）通過。
 - 工程圖相關的單元測試（`apps/mcp/test`、`tests/phase5`、`packages/drawing`、`packages/model`、`apps/web/test`、`packages/i18n`）共 156 個檔，全部通過。
 
+- **full-suite CI**：run 45770751941（`94952560`）全綠（547 個測試檔、6594 項）。前一輪因說明摘要超過 80 字而在 `tests/phase8/help.test.ts` 紅燈，這個測試不在本機先跑的工程圖範圍內，已修正。
+
 ## 4. 已知限制
 
 - **R1-10226 實件沒有驗證**：當時的工程圖與 3D 檔（`out/approved-20261122/…`）不在這台電腦，所以「實件上 5 個斜面從缺標變成有標」只以合成零件代證。原圖 PDF 可以拿來核對數值，但核對需要 R1-10226 的 3D 檔。
