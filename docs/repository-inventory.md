@@ -6,8 +6,8 @@
 
 | 項目 | 程式來源值 |
 |---|---|
-| 零件／組合件／工程圖 Schema | 96／7／44 |
-| ADR 文件 | 264 |
+| 零件／組合件／工程圖 Schema | 96／7／45 |
+| ADR 文件 | 265 |
 | 瀏覽器檔案／可執行腳本／呼叫 | 234／229／281 |
 | 實機清單項目 | 101 |
 | 本地 wiki/ | 不存在；未假定另有遠端 wiki |
@@ -612,6 +612,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 - [ADR 0263: drawing quality gate (draft vs release status, PRELIMINARY stamp, general tolerance and 3D model authority checks)](<adr/0263-drawing-quality-gate.md>)
 - [ADR 0264: DWG conversion and editable detached 2D drawings](<adr/0264-dwg-editable-drawing-import-export.md>)
 - [ADR 0265：圓角跨過 C1 接縫——先在接縫切開再做圓角](<adr/0265-fillet-across-c1-joints.md>)
+- [ADR 0266：角度尺寸的引線畫法——小角度斜面不再被自動標註丟掉](<adr/0266-angle-dimension-leader.md>)
 
 ### 歷史驗證
 
