@@ -70,6 +70,60 @@ export interface ReconstructReport {
 export interface ReconstructOptions {
   /** Make a spline outline of biarcs, and say how close that is. Off by default: the user asks for it (ADR 0243). */
   approximateSplines?: boolean;
+  /**
+   * A round or chamfer far from every one placed since the last rebuild is found on that rebuild instead of a new one (default true; `blendsApart`).
+   * Off, every blend is found on a rebuild of all the features before it, as before 2026-11-26: the tests compare the two.
+   */
+  shareBlendRebuilds?: boolean;
+}
+
+/**
+ * How far from its sharp edge a blend may reach, in its own radius (a fillet) or largest distance (a chamfer): a round of radius r between faces at an
+ * angle θ touches them r·cot(θ/2) from the edge, 4r at θ = 28°.
+ */
+const BLEND_REACH = 4;
+
+/** Points along a sharp edge, and the most two neighbours are apart. */
+function sharpPoints(s: SharpEdge): { points: Vec3[]; spacing: number } {
+  if (s.kind === 'sampled') return { points: s.points, spacing: Math.max(0, ...s.points.slice(1).map((p, k) => len(sub(p, s.points[k]!)))) };
+  if (s.kind === 'line') {
+    const d = sub(s.ends[1], s.ends[0]);
+    return { points: Array.from({ length: 17 }, (_, k) => addv(s.ends[0], [d[0] * k / 16, d[1] * k / 16, d[2] * k / 16])), spacing: len(d) / 16 };
+  }
+  const n = unit(s.normal);
+  const a = unit(Math.abs(n[0]) < 0.9 ? [0, n[2], -n[1]] : [-n[2], 0, n[0]]);
+  const b: Vec3 = [n[1] * a[2] - n[2] * a[1], n[2] * a[0] - n[0] * a[2], n[0] * a[1] - n[1] * a[0]];
+  const points = Array.from({ length: 48 }, (_, k): Vec3 => {
+    const q = (2 * Math.PI * k) / 48;
+    return addv(s.center, [s.radius * (Math.cos(q) * a[0] + Math.sin(q) * b[0]), s.radius * (Math.cos(q) * a[1] + Math.sin(q) * b[1]), s.radius * (Math.cos(q) * a[2] + Math.sin(q) * b[2])]);
+  });
+  return { points, spacing: 2 * s.radius * Math.sin(Math.PI / 48) };
+}
+
+function blendReach(rec: BlendRecord): number {
+  return BLEND_REACH * (rec.type === 'fillet' ? rec.radius : Math.max(...rec.edges.flatMap((e) => e.distances)));
+}
+
+function blendEdges(rec: BlendRecord): SharpEdge[] {
+  return rec.type === 'fillet' ? rec.edges : rec.edges.map((e) => e.edge);
+}
+
+/**
+ * Whether `blend` is far enough from each of `others` that placing them changes nothing it is found on: their sharp edges, sampled, are further apart
+ * than twice what the two may reach (less the sampling's spacing). A rebuild then shows `blend`'s edges as a rebuild with `others` placed would.
+ * Recognition used to rebuild every feature before each blend: n blends were n + 1 rebuilds of the whole part and n(n + 1)/2 fillets, and on a cup
+ * with four rounded windows (window-rounds fuzz seed 54) that grew the heap 979 MiB, where a rebuild of the result alone took 137 (2026-11-26).
+ */
+export function blendsApart(blend: BlendRecord, others: readonly BlendRecord[]): boolean {
+  const mine = blendEdges(blend).map(sharpPoints);
+  return others.every((o) => {
+    const gap = 2 * (blendReach(blend) + blendReach(o));
+    return blendEdges(o).map(sharpPoints).every((q) => mine.every((p) => {
+      let d = Infinity;
+      for (const x of p.points) for (const y of q.points) d = Math.min(d, len(sub(x, y)));
+      return d - p.spacing - q.spacing > gap;
+    }));
+  });
 }
 
 /** What each biarc is built to keep within (mm): the same size as a hundredth, and 16 pieces for a gentle curve of 30 mm. */
@@ -645,11 +699,18 @@ export function reconstructImported(kernel: Kernel, regen: Regenerator, doc: Par
       run({ type: 'deleteFeatures', featureIds: [featureId] });
       let end = index + b.features.length;
       const made = b.features.map((f) => f.id);
+      // the last rebuild, and the blends placed since it (found on it, all far apart: blendsApart)
+      let r: RebuildResult | null = null;
+      let since: BlendRecord[] = [];
       for (const blend of rec.blends) {
-        budget.check();
-        const r = regen.rebuild(next, { until: end, ...REFUSALS });
-        const failed = failedOf(r, made);
-        if (failed) throw new RecognizeError(whyFailed(failed));
+        if (!r || options.shareBlendRebuilds === false || !blendsApart(blend, since)) {
+          budget.check();
+          r = regen.rebuild(next, { until: end, ...REFUSALS });
+          const failed = failedOf(r, made);
+          if (failed) throw new RecognizeError(whyFailed(failed));
+          since = [];
+        }
+        since.push(blend);
         for (const f of blendFeature(kernel, blend, r, ids, b)) {
           run({ type: 'insertFeature', feature: f, index: end });
           made.push(f.id);
