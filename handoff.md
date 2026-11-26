@@ -9,7 +9,8 @@
 - **探針**：`spikes/0265-fillet-c1-joints/w54.test.ts`、`w54heap.test.ts`、`window-outcomes.mjs`、`mutate-shared.mjs`。
 - **驗證（續）**：full-suite CI run 45749220255（`de45d3aa`）全綠。辨識相關的兩支 e2e（`phase8-feature-recognition`、`phase8-recognize-spline`）2/2 通過；完整 `verify:ui` 未跑（只改辨識的重建次數，不動繪圖、檢視或點選）。
 - **同日另修**：`apps/mcp/test/live-assembly.test.ts` 的固定等待改成等條件（run #379 macOS 紅燈，見 DEV_LOG 同日）。
-- **仍待**（沿用上一節）：倒角是否比照；seed 73、52 精確圓角例外；window-rounds 切開失敗退回的原因。
+- **倒角是否比照**：**不比照，已結案**（ADR 0265 §11）。樣條牆上倒角不切開時 100 組全成功、最慢 0.27 秒、體積合理；切開反而補錯材料（最多 9.2 倍）。
+- **仍待**（沿用上一節）：seed 73、52 精確圓角例外；window-rounds 切開失敗退回的原因。
 
 ## 2026-11-26 — ADR 0265 實作：圓角跨過 C1 接縫，先切開再做圓角（已推送）
 
@@ -53,10 +54,10 @@
   2. `RebuildOptions.largestFilletRadius`（預設 true）；辨識的重建傳 false，不跑二分法。手動建模的訊息不變。
 - **驗證**：新測試 3 項，3 項突變皆轉紅；`typecheck`、`lint:rules` 通過；50 個受影響 fuzz 檔 420 組全過，與修改前 CI run 45323057609 比對總結全同（窗口圓角只比到每檔計數）；提到圓角／辨識的 102 檔回歸 100 通過、2 略過（1361 項通過）。seed 46 41 秒、seed 91 72 秒、seed 96 140 秒、seed 16 6 秒。
 - **仍待**：
-  - seed 96 仍需 140 秒：OCCT 在精確邊上三種形狀都建不出圓角，根因未量。
+  - ~~seed 96 仍需 140 秒~~ **已解決（2026-11-26）**：根因與修法見下一項；ADR 0265 實作後本機 15 秒內。
   - 兩個剖面測試（`section-spline-isolation` 18.5 秒、`section-clearance-probe` 30.7 秒）的時間在測試自己的 `isValid`（BRepCheck 對 48 條一次 B-spline），只記錄，未改。
-  - **seed 96 根因已查明，修法寫成 [ADR 0265 草案](docs/adr/0265-fillet-across-c1-joints.md)（未實作）**：草圖樣條（Catmull-Rom）在內部節點只有 C1，OCCT 滾球圓角走到接縫回報 `ChFiDS_Error`，有時要 10～75 秒才放棄；換成 C2 曲線或先在接縫切開（`ShapeUpgrade_ShapeDivideContinuity`），就在 0.02～3.5 秒內成功。100 組中成功由 84 組增為 94 組，唯一退步是 seed 39（需退路）。實作與否待使用者決定。探針與當時的量測輸出已入庫於 `spikes/0265-fillet-c1-joints/`（README 寫了怎麼跑；驗收標準第 1 項的全套件圓角探針是其中的 `vitest.fillet.mts`）。
-  - **seed 96 在 CI 上更接近時限**：[run 45358480253](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45358480253) 中 shard 3 的 seed 96 為 215 秒（修改前 run 45323057609 為 173 秒；本次修改不碰它走的路，差異應是 runner 起伏，未驗證），時限 300 秒。這是下一個要查的。
+  - **seed 96 根因已查明，修法為 [ADR 0265](docs/adr/0265-fillet-across-c1-joints.md)（2026-11-26 已實作並推送，以下為當時的草案摘要）**：草圖樣條（Catmull-Rom）在內部節點只有 C1，OCCT 滾球圓角走到接縫回報 `ChFiDS_Error`，有時要 10～75 秒才放棄；換成 C2 曲線或先在接縫切開（`ShapeUpgrade_ShapeDivideContinuity`），就在 0.02～3.5 秒內成功。100 組中成功由 84 組增為 94 組，唯一退步是 seed 39（需退路）。探針與當時的量測輸出已入庫於 `spikes/0265-fillet-c1-joints/`（README 寫了怎麼跑；驗收標準第 1 項的全套件圓角探針是其中的 `vitest.fillet.mts`）。
+  - **seed 96 在 CI 上更接近時限**：[run 45358480253](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45358480253) 中 shard 3 的 seed 96 為 215 秒（修改前 run 45323057609 為 173 秒；本次修改不碰它走的路，差異應是 runner 起伏，未驗證），時限 300 秒。**已解決（2026-11-26）**：ADR 0265 之後，該檔（fuzz-10，seed 91–100）在 full-suite CI [run 45749220255](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45749220255) 為 172 秒（此處的 367 秒是整檔）；CI 日誌沒有逐種子時間。
 - **full-suite CI**：[run 45358480253](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/45358480253)（`908ca3b6`）全數成功：8 個分片、`section-offset-cost`、三平台 integrity；`deploy-pages` 依設定略過。CI 上各檔耗時（修改前 → 後）：rolling-ball fuzz-5 252 → 156 秒、fuzz-2 187 → 112、fuzz-4 170 → 74、fuzz-7 177 → 104、fuzz-6 145 → 88、fuzz-10 336 → 367（seed 96）、fuzz（1–10）68 → 111。單次 CI 起伏大，只能看趨勢。
 
 ## 2026-11-24 — DWG 匯入不再產生空白「Paper」頁；完整 `verify:ui` 281/281（已推送）
@@ -258,7 +259,7 @@
 | **桌面新版** | `101b2103`、`0d4d3269` 與 `167d29ce` 都已推送。原檢具 `EFU0010073_01.3dbd` 在全新瀏覽器工作階段驗證過兩條螺孔線的模式切換，回報當下的既有分頁版本未能確認。粗糙度提交的 [三平台檢查／Pages](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/44971456035) 已通過，網頁版已部署。桌面最新 Release 仍為 `v0.6.0`，發行後加入的 UI 版本號（`995f2b94`）及工程圖改動待納入下一次桌面建置。 |
 | **照片到原生組合件／Anatomy** | `5721fa91` 已交付流程文件與 MCP 回歸。線性致動器已有七件外部組立、原生組合件與互動拆解示例，360 mm 安裝距、Ø12、50 mm 行程為模擬值。實照閉環還需多角度實物照片、至少一項實測尺寸，以及遮蔽界面與配合的確認，再驗收拆件、預覽、存檔與重開。齒輪、絲桿、軸承和限位目前未建模。舊聊天的致動器／藍圖 HTML 在搬移前的 `out/`，本 checkout 未找到，交接時先確認原檔位置。參見 [照片建模指引](docs/photo-to-cad.md)。 |
 | **組合件 MCP 客戶端驗收** | 無視窗組裝、BOM／STEP 匯出、`assembly_open` 與 GUI 即時控制（ADR 0253）已在主線。Claude Code 已完成試建、預覽、儲存及獨立重開的實例。Codex 停在工具核准，OpenCode 已連線，其他規劃中的客戶端仍缺完整操作證據。各客戶端均用同一案例核對工具探索、試組、預覽、存檔、重開後姿態與配合。零件 GUI 的 S3 使用者驗收已完成，拒絕路徑另有自動驗證。參見 [組合件 MCP 計畫](docs/design/ai-cad-control/assembly-mcp-plan.md)。 |
-| **長測試效能** | C2.14 Heap 修正（`bdd5f445`）和 `recognize-approximate` OOM 修正（`2074f4b4`）已交付。保留使用者原先延後的三項 profiling：`section-spline-isolation` smooth=false、`section-clearance-probe` gap 0、`recognize-rolling-ball-fuzz-5` seed 46。先在對應 runner 量測熱點，維持原逾時與誤差門檻。[最近查得的排程驗證](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/44889175106) 已通過。 |
+| **長測試效能** | C2.14 Heap 修正（`bdd5f445`）和 `recognize-approximate` OOM 修正（`2074f4b4`）已交付。保留使用者原先延後的三項 profiling：`section-spline-isolation` smooth=false、`section-clearance-probe` gap 0、`recognize-rolling-ball-fuzz-5` seed 46。**2026-11-26 更新**：seed 46 已解（11-24 修改後 41 秒）；兩個剖面測試的時間在測試自己的 `isValid`，只記錄未改（見 11-24 節）。先在對應 runner 量測熱點，維持原逾時與誤差門檻。[最近查得的排程驗證](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/44889175106) 已通過。 |
 | **外部驗收與手冊** | 公開鈑金 STEP 的 FreeCAD 驗收、工程圖 DXF 的 FreeCAD 匯入與 PDF 的 Chromium 渲染已落地（`f252e0f2`，`npm run verify:drawing-export`）。手冊還需保留實體滑鼠／機台操作、私有零件的獨立 SolidWorks 特徵樹和製造基準、公司孔標註用語，以及指定下游 CAD／雷射軟體的相容性驗收。細項以 [自動化驗收盤點](docs/automated-acceptance.md) 和 [驗證覆蓋表](docs/verification-coverage.md) 為準。 |
 
 ### 已結案與維持擱置

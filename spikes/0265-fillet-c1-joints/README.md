@@ -42,6 +42,7 @@ node spikes/0265-fillet-c1-joints/summarize.mjs out/fillet-probe
 | `compare.mjs` | 本機 fuzz 輸出與 CI 日誌的逐件比對（注意：CI 日誌沒有檔案標頭，`#種子` 的列印在不同 kit 間撞號） | — |
 | `mutate.mjs` | 提交 `b49a50e6` 的三項突變檢查（每項比對須恰好一次，跑完逐位元組還原） | — |
 | `w54.test.ts` | 2026-11-26 CI 紅燈（window-rounds fuzz-14）：單一種子在全新 Heap 上做零件並辨識，逐次記下每次圓角（切開與否、時間、Heap）與每次重建；`SEEDS`、`CUT=on\|off`（off：`cutAtJoints` 回傳 null）、`NOLIMIT=1`（取消 512 MiB 預算，看最後結果）、`FRESH=1`（在另一個全新 Heap 上只重建一次結果） | `data/w54-off-*`、`data/w54-on-nolimit-*`（共用重建之前）、`data/w54-old-54.log`（核心三檔換回 `464366fa`）、`data/w54-shared-*`（共用重建之後） |
+| `chamfer100.test.ts` | ADR 0265 §11：100 組樣條牆倒角，不切開與切開的成敗、時間、補上的體積對 d²/2 × 邊長 | `data/chamfer100.jsonl` |
 | `w54heap.test.ts` | 同一件辨識時，依 `Kernel` 方法彙總 Heap 成長與時間 | `data/w54heap-on-54.log` |
 | `window-outcomes.mjs` | window-rounds 100 組逐件分類，三份日誌對照（只認該 fuzz 檔標頭下的 `#種子`） | `data/window-outcomes.txt` |
 | `mutate-shared.mjs` | 共用重建的四項突變（每項比對須恰好一次，跑完逐位元組還原） | — |
