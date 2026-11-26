@@ -159,10 +159,12 @@ it('works on the assembly open in the app: sources from the app, a trial that ch
   expect(data(await call('assembly_inspect')).valid).toBe(true);
   expect(asm.state.reads).toEqual(pinReads);
   // one undo step in the app
+  const sent = server!.open;
   asm.history.undo();
   expect(asm.history.doc.components).toHaveLength(1);
   asm.history.redo();
-  await new Promise((r) => setTimeout(r, 400)); // the user's undo and redo reach the server
+  // the user's undo and redo reach the server: the app sends the assembly it shows again (a fixed wait, not a condition, before 2026-11-26)
+  await wait(() => server!.open !== sent && server!.open.kind === 'assembly' && server!.open.doc.components.length === 2);
   // the server reads its copy again from the app (the same document), and the part file it read before is the app's now
   expect(data(await call('assembly_inspect')).components.map((c: { id: string }) => c.id)).toEqual(['plate', 'pin']);
 
@@ -239,7 +241,8 @@ it('says why an assembly of the app cannot be solved here, and follows the app f
 
   // the user opens a part: the assembly tools stop, the part tools work on the app's part
   linked.show(null);
-  await new Promise((r) => setTimeout(r, 50));
+  // until the server has it: a fixed 50 ms was not always enough on a macOS runner (run #379, 2026-11-24: the next call still saw the old document)
+  await wait(() => server!.open.kind === 'part');
   const asPart = await linked.call('assembly_inspect');
   expect(asPart.isError).toBe(true);
   expect(text(asPart)).toMatch(/shows a part/);
@@ -248,7 +251,7 @@ it('says why an assembly of the app cannot be solved here, and follows the app f
   // the user opens an assembly again
   const next = assemblyHost(plateOnly());
   linked.show(next);
-  await new Promise((r) => setTimeout(r, 50));
+  await wait(() => server!.open.kind === 'assembly');
   expect(data(await linked.call('assembly_inspect')).components).toHaveLength(1);
 
   // the link ends: the app's assembly is not the workspace's
