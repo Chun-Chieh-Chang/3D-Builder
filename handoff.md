@@ -7,7 +7,8 @@
 - **修正**：`packages/regen/src/recognize/reconstruct.ts` 的 `blendsApart` 與 `ReconstructOptions.shareBlendRebuilds`（預設 true）。門檻、預算不變。
 - **結果**：window-rounds 100 組（本機）重建 55／拒絕 28／撞預算 0（`464366fa` CI 31／37／15）；任一版本能重建的全部仍重建。新測試 `tests/phase8/recognize-shared-blend-rebuild.test.ts`；辨識相關 99 檔全過；突變 4 項全紅；typecheck、四項 lint 全過。細節 ADR 0265 §10。
 - **探針**：`spikes/0265-fillet-c1-joints/w54.test.ts`、`w54heap.test.ts`、`window-outcomes.mjs`、`mutate-shared.mjs`。
-- **未跑**：完整 `verify:ui`（本次只改辨識的重建次數，不動繪圖、檢視或點選）。full-suite CI 於推送後觸發，結果待填。
+- **驗證（續）**：full-suite CI run 45749220255（`de45d3aa`）全綠。辨識相關的兩支 e2e（`phase8-feature-recognition`、`phase8-recognize-spline`）2/2 通過；完整 `verify:ui` 未跑（只改辨識的重建次數，不動繪圖、檢視或點選）。
+- **同日另修**：`apps/mcp/test/live-assembly.test.ts` 的固定等待改成等條件（run #379 macOS 紅燈，見 DEV_LOG 同日）。
 - **仍待**（沿用上一節）：倒角是否比照；seed 73、52 精確圓角例外；window-rounds 切開失敗退回的原因。
 
 ## 2026-11-26 — ADR 0265 實作：圓角跨過 C1 接縫，先切開再做圓角（已推送）
