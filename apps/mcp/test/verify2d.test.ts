@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { CadSession } from '../src/session';
 import { callTool } from '../src/server';
-import type { Verify2dReport } from '../src/verify2d';
+import { openMeshEdges, type Verify2dReport } from '../src/verify2d';
 
 const GOLDEN = resolve('tests/golden');
 
@@ -12,6 +12,28 @@ function parseReport(r: Awaited<ReturnType<typeof callTool>>): Verify2dReport {
   if (!txt || txt.type !== 'text') throw new Error('expected text report');
   return JSON.parse(txt.text) as Verify2dReport;
 }
+
+describe('openMeshEdges: the edges one triangle alone uses, vertices welded by position', () => {
+  // a tetrahedron, its corners repeated per face as a mesher writes them (welded, they are 4)
+  const corners = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const faces = [[0, 2, 1], [0, 1, 3], [1, 2, 3], [0, 3, 2]];
+  const mesh = (fs: number[][]) => ({ positions: fs.flatMap((f) => f.flatMap((k) => corners[k]!)), indices: fs.flatMap((_, i) => [3 * i, 3 * i + 1, 3 * i + 2]) });
+  it('a closed surface has none; one triangle taken away leaves its three sides open', () => {
+    expect(openMeshEdges(mesh(faces))).toBe(0);
+    expect(openMeshEdges(mesh(faces.slice(1)))).toBe(3);
+  });
+  it('a triangle squeezed to a line (a pole, an apex) opens nothing: its two welded corners make no side', () => {
+    expect(openMeshEdges(mesh([...faces, [0, 0, 1]]))).toBe(0);
+  });
+  it('corners off by less than 1e-4 mm are one vertex; farther apart they are two (a crack)', () => {
+    const near = mesh(faces);
+    near.positions[0] = 4e-5;
+    expect(openMeshEdges(near)).toBe(0);
+    const far = mesh(faces);
+    far.positions[0] = 1e-3;
+    expect(openMeshEdges(far)).toBeGreaterThan(0);
+  });
+});
 
 describe('part_verify_against_2d (2D->3D projection back-verification)', () => {
   it('verifies locating-plate.3dbx width, height, hole diameters+counts, corner radii, distances, and optional PNG pictures', async () => {
@@ -36,7 +58,7 @@ describe('part_verify_against_2d (2D->3D projection back-verification)', () => {
       expect(report.passed).toBe(8);
       const faceCount = s.drawingSource()!.body.topology.faces.length;
       expect(faceCount).toBeGreaterThan(0);
-      expect(report.meshIntegrity).toEqual({ totalFaces: faceCount, triangulatedFaces: faceCount, unmeshedFaces: [], pass: true });
+      expect(report.meshIntegrity).toEqual({ totalFaces: faceCount, triangulatedFaces: faceCount, unmeshedFaces: [], openEdges: 0, pass: true });
       expect(report.failed).toBe(0);
       expect(report.maxAbsError).toBeLessThan(1e-3);
       expect(report.views.top).toEqual({ width: 120, height: 80 });
@@ -113,12 +135,15 @@ describe('part_verify_against_2d (2D->3D projection back-verification)', () => {
         expect(meshCall).toHaveBeenCalledWith(source.body.shape);
         expect(missingFace.results).toEqual(intact.results);
         expect(missingFace.failed).toBe(0);
-        expect(missingFace.meshIntegrity).toEqual({
+        expect(missingFace.meshIntegrity).toMatchObject({
           totalFaces: intact.meshIntegrity.totalFaces,
           triangulatedFaces: intact.meshIntegrity.triangulatedFaces - 1,
           unmeshedFaces: [face],
           pass: false,
         });
+        // the face that lost its triangles leaves its boundary open on the faces around it
+        expect(intact.meshIntegrity.openEdges).toBe(0);
+        expect(missingFace.meshIntegrity.openEdges).toBeGreaterThan(0);
         expect(missingFace.pass).toBe(false);
       } finally {
         meshCall.mockRestore();
@@ -127,6 +152,30 @@ describe('part_verify_against_2d (2D->3D projection back-verification)', () => {
       s.dispose();
     }
   }, 30_000);
+
+  it('fails a part whose faces all have triangles but one is torn: ADR 0214\'s fillet, its open edges, the dimensions right', async () => {
+    // The user's part of ADR 0214 (tests/fixtures/fillet-chamfer-equals-wall.3dbx). Its fillet is refused today for its 18 mm tolerance, so the torn
+    // fillet is made as OCCT makes it with that gate let through (the tolerance read as 0): every face triangulated, the fillet face torn along its edge.
+    const s = await CadSession.create({ root: resolve('tests/fixtures'), locale: 'zh-TW' });
+    const kernel = (s as unknown as { kernel: { maxTolerance(...a: unknown[]): number } }).kernel;
+    const gate = vi.spyOn(kernel, 'maxTolerance').mockReturnValue(0);
+    try {
+      await s.open('fillet-chamfer-equals-wall.3dbx');
+      const r = await callTool(s, 'part_verify_against_2d', { checks: [{ label: 'Diameter (sketch1: Ø20, seen along its axis)', view: 'front', kind: 'diameter', nominal: 20, tolerance: 0.05 }] });
+      const report = parseReport(r);
+      expect(gate).toHaveBeenCalled();
+      expect(report.results.every((x) => x.pass), JSON.stringify(report.results)).toBe(true);
+      expect(report.meshIntegrity.unmeshedFaces).toEqual([]);
+      expect(report.meshIntegrity.triangulatedFaces).toBe(report.meshIntegrity.totalFaces);
+      // how many depends on how the mesh is cut (ADR 0214: 22 to 48 over the mesh parameters; 23 here, 24 in spikes/mesh-open-edges): there are some
+      expect(report.meshIntegrity.openEdges).toBeGreaterThan(0);
+      expect(report.meshIntegrity.pass).toBe(false);
+      expect(report.pass).toBe(false);
+    } finally {
+      gate.mockRestore();
+      s.dispose();
+    }
+  }, 60_000);
 
   it('refuses invalid inputs (non-integer count, negative nominal/tolerance, missing axis, empty part) without silent coercion', async () => {
     const s = await CadSession.create({ root: GOLDEN, locale: 'zh-TW' });

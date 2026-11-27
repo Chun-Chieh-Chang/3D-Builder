@@ -1,0 +1,200 @@
+[
+ {
+  "part": "sphere (revolved half disc)",
+  "faces": 1,
+  "triangles": 5860,
+  "open": 0
+ },
+ {
+  "part": "cone with an apex",
+  "faces": 2,
+  "triangles": 907,
+  "open": 0
+ },
+ {
+  "part": "torus",
+  "faces": 2,
+  "triangles": 10678,
+  "open": 0
+ },
+ {
+  "part": "cylinder (seam)",
+  "faces": 3,
+  "triangles": 252,
+  "open": 0
+ },
+ {
+  "part": "threaded bore",
+  "faces": 22,
+  "triangles": 3222,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 1",
+  "faces": 14,
+  "triangles": 6042,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 2",
+  "faces": 12,
+  "triangles": 3078,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 3",
+  "faces": 14,
+  "triangles": 9900,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 4",
+  "faces": 12,
+  "triangles": 2950,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 5",
+  "faces": 12,
+  "triangles": 2954,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 6",
+  "faces": 14,
+  "triangles": 3164,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 7",
+  "faces": 15,
+  "triangles": 5468,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 8",
+  "faces": 12,
+  "triangles": 3070,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 9",
+  "faces": 12,
+  "triangles": 3142,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 10",
+  "faces": 15,
+  "triangles": 4836,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 11",
+  "faces": 14,
+  "triangles": 3156,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 12",
+  "faces": 14,
+  "triangles": 7820,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 13",
+  "faces": 12,
+  "triangles": 1774,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 14",
+  "faces": 14,
+  "triangles": 4574,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 15",
+  "faces": 14,
+  "triangles": 7892,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 16",
+  "faces": 15,
+  "triangles": 8248,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 17",
+  "faces": 14,
+  "triangles": 3182,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 18",
+  "faces": 12,
+  "triangles": 1614,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 19",
+  "faces": 14,
+  "triangles": 6520,
+  "open": 0
+ },
+ {
+  "part": "rolling-ball seed 20",
+  "faces": 14,
+  "triangles": 4238,
+  "open": 0
+ },
+ {
+  "part": "tests/golden/diamond-pin.3dbx",
+  "faces": 16,
+  "triangles": 1184,
+  "open": 0
+ },
+ {
+  "part": "tests/golden/locating-plate.3dbx",
+  "faces": 24,
+  "triangles": 1580,
+  "open": 0
+ },
+ {
+  "part": "tests/golden/sds-plus-bit.3dbx",
+  "faces": 101,
+  "triangles": 10454,
+  "open": 0
+ },
+ {
+  "part": "tests/golden/v-block.3dbx",
+  "faces": 14,
+  "triangles": 484,
+  "open": 0
+ },
+ {
+  "part": "tests/fixtures/fillet-chamfer-equals-wall.3dbx",
+  "faces": 12,
+  "triangles": 384,
+  "open": 0
+ },
+ {
+  "part": "tests/fixtures/parts/bracket.3dbx",
+  "faces": 32,
+  "triangles": 964,
+  "open": 0
+ },
+ {
+  "part": "tests/fixtures/parts/hole-callouts.3dbx",
+  "faces": 18,
+  "triangles": 1764,
+  "open": 0
+ },
+ {
+  "part": "ADR 0214 torn fillet (gate off)",
+  "faces": 16,
+  "triangles": 572,
+  "open": 24
+ }
+]

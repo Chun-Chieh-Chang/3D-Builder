@@ -30,7 +30,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'part_verify_against_2d',
     description:
-      'Projects the open 3D part onto orthographic views using the native OCCT kernel and verifies 2D engineering drawing callouts (width, height, diameter, radius, angle, distance, and optional feature count) against the actual projected geometry. Returns pass/fail per callout, exact measured values and deviations, view bounding boxes, and optional rendered PNGs for visual comparison.',
+      'Projects the open 3D part onto orthographic views using the native OCCT kernel and verifies 2D engineering drawing callouts (width, height, diameter, radius, angle, distance, and optional feature count) against the actual projected geometry. Returns pass/fail per callout, exact measured values and deviations, view bounding boxes, and optional rendered PNGs for visual comparison. The report fails as a whole, whatever the callouts, when the mesh of the part is not closed: a face with no triangles (meshIntegrity.unmeshedFaces) or a torn one (meshIntegrity.openEdges, edges one triangle alone uses).',
     inputSchema: {
       type: 'object',
       properties: {

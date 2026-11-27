@@ -643,6 +643,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 ### 研究證據
 
 - [ADR 0265 的探針與量測資料](<../spikes/0265-fillet-c1-joints/README.md>)
+- [網格開邊檢查的量測（2026-11-26）](<../spikes/mesh-open-edges/README.md>)
 - [OCCT 綁定缺口技術驗證](<../spikes/occt-gaps/README.md>)
 - [OCCT 綁定盤點](<../spikes/occt-gaps/inventory.md>)
 

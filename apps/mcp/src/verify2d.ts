@@ -38,6 +38,35 @@ export interface Verify2dCheckResult {
   reason?: string;
 }
 
+/**
+ * The edges of a mesh that one triangle alone uses, its vertices welded by position (to 1e-4 mm): the holes of a surface that should be closed. A face
+ * that is triangulated but torn (ADR 0214: a fillet face with an edge 18 mm off it, 24 such edges) is not seen by counting the faces that have triangles;
+ * this is the oracle tests/phase3/fillet-tolerance.test.ts uses, nothing of the kernel's own judgement.
+ */
+export function openMeshEdges(mesh: { positions: ArrayLike<number>; indices: ArrayLike<number> }): number {
+  const ids = new Map<string, number>();
+  const vid = (k: number) => {
+    const key = `${Math.round(mesh.positions[3 * k]! * 1e4)},${Math.round(mesh.positions[3 * k + 1]! * 1e4)},${Math.round(mesh.positions[3 * k + 2]! * 1e4)}`;
+    let id = ids.get(key);
+    if (id === undefined) ids.set(key, (id = ids.size));
+    return id;
+  };
+  const use = new Map<string, number>();
+  for (let tr = 0; tr < mesh.indices.length / 3; tr++) {
+    const v = [vid(mesh.indices[3 * tr]!), vid(mesh.indices[3 * tr + 1]!), vid(mesh.indices[3 * tr + 2]!)];
+    for (let k = 0; k < 3; k++) {
+      const a = v[k]!, b = v[(k + 1) % 3]!;
+      // a triangle squeezed to an edge (a pole, a cone's apex) has no side between two welded corners
+      if (a === b) continue;
+      const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+      use.set(key, (use.get(key) ?? 0) + 1);
+    }
+  }
+  let open = 0;
+  for (const n of use.values()) if (n === 1) open++;
+  return open;
+}
+
 export interface Verify2dReport {
   pass: boolean;
   passed: number;
@@ -48,6 +77,8 @@ export interface Verify2dReport {
     totalFaces: number;
     triangulatedFaces: number;
     unmeshedFaces: number[];
+    /** Edges of the mesh one triangle alone uses (welded to 1e-4 mm): holes in a surface that should be closed. */
+    openEdges: number;
     pass: boolean;
   };
   results: Verify2dCheckResult[];
@@ -324,11 +355,16 @@ export function verifyPartAgainst2d(session: CadSession, checks: readonly Verify
       unmeshedFaces.push(fi);
     }
   }
+  // A face can have its triangles and still be torn (ADR 0214: a fillet face whose edge lies 18 mm off it, 24 open edges): every edge of a closed
+  // surface's mesh is shared by two triangles. Measured 2026-11-26 on 32 sound parts (a sphere's poles, a cone's apex, a torus, a seam, a thread,
+  // 20 spline walls with exact rounds, the repository's part files): 0 each (spikes/mesh-open-edges).
+  const openEdges = openMeshEdges(mesh);
   const meshIntegrity = {
     totalFaces,
     triangulatedFaces: meshedSet.size,
     unmeshedFaces,
-    pass: unmeshedFaces.length === 0 && totalFaces > 0,
+    openEdges,
+    pass: unmeshedFaces.length === 0 && openEdges === 0 && totalFaces > 0,
   };
 
   const passed = results.filter((r) => r.pass).length;
