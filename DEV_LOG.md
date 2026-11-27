@@ -7410,3 +7410,4 @@ Schema 93 記錄來源本體、基準面或模型平面、帶符號的平面偏�
 - **seed 73**：重建時 `exactify` 拋 `Standard_ConstructionError`。以 Proxy 包住 `kernel.oc` 在丟出當下記錄堆疊，定位到 `exactRound.ts` 的 `new BRepAdaptor_Curve2d(ed, mf)`；再以暫時的診斷記錄（已移除，以 diff 核對）確認：頂點落在邊曲線端點外 0.047 mm，投影只給垂足，取到 15.6 mm 外的一個，邊的範圍變成 42.62 > 39.19。
 - **修正**（`packages/kernel/src/exactRound.ts`）：垂足只在比「從較近端點以牛頓法找的最近點」更近時採用。`kernel.ts` 的 `exactRoundLog` 改記 OCCT 例外型別。
 - **驗證**：新測試 `recognize-rolling-ball-seed73.test.ts`（突變轉紅）；rolling-ball fuzz 1–100 前後各跑一次，逐種子比對只有 seed 73 由 `rebuiltOcct` 變 `rebuilt`，最差誤差 2.8e-8 → 6.7e-10；圓角／辨識子集 26 檔 249 項通過；typecheck 通過。window-rounds、drafted 等其他 fuzz 全套未在本機跑，交給 full-suite CI。
+- **CI**：full-suite run 45958560186（`073be7d7`）全綠（8 片、三平台 integrity、section-offset-cost），推送觸發的 run 45958542780 全綠；本機未跑的其他辨識 fuzz 均通過。

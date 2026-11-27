@@ -1,9 +1,11 @@
 # 交接與接續工作
 
-## 2026-11-27 — 待辦 #3：seed 73、52（已解決，未提交）
+## 2026-11-27 — 待辦 #3：seed 73、52（已解決）
 
-- seed 52 早已解決；seed 73 的重建拋例外，根因是頂點投影取到遠處的垂足，已修（`exactRound.ts`），重建改為精確圓角。細節見 DEV_LOG 同日、ADR 0265 §12。
-- 本機回歸只跑了 rolling-ball 全套與圓角／辨識子集；其他辨識 fuzz 需 full-suite CI。
+- seed 52 早已解決；seed 73 的重建拋例外，根因是頂點投影取到遠處的垂足，已修（`exactRound.ts`，`fa27a4ab`），重建改為精確圓角。細節見 DEV_LOG 同日、ADR 0265 §12。
+- **CI**：full-suite run 45958560186（`073be7d7`）全綠：8 片、三平台 integrity、section-offset-cost 全過；推送觸發的 run 45958542780 也全綠。本機未跑的 window-rounds、drafted、multi-window、revolved、loft 辨識 fuzz 都在其中。
+- **本日推送**：`45c77b74`（#12 開邊檢查）、`5fbdd09e`（旋轉跨軸檢查）、`9004415e`（drawing_complete 角度、斜面片段）、`fa27a4ab`（精確圓角投影）及其文件提交；各輪 CI 全綠。
+- **仍待**：#9 兩份 v4 審閱稿等使用者審閱（`out/` 不在 git，換機需手動拷 `out/R1-9035/`、`out/R1-16148/`）；#4、#14 待做；#18 三個未追蹤檔待使用者決定。
 
 ## 2026-11-27 — 兩份 v4 審閱稿（待辦 #9）
 
