@@ -446,6 +446,26 @@ const unit = (a: Vec3): Vec3 => {
 };
 
 /** The axis of a face that is a surface of revolution: a point on it and its direction. */
+/**
+ * The points of an arc of a revolve's profile that are farthest to either side of the axis (direction `dir`): its ends, and the circle's points
+ * across the axis direction when the arc passes them. Its centre is not one: a blend wider than the shaft it rounds (R1-16148's R.23 point on a
+ * Ø.20 spike) has its centre across the axis while every point of the arc stays on one side.
+ */
+export function arcSideExtremes(seg: Extract<Segment, { kind: 'arc' }>, dir: [number, number]): [number, number][] {
+  const len = Math.hypot(dir[0], dir[1]) || 1;
+  const nrm: [number, number] = [-dir[1] / len, dir[0] / len];
+  const angle = (p: [number, number]) => Math.atan2(p[1] - seg.c[1], p[0] - seg.c[0]);
+  const from = angle(seg.from), to = angle(seg.to);
+  const sweep = (((seg.ccw ? to - from : from - to) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) || 2 * Math.PI;
+  const passes = (t: number) => (((seg.ccw ? t - from : from - t) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) <= sweep;
+  const out: [number, number][] = [seg.from, seg.to];
+  for (const s of [1, -1]) {
+    const t = Math.atan2(s * nrm[1], s * nrm[0]);
+    if (passes(t)) out.push([seg.c[0] + seg.r * Math.cos(t), seg.c[1] + seg.r * Math.sin(t)]);
+  }
+  return out;
+}
+
 function axisOf(face: Topology['faces'][number]): { point: Vec3; dir: Vec3 } | null {
   const g = face.geometry;
   if (g?.type === 'cylinder') return { point: g.origin, dir: g.axis };
@@ -1710,7 +1730,7 @@ export class Regenerator {
         seg.kind === 'line'
           ? [seg.a, seg.b]
           : seg.kind === 'arc'
-            ? [seg.from, seg.to, seg.c]
+            ? arcSideExtremes(seg, [b[0] - a[0], b[1] - a[1]])
             : seg.kind === 'ellipse'
               ? [
                   seg.c,
