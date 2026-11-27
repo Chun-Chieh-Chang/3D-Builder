@@ -327,3 +327,11 @@
 - **結果正確**：這條邊是凹角，倒角是補上材料。補上的體積是 d²/2 × 邊長的 0.94～1.01 倍，差的部分來自樣條和平牆交接的角落。
 - **切開反而出錯**：同樣的倒角做在切開的形狀上，雖然 100 組也都「成功」，補上的體積卻最多到理論值的 9.2 倍（seed 92、75、77）。
 - **結論**：倒角不切開，`Kernel.chamfer` 不改。
+
+## 12. 補記（2026-11-27）：seed 73、52 的重建缺口
+
+- **seed 52**：切開路徑上線後，重建已是精確圓角（讀回 1.6e-13），§9.5「與 seed 52 同類」的說法已不成立。
+- **seed 73 的根因**：重建的 `exactify` 在移動與圓角相接的邊上的頂點時，把頂點投影回邊的曲線取參數。頂點落在曲線端點外 0.047 mm，`GeomAPI_ProjectPointOnCurve` 只回傳垂足，給了 15.6 mm 外的另一個垂足；邊的範圍因此起點大於終點，`BRepAdaptor_Curve2d` 拋 `Standard_ConstructionError`（以包住 `kernel.oc` 的 Proxy 在丟出當下記錄堆疊定位，`spikes/exact-round-rebuild/`）。
+- **修正**：垂足只在比「從較近端點找的最近點」更近時採用。seed 73 改為精確圓角重建，讀回 9.9e-13（原 2.8e-8），`rebuiltOcct` 分類目前沒有任何種子。rolling-ball fuzz 1–100 前後逐種子比對，只有 seed 73 改變分類。
+- **測試**：`tests/phase8/recognize-rolling-ball-seed73.test.ts`；突變（永遠採用垂足）轉紅。
+- 另：`exactRoundLog` 的 `threw` 改記 OCCT 例外的型別與訊息。

@@ -7403,3 +7403,10 @@ Schema 93 記錄來源本體、基準面或模型平面、帶符號的平面偏�
 - **產品修正 1：`drawing_complete` 套用 ADR 0266 的角度處理**（`apps/mcp/src/drawingSession.ts` 的 `settleAngles`）：見 ADR 0266 §5。
 - **產品修正 2：同一平面被切開的斜面片段算一個**（`packages/drawing/src/autoDrawing.ts` 的 `sameSlantLine`）：視圖中共線的平面斜面片段（R1-16148 翼板兩個斜面各被肋切成 3 片）由規劃器只標最大一片，覆蓋率把同線的其他片段一併算已標。R1-16148 的 A-A 由 6 個 20.05° 變 2 個，雜亂 30 → 9（再經佈局調整到 7）。測試 `tests/phase5/drawing-slant-pieces.test.ts`（3 項）；突變（永不同線、覆蓋率不認片段）分別轉紅 3、1 項。
 - **回歸**：typecheck、四種 lint 通過；`apps/mcp/test` 與 `tests/phase5` 全數通過（87 檔 895 項、另 96 檔 932 項的較早一輪）。完整 `verify:ui` 未跑（改動在標註規劃與 MCP，不在畫面層）。
+
+## 2026-11-27 — 待辦 #3：rolling-ball seed 73、52 的精確圓角重建
+
+- **seed 52**：早已解決（ADR 0265 切開路徑後重建為精確圓角，1.6e-13），待辦未同步。
+- **seed 73**：重建時 `exactify` 拋 `Standard_ConstructionError`。以 Proxy 包住 `kernel.oc` 在丟出當下記錄堆疊，定位到 `exactRound.ts` 的 `new BRepAdaptor_Curve2d(ed, mf)`；再以暫時的診斷記錄（已移除，以 diff 核對）確認：頂點落在邊曲線端點外 0.047 mm，投影只給垂足，取到 15.6 mm 外的一個，邊的範圍變成 42.62 > 39.19。
+- **修正**（`packages/kernel/src/exactRound.ts`）：垂足只在比「從較近端點以牛頓法找的最近點」更近時採用。`kernel.ts` 的 `exactRoundLog` 改記 OCCT 例外型別。
+- **驗證**：新測試 `recognize-rolling-ball-seed73.test.ts`（突變轉紅）；rolling-ball fuzz 1–100 前後各跑一次，逐種子比對只有 seed 73 由 `rebuiltOcct` 變 `rebuilt`，最差誤差 2.8e-8 → 6.7e-10；圓角／辨識子集 26 檔 249 項通過；typecheck 通過。window-rounds、drafted 等其他 fuzz 全套未在本機跑，交給 full-suite CI。
