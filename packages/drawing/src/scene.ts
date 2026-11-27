@@ -3,7 +3,7 @@ import { cadScene } from './cadScene';
 import type { CadDrawing, CadLayer } from '@3db/model';
 import { bendTableItems } from './bendTable';
 import { getLocale, t, withLocale } from '@3db/i18n';
-import { axesOf, baseDimStyle, DIM_STYLE_DEFAULT, hatchStyleOf, displayOf, isCorner, isDerived, isShaded, lineGroupOf, page, profileOf, DRAWING_PROFILES, type DrawingProfile, type LineGroup, resolveDimStyle, resolveTitleStyle, sectionEndDirections, standardOf, type HatchStyle, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
+import { axesOf, baseDimStyle, DIM_STYLE_DEFAULT, hatchStyleOf, displayOf, isCorner, isDerived, isShaded, lineGroupOf, page, profileOf, DRAWING_PROFILES, type DrawingProfile, type LineGroup, resolveDimStyle, resolveTitleStyle, sectionEndDirections, sheetTemplateOf, standardOf, type HatchStyle, type CropDrawingView, type DetailDrawingView, type DimStyle, type DrawingDoc, type DrawingSheet, type DrawingView, type Id, type Scale, type LocalSectionDrawingView, type SectionDrawingView, type TitleField, type ViewFeature } from '@3db/model';
 import type { ShadeImage } from './shade';
 import { centreItems, holeRows, holeTableBox, holeTableItems, threadItems, type HoleRow } from './annotation';
 import { annotationItems } from './gdt';
@@ -11,7 +11,7 @@ import { balloonSpots, bomTableBox, bomTableItems, spotItems, type BalloonSpot, 
 import { evaluateDimension, type DimensionOutcome, type DimensionTextPart, type ElementsResult } from './dimension';
 import { circlePolyline, clipToOutline, clipToBand, hatch, outlinePoints, type Polyline } from './geometry';
 import { layoutViews, ratio, resolveLines, scaleOf, toSheet, type PlacedView, type ViewLines } from './layout';
-import { fittedTitleHeight, sheetMetrics, titleCells, type Rect } from './sheet';
+import { fittedTitleHeight, INDUSTRIAL_TITLE_BLOCK, sheetMetrics, textWidthMm, TITLE_FIT_MIN, titleCells, wrapPaperText, type Rect, type SheetMetrics } from './sheet';
 import { surfaceFinishItems } from './surfaceFinish';
 import { currentDrawingRevision, DRAWING_TEXT_WIDTH } from '@3db/model';
 import { drawingSheetMetrics, revisionTableItems } from './revisionTable';
@@ -164,10 +164,287 @@ const rect = (r: Rect, style: LineStyle): ScenePolyline => ({ kind: 'polyline', 
 /** The text of a scale: 「1:2」, 「5:1」. */
 export const scaleText = (s: readonly [number, number]) => `${s[0]}:${s[1]}`;
 
+/** Generic bilingual industrial title block, projection symbol box, and bottom-left revision table (v45). */
+function industrialSheetItems(doc: DrawingDoc, m: SheetMetrics): SceneItem[] {
+  const pg = page(doc);
+  const tb = m.titleBlock;
+  const sx = tb.w / INDUSTRIAL_TITLE_BLOCK.width;
+  const tx = (x: number) => tb.x + x * sx;
+  const ty = (y: number) => tb.y + y;
+  const line = (x0: number, y0: number, x1: number, y1: number, style: LineStyle = 'thin'): ScenePolyline => ({
+    kind: 'polyline',
+    points: [tx(x0), ty(y0), tx(x1), ty(y1)],
+    style,
+  });
+
+  const projW = INDUSTRIAL_TITLE_BLOCK.projectionBoxWidth * sx;
+  const projH = INDUSTRIAL_TITLE_BLOCK.projectionBoxHeight;
+  const projBox: Rect = { x: tb.x + tb.w - projW, y: tb.y + tb.h, w: projW, h: projH };
+
+  const items: SceneItem[] = [
+    rect(m.frame, 'frame'),
+    rect(tb, 'frame'),
+    rect(projBox, 'frame'),
+  ];
+
+  // Projection symbol (first-angle or third-angle) inside projBox
+  {
+    const bx = projBox.x;
+    const cy = projBox.y + projH / 2;
+    const rOuter = Math.min(3.4, 3.4 * sx);
+    const rInner = rOuter * 0.5;
+    const circleCx = pg.sheet.projection === 'third' ? bx + 7.5 * sx : bx + 20.5 * sx;
+    const trapX0 = pg.sheet.projection === 'third' ? bx + 15.5 * sx : bx + 5.3 * sx;
+    const trapX1 = pg.sheet.projection === 'third' ? bx + 22.7 * sx : bx + 12.5 * sx;
+    const halfSmall = rInner;
+    const halfLarge = rOuter;
+    const [h0, h1] = pg.sheet.projection === 'third' ? [halfSmall, halfLarge] : [halfLarge, halfSmall];
+
+    items.push({ kind: 'polyline', points: circlePolyline([circleCx, cy], rOuter, 36), style: 'thin', closed: true });
+    items.push({ kind: 'polyline', points: circlePolyline([circleCx, cy], rInner, 36), style: 'thin', closed: true });
+    items.push({ kind: 'polyline', points: [circleCx - rOuter - 1.1, cy, circleCx + rOuter + 1.1, cy], style: 'center' });
+    items.push({ kind: 'polyline', points: [circleCx, cy - rOuter - 1.1, circleCx, cy + rOuter + 1.1], style: 'center' });
+
+    items.push({ kind: 'polyline', points: [trapX0, cy - h0, trapX1, cy - h1, trapX1, cy + h1, trapX0, cy + h0], style: 'thin', closed: true });
+    items.push({ kind: 'polyline', points: [trapX0 - 1.1, cy, trapX1 + 1.1, cy], style: 'center' });
+  }
+
+  // Title block grid lines (local coordinates: x in 0..180, y in 0..64)
+  items.push(
+    // Main horizontal divider between tolerance/classification (44..64) and specs/company (0..44)
+    line(0, 44, 180, 44),
+    // Top-left general tolerances (0..108, 44..64)
+    line(108, 44, 108, 64),
+    line(0, 50, 108, 50),
+    line(27, 50, 27, 64),
+    line(54, 50, 54, 64),
+    line(81, 50, 81, 64),
+    line(0, 59, 54, 59),
+    line(81, 54.67, 108, 54.67),
+    line(81, 59.33, 108, 59.33),
+    // Bottom section vertical split (0..96 vs 96..180)
+    line(96, 0, 96, 44),
+    // Bottom-left specs & sign-off (0..96, 0..44)
+    line(0, 35, 96, 35),
+    line(0, 27, 96, 27),
+    line(0, 18, 96, 18),
+    line(0, 9, 96, 9),
+    line(52, 0, 52, 44),
+    line(74, 0, 74, 44),
+    line(30, 0, 30, 27),
+    line(17, 18, 17, 27),
+    // Bottom-right company & part identification (96..180, 0..44)
+    line(96, 27, 180, 27),
+    line(96, 17, 180, 17),
+    line(96, 8, 180, 8),
+    line(148, 35.5, 180, 35.5),
+    line(148, 27, 148, 44),
+    line(164, 27, 164, 44),
+    line(118, 8, 118, 27),
+    line(142, 0, 142, 8),
+  );
+
+  const centered = (x0: number, x1: number, y0: number, y1: number, raw: string, baseHeight: number, maxLines = 1) => {
+    const text = raw.trim();
+    if (!text) return;
+    const cellW = (x1 - x0) * sx;
+    const cx = tx((x0 + x1) / 2);
+    if (maxLines <= 1) {
+      const h = fittedTitleHeight(text, baseHeight, cellW, true);
+      items.push({ kind: 'text', at: [cx, ty((y0 + y1 - h) / 2)], text, height: h, anchor: 'center' });
+      return;
+    }
+    const availW = Math.max(2, cellW - 3);
+    let h = baseHeight;
+    let lines = wrapPaperText(text, availW, (s) => textWidthMm(s, h));
+    while (lines.length > maxLines && h > TITLE_FIT_MIN) {
+      h = Math.max(TITLE_FIT_MIN, h * 0.88);
+      lines = wrapPaperText(text, availW, (s) => textWidthMm(s, h));
+    }
+    const shown = lines.slice(0, maxLines);
+    const gap = Math.max(0.6, h * 0.35);
+    const totalH = shown.length * h + (shown.length - 1) * gap;
+    const startTop = (y0 + y1 + totalH) / 2;
+    shown.forEach((ln, idx) => {
+      const lineH = fittedTitleHeight(ln, h, cellW, true);
+      items.push({ kind: 'text', at: [cx, ty(startTop - (idx + 1) * h - idx * gap)], text: ln, height: lineH, anchor: 'center' });
+    });
+  };
+
+  const bilingual = (x0: number, x1: number, y0: number, y1: number, packed: string, topBase = 2.2, botBase = 2.0) => {
+    const parts = packed.split('\n');
+    if (parts.length < 2) {
+      centered(x0, x1, y0, y1, parts[0] ?? '', topBase);
+      return;
+    }
+    const [topText, botText] = [parts[0]!, parts[1]!];
+    const cellW = (x1 - x0) * sx;
+    const cx = tx((x0 + x1) / 2);
+    const zhH = fittedTitleHeight(topText, topBase, cellW, true);
+    const enH = fittedTitleHeight(botText, botBase, cellW, true);
+    const gap = Math.max(0.5, ((y1 - y0) - zhH - enH) / 3);
+    items.push({ kind: 'text', at: [cx, ty(y1 - gap - zhH)], text: topText, height: zhH, anchor: 'center' });
+    items.push({ kind: 'text', at: [cx, ty(y0 + gap)], text: botText, height: enH, anchor: 'center' });
+  };
+
+  const title = pg.title;
+  const revision = currentDrawingRevision(doc) ?? title.revision ?? '';
+  const pageNum = (doc.outputPage?.index ?? 0) + 1;
+  const pageTotal = doc.outputPage?.total ?? doc.pages.length;
+
+  // Top-left general tolerance headers & user values (blank by default)
+  centered(0, 27, 50, 59, 'ANGLES', 2.2);
+  centered(27, 54, 50, 59, 'FRACTIONAL', 2.2);
+  centered(54, 81, 50, 64, 'DECIMALS/MM', 2.2);
+  centered(0, 27, 59, 64, title.tolAngle ?? '', 2.3);
+  centered(27, 54, 59, 64, title.tolFraction ?? '', 2.3);
+  {
+    const tolRows: [number, number, string, string | undefined][] = [
+      [59.33, 64, '.X', title.tolDec1],
+      [54.67, 59.33, '.XX', title.tolDec2],
+      [50, 54.67, '.XXX', title.tolDec3],
+    ];
+    for (const [y0, y1, prefix, val] of tolRows) {
+      const lblH = fittedTitleHeight(prefix, 2.1, 8 * sx, true);
+      items.push({ kind: 'text', at: [tx(82.5), ty((y0 + y1 - lblH) / 2)], text: prefix, height: lblH });
+      if (val) centered(89, 107.5, y0, y1, val, 2.2);
+    }
+  }
+  {
+    const banner = t('drawing.industrial.tolerances');
+    const h = fittedTitleHeight(banner, 2.3, 108 * sx, true);
+    items.push({ kind: 'text', at: [tx(2), ty((44 + 50 - h) / 2)], text: banner, height: h });
+  }
+
+  // Top-right dimension classification legend (vector triangles for PDF/SVG/DXF parity)
+  centered(108, 180, 59.2, 64, t('drawing.industrial.dimClass'), 2.2);
+  {
+    const row1Y = 55.1;
+    const row2Y = 50.1;
+    const row3Y = 45.3;
+    const triCx = tx(116.5);
+    const triHalf = 1.5 * sx;
+    const triTop = 2.6;
+    const splitClass = (raw: string): [string | null, string] => {
+      const parts = raw.split('\t');
+      return parts.length >= 2 ? [parts[0]!, parts[1]!] : [null, parts[0]!];
+    };
+    const [c1Zh, c1En] = splitClass(t('drawing.industrial.critical'));
+    const [c2Zh, c2En] = splitClass(t('drawing.industrial.major'));
+    const [c3Zh, c3En] = splitClass(t('drawing.industrial.minor'));
+
+    // Row 1: 1 ▲ CRITICAL
+    items.push({ kind: 'text', at: [tx(111), ty(row1Y)], text: '1', height: 2.1 });
+    items.push({
+      kind: 'polyline',
+      points: [triCx - triHalf, ty(row1Y + 0.1), triCx + triHalf, ty(row1Y + 0.1), triCx, ty(row1Y + triTop)],
+      style: 'thin',
+      closed: true,
+      filled: true,
+    });
+    if (c1Zh) {
+      items.push({ kind: 'text', at: [tx(120), ty(row1Y)], text: c1Zh, height: 2.1 });
+      items.push({ kind: 'text', at: [tx(141), ty(row1Y)], text: c1En, height: 2.0 });
+    } else {
+      items.push({ kind: 'text', at: [tx(121), ty(row1Y)], text: c1En, height: 2.0 });
+    }
+
+    // Row 2: 2 (half-filled triangle) MAJOR
+    items.push({ kind: 'text', at: [tx(111), ty(row2Y)], text: '2', height: 2.1 });
+    items.push({
+      kind: 'polyline',
+      points: [triCx - triHalf, ty(row2Y + 0.1), triCx + triHalf, ty(row2Y + 0.1), triCx, ty(row2Y + triTop)],
+      style: 'thin',
+      closed: true,
+    });
+    items.push({
+      kind: 'polyline',
+      points: [triCx - triHalf, ty(row2Y + 0.1), triCx + triHalf, ty(row2Y + 0.1), triCx + triHalf * 0.5, ty(row2Y + triTop * 0.5)],
+      style: 'thin',
+      closed: true,
+      filled: true,
+    });
+    if (c2Zh) {
+      items.push({ kind: 'text', at: [tx(120), ty(row2Y)], text: c2Zh, height: 2.1 });
+      items.push({ kind: 'text', at: [tx(141), ty(row2Y)], text: c2En, height: 2.0 });
+    } else {
+      items.push({ kind: 'text', at: [tx(121), ty(row2Y)], text: c2En, height: 2.0 });
+    }
+
+    // Row 3: 3 ALL OTHERS MINOR
+    items.push({ kind: 'text', at: [tx(111), ty(row3Y)], text: '3', height: 2.1 });
+    if (c3Zh) {
+      items.push({ kind: 'text', at: [tx(120), ty(row3Y)], text: c3Zh, height: 2.1 });
+      items.push({ kind: 'text', at: [tx(141), ty(row3Y)], text: c3En, height: fittedTitleHeight(c3En, 2.0, 38 * sx, true) });
+    } else {
+      items.push({ kind: 'text', at: [tx(121), ty(row3Y)], text: c3En, height: fittedTitleHeight(c3En, 2.0, 56 * sx, true) });
+    }
+  }
+
+  // Bottom-left specs & sign-off
+  bilingual(0, 52, 35, 44, t('drawing.industrial.material'));
+  bilingual(52, 74, 35, 44, t('drawing.industrial.finish'));
+  bilingual(74, 96, 35, 44, t('drawing.industrial.scale'));
+
+  centered(0, 52, 27, 35, title.material ?? '', 2.8);
+  centered(52, 74, 27, 35, title.finish ?? '', 2.6);
+  centered(74, 96, 27, 35, scaleText(pg.sheet.scale), 2.8);
+
+  bilingual(0, 17, 18, 27, t('drawing.industrial.unit'), 2.1, 1.9);
+  centered(17, 30, 18, 27, pg.sheet.unit ?? 'mm', 3.0);
+  bilingual(30, 52, 18, 27, t('drawing.industrial.app'), 2.1, 1.9);
+  bilingual(52, 74, 18, 27, t('drawing.industrial.ckd'), 2.1, 1.9);
+  bilingual(74, 96, 18, 27, t('drawing.industrial.dra'), 2.1, 1.9);
+
+  bilingual(0, 30, 9, 18, t('drawing.industrial.by'), 2.1, 1.9);
+  centered(30, 52, 9, 18, title.approvedBy ?? '', 2.6);
+  centered(52, 74, 9, 18, title.checkedBy ?? '', 2.6);
+  centered(74, 96, 9, 18, title.drafter ?? '', 2.6);
+
+  bilingual(0, 30, 0, 9, t('drawing.industrial.date'), 2.1, 1.9);
+  centered(30, 52, 0, 9, title.approvedDate ?? '', 2.4);
+  centered(52, 74, 0, 9, title.checkedDate ?? '', 2.4);
+  centered(74, 96, 0, 9, title.date ?? '', 2.4);
+
+  // Bottom-right company & part identification
+  {
+    const compZh = (title.company ?? '').trim();
+    const compEn = (title.companyEn ?? '').trim();
+    if (compZh && compEn) {
+      centered(96, 148, 35.5, 44, compZh, 3.6);
+      centered(96, 148, 27, 35.5, compEn, 3.0);
+    } else if (compZh || compEn) {
+      centered(96, 148, 27, 44, compZh || compEn, 3.8);
+    }
+  }
+  centered(148, 164, 35.5, 44, 'REV', 2.6);
+  centered(164, 180, 35.5, 44, revision, 3.2);
+  centered(148, 164, 27, 35.5, 'PAGE', 2.5);
+  centered(164, 180, 27, 35.5, `${pageNum}/${pageTotal}`, 3.0);
+
+  bilingual(96, 118, 17, 27, t('drawing.industrial.desc'), 2.1, 1.9);
+  centered(118, 180, 17, 27, title.drawingName ?? '', 3.0, 2);
+
+  bilingual(96, 118, 8, 17, t('drawing.industrial.partNo'), 2.1, 1.9);
+  centered(118, 180, 8, 17, title.drawingNo ?? '', 3.6);
+
+  {
+    const label = t('drawing.industrial.fileNo');
+    const h = fittedTitleHeight(label, 2.3, 46 * sx, true);
+    items.push({ kind: 'text', at: [tx(119), ty((0 + 8 - h) / 2)], text: label, height: h, anchor: 'center' });
+  }
+  centered(142, 180, 0, 8, title.fileNo ?? '', 2.7);
+
+  const revisions = revisionTableItems(doc, m.frame);
+  if (revisions) items.push(...revisions.items);
+  return items;
+}
+
 /** The frame and the title block with what the document says in it, written at the heights the drawing's title style gives (ADR 0150). */
 export function sheetItems(doc: DrawingDoc): SceneItem[] {
   const pg = page(doc);
   const m = sheetMetrics(pg.sheet);
+  if (sheetTemplateOf(pg.sheet) === 'industrial') return industrialSheetItems(doc, m);
   const style = resolveTitleStyle(pg.sheet.titleStyle);
   const items: SceneItem[] = [rect(m.frame, 'frame'), rect(m.titleBlock, 'frame')];
   const values: Record<string, string> = {

@@ -1,4 +1,4 @@
-import { standardOf, type DrawingDoc, type DrawingSheet } from '@3db/model';
+import { sheetTemplateOf, standardOf, type DrawingDoc, type DrawingSheet, type TitleField } from '@3db/model';
 import { sheetMetrics } from './sheet';
 import type { CoverageReport } from './autoDrawing';
 import type { DrawingLayoutInspection } from './layoutMetrics';
@@ -343,9 +343,14 @@ export function evaluateQualityGate(input: QualityGateInput): QualityGateReport 
   );
 
   // Rule C5: General tolerance block must not be blank (tool never auto-fills it)
+  const INDUSTRIAL_TOL_FIELDS: readonly TitleField[] = ['tolAngle', 'tolFraction', 'tolDec1', 'tolDec2', 'tolDec3'];
   const blankTolPages = doc.pages
-    .map((p, i) => ({ i, tol: (p.title.generalTolerance ?? '').trim() }))
-    .filter((x) => x.tol.length === 0);
+    .map((p, i) => {
+      const standardTol = (p.title.generalTolerance ?? '').trim().length > 0;
+      const industrialTol = sheetTemplateOf(p.sheet) === 'industrial' && INDUSTRIAL_TOL_FIELDS.some((k) => (p.title[k] ?? '').trim().length > 0);
+      return { i, hasTol: standardTol || industrialTol };
+    })
+    .filter((x) => !x.hasTol);
   push(
     'C5',
     'generalTolerance',
@@ -398,7 +403,7 @@ export function evaluateQualityGate(input: QualityGateInput): QualityGateReport 
  * Places the `PRELIMINARY` status above the title block for draft exports (ADR 0263, rule Q1).
  * Works across PDF, SVG, DXF, and PNG because all exporters render `SceneText` with `angle` and `color`.
  */
-export function stampPreliminary(scene: Scene, sheet: Pick<DrawingSheet, 'size' | 'orientation' | 'standard'>): Scene {
+export function stampPreliminary(scene: Scene, sheet: Pick<DrawingSheet, 'size' | 'orientation' | 'standard' | 'template' | 'titleStyle'>): Scene {
   const { titleBlock } = sheetMetrics(sheet);
   const stamp: SceneText = {
     kind: 'text',

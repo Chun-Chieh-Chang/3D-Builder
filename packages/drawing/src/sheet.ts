@@ -1,5 +1,5 @@
 import { HELVETICA_CAP_HEIGHT, helveticaCode, helveticaWidth } from './helvetica';
-import { frameMarginsOf, TITLE_ROW_HEIGHTS_DEFAULT, type DrawingSheet, type SheetSize, type TitleCellField, type TitleRowHeights, type TitleStyle } from '@3db/model';
+import { frameMarginsOf, sheetTemplateOf, TITLE_ROW_HEIGHTS_DEFAULT, type DrawingSheet, type SheetSize, type TitleCellField, type TitleRowHeights, type TitleStyle } from '@3db/model';
 
 /**
  * The sheet (C16.1, ISO 5457 and ISO 7200): its size, the frame, and the title block at the lower right, all in mm from the lower left corner of the sheet.
@@ -26,6 +26,7 @@ export interface SheetMetrics {
 }
 
 export const TITLE_BLOCK = { width: 180, height: 48 } as const;
+export const INDUSTRIAL_TITLE_BLOCK = { width: 180, height: 64, projectionBoxWidth: 28, projectionBoxHeight: 12 } as const;
 
 export function titleRowHeightsOf(titleStyle?: TitleStyle): TitleRowHeights {
   return titleStyle?.rowHeights ? [...titleStyle.rowHeights] as TitleRowHeights : [...TITLE_ROW_HEIGHTS_DEFAULT] as TitleRowHeights;
@@ -36,15 +37,23 @@ export function titleBlockHeight(titleStyle?: TitleStyle): number {
   return rows[0] + rows[1] + rows[2] + rows[3];
 }
 
-export function sheetMetrics(sheet: Pick<DrawingSheet, 'size' | 'orientation' | 'standard' | 'titleStyle'>): SheetMetrics {
+export function sheetMetrics(sheet: Pick<DrawingSheet, 'size' | 'orientation' | 'standard' | 'titleStyle' | 'template'>): SheetMetrics {
   const [lw, lh] = SIZES[sheet.size];
   const [width, height] = sheet.orientation === 'landscape' ? [lw, lh] : [lh, lw];
   // the frame as far from the edges as the sheet's standard puts it (ADR 0260, `DRAWING_PROFILES`)
   const { left, other: margin } = frameMarginsOf(sheet);
   const frame: Rect = { x: left, y: margin, w: width - left - margin, h: height - 2 * margin };
+  const pad = 8;
+  if (sheetTemplateOf(sheet) === 'industrial') {
+    const tbWidth = Math.min(INDUSTRIAL_TITLE_BLOCK.width, frame.w);
+    const tbHeight = INDUSTRIAL_TITLE_BLOCK.height;
+    const titleBlock: Rect = { x: frame.x + frame.w - tbWidth, y: frame.y, w: tbWidth, h: tbHeight };
+    const reserveH = tbHeight + INDUSTRIAL_TITLE_BLOCK.projectionBoxHeight;
+    const area: Rect = { x: frame.x + pad, y: frame.y + reserveH + pad, w: frame.w - 2 * pad, h: Math.max(10, frame.h - reserveH - 2 * pad) };
+    return { width, height, frame, titleBlock, area };
+  }
   const tbHeight = titleBlockHeight(sheet.titleStyle);
   const titleBlock: Rect = { x: frame.x + frame.w - TITLE_BLOCK.width, y: frame.y, w: TITLE_BLOCK.width, h: tbHeight };
-  const pad = 8;
   const area: Rect = { x: frame.x + pad, y: frame.y + tbHeight + pad, w: frame.w - 2 * pad, h: frame.h - tbHeight - 2 * pad };
   return { width, height, frame, titleBlock, area };
 }

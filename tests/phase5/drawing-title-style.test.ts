@@ -18,7 +18,7 @@ function titled(title: Partial<Record<TitleField, string>>, style?: TitleStyle):
   return doc;
 }
 
-const ALL: Record<TitleField, string> = { company: 'ACME', drawingName: 'BRACKET', drawingNo: 'DWG-1', material: 'AL', generalTolerance: '+/- 0.1', drafter: 'AB', date: '2026-10-16', revision: 'A' };
+const ALL: Partial<Record<TitleField, string>> = { company: 'ACME', drawingName: 'BRACKET', drawingNo: 'DWG-1', material: 'AL', generalTolerance: '+/- 0.1', drafter: 'AB', date: '2026-10-16', revision: 'A' };
 
 const textItems = (doc: DrawingDoc): TextItem[] => sheetItems(doc).filter((i): i is TextItem => i.kind === 'text');
 const drawn = (doc: DrawingDoc, text: string): TextItem => textItems(doc).find((i) => i.text === text)!;

@@ -2,7 +2,7 @@ import { t } from '@3db/i18n';
 import { DRAWING_TEXT_WIDTH, validDrawingTextWidth } from './drawingAnnotations';
 import { countersFor } from './ids';
 import { checkCadDrawing } from './drawingCad';
-import { checkViewCaption, dimensionRefs, normalizeDrawingRevision, validDimensionTextOffset, validTriangleSizePercent, validDrawingPointRef, validProjectionRef, DRAWING_SCHEMA_VERSION, DRAWING_STANDARDS, type Dimension, type DrawingDoc, type DrawingStandard } from './drawing';
+import { checkViewCaption, dimensionRefs, normalizeDrawingRevision, validDimensionTextOffset, validTriangleSizePercent, validDrawingPointRef, validProjectionRef, DRAWING_SCHEMA_VERSION, DRAWING_STANDARDS, SHEET_TEMPLATES, type Dimension, type DrawingDoc, type DrawingStandard, type SheetTemplate } from './drawing';
 import { ASSEMBLY_SCHEMA_VERSION, SCHEMA_VERSION, type AssemblyDoc, type PartDoc } from './schema';
 
 /**
@@ -18,7 +18,8 @@ export function serializeAssembly(doc: AssemblyDoc): string {
 }
 
 export function serializeDrawing(doc: DrawingDoc): string {
-  return canonical(doc);
+  const { outputPage: _outputPage, ...persisted } = doc;
+  return canonical(persisted);
 }
 
 const canonical = (doc: object) => JSON.stringify(sortKeys(doc), null, 2) + '\n';
@@ -494,6 +495,8 @@ const drawingMigrations: Record<number, (doc: Json) => Json> = {
   // v45: an angle dimension may be written with a leader (`leader`, `angle`; ADR 0266). Absent means its arc, as before; nothing to convert, the version keeps
   // an older program from drawing an arc whose lines meet far off the view.
   44: (doc) => doc,
+  // v46: selectable sheet template (`sheet.template`: `'standard' | 'industrial'`) and industrial title block fields. Absent defaults to `'standard'`.
+  45: (doc) => doc,
 };
 
 export function parseDrawing(text: string): DrawingDoc {
@@ -525,6 +528,8 @@ export function parseDrawing(text: string): DrawingDoc {
     if (!p.sheet || typeof p.sheet !== 'object') throw new FormatError(t('format.noViews'));
     const standard = (p.sheet as Json).standard;
     if (standard !== undefined && !DRAWING_STANDARDS.includes(standard as DrawingStandard)) throw new FormatError(t('drawing.badStandard', { standard: String(standard) }));
+    const template = (p.sheet as Json).template;
+    if (template !== undefined && !SHEET_TEMPLATES.includes(template as SheetTemplate)) throw new FormatError(t('drawing.badTemplate', { template: String(template) }));
     p.title ??= {};
     p.views ??= [];
     p.dimensions ??= [];

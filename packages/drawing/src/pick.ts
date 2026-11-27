@@ -107,6 +107,17 @@ export function segmentDistance(p: P2, a: P2, b: P2): number {
 /** How big what a feature is drawn as is, for telling two apart that are the same distance from the pointer: the area of the circle an arc or a fillet is part of. */
 const areaOf = (f: Pickable) => (f.type === 'circle' || f.type === 'torus' ? Math.PI * f.radius * f.radius : f.type === 'edge' || f.type === 'vertex' || f.type === 'outline' ? 0 : f.area);
 
+/** Distance from pointer `p` (view coordinates) to the drawn geometry of `f`. */
+function pickDistance(f: Pickable, p: P2): number {
+  if (f.type === 'vertex') return hyp(p[0] - f.at[0], p[1] - f.at[1]);
+  if (f.type === 'edge') return segmentDistance(p, f.a, f.b);
+  if (f.type === 'outline') return segmentDistance(p, f.from, f.to);
+  if (f.type === 'plane') return Math.abs(p[f.axis === 'x' ? 0 : 1] - f.coord);
+  if (f.type === 'slant') return Math.abs((p[0] - f.at[0]) * f.dir[1] - (p[1] - f.at[1]) * f.dir[0]);
+  const at = f.type === 'circle' ? f.centre : f.at;
+  return Math.abs(hyp(p[0] - at[0], p[1] - at[1]) - f.radius);
+}
+
 /** Dimension tools also acquire the exact centre of a visible circle/arc. Keep its persistent circular reference: never invent a vertex at the centre. */
 export function dimensionReferenceAt(lines: ViewLines | null | undefined, features: readonly PickFeature[], p: P2, tol: number, seen?: VisibleElements, pointSnaps = true, extendEdges = false): Pickable | null {
   const hit = featureAt(lines, features, p, tol, seen);
@@ -152,7 +163,9 @@ export function dimensionReferenceAt(lines: ViewLines | null | undefined, featur
     });
     if (visible) offer(f, f.centre);
   }
-  return (best as { f: Pickable } | null)?.f ?? hit;
+  const snap = best as { f: Pickable; d: number } | null;
+  if (snap?.f.type === 'circle' && hit && pickDistance(hit, p) < snap.d - 1e-9) return hit;
+  return snap?.f ?? hit;
 }
 
 function crossingAt(edges: readonly EdgePick[], p: P2, tolerance: number, extendEdges: boolean): VertexPick | null {
@@ -188,13 +201,23 @@ export function withProjectedReference(native: Pickable | null, lines: ViewLines
   if (!native) return projected;
   if (!projected || native.type === 'vertex') return native;
   if (native.type === 'circle' && hyp(p[0] - native.centre[0], p[1] - native.centre[1]) <= tol) return native;
-  let distance: number;
-  if (native.type === 'edge') distance = segmentDistance(p, native.a, native.b);
-  else if (native.type === 'outline') distance = segmentDistance(p, native.from, native.to);
-  else if (native.type === 'plane') distance = Math.abs(p[native.axis === 'x' ? 0 : 1] - native.coord);
-  else if (native.type === 'slant') distance = Math.abs((p[0] - native.at[0]) * native.dir[1] - (p[1] - native.at[1]) * native.dir[0]);
-  else { const at = native.type === 'circle' ? native.centre : native.at; distance = Math.abs(hyp(p[0] - at[0], p[1] - at[1]) - native.radius); }
-  return distance > EDGE_TOLERANCE ? projected : native;
+  return pickDistance(native, p) - pickDistance(projected, p) > EDGE_TOLERANCE ? projected : native;
+}
+
+/** Diameter/radius modes target round rims/outlines directly without vertices, seam edges, adjacent planes or concentric centre snaps stealing the pick. */
+export function roundReferenceAt(
+  lines: ViewLines | null | undefined,
+  features: readonly PickFeature[],
+  p: P2,
+  tol: number,
+  seen?: VisibleElements,
+  mode: 'diameter' | 'radius' = 'diameter',
+): Pickable | null {
+  const roundFeatures = features.filter((f) => f.type === 'circle' || (mode === 'diameter' ? f.type === 'axis' : f.type === 'torus'));
+  const roundSeen = seen ? { edges: [], vertices: [], circles: seen.circles } : undefined;
+  const round = featureAt(lines, roundFeatures, p, tol, roundSeen);
+  if (round) return round;
+  return featureAt(lines, features, p, tol, seen ? { ...seen, vertices: [] } : undefined);
 }
 
 /** Chamfer mode targets a line, even when a short chamfer lies inside both endpoint hit areas. */

@@ -1,5 +1,29 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-27（下午）— 新增通用雙語製造圖框樣板（`template: 'industrial'`）
+
+- **需求與設計決策**：依使用者提供之工程圖截圖欄位結構，設計通用、無真實公司／人員／零件／公差範例資料的內建可切換圖頁樣板 `industrial`（保留原 ISO/CNS 4 列樣板 `standard` 為預設，Schema 升至 `46`）。
+- **實作範圍**：
+  - `packages/model/src/drawing.ts` & `serialize.ts`：新增 `SheetTemplate = 'standard' | 'industrial'`、`INDUSTRIAL_TITLE_FIELDS`（含 `companyEn`、`finish`、`fileNo`、`checkedBy`/`checkedDate`、`approvedBy`/`approvedDate`、`tolAngle`/`tolFraction`/`tolDec1..3`）、執行期 `outputPage`（序列化自動剔除）與 `45 → 46` 無痛遷移及合法性檢查（基於 `8d75bccf`）。
+  - `packages/drawing/src/sheet.ts`、`scene.ts`、`revisionTable.ts`、`qualityGate.ts`：實作 180×64 mm 純黑雙語標題欄、右上 28×12 mm 第一／第三角向量投影符號框、向量實心／半填滿尺寸級別三角圖例、空白可填一般公差欄、與 `revisionHistory` 聯動的左下 4 列修訂表（由下往上 `原`、`△1..△3`，無紀錄時保留空白格線；移除框外左下角表單編號；A4 直式等窄幅自動改置左上角避免重疊）。品質閘門 C5 同步辨識工業樣板公差欄位。
+  - `packages/i18n` & `apps/web/src/components/DrawingPanel.tsx`：補齊雙語字典並在「圖頁格式」面板新增「圖頁樣板」切換選單與對應欄位表單。
+- **確效驗證**：
+  - 新增 `tests/phase5/drawing-template-industrial.test.ts` 覆蓋 Schema v46 往返、零截圖真實資料外洩、SVG／PDF／DXF（標準＋相容）輸出、雙語與向量圖形、修訂表聯動與 20 種圖紙規格全版面零重疊檢查。
+  - Rebase 前執行全量 `npm run verify:ui`：**281 / 281 全數通過（0 known defect、0 失敗）**，且 `apps/mcp/test` 20 檔 105/105 通過。
+  - Rebase 至 `8d75bccf`（調整 Schema 至 `46` 以接續上游 ADR 0266 之 `45`）後，重新執行 `npm run docs:sync` 與 `npm run lint:repo`（343 份文件、16 個工作區、281 個瀏覽器檢查項）、`typecheck`、`lint:rules`、`lint:deps`、`lint:i18n`、`npm run build`、CI 冒煙＋工程圖相關測試 35 檔（440 通過、1 既略）＋`sketch-pointer-baseline.test.ts`（2/2）及 `npm run verify:ui -- --only "drawing|phase5-"`（**34 / 34 全數通過**）。
+
+## 2026-11-27 — 修復工程圖無法標註直徑與同心圓選取遭搶佔缺陷
+
+- **根因分析（RCA）**：
+  1. `packages/drawing/src/pick.ts` 的 `withProjectedReference` 未比較 `native` 與 `projected` 到游標的距離，僅檢查 `distance > EDGE_TOLERANCE (0.08 mm)` 就丟棄原生 `circle`/`outline` 並換成 `projection` 參考點／邊，導致實機點擊圓周或側視圓柱輪廓線（偏離 > 0.08 mm）無法建立直徑尺寸。
+  2. `dimensionReferenceAt` 在 `best?.f` 為圓心磁吸時無條件蓋過 `hit`，且同心圓共用圓心、依 `areaOf` 取最大圓，導致點在小內圓圓周上被大外圓的圓心磁吸搶走。
+  3. `DrawingViewport.tsx` 在 `diameter`/`radius` 模式下仍經 `dimensionReferenceAt` 與 `withProjectedReference`，使端點／邊線／圓心或投影點搶走圓周；單元素錯誤未在第一下即時攔截；另 `apps/web/src/state/drawing.ts` `crop` 視圖漏列繼承母視圖特徵。
+- **矯正與預防措施（CAPA）**：
+  - `packages/drawing/src/pick.ts`：新增 `pickDistance` 比較函式；`dimensionReferenceAt` 僅在圓心確實比 `hit` 更近時才採用圓心磁吸；`withProjectedReference` 改為 `pickDistance(native, p) - pickDistance(projected, p) > EDGE_TOLERANCE` 才讓衍生輪廓接管；新增 `roundReferenceAt` 專供 `diameter`/`radius` 模式優先選取圓周／圓角／側視圓柱輪廓線。
+  - `apps/web/src/components/DrawingViewport.tsx`：`diameter`/`radius` 模式改用 `roundReferenceAt`（不走 `withProjectedReference`），第一下即檢查 `planDimension` 錯誤並避免在圓周懸停顯示「圓心」標籤。
+  - `apps/web/src/state/drawing.ts`：`crop` 視圖補齊繼承母視圖特徵與邊界資料。
+- **確效驗證**：`tests/phase5/drawing-dimension-modes.test.ts` 新增真實 OCCT 同心圓（Ø20 凸台＋Ø4 孔、120 組隨機非零偏移、側視圓柱輪廓、`R5` 小圓弧大容差）回歸測試；執行 `vitest` 相關工程圖選取／投影／裁切測試集、`typecheck`、`lint:rules`、`lint:deps`、`lint:i18n` 與 `build` 全數通過。
+
 ## 2026-11-23 — DWG 匯入擴充（單位、標註、CAD 內建圖層）、醒目提示與 Autodesk 相容修正
 
 - **範圍**（`49872f24`、`6a1f26fc`、`176c7405`）：DWG／DXF 匯入支援 mm 以外單位（in、ft、yd、mil、µm、cm、dm、m 換算成 mm，含尺寸標註）；缺圖形區塊的標註依定義點以標準樣式重畫，字高與箭頭取原檔 `$DIMTXT`／`$DIMASZ`×`$DIMSCALE`；標註文字位置 (0,0) 視為未設定；`*` 開頭的 CAD 內建圖層可匯入；紙張空間 VIEWPORT 略過並提示；驗證失敗訊息附出錯的圖層或圖元。輸出 DWG 可自選位置；匯入圖面線條最少約 1 px；全域紅／綠提示框（NoticeToast）。

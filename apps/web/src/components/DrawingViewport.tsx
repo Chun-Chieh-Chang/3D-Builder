@@ -4,6 +4,7 @@ import { DrawingMenu, type DrawingMenuAt } from './DrawingViewMenu';
 import { SheetTabs } from './SheetTabs';
 import {
   chamferReferenceAt,
+  roundReferenceAt,
   projectionReferenceLines, withProjectedReference, showsHidden,
   annotationItems,
   arrangementBase,
@@ -426,11 +427,19 @@ function ModelDrawingViewport() {
       const placed = basePlaced.get(v.id);
       if (!placed || placed.w <= 0) continue;
       const isDimTool = tool?.kind === 'dimension' || tool?.kind === 'ordinate' || tool?.kind === 'baseline';
-      const acquire = tool?.kind === 'dimension' && tool.mode === 'chamfer' ? chamferReferenceAt : referencePoints && isDimTool ? dimensionReferenceAt : featureAt;
+      const isRoundMode = tool?.kind === 'dimension' && (tool.mode === 'diameter' || tool.mode === 'radius');
+      const roundMode = isRoundMode ? (tool.mode as 'diameter' | 'radius') : undefined;
+      const acquire = tool?.kind === 'dimension' && tool.mode === 'chamfer'
+        ? chamferReferenceAt
+        : isRoundMode
+          ? (l: ViewLines | null | undefined, f: readonly Parameters<typeof roundReferenceAt>[1][number][], pt: P, tol: number, s?: Parameters<typeof roundReferenceAt>[4]) => roundReferenceAt(l, f, pt, tol, s, roundMode)
+          : referencePoints && isDimTool
+            ? dimensionReferenceAt
+            : featureAt;
       const pointSnaps = tool?.kind === 'ordinate' || tool?.kind === 'baseline' || (tool?.kind === 'dimension' && (!tool.mode || ['smart', 'horizontal', 'vertical', 'aligned'].includes(tool.mode)));
       const q = toView(placed, p), tolerance = reach / placed.scale;
       const native = acquire(selectionLines.get(v.id), drw.features.get(v.id) ?? [], q, tolerance, seenByView.get(v.id), pointSnaps, extendEdges);
-      const f = !tool || isDimTool ? withProjectedReference(native, selectionLines.get(v.id), q, tolerance, referencePoints && pointSnaps) : native;
+      const f = (!tool || isDimTool) && !isRoundMode ? withProjectedReference(native, selectionLines.get(v.id), q, tolerance, referencePoints && pointSnaps) : native;
       if (f) return { view: v.id, feature: f };
     }
     return null;
@@ -563,7 +572,7 @@ function ModelDrawingViewport() {
     const keep = mode ? { mode } : {};
     if (!first) {
       if (hit) {
-        if (mode === 'chamfer') {
+        if (mode === 'chamfer' || mode === 'diameter' || mode === 'radius') {
           const view = curPage.views.find(v => v.id === hit.view);
           const placed = basePlaced.get(hit.view);
           const axes = view && axesOf(curPage.views, curPage.sheet.projection, view);
@@ -1786,7 +1795,9 @@ function ModelDrawingViewport() {
             if (!placed || (f.type !== 'vertex' && f.type !== 'circle')) return null;
             const q = f.type === 'vertex' ? f.at : f.centre;
             const at = toSheet(placed, q[0], q[1]);
-            if (Math.hypot(at[0] - hover.p[0], at[1] - hover.p[1]) > reach) return null;
+            const distToCentre = Math.hypot(at[0] - hover.p[0], at[1] - hover.p[1]);
+            if (distToCentre > reach) return null;
+            if (f.type === 'circle' && ((tool?.kind === 'dimension' && (tool.mode === 'diameter' || tool.mode === 'radius')) || Math.abs(distToCentre - f.radius * placed.scale) < distToCentre - 1e-6)) return null;
             const r = 5 / (pan.zoom * PX);
             const crossing = f.type === 'vertex' && f.ref.crossing;
             const snapKind = crossing ? crossing.extended ? 'virtualIntersection' : 'intersection' : f.type === 'vertex' ? 'snap' in f ? f.snap : 'vertex' : 'centre';

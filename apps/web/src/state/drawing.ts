@@ -1163,7 +1163,7 @@ export class DrawingStore {
         const edges = new Map<Id, ViewEdgeSet>();
         for (const p of doc.pages) {
           for (const v of p.views) {
-            const own = v.kind === 'detail' ? this.ancestor(p.views, v) : v;
+            const own = v.kind === 'detail' || v.kind === 'crop' ? this.ancestor(p.views, v) : v;
             const r = own ? this.requestOf(own) : null;
             const asmFound = own && this.assemblyOf(own) && r ? this.featureCache.get(`asm|${r.id}`) : undefined;
             const found = asmFound ?? (r?.featureId ? this.featureCache.get(r.featureId) : undefined);
@@ -1222,9 +1222,9 @@ export class DrawingStore {
     const { views } = page(this.history.doc, this.state.activePageIndex);
     const { lines, problems } = this.state;
     if (views.length === 0) return;
-    const drawn = views.every((v) => v.kind === 'detail' || lines.get(v.id) || problems.has(v.id));
+    const drawn = views.every((v) => v.kind === 'detail' || v.kind === 'crop' || lines.get(v.id) || problems.has(v.id));
     const known = this.featuresFailed || views.every((v) => {
-      if (v.kind === 'detail' || problems.has(v.id)) return true;
+      if (v.kind === 'detail' || v.kind === 'crop' || problems.has(v.id)) return true;
       const id = this.requestOf(v)?.featureId;
       return !id || this.featureCache.has(id);
     });
@@ -1263,10 +1263,10 @@ export class DrawingStore {
     for (const resolve of waiting) resolve();
   }
 
-  /** The nearest view up the parents that is not a detail (a detail is measured in its parent's coordinates). */
+  /** The nearest view up the parents that is not a detail or crop (details and crops are measured in their parent's coordinates). */
   private ancestor(views: readonly DrawingView[], view: DrawingView): DrawingView | null {
     let v: DrawingView | undefined = view;
-    for (let i = 0; i < 64 && v && v.kind === 'detail'; i++) v = viewById(views, v.parent);
+    for (let i = 0; i < 64 && v && (v.kind === 'detail' || v.kind === 'crop'); i++) v = viewById(views, v.parent);
     return v ?? null;
   }
 

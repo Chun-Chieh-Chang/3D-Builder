@@ -11,9 +11,9 @@ import { applyDrawingCommand, createEmptyDrawing, page, parseDrawing, serializeD
 import { Kernel } from '@3db/kernel';
 import { PlaneGcsSolver } from '@3db/sketch';
 import { elementFacts, placedViewFeatures, Regenerator, viewEdges, viewFeatures, type RebuildResult } from '@3db/regen';
-import { DIMENSION_MODES, GAP, chamferReferenceAt, autoDimensions, dimensionReferenceAt, dimensionModesFor, evaluateDimension, outlinesOf, featureAt, pickKind, planDimension, toSheet, visibleElements, type DimensionMode, type Pickable, type PlacedView, type ViewLines } from '@3db/drawing';
+import { DIMENSION_MODES, EDGE_TOLERANCE, GAP, chamferReferenceAt, autoDimensions, dimensionReferenceAt, dimensionModesFor, evaluateDimension, outlinesOf, featureAt, pickKind, planDimension, roundReferenceAt, sourceOfPick, toSheet, visibleElements, withProjectedReference, type DimensionMode, type Pickable, type PlacedView, type ViewLines } from '@3db/drawing';
 import { t } from '@3db/i18n';
-import { build, circle as circleProfile, edge, extrude, face, fillet, front, pin, sketch } from '../phase1/builders';
+import { build, circle as circleProfile, edge, extrude, face, fillet, front, pin, rectangle, sketch } from '../phase1/builders';
 
 let kernel: Kernel;
 let regen: Regenerator;
@@ -514,5 +514,160 @@ describe('extension lines follow the referenced visible contour', () => {
     if (!stroke || stroke.kind !== 'polyline') throw new Error('missing extension stroke');
     expect(stroke.points[0]).toBeCloseTo(expected[0], 9);
     expect(stroke.points[1]).toBeCloseTo(expected[1] + GAP, 9);
+  });
+});
+
+describe('diameter and concentric circle picking through viewport reference path', () => {
+  it('preserves concentric inner/outer circles and side cylinder outlines across non-zero pointer offsets and large snap tolerances', async () => {
+    const isolated = new Regenerator(kernel, await PlaneGcsSolver.create());
+    try {
+      const part = isolated.rebuild(
+        build(
+          sketch('base', front, rectangle('r', -20, -20, 40, 40)),
+          extrude('ebase', 'base', 'boss', { type: 'blind', depth: '8' }),
+          sketch('boss', face('ebase:cap:end'), circleProfile('bc', 0, 0, 10)),
+          extrude('eboss', 'boss', 'boss', { type: 'blind', depth: '6' }),
+          { ...sketch('hs', face('eboss:cap:end')), entities: [{ id: 'hp', type: 'point', x: 0, y: 0 }] } as Feature,
+          { id: 'h', type: 'hole', name: 'h', suppressed: false, sketch: 'hs', kind: 'straight', diameter: '4', end: { type: 'throughAll' } } as Feature,
+        ),
+      );
+      expect(part.features.every((f) => f.status === 'ok')).toBe(true);
+      const b = part.body!;
+
+      const endAxes = viewVectors('front');
+      const endLines = kernel.projectView(b.shape, endAxes) as ViewLines;
+      const endFeatures = viewFeatures(b.topology, b.names, endAxes);
+      const endSeen = visibleElements(endLines, viewEdges(kernel, b.shape, b.topology, b.names, endAxes), endFeatures);
+      const endBox = endLines.box!;
+      const endPlaced: PlacedView = {
+        id: 'end',
+        at: [150, 150],
+        scale: 1,
+        w: endBox.max[0] - endBox.min[0],
+        h: endBox.max[1] - endBox.min[1],
+        centre: [(endBox.min[0] + endBox.max[0]) / 2, (endBox.min[1] + endBox.max[1]) / 2],
+      };
+
+      const evalPick = (pick: Pickable | null, mode: DimensionMode | undefined, viewPlaced: PlacedView, viewAx: ViewAxes) => {
+        expect(pick).not.toBeNull();
+        const plan = planDimension([pick!], [viewPlaced.at[0] + 40, viewPlaced.at[1] + 40], viewPlaced, viewAx, mode);
+        if (!('draft' in plan)) throw new Error(JSON.stringify(plan));
+        const d = { ...plan.draft, id: 'd', view: viewPlaced.id } as Dimension;
+        const refs = d.kind === 'linear' || d.kind === 'angle' ? [d.a, d.b] : d.kind === 'ordinate' ? [] : [d.ref];
+        const elements = refs.map((r) => elementFacts(b.topology, b.names, r));
+        expect(elements.every((e) => !('error' in e))).toBe(true);
+        const out = evaluateDimension(d, { elements: elements as never }, viewAx, viewPlaced);
+        if ('error' in out) throw new Error(out.error);
+        return { kind: d.kind, prefix: d.kind === 'linear' ? d.prefix : undefined, value: out.value, text: out.text };
+      };
+
+      // Concentric trap: tol = 3.0 > inner radius (2.0). Clicking near inner rim must pick Ø4, not outer Ø20 centre snap or projection point.
+      const innerRim: [number, number] = [2.25 * Math.SQRT1_2, 2.25 * Math.SQRT1_2];
+      const outerRim: [number, number] = [10.35 * Math.SQRT1_2, 10.35 * Math.SQRT1_2];
+      expect(Math.hypot(innerRim[0], innerRim[1])).toBeLessThan(3.0);
+
+      const smartInner = withProjectedReference(dimensionReferenceAt(endLines, endFeatures, innerRim, 3.0, endSeen, true), endLines, innerRim, 3.0, true);
+      expect(smartInner && sourceOfPick(smartInner).type).toBe('circle');
+      expect(evalPick(smartInner, 'smart', endPlaced, endAxes)).toMatchObject({ kind: 'diameter', value: expect.closeTo(4, 6) });
+
+      // Even with pointSnaps=false (no quadrant snaps, shared centre within tol=3.0), rim pick beats outer circle's centre snap
+      const smartInnerNoSnap = withProjectedReference(dimensionReferenceAt(endLines, endFeatures, innerRim, 3.0, endSeen, false), endLines, innerRim, 3.0, false);
+      expect(smartInnerNoSnap?.type).toBe('circle');
+      expect(evalPick(smartInnerNoSnap, 'smart', endPlaced, endAxes)).toMatchObject({ kind: 'diameter', value: expect.closeTo(4, 6) });
+
+      const roundInner = roundReferenceAt(endLines, endFeatures, innerRim, 3.0, endSeen, 'diameter');
+      expect(roundInner?.type).toBe('circle');
+      expect(evalPick(roundInner, 'diameter', endPlaced, endAxes)).toMatchObject({ kind: 'diameter', value: expect.closeTo(4, 6) });
+
+      const smartOuter = withProjectedReference(dimensionReferenceAt(endLines, endFeatures, outerRim, 3.0, endSeen, true), endLines, outerRim, 3.0, true);
+      expect(smartOuter?.type).toBe('circle');
+      expect(evalPick(smartOuter, 'smart', endPlaced, endAxes)).toMatchObject({ kind: 'diameter', value: expect.closeTo(20, 6) });
+
+      const roundOuter = roundReferenceAt(endLines, endFeatures, outerRim, 3.0, endSeen, 'diameter');
+      expect(roundOuter?.type).toBe('circle');
+      expect(evalPick(roundOuter, 'diameter', endPlaced, endAxes)).toMatchObject({ kind: 'diameter', value: expect.closeTo(20, 6) });
+
+      // Centre snap still works when pointer is actually near the shared centre
+      const centreHit = dimensionReferenceAt(endLines, endFeatures, [0.05, 0.05], 3.0, endSeen, true);
+      expect(centreHit?.type).toBe('circle');
+
+      // 120 randomized non-zero offsets (> EDGE_TOLERANCE = 0.08 mm) across inner & outer concentric rims
+      let seed = 421;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      for (let i = 0; i < 120; i++) {
+        const radius = i % 2 === 0 ? 2 : 10;
+        // Avoid quadrant snap zones (multiples of 90° +/- 20°) for smart mode; test all angles for roundReferenceAt
+        const baseQ = Math.floor(rnd() * 4) * (Math.PI / 2);
+        const angle = baseQ + (22 + rnd() * 46) * (Math.PI / 180);
+        const offset = (EDGE_TOLERANCE + 0.08 + rnd() * 0.45) * (rnd() < 0.5 ? 1 : -1);
+        const p: [number, number] = [(radius + offset) * Math.cos(angle), (radius + offset) * Math.sin(angle)];
+        const tol = 0.8;
+
+        const smartPick = withProjectedReference(dimensionReferenceAt(endLines, endFeatures, p, tol, endSeen, true), endLines, p, tol, true);
+        expect(smartPick?.type, `smart i=${i} r=${radius}`).toBe('circle');
+        expect((smartPick as Extract<Pickable, { type: 'circle' }>).radius).toBeCloseTo(radius, 6);
+
+        const anyAngle = rnd() * 2 * Math.PI;
+        const pAny: [number, number] = [(radius + offset) * Math.cos(anyAngle), (radius + offset) * Math.sin(anyAngle)];
+        const diamPick = roundReferenceAt(endLines, endFeatures, pAny, 3.0, endSeen, 'diameter');
+        expect(diamPick?.type, `diameter i=${i} r=${radius}`).toBe('circle');
+        expect((diamPick as Extract<Pickable, { type: 'circle' }>).radius).toBeCloseTo(radius, 6);
+      }
+
+      // Side-view cylinder outline diameter with non-zero pointer offsets
+      const sideAxes = viewVectors('right');
+      const sideLines = kernel.projectView(b.shape, sideAxes) as ViewLines;
+      const sideFeatures = viewFeatures(b.topology, b.names, sideAxes);
+      const sideSeen = visibleElements(sideLines, viewEdges(kernel, b.shape, b.topology, b.names, sideAxes), sideFeatures);
+      const sideBox = sideLines.box!;
+      const sidePlaced: PlacedView = {
+        id: 'side',
+        at: [260, 150],
+        scale: 1,
+        w: sideBox.max[0] - sideBox.min[0],
+        h: sideBox.max[1] - sideBox.min[1],
+        centre: [(sideBox.min[0] + sideBox.max[0]) / 2, (sideBox.min[1] + sideBox.max[1]) / 2],
+      };
+      const bossAxis = sideFeatures.find((f) => f.type === 'axis' && Math.abs(f.radius - 10) < 1e-6);
+      expect(bossAxis).toBeDefined();
+      const bossOutlines = outlinesOf([bossAxis!]);
+      expect(bossOutlines.length).toBe(2);
+      const out0 = bossOutlines[0]!;
+      const dx = out0.to[0] - out0.from[0], dy = out0.to[1] - out0.from[1];
+      const len = Math.hypot(dx, dy);
+      const offOut: [number, number] = [out0.from[0] + 0.27 * dx - 0.35 * (dy / len), out0.from[1] + 0.27 * dy + 0.35 * (dx / len)];
+      const midOut: [number, number] = [(out0.from[0] + out0.to[0]) / 2 + 0.35, (out0.from[1] + out0.to[1]) / 2 + 0.35];
+
+      const smartSide = withProjectedReference(dimensionReferenceAt(sideLines, sideFeatures, offOut, 0.9, sideSeen, true), sideLines, offOut, 0.9, true);
+      expect(smartSide?.type).toBe('outline');
+      expect(evalPick(smartSide, 'smart', sidePlaced, sideAxes)).toMatchObject({ kind: 'linear', prefix: 'Ø', value: expect.closeTo(20, 6) });
+
+      const smartSideMid = withProjectedReference(dimensionReferenceAt(sideLines, sideFeatures, midOut, 0.9, sideSeen, true), sideLines, midOut, 0.9, true);
+      expect(smartSideMid && sourceOfPick(smartSideMid).type).toBe('outline');
+      expect(evalPick(smartSideMid, 'smart', sidePlaced, sideAxes)).toMatchObject({ kind: 'linear', prefix: 'Ø', value: expect.closeTo(20, 6) });
+
+      const roundSide = roundReferenceAt(sideLines, sideFeatures, midOut, 0.9, sideSeen, 'diameter');
+      expect(roundSide?.type).toBe('outline');
+      expect(evalPick(roundSide, 'diameter', sidePlaced, sideAxes)).toMatchObject({ kind: 'linear', prefix: 'Ø', value: expect.closeTo(20, 6) });
+    } finally {
+      isolated.dispose();
+    }
+  });
+
+  it('roundReferenceAt prevents endpoints from stealing a small R5 arc and rejects straight planes', () => {
+    const r = cylinderAt(5, 5);
+    const arcPt: [number, number] = [5 - r * Math.SQRT1_2 + 0.25, 5 - r * Math.SQRT1_2 + 0.25];
+    const tol = 6;
+    expect(featureAt(V.lines, V.features, arcPt, tol, V.seen)?.type).toBe('vertex');
+    const picked = roundReferenceAt(V.lines, V.features, arcPt, tol, V.seen, 'diameter');
+    expect(picked?.type).toBe('circle');
+    expect(make([picked!], sheetAt(-10, -10), 'diameter')).toMatchObject({ kind: 'diameter', value: expect.closeTo(10, 8) });
+    const pickedRad = roundReferenceAt(V.lines, V.features, arcPt, tol, V.seen, 'radius');
+    expect(pickedRad?.type).toBe('circle');
+    expect(make([pickedRad!], sheetAt(-10, -10), 'radius')).toMatchObject({ kind: 'radius', value: expect.closeTo(5, 8) });
+
+    const planePick = roundReferenceAt(V.lines, V.features, [20, 0.2], 0.5, V.seen, 'diameter');
+    expect(planePick?.type).toBe('plane');
+    expect(make([planePick!], sheetAt(20, -15), 'diameter')).toEqual({ error: t('drawing.dimModeNotRound') });
   });
 });

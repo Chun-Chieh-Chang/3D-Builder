@@ -1,7 +1,7 @@
 import { t, type Locale } from '@3db/i18n';
 import { CadDrawingPanel } from './CadDrawingEditor';
 import { dwgAvailable } from '../dwg';
-import { BREAK_GAP, DRAWING_STANDARDS, SHEET_SIZES, TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, VIEW_ORIENTATION_PRESETS, axesOf, axesToOrientation, baseName, canHatch, hatchStyleOf, displayOf, isCorner, isDerived, isShaded, baseDimStyle, page, resolveDimStyle, standardOf, type DrawingStandard, type DrawingView, type Scale, type SheetSize, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewOrientation, type ViewSide } from '@3db/model';
+import { BREAK_GAP, DRAWING_STANDARDS, INDUSTRIAL_TITLE_FIELDS, SHEET_SIZES, SHEET_TEMPLATES, STANDARD_TITLE_FIELDS, TITLE_STYLE_DEFAULT, VIEW_CORNERS, VIEW_DISPLAYS, VIEW_NAMES, VIEW_ORIENTATION_PRESETS, axesOf, axesToOrientation, baseName, canHatch, hatchStyleOf, displayOf, isCorner, isDerived, isShaded, baseDimStyle, page, resolveDimStyle, sheetTemplateOf, standardOf, type DrawingStandard, type DrawingView, type Scale, type SheetSize, type SheetTemplate, type TitleField, type ViewCorner, type ViewDisplay, type ViewName, type ViewOrientation, type ViewSide } from '@3db/model';
 import { STANDARD_SCALES, viewCaptionTemplate, arrangementBase, lineAcrossBox, scaleText, type ViewLines } from '@3db/drawing';
 import { ACTIONS, openDrawingPart, shortcutOf } from '../actions';
 import { DimStyleFields } from './DimStyleFields';
@@ -599,14 +599,24 @@ function ModelDrawingPanel() {
         </PMGroup>
 
         <PMGroup title={t('drawingUi.tree.format')} icon="titleBlock" open={isOpen('format')} onToggle={() => toggle('format')} hidden={!onSheetGroups}>
-          {TITLE_FIELDS.map((field: TitleField) => (
+          <label className="pm-row" title={t('drawingUi.templateTip')}>
+            <span>{t('drawingUi.template')}</span>
+            <select data-field="sheetTemplate" value={sheetTemplateOf(curPage.sheet)} onChange={(e) => d.setSheet({ template: e.target.value as SheetTemplate })}>
+              {SHEET_TEMPLATES.map((tpl) => (
+                <option key={tpl} value={tpl}>
+                  {t(`drawingUi.template.${tpl}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {(sheetTemplateOf(curPage.sheet) === 'industrial' ? INDUSTRIAL_TITLE_FIELDS : STANDARD_TITLE_FIELDS).map((field: TitleField) => (
             <label key={field} className="pm-row">
               <span>{t(`drawing.title.${field}`)}</span>
               <TextBox field={field === 'revision' ? field : undefined} value={(field === 'revision' ? currentDrawingRevision(doc) : undefined) ?? curPage.title[field] ?? ''} onCommit={(v) => d.setTitle(field, v)} />
             </label>
           ))}
           <DrawingRevisionHistory entries={doc.revisionHistory} drafter={curPage.title.drafter} execute={(command) => d.execute(command)} />
-          <TitleStyleFields value={curPage.sheet.titleStyle ?? {}} base={TITLE_STYLE_DEFAULT} onChange={(s) => d.setSheet({ titleStyle: s })} />
+          {sheetTemplateOf(curPage.sheet) === 'standard' && <TitleStyleFields value={curPage.sheet.titleStyle ?? {}} base={TITLE_STYLE_DEFAULT} onChange={(s) => d.setSheet({ titleStyle: s })} />}
         </PMGroup>
 
         <PMGroup title={t('drawingUi.group.viewProps')} icon={view ? VIEW_ICON(view) : 'view'} open={isOpen('view')} onToggle={() => toggle('view')} hidden={!view}>

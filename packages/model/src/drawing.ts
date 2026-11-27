@@ -14,10 +14,14 @@ import { ANNOTATION_FIELDS, checkAnnotation, DRAWING_TEXT_WIDTH, framesUsing, va
  * opened (exact hidden-line removal), so a drawing can never disagree with the model it shows.
  */
 
-export const DRAWING_SCHEMA_VERSION = 45;
+export const DRAWING_SCHEMA_VERSION = 46;
 
 export type SheetSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 export const SHEET_SIZES: readonly SheetSize[] = ['A4', 'A3', 'A2', 'A1', 'A0'];
+
+export type SheetTemplate = 'standard' | 'industrial';
+export const SHEET_TEMPLATES: readonly SheetTemplate[] = ['standard', 'industrial'];
+export const sheetTemplateOf = (sheet: Pick<DrawingSheet, 'template'>): SheetTemplate => sheet.template ?? 'standard';
 
 /** The views a drawing takes of a model: the six of the orthographic projection, the isometric, and (v6) the flat pattern of a sheet metal part (not a direction: the unfolded part, in the plane of the sheet). */
 export type ViewName = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 'isometric' | 'flat';
@@ -59,6 +63,8 @@ export interface DrawingSheet {
    * (`DEFAULT_DRAWING_STANDARD`, or the one chosen in 「選項」).
    */
   standard?: DrawingStandard;
+  /** Title block and sheet format template (v46). Absent defaults to `'standard'`. */
+  template?: SheetTemplate;
 }
 
 /** The drafting standards a sheet can be drawn to (ADR 0260): Taiwan's CNS 3 and ISO (128-20 lines, 5457 frame). */
@@ -572,9 +578,14 @@ export type DerivedDrawingView = Exclude<DrawingView, ModelDrawingView>;
 
 export const isDerived = (v: DrawingView): v is DerivedDrawingView => v.kind !== undefined && v.kind !== 'model';
 
-/** The fields of the title block (C16.1), by key; the names of them are the language's. */
-export const TITLE_FIELDS = ['company', 'drawingName', 'drawingNo', 'material', 'drafter', 'date', 'revision', 'generalTolerance'] as const;
+/** The fields of the standard 4-row title block (C16.1), by key; the names of them are the language's. */
+export const STANDARD_TITLE_FIELDS = ['company', 'drawingName', 'drawingNo', 'material', 'drafter', 'date', 'revision', 'generalTolerance'] as const;
+/** Additional fields used by the bilingual industrial title block template (v45). */
+export const INDUSTRIAL_EXTRA_TITLE_FIELDS = ['companyEn', 'finish', 'fileNo', 'checkedBy', 'checkedDate', 'approvedBy', 'approvedDate', 'tolAngle', 'tolFraction', 'tolDec1', 'tolDec2', 'tolDec3'] as const;
+export const TITLE_FIELDS = [...STANDARD_TITLE_FIELDS, ...INDUSTRIAL_EXTRA_TITLE_FIELDS] as const;
 export type TitleField = (typeof TITLE_FIELDS)[number];
+/** Ordered fields displayed in the PropertyManager when the `'industrial'` sheet template is selected. */
+export const INDUSTRIAL_TITLE_FIELDS: readonly TitleField[] = ['company', 'companyEn', 'drawingName', 'drawingNo', 'fileNo', 'material', 'finish', 'revision', 'drafter', 'date', 'checkedBy', 'checkedDate', 'approvedBy', 'approvedDate', 'tolAngle', 'tolFraction', 'tolDec1', 'tolDec2', 'tolDec3'];
 
 // ---------------------------------------------------------------- dimensions (C16.4)
 
@@ -1049,6 +1060,8 @@ export interface DrawingDoc {
   properties: Record<string, string>;
   idCounters: Record<string, number>;
   revisionHistory?: DrawingRevision[];
+  /** Runtime-only 1-based page position and total pages set by `drawingPageForOutput` (stripped on serialization). */
+  outputPage?: { index: number; total: number };
 }
 
 /** The page the program reads while a drawing holds one sheet (B2.8, ADR 0154). */
@@ -1068,6 +1081,7 @@ export function drawingPageForOutput(doc: DrawingDoc, index: number, p = page(do
   return {
     ...drawingFromPage(sheet, doc.properties),
     ...(index === 0 && doc.revisionHistory?.length ? { revisionHistory: doc.revisionHistory } : {}),
+    outputPage: { index, total: doc.pages.length },
   };
 }
 
@@ -1607,13 +1621,18 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       if (s.shift && !(s.shift.length === 2 && s.shift.every(Number.isFinite))) throw new CommandError(t('drawing.badPosition'));
       if (s.unit !== undefined && s.unit !== 'mm' && s.unit !== 'in') throw new CommandError(t('drawing.badUnit'));
       if (s.standard !== undefined && !DRAWING_STANDARDS.includes(s.standard)) throw new CommandError(t('drawing.badStandard', { standard: String(s.standard) }));
+      if (s.template !== undefined && !SHEET_TEMPLATES.includes(s.template)) throw new CommandError(t('drawing.badTemplate', { template: String(s.template) }));
       if (s.calloutStyle !== undefined && !['text', 'symbols'].includes(s.calloutStyle)) throw new CommandError(t('drawing.dimBadCalloutStyle'));
       if (s.language !== undefined && s.language !== null && !LOCALES.includes(s.language)) throw new CommandError(t('drawing.badLanguage'));
       if (s.dimStyle !== undefined && s.dimStyle !== null) checkDimStyle(s.dimStyle);
       if (s.titleStyle !== undefined && s.titleStyle !== null) checkTitleStyle(s.titleStyle);
-      const { shift, language, dimStyle, titleStyle, pdfFont, standard, ...rest } = s;
+      const { shift, language, dimStyle, titleStyle, pdfFont, standard, template, ...rest } = s;
       // one standard for the whole drawing (ADR 0260): its pages are not drawn to two
       if (standard !== undefined) for (const p of draft.pages) p.sheet.standard = standard;
+      if (template !== undefined) {
+        if (template === 'standard') delete pg.sheet.template;
+        else pg.sheet.template = template;
+      }
       // an empty style is the default's, written as none
       if (dimStyle === null || (dimStyle && Object.keys(dimStyle).length === 0)) delete pg.sheet.dimStyle;
       else if (dimStyle) pg.sheet.dimStyle = { ...dimStyle };
@@ -1645,6 +1664,7 @@ export function mutateDrawing(draft: Draft<DrawingDoc>, cmd: DrawingCommand): vo
       return;
     }
     case 'setTitle': {
+      if (!(TITLE_FIELDS as readonly string[]).includes(cmd.field)) throw new CommandError(t('drawing.badTitleField', { field: String(cmd.field) }));
       const value = cmd.value.trim();
       if (cmd.field === 'revision') {
         const current = currentDrawingRevision(draft);
