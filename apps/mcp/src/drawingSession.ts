@@ -594,50 +594,7 @@ export class DrawingSession {
     const alloc = new IdAllocator(doc.idCounters, drawingIdsInUse(doc));
     const dimensions = planned.map((p) => ({ ...p.draft, id: alloc.take('dim'), view: p.view }) as Dimension);
     const draft = applyDrawingCommand(doc, { type: 'insertDimensions', dimensions });
-    const { placed, outcomes } = this.build(draft);
-    const commands: DrawingCommand[] = [];
-    const detached: Id[] = [];
-    const leadered: Id[] = [];
-    for (const d of dimensions) {
-      if (d.kind !== 'angle') continue;
-      const view = placed.get(d.view);
-      const result = outcomes.get(d.id);
-      if (!view || !result || 'error' in result || result.handle?.kind !== 'angle') continue;
-      const [x, y] = result.handle.centre;
-      // An intersection of extended lines can lie far from either real feature.
-      const outsideX = Math.max(0, Math.abs(x - view.at[0]) - view.w / 2);
-      const outsideY = Math.max(0, Math.abs(y - view.at[1]) - view.h / 2);
-      const acute = Math.min(result.value, 180 - result.value);
-      const supplementary = result.value > 120 ? { supplementary: true } : {};
-      if (acute >= 87) {
-        detached.push(d.id);
-      } else if (Math.hypot(outsideX, outsideY) > 8 * view.scale) {
-        // a small slant meets its plane far off the view (1°–8° drafts of R1-10226: 12–279 mm): written with a leader from the slant, not dropped (ADR 0266)
-        commands.push({ type: 'setDimension', dimensionId: d.id, patch: { leader: LEADER_ANGLE_LENGTH, angle: 45, ...supplementary } });
-        leadered.push(d.id);
-      } else if (result.value > 120) {
-        commands.push({ type: 'setDimension', dimensionId: d.id, patch: { supplementary: true } });
-      }
-    }
-    if (detached.length) commands.push({ type: 'deleteDimensions', dimensionIds: detached });
-    if (!commands.length) return draft;
-    const done = applyDrawingCommand(draft, { type: 'batch', commands });
-    if (!leadered.length) return done;
-    // each leader points away from the middle of its view, where the slant is, so that its text is off the part
-    const again = this.build(done);
-    const turns: DrawingCommand[] = [];
-    for (const id of leadered) {
-      const d = page(done).dimensions.find((x) => x.id === id);
-      const view = d && again.placed.get(d.view);
-      const result = again.outcomes.get(id);
-      if (!view || !result || 'error' in result || result.handle?.kind !== 'round') continue;
-      const [tx, ty] = result.handle.centre;
-      const away = Math.atan2(ty - view.at[1], tx - view.at[0]);
-      // the nearer of the four diagonals: a leader at 45° off the axes clears the view's lines
-      const angle = ((Math.floor((away * 180) / Math.PI / 90) * 90 + 45) % 360 + 360) % 360;
-      if (angle !== 45) turns.push({ type: 'setDimension', dimensionId: id, patch: { angle } });
-    }
-    return turns.length ? applyDrawingCommand(done, { type: 'batch', commands: turns }) : done;
+    return this.settleAngles(draft, dimensions, 0);
   }
 
   /**
@@ -2022,6 +1979,58 @@ export class DrawingSession {
     return changed;
   }
 
+  /**
+   * The angle dimensions just added to page `pageIndex` made readable (ADR 0266): one near 90° is dropped (the planes' square corner says it), one whose
+   * lines meet far off its view is written with a leader from the slant, turned away from the view's middle, and one over 120° measures the other side.
+   * Both the first dimensioning and drawing_complete add angles, so both come here.
+   */
+  private settleAngles(draft: DrawingDoc, dimensions: Dimension[], pageIndex: number): DrawingDoc {
+    const { placed, outcomes } = this.build(draft, pageIndex);
+    const commands: DrawingCommand[] = [];
+    const detached: Id[] = [];
+    const leadered: Id[] = [];
+    for (const d of dimensions) {
+      if (d.kind !== 'angle') continue;
+      const view = placed.get(d.view);
+      const result = outcomes.get(d.id);
+      if (!view || !result || 'error' in result || result.handle?.kind !== 'angle') continue;
+      const [x, y] = result.handle.centre;
+      // An intersection of extended lines can lie far from either real feature.
+      const outsideX = Math.max(0, Math.abs(x - view.at[0]) - view.w / 2);
+      const outsideY = Math.max(0, Math.abs(y - view.at[1]) - view.h / 2);
+      const acute = Math.min(result.value, 180 - result.value);
+      const supplementary = result.value > 120 ? { supplementary: true } : {};
+      if (acute >= 87) {
+        detached.push(d.id);
+      } else if (Math.hypot(outsideX, outsideY) > 8 * view.scale) {
+        // a small slant meets its plane far off the view (1°–8° drafts of R1-10226: 12–279 mm): written with a leader from the slant, not dropped (ADR 0266)
+        commands.push({ type: 'setDimension', dimensionId: d.id, patch: { leader: LEADER_ANGLE_LENGTH, angle: 45, ...supplementary } });
+        leadered.push(d.id);
+      } else if (result.value > 120) {
+        commands.push({ type: 'setDimension', dimensionId: d.id, patch: { supplementary: true } });
+      }
+    }
+    if (detached.length) commands.push({ type: 'deleteDimensions', dimensionIds: detached });
+    if (!commands.length) return draft;
+    const done = onPage(draft, pageIndex, (single) => applyDrawingCommand(single, { type: 'batch', commands }));
+    if (!leadered.length) return done;
+    // each leader points away from the middle of its view, where the slant is, so that its text is off the part
+    const again = this.build(done, pageIndex);
+    const turns: DrawingCommand[] = [];
+    for (const id of leadered) {
+      const d = page(done, pageIndex).dimensions.find((x) => x.id === id);
+      const view = d && again.placed.get(d.view);
+      const result = again.outcomes.get(id);
+      if (!view || !result || 'error' in result || result.handle?.kind !== 'round') continue;
+      const [tx, ty] = result.handle.centre;
+      const away = Math.atan2(ty - view.at[1], tx - view.at[0]);
+      // the nearer of the four diagonals: a leader at 45° off the axes clears the view's lines
+      const angle = ((Math.floor((away * 180) / Math.PI / 90) * 90 + 45) % 360 + 360) % 360;
+      if (angle !== 45) turns.push({ type: 'setDimension', dimensionId: id, patch: { angle } });
+    }
+    return turns.length ? onPage(done, pageIndex, (single) => applyDrawingCommand(single, { type: 'batch', commands: turns })) : done;
+  }
+
   /** Adds the dimensions the graph still finds missing (after the user deleted some, or the part changed), arranged again. */
   complete(): number {
     const doc = this.need();
@@ -2039,7 +2048,7 @@ export class DrawingSession {
         if (pi === null) throw new AgentError(`the dimension planner chose view ${p.view}, which is on no page`);
         byPage.set(pi, [...(byPage.get(pi) ?? []), { ...p.draft, id: alloc.take('dim'), view: p.view } as Dimension]);
       }
-      for (const [pi, dimensions] of byPage) next = onPage(next, pi, (single) => applyDrawingCommand(single, { type: 'insertDimensions', dimensions }));
+      for (const [pi, dimensions] of byPage) next = this.settleAngles(onPage(next, pi, (single) => applyDrawingCommand(single, { type: 'insertDimensions', dimensions })), dimensions, pi);
       for (const pi of byPage.keys()) if (pi !== 0) next = this.tidy(next, pi, 'keep');
     }
     next = this.tidy(next, 0, 'keep'); // as before: the first page is always arranged again

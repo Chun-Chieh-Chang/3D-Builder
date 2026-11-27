@@ -156,3 +156,21 @@ describe('the leader of an angle dimension, on the 3° block', () => {
     expect(radial.map(textOf).some((x) => /^3(°|%%[dD])$/.test(x)), radial.map(textOf).join(' | ')).toBe(true);
   });
 });
+
+describe('drawing_complete adds an angle the way the first dimensioning does', () => {
+  it('writes a small slant it adds again with a leader, not with an arc whose centre is far off the sheet', async () => {
+    // R1-9035's v4 review draft (2026-11-27): drawing_complete added a 0.94° draft as an arc whose centre lay 186 mm off the sheet. The first dimensioning
+    // turned such an angle into a leader (ADR 0266); drawing_complete now does the same.
+    const { doc } = await drawn(3);
+    const old = angleOf(doc, SLANT)!;
+    drawingOf(s).apply([{ type: 'deleteDimensions', dimensionIds: [old.id] }]);
+    expect(angleOf(drawingOf(s).doc!, SLANT)).toBeUndefined();
+    const done = text(ok(await callTool(s, 'drawing_complete', { picture: false })));
+    const again = angleOf(drawingOf(s).doc!, SLANT);
+    expect(again, JSON.stringify(page(drawingOf(s).doc!).dimensions)).toBeTruthy();
+    expect(again!.leader).toBeGreaterThan(0);
+    expect(Number.isFinite(again!.angle)).toBe(true);
+    expect(done.drawing.checks.outside).toBe(0);
+    expect(done.drawing.checks.coverage.slants).toEqual({ total: 2, determined: 2, missing: [] });
+  }, 300_000);
+});

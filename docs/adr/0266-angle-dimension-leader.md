@@ -61,3 +61,9 @@
 
 - **R1-10226 實件沒有驗證**：當時的工程圖與 3D 檔（`out/approved-20261122/…`）不在這台電腦，所以「實件上 5 個斜面從缺標變成有標」只以合成零件代證。原圖 PDF 可以拿來核對數值，但核對需要 R1-10226 的 3D 檔。
 - 在合成零件上，右側已經有「30」的尺寸線，排開重疊時把引線轉向零件內側，數值因此落在輪廓內。數值可讀、不和其他東西重疊，但不是最理想的位置。
+
+## 5. 補記（2026-11-27）：drawing_complete 也要走同一套
+
+- **缺口**：§2 的處理（交點遠離視圖改用引線、接近 90° 刪除、超過 120° 量另一側）只寫在 `dimensionAll`，也就是 `drawing_create` 第一次標註的路徑。`drawing_complete` 補標時直接插入規劃結果，沒有經過這一步。R1-9035 v4 補標時，0.94° 拔模角因此被畫成圓弧，圓心離圖紙 186 mm。
+- **修正**：抽成 `settleAngles(draft, dimensions, pageIndex)`，`dimensionAll` 與 `complete()` 都呼叫它；`complete()` 依頁別處理。
+- **驗證**：`apps/mcp/test/drawing-angle-leader.test.ts` 新增一項（3° 方塊刪掉斜面角度後 `drawing_complete`，加回的角度必須是引線式、圖紙外 0、斜面 2/2）；突變（`complete()` 不呼叫 `settleAngles`）使該項轉紅。

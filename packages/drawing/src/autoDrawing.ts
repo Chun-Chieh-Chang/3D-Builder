@@ -503,6 +503,17 @@ function isAutoChamferCone(f: Extract<ViewFeature, { type: 'slant' }>): boolean 
   return f.cone.axial <= 2 + 1e-6 && degrees >= 15 - 1e-6 && degrees <= 75 + 1e-6;
 }
 
+/**
+ * Two planar slants of one view on one line: the pieces of one plane, cut apart by a rib or a hole, seen edge-on (R1-16148: each slope of its flange is cut in
+ * three by the ribs). One angle sizes the plane, so it sizes every piece.
+ */
+export function sameSlantLine(a: Extract<ViewFeature, { type: 'slant' }>, b: Extract<ViewFeature, { type: 'slant' }>): boolean {
+  if (a.cone || b.cone) return false;
+  const parallel = Math.abs(a.dir[0] * b.dir[1] - a.dir[1] * b.dir[0]) < 1e-6;
+  const onLine = Math.abs((b.at[0] - a.at[0]) * a.dir[1] - (b.at[1] - a.at[1]) * a.dir[0]) < 1e-4;
+  return parallel && onLine;
+}
+
 const slantAngleKey = (f: Extract<ViewFeature, { type: 'slant' }>): string | null => {
   if (f.cone) return null;
   const deg = Math.round((Math.asin(Math.min(1, Math.min(Math.abs(f.dir[0]), Math.abs(f.dir[1])))) * 180 / Math.PI) * 10) / 10;
@@ -576,6 +587,11 @@ export function dimensionCoverage(views: readonly ViewToDimension[], dimensions:
       const ok = sized.has(f.ref.name) || (key !== null && slantKeysGiven.has(`${v.viewId}|${key}`));
       slants.set(f.ref.name, (slants.get(f.ref.name) ?? false) || ok);
     }
+  // a piece of a plane whose other piece is sized is sized too
+  for (const v of views) {
+    const planar = v.features.filter((x): x is Extract<ViewFeature, { type: 'slant' }> => x.type === 'slant' && !x.cone);
+    for (const f of planar) if (!slants.get(f.ref.name) && planar.some((g) => g !== f && slants.get(g.ref.name) && sameSlantLine(f, g))) slants.set(f.ref.name, true);
+  }
   const roundList = [...rounds.values()];
   const report: CoverageReport = {
     ways,
@@ -749,6 +765,7 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
       const midY = (box.y0 + box.y1) / 2;
       const planes = v.features.filter((x): x is Extract<ViewFeature, { type: 'plane' }> => x.type === 'plane');
       const planarByKey = new Map<string, Extract<ViewFeature, { type: 'slant' }>[]>();
+      const lines: { host: Extract<ViewFeature, { type: 'slant' }>; pieces: Extract<ViewFeature, { type: 'slant' }>[] }[] = [];
       for (const f of v.features) {
         if (f.type !== 'slant' || sized.has(f.ref.name) || !isAutoChamferCone(f)) continue;
         if (!allowHiddenSlant && v.hidden?.has(f.ref.name)) continue;
@@ -763,9 +780,21 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
           });
           sized.add(f.ref.name);
         } else if (planes.length > 0) {
-          const k = slantAngleKey(f) ?? `u:${f.ref.name}`;
-          planarByKey.set(k, [...(planarByKey.get(k) ?? []), f]);
+          // a piece of a plane already listed joins it; the larger piece stands for the plane
+          const line = lines.find((l) => sameSlantLine(l.host, f));
+          if (line) {
+            if (f.area > line.host.area) {
+              line.pieces.push(line.host);
+              line.host = f;
+            } else line.pieces.push(f);
+            continue;
+          }
+          lines.push({ host: f, pieces: [] });
         }
+      }
+      for (const { host: f } of lines) {
+        const k = slantAngleKey(f) ?? `u:${f.ref.name}`;
+        planarByKey.set(k, [...(planarByKey.get(k) ?? []), f]);
       }
       for (const group of planarByKey.values()) {
         const rep = [...group].sort((a, b) => b.area - a.area)[0]!;
@@ -801,7 +830,10 @@ export function planDrawingDimensions(views: readonly ViewToDimension[], existin
           draft: { kind: 'angle', a: rep.ref, b: anchor.ref, arc: 6, ...(group.length > 1 ? { count: group.length } : {}) },
           role: 'size',
         });
-        for (const f of group) sized.add(f.ref.name);
+        for (const f of group) {
+          sized.add(f.ref.name);
+          for (const p of lines.find((l) => l.host === f)?.pieces ?? []) sized.add(p.ref.name);
+        }
       }
     }
   }
