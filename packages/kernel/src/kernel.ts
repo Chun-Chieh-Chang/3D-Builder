@@ -2856,7 +2856,7 @@ export class Kernel {
               res = exactify(oc, work, wRounds.length > 1 ? wRounds : wRounds[0], wSup, pl.sharp, r, pl.sgn, seamSwap, original, others);
               work = res.shape; infos.push(res.info);
             }
-          } catch (e) { rethrowTrap(e); note('threw', String((e as any)?.message ?? e)); break; }
+          } catch (e) { rethrowTrap(e); note('threw', this.errorText(e)); break; }
           res.info = Object.fromEntries(['clamped', 'vertexTol', 'endGap', 'pcurveRemade', 'pjointGap', 'endCorners'].map((k) => [k, infos.flatMap((x) => x[k] ?? [])]));
           res.info.sections = infos.map((x) => x.sections).join('+');
           if (!arena.own(new oc.BRepCheck_Analyzer(res.shape, true, false, false)).IsValid()) { note('invalid', `seamSwap=${seamSwap}`); continue; }
@@ -2868,7 +2868,7 @@ export class Kernel {
           break;
         }
       } catch (e) {
-        rethrowTrap(e); note('threw', String((e as any)?.message ?? e));
+        rethrowTrap(e); note('threw', this.errorText(e));
       } finally {
         setRoundDeadline(Infinity);
       }

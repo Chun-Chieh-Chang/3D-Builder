@@ -782,8 +782,13 @@ export function exactify(oc: any, shape: any, FoldIn: any, supFaces: any[], shar
     for (const v of vs) { const k = hit.find((h) => h.V.IsSame(v)); if (!k) continue;
       const P0 = new oc.gp_Pnt(k.p[0], k.p[1], k.p[2]); const pr = new oc.GeomAPI_ProjectPointOnCurve(P0, crv);
       let par: number;
-      if (pr.NbPoints() > 0) par = pr.LowerDistanceParameter();
-      else { const gc = new oc.GeomAdaptor_Curve(crv); par = gc.Value(f0).Distance(P0) < gc.Value(f1).Distance(P0) ? f0 : f1; par = root((x) => { const d = cD1(oc, gc, x); return dot(sub(d.p, k.p), d.d); }, par, 1e-6 * (f1 - f0)); (info.projFallback ??= []).push(oc.Standard_Type ? '' : 'nearest'); }
+      // the projection gives only feet of perpendiculars: a vertex moved a little past the end of the curve has its nearest point at that end, and the
+      // foot found may be another, far along the curve (rolling-ball seed 73's rebuild: 15.6 mm off, the edge's range turned inside out). The foot is kept
+      // only where it is nearer than the point found from the nearer end.
+      const fromEnd = () => { const gc = new oc.GeomAdaptor_Curve(crv); const q = gc.Value(f0).Distance(P0) < gc.Value(f1).Distance(P0) ? f0 : f1; return root((x) => { const d = cD1(oc, gc, x); return dot(sub(d.p, k.p), d.d); }, q, 1e-6 * (f1 - f0)); };
+      const away = (q: number) => { const g = new oc.GeomAdaptor_Curve(crv); const d = g.Value(q).Distance(P0); g.delete(); return d; };
+      if (pr.NbPoints() > 0) { par = pr.LowerDistanceParameter(); const q = fromEnd(); if (away(q) < pr.LowerDistance()) { par = q; (info.projFallback ??= []).push('far foot'); } }
+      else { par = fromEnd(); (info.projFallback ??= []).push(oc.Standard_Type ? '' : 'nearest'); }
       let off = new oc.GeomAdaptor_Curve(crv).Value(par).Distance(new oc.gp_Pnt(k.p[0], k.p[1], k.p[2])); info.offOtherEdge = Math.max(info.offOtherEdge ?? 0, off);
       { const gc = new oc.GeomAdaptor_Curve(crv); const old = v.Orientation() === FWD ? f0 : f1; if (gc.IsPeriodic()) { const T = gc.Period(); par += T * Math.round((old - par) / T); } (info.rangeEdits ??= []).push([+(par - old).toExponential(2), gc.IsPeriodic()]); }
       { const C3 = oc.BRep_Tool.Curve(ed, 0, 0); const crv3 = C3.returnValue ?? C3; const gc = new oc.GeomAdaptor_Curve(crv3); if (!gc.IsPeriodic()) { const d0 = gc.FirstParameter(), d1 = gc.LastParameter(); if (par < d0 || par > d1) { const cl = Math.min(d1, Math.max(d0, par)); const gap = gc.Value(cl).Distance(P0); (info.clamped ??= []).push(+gap.toExponential(2)); par = cl; off = Math.max(off, gap); } } }

@@ -89,8 +89,8 @@ export function fuzzFile(from: number, to: number) {
       if (r instanceof RecognizeError) {
         // Honest, whole refusals. Neither "the kernel's round is exact" nor "it is OCCT's" says whether the file's round is a rolling ball to
         // recognition's tolerance (measured: exact 4e-13 to 1.85e-6 off the ball when the build ran out of sections, OCCT's 9e-7 to 5.1e-5), so only the
-        // comparison after the rebuild decides. Allowed: a freeform face; a rebuild not the same solid; OCCT's fillet failing on the rebuilt edge (a known
-        // gap: seed 52's rebuilt edge is on its faces to 3.6e-15 and OCCT's own round of it fails too). Not allowed: an edge not found again (what C2.10
+        // comparison after the rebuild decides. Allowed: a freeform face; a rebuild not the same solid; OCCT's fillet failing on the rebuilt edge (seed 52 was
+        // one until ADR 0265's cut wall: its rebuilt edge is on its faces to 3.6e-15 and OCCT's own round of it failed too). Not allowed: an edge not found again (what C2.10
         // claims), or anything else.
         const kind = /自由曲面|freeform/.test(r.message) ? 'freeform' : /^重建結果與原件不同/.test(r.message) ? 'differs' : /^重建的特徵無法成立：圓角/.test(r.message) ? 'filletOnRebuild' : null;
         if (!kind) throw new Error(`${what}: refused: ${r.message}`);
@@ -104,9 +104,9 @@ export function fuzzFile(from: number, to: number) {
       const fillets = r.doc.features.filter((f) => f.type === 'fillet');
       expect(fillets.length, what).toBe(1);
       expect(fillets[0]!.type === 'fillet' && fillets[0]!.exact, what).toBe(true);
-      // A known gap, like seed 52's: the rebuild's own exact round refused (thrown or invalid in OCCT), so it keeps OCCT's round, the same solid to the
-      // recognition tolerance but not to 1e-9 (seed 73, 2.8e-8: the rebuilt wall is the recognized spline, C2, nothing to cut; its input was not made
-      // uncut, ADR 0265). Where OCCT's round reads back to 1e-9 all the same (seed 3, 1.9e-10), the case is checked as any other.
+      // The rebuild's own exact round refused (thrown or invalid in OCCT), so it keeps OCCT's round, the same solid to the recognition tolerance but not
+      // to 1e-9. Seed 73 was the one such case (2.8e-8) until 2026-11-27: its throw came from a vertex projected onto the wrong foot of a curve, fixed in
+      // exactify (recognize-rolling-ball-seed73.test.ts). Where OCCT's round reads back to 1e-9 all the same (seed 3, 1.9e-10), the case is checked as any other.
       const back = (kernel as unknown as { exactRoundLog: { outcome: string }[] }).exactRoundLog.map((x) => x.outcome).filter((x) => x !== 'stretches');
       if (exact && r.report.volumeError >= 1e-9 && !back.every((x) => x === 'exact')) {
         expect(back.some((x) => x === 'threw' || x === 'invalid'), `${what}: ${back.join(',')}`).toBe(true);

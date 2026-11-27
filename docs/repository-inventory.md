@@ -643,6 +643,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 ### 研究證據
 
 - [ADR 0265 的探針與量測資料](<../spikes/0265-fillet-c1-joints/README.md>)
+- [精確圓角重建時拋例外（待辦 #3，2026-11-27）](<../spikes/exact-round-rebuild/README.md>)
 - [網格開邊檢查的量測（2026-11-26）](<../spikes/mesh-open-edges/README.md>)
 - [OCCT 綁定缺口技術驗證](<../spikes/occt-gaps/README.md>)
 - [OCCT 綁定盤點](<../spikes/occt-gaps/inventory.md>)
@@ -716,6 +717,7 @@ Cargo.lock：417個package條目（含本專案）。Rust授權未由lockfile提
 
 ## 資源盤點
 
-逐位元相同的檔案群組：1。相同內容只是候選，不能據此刪除不同平台圖示、測試探針或授權原稿。
+逐位元相同的檔案群組：2。相同內容只是候選，不能據此刪除不同平台圖示、測試探針或授權原稿。
 
 - `apps/desktop/src-tauri/icons/icon.ico`、`apps/web/public/favicon.ico`
+- `packages/kernel/src/exactRound.ts`、`spikes/exact-round-rebuild/exactRound.fixed`

@@ -1,0 +1,204 @@
+[
+ {
+  "seed": 73,
+  "sample": {
+   "top": [
+    [
+     28.465,
+     22.875
+    ],
+    [
+     21.349,
+     21.569
+    ],
+    [
+     14.233,
+     29.855
+    ],
+    [
+     7.116,
+     20.03
+    ],
+    [
+     0,
+     22.875
+    ]
+   ],
+   "h": 6.266,
+   "radius": 0.394
+  },
+  "original": {
+   "log": [
+    {
+     "contour": 1,
+     "outcome": "stretches",
+     "detail": "4"
+    },
+    {
+     "contour": 1,
+     "outcome": "exact",
+     "detail": "dev 2.94e-6 sections 355+512+439+248 clamped 2.7e-3 vtol 4.0e-3 endGap 3.3e-10 pcRemade - pjoint 2.5e-6"
+    }
+   ],
+   "cut": "cut",
+   "volume": 17192.057005049297
+  },
+  "rec": {
+   "ok": true,
+   "report": {
+    "features": {
+     "sketch": 2,
+     "extrude": 2,
+     "revolve": 0,
+     "hole": 0,
+     "fillet": 1,
+     "chamfer": 0,
+     "datum": 1
+    },
+    "faces": [
+     15,
+     15
+    ],
+    "volume": 17192.057005048977,
+    "volumeError": 9.86305432495637e-13,
+    "areaError": 3.809879740354666e-15,
+    "difference": 1.2915597754022973e-13
+   },
+   "fillet": {
+    "id": "fillet1",
+    "type": "fillet",
+    "name": "圓角1",
+    "suppressed": false,
+    "edges": [
+     {
+      "kind": "edge",
+      "name": "{extrude1:cap:end|extrude2:side:sketch2.sp1}",
+      "fingerprint": {
+       "type": "bsplinecurve",
+       "size": 39.000277748825624,
+       "center": [
+        14.233,
+        29.855,
+        0
+       ]
+      }
+     }
+    ],
+    "radius": "0.394",
+    "exact": true
+   },
+   "rebuildLog": [
+    {
+     "contour": 1,
+     "outcome": "stretches",
+     "detail": "4"
+    },
+    {
+     "contour": 1,
+     "outcome": "exact",
+     "detail": "dev 4.13e-4 sections 248+358+404+320 clamped 4.7e-2 vtol 7.1e-2 endGap 3.3e-10 pcRemade - pjoint 7.8e-4"
+    }
+   ],
+   "cut": "cut"
+  }
+ },
+ {
+  "seed": 52,
+  "sample": {
+   "top": [
+    [
+     20.999,
+     14.043
+    ],
+    [
+     13.999,
+     20.386
+    ],
+    [
+     7,
+     17.022
+    ],
+    [
+     0,
+     14.043
+    ]
+   ],
+   "h": 9.153,
+   "radius": 0.325
+  },
+  "original": {
+   "log": [
+    {
+     "contour": 1,
+     "outcome": "stretches",
+     "detail": "3"
+    },
+    {
+     "contour": 1,
+     "outcome": "exact",
+     "detail": "dev 2.10e-6 sections 32+187+250 clamped 6.4e-15 vtol 1.6e-5 endGap 2.7e-10 pcRemade - pjoint 2.6e-8"
+    }
+   ],
+   "cut": "cut",
+   "volume": 16346.679564776185
+  },
+  "rec": {
+   "ok": true,
+   "report": {
+    "features": {
+     "sketch": 2,
+     "extrude": 2,
+     "revolve": 0,
+     "hole": 0,
+     "fillet": 1,
+     "chamfer": 0,
+     "datum": 1
+    },
+    "faces": [
+     14,
+     14
+    ],
+    "volume": 16346.67956477632,
+    "volumeError": 1.5990328571239495e-13,
+    "areaError": 8.441269621910749e-15,
+    "difference": 7.502729690528724e-14
+   },
+   "fillet": {
+    "id": "fillet1",
+    "type": "fillet",
+    "name": "圓角1",
+    "suppressed": false,
+    "edges": [
+     {
+      "kind": "edge",
+      "name": "{extrude1:cap:end|extrude2:side:sketch2.sp1}",
+      "fingerprint": {
+       "type": "bsplinecurve",
+       "size": 25.104106204385527,
+       "center": [
+        10.499500000000001,
+        19.286625000012503,
+        0
+       ]
+      }
+     }
+    ],
+    "radius": "0.325",
+    "exact": true
+   },
+   "rebuildLog": [
+    {
+     "contour": 1,
+     "outcome": "stretches",
+     "detail": "3"
+    },
+    {
+     "contour": 1,
+     "outcome": "exact",
+     "detail": "dev 5.58e-5 sections 195+170+32 clamped 2.3e-2 vtol 3.4e-2 endGap 2.7e-10 pcRemade - pjoint 2.0e-4"
+    }
+   ],
+   "cut": "cut"
+  }
+ }
+]
