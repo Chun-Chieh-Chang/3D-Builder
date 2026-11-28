@@ -1,5 +1,11 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-28 — 桌面版進版至 v0.8.0、本機覆蓋更新與單一安裝檔發佈
+
+- **升版與打包**：將桌面應用（`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`）、內建 MCP 伺服器（`apps/mcp/src/main.ts`）與 Windows 發佈工作流程升級基準同步進版至 `0.8.0`（提交 `58383a5d`）；完成 Tauri 2 單一 NSIS 安裝檔打包 [`apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.8.0_x64-setup.exe`](apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.8.0_x64-setup.exe)（`49,421,247 B`，SHA-256 `d6cc0e19e3061591484faeda939fb921380e6a74cf173922a54a5eb9ca180c21`），並依使用者確認刪除本機舊版 `0.7.0` 與 `0.7.1` 安裝檔。
+- **本機更新與實機驗收**：以 `/S` 原地覆蓋更新至 `D:\軟體資料夾\3D-Builder`，確認登錄檔與 `desktop.exe` 版本皆為 `0.8.0`；透過 `tests/e2e/desktop-probe.mjs` 啟動 10 秒存活、OCCT 載入完成（`bootOverlay: false`）、命令列顯示 `3D-Builder v0.8.0`；`scripts/verify-windows-release-mcp.mjs` 兩輪 MCP Sidecar 連線與埠釋放通過。
+- **遠端發佈**：[GitHub Release v0.8.0](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.8.0) 已公開並標記為 `Latest`（含 `3D-Builder_0.8.0_x64-setup.exe` 與 `SHA256SUMS.txt`），履歷同步登錄於 [`docs/desktop-release-history.md`](docs/desktop-release-history.md)。
+
 ## 2026-11-28 — 編輯旋轉軸特徵時於 3D 畫布穿透實體醒目顯示所選旋轉軸
 
 - **問題現象**：在建立或編輯「旋轉填料／基材」等具備旋轉軸之特徵時（如截圖中之階梯圓柱），所選旋轉軸位於實體內部且來源草圖預設被特徵吸收隱藏，導致圖形區完全看不見目前選定的旋轉軸。

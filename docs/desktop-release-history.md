@@ -8,8 +8,9 @@
 
 | 版本 | 首次建置 | 含到的提交 | 安裝檔大小 | 狀態 |
 |---|---|---|---|---|
-| 0.7.1 | 2026-11-23 11:56 | `a68e9f40` | 49,668,006 B | GitHub Release `v0.7.1`（Latest，正式公開 2026-11-23T04:19:12Z） |
-| 0.7.0 | 2026-11-22 17:00 | `43e74d6e` | 49,350,112 B | GitHub Release `v0.7.0`（內建 MCP Sidecar） |
+| 0.8.0 | 2026-11-28 13:12 | `58383a5d` | 49,421,247 B | GitHub Release `v0.8.0`（Latest，正式公開 2026-11-28T05:53:44Z） |
+| 0.7.1 | 2026-11-23 11:56 | `a68e9f40` | 49,668,006 B | GitHub Release `v0.7.1`（已刪除本機舊安裝檔 2026-11-28） |
+| 0.7.0 | 2026-11-22 17:00 | `43e74d6e` | 49,350,112 B | GitHub Release `v0.7.0`（內建 MCP Sidecar；已刪除本機舊安裝檔 2026-11-28） |
 | 0.6.0 | 2026-11-15 16:16 | `0cd8b09f` | 13,177,478 B | GitHub Release `v0.6.0` |
 | 0.5.0 | 2026-11-14 21:31 | `b3771674`＋升版提交 `da072cd5` | 13,128,755 B | GitHub Release `v0.5.0`；本機舊安裝檔已移至資源回收筒（2026-11-15） |
 | 0.4.1 | 2026-11-14 20:10 | `5e4d1ad6`＋升版提交 `b3771674` | 13,129,684 B | 已刪除本機安裝檔（2026-11-14）；從未發佈成 Release（改發 0.5.0） |
@@ -34,6 +35,25 @@
 - 輸出方式：開啟有爆炸步驟的組合件，選「檔案 → 輸出互動拆解示意」，再用支援 WebGL 2 的瀏覽器開啟下載的 HTML。
 - 本機以正式 Web 建置與實際執行 NSIS 後的桌面程式，各從選單下載金樣夾具 HTML。兩份檔案共用 SHA-256 `0D956A92439C8F593155601E5F2C281DB847A11D73CB769A7C79D6C2E63DCC8E`，各 726,152 B。Chrome 斷網開啟兩份檔案，逐步位姿與 BOM 高亮測試通過，HTTP(S) 請求為 0。
 - x64 驗收安裝包為 13,129,167 B，SHA-256 `7588569A0C9A14F36CA3EB64136181F215C7EBF53A78EA532C5010175C70839E`。NSIS 以獨立目錄執行成功，驗收後還原原有安裝登錄並核對原程式雜湊。
+
+## 0.8.0（2026-11-28）
+
+- **升版提交**：`58383a5d`（同步 `tauri.conf.json`、`Cargo.toml`、`Cargo.lock` 之 `desktop` 項、`apps/mcp/src/main.ts` 至 `0.8.0`，並更新 `.github/workflows/windows-release-package.yml` 預設升級基準至 `0.7.1`）。
+- **重點變更**（相較 `0.7.1` 的 `a68e9f40`）：
+  - **旋轉軸 3D 穿透實體醒目顯示**（`8442611b`）：編輯旋轉、螺紋、壓花、移動／複製本體、環狀排列與角度基準面時，在 `overlayScene` 以橘色粗虛線貫穿並延伸出實體兩端，並暫時顯示來源草圖。
+  - **DWG 匯入／匯出與可編輯 2D CAD 圖頁**（`66399fab`、`49872f24`、`6a1f26fc`、`176c7405`、`ec0cb5e9`，ADR 0264）：支援單位換算、無圖形區塊標註依 `$DIMSTYLE` 重畫、CAD 內建圖層匯入、黑色輸出為 CAD 色號 7，並以 `AC1021` UTF-8 作為 DXF 預設格式（另提供 FreeCAD 相容模式 `b8b8bfa1`）。
+  - **通用雙語製造圖框樣板（工程圖 Schema v46）**（`bf43ed9c`）：可切換 `industrial` 圖頁樣板（180×64 mm 標題欄、第一／第三角向量投影符號、一般公差欄與 4 列修訂履歷表），並修正直徑／半徑模式選取圓周與同心內圓被圓心搶佔問題。
+  - **工程圖角度標註導線（ADR 0266）與 STEP 圓角／特徵辨識強化（ADR 0265）**（`5a4971fb`、`ce33a2fe`、`073be7d7`）。
+  - **檔案與體驗優化**：專案資料夾選擇器預設開啟所選檔案所在資料夾（`af3fe0c6`）；全域操作提示升級為 Toast 通知；內建獨立 MCP 伺服器同步升版至 `0.8.0`。
+- **格式相容性**：工程圖升級至 Schema 46（相容舊版 `.3dbd` 自動升級；含工業圖框或 Schema 46 欄位之圖檔需以 `0.8.0` 以上版本開啟）。
+- **單一安裝檔**：`apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.8.0_x64-setup.exe`，**49,421,247 B**（47.13 MiB，未簽章），SHA-256 `d6cc0e19e3061591484faeda939fb921380e6a74cf173922a54a5eb9ca180c21`；已刪除本機舊版 `0.7.0`／`0.7.1` 安裝檔僅保留 `0.8.0`。
+- **本機覆蓋安裝、WebView2 與 MCP Sidecar 驗收**：
+  - Tauri 2 建置 exit 0，Rust 0 警告；`desktop.exe` 版本 `0.8.0`。
+  - 以 `/S` 覆蓋安裝至既有安裝目錄 `D:\軟體資料夾\3D-Builder`（exit 0），登錄與 `desktop.exe` 版本皆為 `0.8.0`。
+  - 以 `tests/e2e/desktop-probe.mjs`（WebView2 CDP）實機啟動 10 秒存活且視窗無崩潰，`url: "http://tauri.localhost/"`、`title: "3D-Builder"`、`bootOverlay: false`、命令列顯示 `3D-Builder v0.8.0`、OPFS／IndexedDB／WASM 正常。
+  - 執行 `scripts/verify-windows-release-mcp.mjs` 驗證已安裝之 `3d-builder-mcp.exe`：回報 `version: "0.8.0"`、`upgradedInPlace: true`，連續兩輪 live port `38923` 啟閉完全釋放。
+  - 功能基準 `8442611b` 已通過全量 `npm run verify:ui` **282 / 282**（0 失敗）。
+- **正式發佈**：[GitHub Release v0.8.0](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.8.0) 已於 `2026-11-28T05:53:44Z` 公開並設為 `Latest`，附件 `3D-Builder_0.8.0_x64-setup.exe`（`49,421,247 B`，`sha256:d6cc0e19e3061591484faeda939fb921380e6a74cf173922a54a5eb9ca180c21`）與 `SHA256SUMS.txt`（97 B）與本機建置完全一致。
 
 ## 0.7.1（2026-11-23）
 
