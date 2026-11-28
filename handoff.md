@@ -1,5 +1,23 @@
 # 交接與接續工作
 
+## 2026-11-28 — v0.8.0 正式發佈、旋轉軸 3D 醒目顯示、專案資料夾預設位置與推送前門檻強化
+
+- **本日完成與已推送提交**：
+  - `af3fe0c6`（**「選擇資料夾…」預設開啟所選檔案所在資料夾**）：`pickProjectFolder` 支援 `startIn` 並於呼叫前零 `await` 保留使用者手勢，非 `AbortError` 自動降級重試；`AppStore` 於各開啟／建立流程傳入對應檔案或專案 handle（CI run `46097515173` 通過）。
+  - `8442611b`（**編輯旋轉軸特徵時於 3D 畫布穿透實體醒目顯示所選旋轉軸**）：新增 `apps/web/src/state/axisPreview.ts` 解析 `revolve`、`thread`、`knurl`、`moveCopyBody`、`pattern`（環狀）與 `refPlane`（角度）旋轉軸；`packages/render/src/viewer.ts` 以 `LineSegments2`＋`LineMaterial`（`depthTest: false`、`renderOrder = 6`）繪製貫穿並延伸出實體兩端之橘色粗虛線；`Viewport.tsx` 編輯時暫時顯示來源草圖並高亮所選線段。全量 `npm run verify:ui` **282 / 282 全數通過**（0 失敗、0 Console 錯誤；CI run `46109358232` 通過）。
+  - `58383a5d`／`9b1b3924`（**桌面版進版至 v0.8.0、單一安裝檔打包、本機更新與 Release 發佈**）：
+    - 同步 `tauri.conf.json`、`Cargo.toml`、`Cargo.lock`（`desktop` 項）、`apps/mcp/src/main.ts` 至 `0.8.0`，更新 `.github/workflows/windows-release-package.yml` 預設升級基準至 `0.7.1`（CI run `46112269406` 通過）。
+    - 建置單一 Windows x64 NSIS 安裝檔 `apps/desktop/src-tauri/target/release/bundle/nsis/3D-Builder_0.8.0_x64-setup.exe`（`49,421,247 B`，SHA-256 `d6cc0e19e3061591484faeda939fb921380e6a74cf173922a54a5eb9ca180c21`），並依使用者確認刪除本機舊版 `0.7.0` 與 `0.7.1` 安裝檔。
+    - 以 `/S` 原地覆蓋更新本機 `D:\軟體資料夾\3D-Builder`，通過 `tests/e2e/desktop-probe.mjs`（10 秒存活、`bootOverlay: false`、顯示 `3D-Builder v0.8.0`）與 `scripts/verify-windows-release-mcp.mjs`（`version: "0.8.0"`、兩輪 live port 啟閉釋放）。
+    - 公開發佈 [GitHub Release v0.8.0](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.8.0)（`Latest`，附 `3D-Builder_0.8.0_x64-setup.exe` 與 `SHA256SUMS.txt`），履歷已登錄於 [docs/desktop-release-history.md](docs/desktop-release-history.md)。
+  - `eaa333a1`（**推送前門檻強化**）：修正 `9b1b3924` 於 `DEV_LOG.md` 將本機 NSIS 安裝檔寫成 Markdown 連結造成 CI run #411 三平台 `lint:repo` 失敗之問題；`lint:repo` 改檢核連結目標必須屬於版本庫，並新增 `scripts/prepush.mjs` 與 `.git/hooks/pre-push`（`npm run prepush`）。[CI run 46117154173](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/46117154173) 三平台 integrity 與 Pages 部署全綠通過。
+- **GitHub Pages vs 桌面版能力盤點**：已確認 GitHub Pages 與桌面版共用同一份 Web／WASM 核心（3D 建模、組合件、工程圖、STEP／IGES／STL／DXF／PDF 皆完整可用）；僅 **DWG 匯入／匯出**（需 Tauri `dwg_convert`）與 **開箱即用之內建 MCP Sidecar／完全離線啟動** 屬桌面版專有。
+- **仍待**：
+  - `#9` 兩份 v4 審閱稿（`out/R1-9035/`、`out/R1-16148/` 需於產出機檢視或本機重跑出圖腳本）；
+  - `#4` `scripts/verify-ui.mjs` 實施 Chrome 批次行程回收（每 40–50 支重啟以消除長程偶發逾時；本次 282/282 雖全過，架構隔離仍待補齊）；
+  - `#14` 實件與手機版適配；
+  - 多客戶端 MCP 矩陣之桌面 IDE 實測（`out/mcp-client-qa/` 已佈署就緒）與外部帳號阻礙項目（Claude Code／Qoder／DeepSeek）。
+
 ## 2026-11-27 — MECE 清理（待辦 #18 已解決）、多客戶端 MCP 矩陣整備與 verify:ui 逾時 RCA（待辦 #4 進展）
 
 - **待辦 #18（未追蹤目錄，已解決）**：經使用者同意，將 `261126/`、`Claude outputs/`、`阿郎/` 本地參考資產完整保留於磁碟，並在 `.gitignore` 寫入忽略規則；工作區恢復潔淨（`git status` 無未追蹤目錄雜訊）。

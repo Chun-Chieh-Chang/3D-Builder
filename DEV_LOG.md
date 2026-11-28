@@ -5,7 +5,7 @@
 - **問題現象**：`docs(desktop): record the v0.8.0 release`（`9b1b3924`）推送後，Repository integrity 的三平台 `lint:repo` 同時失敗（run #411）；本機 `npm run lint:repo` 卻通過。
 - **根因**：`DEV_LOG.md` 將本機 NSIS 安裝檔寫成 Markdown 連結；`check-repository.mjs` 只檢查連結目標是否存在，未檢查它是否屬於版本庫。安裝檔在 `.gitignore` 的 `apps/desktop/src-tauri/target/` 下，本機存在、乾淨 checkout 不存在，於是只在 CI 失敗。
 - **矯正**：連結改為行內程式碼；`lint:repo` 以 `git ls-files --cached --others --exclude-standard` 的檔案集合驗證連結目標，忽略／建置產物會在本機就失敗；新增 `scripts/prepush.mjs` 與 `.git/hooks/pre-push`（`npm run setup:hooks` 安裝），任何代理推送前都跑 `typecheck` 與四項 lint。
-- **驗證**：修正前在本機重現 `DEV_LOG.md:5: target is ignored or generated...`；修正後 `npm run prepush` 全數通過（13 秒內），`tests/phase5/repository-maintenance.test.ts` 7/7 通過。
+- **驗證**：修正前在本機重現 `DEV_LOG.md:5: target is ignored or generated...`；修正後 `npm run prepush` 全數通過（13 秒內），`tests/phase5/repository-maintenance.test.ts` 7/7 通過；推送 `eaa333a1` 後 [Repository integrity CI run 46117154173](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/46117154173) 三平台與 Pages 部署全數綠燈通過，並已同步更新 [`handoff.md`](handoff.md)。
 
 ## 2026-11-28 — 桌面版進版至 v0.8.0、本機覆蓋更新與單一安裝檔發佈
 
