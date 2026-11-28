@@ -1,6 +1,6 @@
 # 交接與接續工作
 
-## 2026-11-28 — v0.8.0 正式發佈、旋轉軸 3D 醒目顯示、專案資料夾預設位置、推送前門檻與 verify:ui 批次回收
+## 2026-11-28 — v0.8.0 正式發佈、旋轉軸 3D 醒目顯示、專案資料夾預設位置、推送前門檻、verify:ui 批次回收與工程圖手機版
 
 - **本日完成與已推送提交**：
   - `af3fe0c6`（**「選擇資料夾…」預設開啟所選檔案所在資料夾**）：`pickProjectFolder` 支援 `startIn` 並於呼叫前零 `await` 保留使用者手勢，非 `AbortError` 自動降級重試；`AppStore` 於各開啟／建立流程傳入對應檔案或專案 handle（CI run `46097515173` 通過）。
@@ -11,15 +11,15 @@
     - 以 `/S` 原地覆蓋更新本機 `D:\軟體資料夾\3D-Builder`，通過 `tests/e2e/desktop-probe.mjs`（10 秒存活、`bootOverlay: false`、顯示 `3D-Builder v0.8.0`）與 `scripts/verify-windows-release-mcp.mjs`（`version: "0.8.0"`、兩輪 live port 啟閉釋放）。
     - 公開發佈 [GitHub Release v0.8.0](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.8.0)（`Latest`，附 `3D-Builder_0.8.0_x64-setup.exe` 與 `SHA256SUMS.txt`），履歷已登錄於 [docs/desktop-release-history.md](docs/desktop-release-history.md)。
   - `eaa333a1`（**推送前門檻強化**）：修正 `9b1b3924` 於 `DEV_LOG.md` 將本機 NSIS 安裝檔寫成 Markdown 連結造成 CI run #411 三平台 `lint:repo` 失敗之問題；`lint:repo` 改檢核連結目標必須屬於版本庫，並新增 `scripts/prepush.mjs` 與 `.git/hooks/pre-push`（`npm run prepush`）。[CI run 46117154173](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/46117154173) 三平台 integrity 與 Pages 部署全綠通過。
+  - `156c3dad`（**verify:ui Chrome 批次行程回收，待辦 #4**）：預設每 40 個實際執行的呼叫換新 Chrome，只在檔案邊界回收；舊 WebSocket、Chrome 程序樹、除錯埠與臨時設定檔依序清理完畢才啟動下一顆。完整回歸 **282/282 PASS，0 KNOWN、0 FAIL、0 Console 錯誤**，實際回收 6 次；[CI run 46141768726](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/46141768726) 通過，推送前 L3 深度安全審查 0 findings。
 - **GitHub Pages vs 桌面版能力盤點**：已確認 GitHub Pages 與桌面版共用同一份 Web／WASM 核心（3D 建模、組合件、工程圖、STEP／IGES／STL／DXF／PDF 皆完整可用）；僅 **DWG 匯入／匯出**（需 Tauri `dwg_convert`）與 **開箱即用之內建 MCP Sidecar／完全離線啟動** 屬桌面版專有。
-- **本輪未提交（依使用者指示不提交、不推送）**：
-  - **待辦 #4 已完成**：[`scripts/verify-ui.mjs`](scripts/verify-ui.mjs) 與 [`scripts/verify-ui-args.mjs`](scripts/verify-ui-args.mjs) 加入 Chrome 批次行程回收，預設每 40 個實際執行的呼叫換新瀏覽器（`VERIFY_UI_RECYCLE_EVERY=0` 可停用），只在檔案邊界回收；快取 PASS／KNOWN 不計入批次。舊 WebSocket、Chrome 程序樹、除錯埠與臨時設定檔必須依序清理完畢才啟動下一顆 Chrome，Windows taskkill 的部分失敗不會被誤報成成功。
-  - 單元測試 **28/28**、真實 Chrome 回收／續跑／截圖冒煙全數通過，`npm run prepush` 通過且仍為 282 個瀏覽器呼叫。完整回歸未使用 checkpoint：**230 支腳本、282/282 PASS，0 KNOWN、0 失敗、0 Console 錯誤**，實際回收 6 次，累計 2912.5 秒，exit code 0。
-  - 完整回歸期間 source diff SHA-256 未變；結束後私有埠 9491／9493／9497 全數釋放，無本輪 Chrome／Vite 或新建臨時設定檔殘留。證據位於本機 `out/verify-ui-recycle/`，詳見 [DEV_LOG](DEV_LOG.md) 本日條目。
+- **本輪完成（依使用者指示提交並推送）**：
+  - **待辦 #14 已完成**：實作提交為 `ace46bfd`。工程圖頁在 375／390／768 px 改用雙抽屜。右側面板在行動版預設關閉，保留 44 px 可點擊頁籤；開啟後以絕對定位覆疊圖紙並帶背景遮罩，不壓縮圖面寬度。行動版開關不寫桌面版 `localStorage`。對話框優先序、色彩輸入與色票、圖頁列及面板控制項已補足 44 px／14 px。
+  - 沿用 `tests/e2e/manual-drawing-menus.js` 第 9 步，以同源 iframe 載入真實定位板與三視圖；三種視口皆為 `scrollWidth === innerWidth`，關閉態圖紙分別為 331／346／724 px，右頁籤均為 44 px 且 `tabHit=true`；開啟面板、左抽屜、對話框與 Console 皆通過。既有目標回歸 **13.5 秒通過**，`typecheck` 與 `prepush` 通過。
+  - 完整 `verify:ui` 使用 `out/drawing-mobile-ui.jsonl` 檢查點接續：**194 項 cached PASS＋88 項實際執行＝282/282 PASS，0 KNOWN、0 FAIL、0 Console 錯誤，exit code 0**；檢查點 282 筆唯一 PASS，無缺漏／重複／額外項目，接續段回收 Chrome 2 次。source diff SHA-256 回歸前後同為 `49fe1de19409489a5c9472a1dabb6c264afe1a1ebec2e80819847c9f0eb5e259`。較早一輪在 Vite 逾時後已通過的 194 項由檢查點保留，未再重跑。
+  - 修改檔案為 `apps/web/src/app.css`、`apps/web/src/components/DrawingPanel.tsx`、`apps/web/src/components/DimStyleFields.tsx`、`tests/e2e/manual-drawing-menus.js`，另同步本文件與 `DEV_LOG.md`；提交與 CI 結果以 Git 紀錄為準。
 - **仍待**：
   - `#9` 兩份 v4 審閱稿（`out/R1-9035/`、`out/R1-16148/` 需於產出機檢視或本機重跑出圖腳本）；
-  - `#4` 實作與完整回歸已完成，等待使用者決定是否提交／推送；
-  - `#14` 實件與手機版適配；
   - 多客戶端 MCP 矩陣之桌面 IDE 實測（`out/mcp-client-qa/` 已佈署就緒）與外部帳號阻礙項目（Claude Code／Qoder／DeepSeek）。
 
 ## 2026-11-27 — MECE 清理（待辦 #18 已解決）、多客戶端 MCP 矩陣整備與 verify:ui 逾時 RCA（待辦 #4 已於 11-28 完成）
@@ -34,14 +34,14 @@
 - **待辦 #4（verify:ui 偶發 4~5 支逾時 RCA，已於 2026-11-28 完成）**：
   - 第一性原理根因確立：`verify-ui.mjs` 在單一 Chromium 行程中連續航向 281 支測試，造成 Blink DOM IPC 與 GPU 行程資源碎片累積，耗時由 9 秒惡化為 18~24 秒；`phase2-assembly.js` 的 `H.loaded` 硬編碼 30s 門檻在後期高負載偶發超時（31~34s）。
   - CAPA 方案（遵守 AGENTS §3.3 零妥協原則）：禁止隨意調大門檻；已於 2026-11-28 在 `verify-ui.mjs` 加入週期性（預設每 40 支）重啟 Chrome 行程之架構隔離，完整 282/282 回歸通過，細節見本文件 11-28 頂部。
-- **仍待**：#9 兩份 v4 審閱稿（需於產出機之 `out/` 複製檢視，或於本機重新跑出圖腳本）；#14 實件與手機版適配。
+- **仍待（截至 2026-11-28）**：#9 兩份 v4 審閱稿（需於產出機之 `out/` 複製檢視，或於本機重新跑出圖腳本）；#14 已完成 375／390／768 px 適配與完整回歸，提交／推送狀態見本文件頂部。
 
 ## 2026-11-27 — 待辦 #3：seed 73、52（已解決）
 
 - seed 52 早已解決；seed 73 的重建拋例外，根因是頂點投影取到遠處的垂足，已修（`exactRound.ts`，`fa27a4ab`），重建改為精確圓角。細節見 DEV_LOG 同日、ADR 0265 §12。
 - **CI**：full-suite run 45958560186（`073be7d7`）全綠：8 片、三平台 integrity、section-offset-cost 全過；推送觸發的 run 45958542780 也全綠。本機未跑的 window-rounds、drafted、multi-window、revolved、loft 辨識 fuzz 都在其中。
 - **本日推送**：`45c77b74`（#12 開邊檢查）、`5fbdd09e`（旋轉跨軸檢查）、`9004415e`（drawing_complete 角度、斜面片段）、`fa27a4ab`（精確圓角投影）及其文件提交；各輪 CI 全綠。
-- **仍待**：#9 兩份 v4 審閱稿等使用者審閱（`out/` 不在 git，換機需手動拷 `out/R1-9035/`、`out/R1-16148/`）；#4 已於 11-28 完成並通過完整回歸，等待提交裁決；#14 待做；#18 三個未追蹤檔待使用者決定。
+- **仍待（更新至 2026-11-28）**：#9 兩份 v4 審閱稿等使用者審閱（`out/` 不在 git，換機需手動拷 `out/R1-9035/`、`out/R1-16148/`）；#4 已推送 `156c3dad`；#14 已完成並通過完整回歸，提交／推送狀態見本文件頂部；#18 已解決。
 
 ## 2026-11-27 — 兩份 v4 審閱稿（待辦 #9）
 
@@ -339,7 +339,7 @@
 | --- | --- |
 | **投影驗算的網格完整性** | `f6c8da22` 已推送，三平台檢查通過。**2026-11-26**：缺面的負向測試已在 `c3da0afd`；另加開邊檢查，以 ADR 0214 的真實零件驗證（見最上方）。仍待用 `R1-9035`、`R1-16148` 的模型複核網格與正交渲染。 |
 | **R1-9035／R1-16148 審閱稿** | v3 兩份已於 11-22 接受。**2026-11-27 更正**：詳圖 K 已在 11-22 結案（外輪廓角 35.34°，原圖 35° ±5°，`out/R1-9035/approved-detail-k.json`），不再待核。以現行引擎重量 v3：斜面標註 R1-9035 2/13、R1-16148 5/7；補標後斜面可全標上，但圖紙外與視圖重疊變差，需 v4 重新排版。R1-16148 模型有裂縫且多處讀圖錯誤，已照原圖重建為 `out/R1-16148/R1-16148-rev-ribs.3dbx`（見最上方與 DEV_LOG 同日）。下一步：用新模型出兩份 v4。 |
-| **其他工程圖實件與手機版** | 重新查看 R1-8032 剩餘的引線／重疊及 R1-10226 的斜面與跨頁標註清單，以當前引擎重跑後才判定剩餘項目。CNS 3 原文的全表核對仍待獨立資料。粗糙度欄位在 375／390／768 px 可用，工程圖雙側欄於 375／390 px 仍造成 536 px 頁寬。零件 PropertyManager 的 P0–P2（`23723317`）已交付，是不同介面。 |
+| **其他工程圖實件與手機版** | 重新查看 R1-8032 剩餘的引線／重疊及 R1-10226 的斜面與跨頁標註清單，以當前引擎重跑後才判定剩餘項目。CNS 3 原文的全表核對仍待獨立資料。粗糙度欄位在 375／390／768 px 可用；536 px 是 2026-11-21 修改前基準，2026-11-28 待辦 #14 已完成雙抽屜、觸控與對話框修正並通過 282／282 回歸，提交／推送狀態見本文件頂部。零件 PropertyManager 的 P0–P2（`23723317`）已交付，是不同介面。 |
 | **桌面新版** | `101b2103`、`0d4d3269` 與 `167d29ce` 都已推送。原檢具 `EFU0010073_01.3dbd` 在全新瀏覽器工作階段驗證過兩條螺孔線的模式切換，回報當下的既有分頁版本未能確認。粗糙度提交的 [三平台檢查／Pages](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/44971456035) 已通過，網頁版已部署。桌面最新 Release 仍為 `v0.6.0`，發行後加入的 UI 版本號（`995f2b94`）及工程圖改動待納入下一次桌面建置。 |
 | **照片到原生組合件／Anatomy** | `5721fa91` 已交付流程文件與 MCP 回歸。線性致動器已有七件外部組立、原生組合件與互動拆解示例，360 mm 安裝距、Ø12、50 mm 行程為模擬值。實照閉環還需多角度實物照片、至少一項實測尺寸，以及遮蔽界面與配合的確認，再驗收拆件、預覽、存檔與重開。齒輪、絲桿、軸承和限位目前未建模。舊聊天的致動器／藍圖 HTML 在搬移前的 `out/`，本 checkout 未找到，交接時先確認原檔位置。參見 [照片建模指引](docs/photo-to-cad.md)。 |
 | **組合件 MCP 客戶端驗收** | 無視窗組裝、BOM／STEP 匯出、`assembly_open` 與 GUI 即時控制（ADR 0253）已在主線。Claude Code 已完成試建、預覽、儲存及獨立重開的實例。Codex 停在工具核准，OpenCode 已連線，其他規劃中的客戶端仍缺完整操作證據。各客戶端均用同一案例核對工具探索、試組、預覽、存檔、重開後姿態與配合。零件 GUI 的 S3 使用者驗收已完成，拒絕路徑另有自動驗證。參見 [組合件 MCP 計畫](docs/design/ai-cad-control/assembly-mcp-plan.md)。 |

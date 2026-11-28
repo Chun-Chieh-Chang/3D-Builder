@@ -1,6 +1,6 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
-## 2026-11-28 — verify:ui Chrome 批次行程回收（待辦 #4，未提交）
+## 2026-11-28 — verify:ui Chrome 批次行程回收（待辦 #4，已推送 `156c3dad`）
 
 - **問題與根因**：完整 `verify:ui` 長期在同一 Chrome 行程內執行，Blink DOM IPC、GPU 行程與 WebGL 資源碎片逐批累積，後段平均耗時由約 9 秒升至 18～24 秒，使既有 30 秒等待門檻偶發逾時。依 AGENTS §3.3，本輪不放寬任何等待、呼叫或評估期限，改以瀏覽器行程隔離消除累積。
 - **實作**：
@@ -18,7 +18,32 @@
   - `node --check` 兩支執行腳本、`git diff --check` 與 `npm run prepush` 全數通過；`lint:repo` 確認 343 份文件、16 個工作區、282 個瀏覽器呼叫。
   - **完整回歸**（2026-11-28 18:28 啟動，不使用 checkpoint，私有埠 9491／9493／9497）：230 支腳本、282 個唯一呼叫全部實際執行，**282/282 PASS，0 KNOWN、0 失敗、0 Console 錯誤**；共回收 6 次（40／40／42／40／40／42，最後一批 38），累計 2912.5 秒，exit code 0，4 份測試下載皆限制在臨時設定檔並已移除。
   - 回歸前後的完整 source diff SHA-256 同為 `3707445d07b5261d4e01d23136d0352102b010d4fa19b21e4a5076eed10d38f1`，執行期間未修改原始碼；結束後三個私有埠皆 FREE，無本輪 Chrome／Vite 殘留，亦沒有於本輪期間寫入的 `3db-verify-*` 臨時設定檔。
-- **狀態**：依使用者指示，本輪只完成實作、審查、修正與完整驗收，**尚未提交、尚未推送**。詳細日誌與 JSON 報告保留於本機 `out/verify-ui-recycle/`。
+- **狀態**：已依使用者指示提交並推送至 `origin/main`，提交為 `156c3dad`（`test(ui): recycle Chrome to stabilize full regressions`）；[CI run 46141768726](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/46141768726) 已完成並通過，推送前 L3 深度安全審查為 0 findings。詳細日誌與 JSON 報告保留於本機 `out/verify-ui-recycle/`。
+
+## 2026-11-28 — 工程圖手機版雙抽屜與觸控適配（待辦 #14）
+
+- **需求與基準**：工程圖頁在 375、390、768 px 不得水平溢出，左右面板皆為可關閉抽屜，圖紙保留可用寬度，觸控目標至少 44×44 px、字級至少 14 px，對話框底部操作必須可達。2026-11-21 回報的雙側欄合計 536 px 是修改前基準；本輪在現行基準實測三種寬度皆為 `scrollWidth === innerWidth`，因此不把 536 px 當成仍可重現的現象。
+- **根因**：右側工作面板在窄視口仍佔用固定欄寬，開啟時進一步壓縮圖紙；關閉態按鈕雖為 44 px，外層格子卻被後方規則的百分比 `max-width` 壓成 1 px，實際無法點擊。較晚定義的 `.modal.wide` 覆蓋行動版規則，使對話框在 375／390 px 仍寬 480 px；尺寸色彩輸入與色票使用行內固定尺寸，無法由 CSS 擴大成觸控目標。
+- **實作**：
+  - [`apps/web/src/components/DrawingPanel.tsx`](apps/web/src/components/DrawingPanel.tsx) 以 `matchMedia('(max-width: 768px)')` 切換行動版覆疊狀態；右側面板預設關閉，開啟後絕對定位覆疊並帶背景遮罩，關閉按鈕與遮罩都能復原。行動版開關使用獨立 state，不寫入桌面版 `localStorage` 偏好。
+  - [`apps/web/src/app.css`](apps/web/src/app.css) 保留 44 px 右側軌道，開啟面板不消耗圖紙欄寬；關閉態明確設定 `min-width: 44px; max-width: none`。提高對話框規則選擇器優先序，並補齊左右抽屜、圖頁列、面板控制項、色彩輸入與色票的 44 px／14 px 規則。
+  - [`apps/web/src/components/DimStyleFields.tsx`](apps/web/src/components/DimStyleFields.tsx) 移除色彩控制項的行內尺寸，改由 CSS 控制桌面與觸控尺寸，並以 `aria-pressed` 標示目前色票。
+  - 沿用 [`tests/e2e/manual-drawing-menus.js`](tests/e2e/manual-drawing-menus.js) 第 9 步，沒有新增第 283 支腳本；以同源 iframe 真正套用 375／390／768 px media query，載入定位板與三視圖，檢查溢出、面板遮罩、關閉頁籤命中、觸控尺寸與對話框可達性。
+- **實測結果**：
+
+  | 視口 | 頁面寬度 | 關閉態圖紙／右頁籤 | 開啟右面板 | 左抽屜 | 對話框 |
+  | --- | --- | --- | --- | --- | --- |
+  | 375 px | 375／375 | 331／44 px，`tabHit=true` | `left=75, right=375, width=300`，圖紙仍 331 px | 350／350 px | `left=8, right=367`，底部 685／812，關閉鈕底部 671 |
+  | 390 px | 390／390 | 346／44 px，`tabHit=true` | `left=90, right=390, width=300`，圖紙仍 346 px | 359／359 px | `left=8, right=382`，底部 709／844，關閉鈕底部 695 |
+  | 768 px | 768／768 | 724／44 px，`tabHit=true` | `left=468, right=768, width=300`，圖紙仍 724 px | 359／359 px | `left=64, right=704`，底部 835.75／1024，關閉鈕底部 821.75 |
+
+  三種寬度的開啟面板、左抽屜與對話框控制項皆無小於 44 px 的目標或小於 14 px 的字級，Console 錯誤 0；獨立真實瀏覽器審核結果為 `{"pass":true,"failures":[],"errors":[]}`。
+- **確效驗證**：
+  - 既有工程圖選單／右鍵／樹狀選單回歸 **13.5 秒通過**；`git diff --check`、`npm run typecheck`、`npm run prepush` 全數通過。
+  - 完整 `verify:ui` 使用 `out/drawing-mobile-ui.jsonl` 逐檔案檢查點接續：**194 項 cached PASS＋88 項實際執行＝282/282 PASS，0 KNOWN、0 FAIL、0 Console 錯誤，exit code 0**。檢查點恰有 282 筆唯一 PASS，無缺漏、重複或額外項目；接續段回收 Chrome 2 次，逐項秒數合計 2971.2 秒，其中新執行 665.8 秒。
+  - 回歸前後 source diff SHA-256 同為 `49fe1de19409489a5c9472a1dabb6c264afe1a1ebec2e80819847c9f0eb5e259`，執行期間未修改原始碼。較早一輪在 Vite 逾時後已通過的 194 項由檢查點保留，未再重跑。
+- **紅隊四問**：極端視口與桌面偏好切換已覆蓋；本功能不建立幾何或執行布林；`matchMedia` → 面板 state → CSS 格子／遮罩 → iframe 實測完整接線；驗收使用真實定位板與三視圖，未以 mock 資料冒充。
+- **狀態**：實作、驗收與文件同步已完成，實作提交為 `ace46bfd`；接著依使用者指示推送並由 CI 驗證，結果記錄於 handoff。
 
 ## 2026-11-28 — 推送前門檻：文件連結不得指向建置產物
 
@@ -374,7 +399,7 @@
 - 剖面兩端若吸到平行輪廓，舊流程會改畫這兩條邊的中線。中心線工具改由使用者選擇「兩點畫線」或「平行邊中線」，並以定位板剖面測試兩種畫法和重複點選同一條邊。
 - 粗糙度放置與拖曳採用距游標最近的可見輪廓，並在放置前高亮該輪廓。粗糙度文字的位移在套用圖紙字高後計算，實際移動距離與拖曳距離一致。框選、命中判定及高亮共用圖紙實際繪出的符號與文字。
 - 邊界驗證涵蓋無效三角形數量與非有限文字偏移、幾何中點與中心軸競爭吸附，以及真實定位板工程圖上的中心線、三角形與兩倍字高下的文字拖曳。
-- Playwright 在 375、390、768 px 均可切換符號。375 與 390 px 時，工程圖雙側欄合計 536 px，頁面有水平溢出。
+- Playwright 在 375、390、768 px 均可切換符號。375 與 390 px 時，工程圖雙側欄合計 536 px，頁面有水平溢出。（歷史基準；2026-11-28 待辦 #14 已修正，見本日工程圖手機版條目。）
 
 ## 2026-11-21（21:25）— 實機 3D 模型重構、OCCT 布林退化缺面根因分析與 Layer-1 網格完整性硬化
 
