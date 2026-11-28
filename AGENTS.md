@@ -38,6 +38,11 @@
    - 宣稱符合特定行業規範（如 ISO 80369-7、ISO 286、ISO 4762）時，參數與幾何必須從定義嚴格推導（如 6.00% 錐度在標稱截面必須精確吻合）。
    - 驗收測試必須使用實體探針（物理量測）或真實拓樸萃取（`elementFacts`），**嚴禁在測試中 hardcode 假資料冒充功能通過**。
 
+### 2.2 推送前門檻 (Pre-Push Gate)
+- 任何 `git push` 前必須通過 `npm run prepush`：`typecheck` 與 `lint:rules`／`lint:deps`／`lint:i18n`／`lint:repo`。本工作區的 `.git/hooks/pre-push` 會自動執行；新 clone 先跑 `npm run setup:hooks`。
+- **文件連結只能指向版本庫檔案**（已追蹤，或未忽略的新檔）。`target/`、`dist/`、`out/` 等建置產物在乾淨 checkout 不存在，必須寫成行內程式碼，不得寫成 Markdown 連結。
+- 起因（2026-11-28）：`DEV_LOG.md` 把本機 NSIS 安裝檔寫成連結，`lint:repo` 因本機檔案存在而誤綠，三平台 CI 的乾淨 checkout 才失敗（run #411）。`lint:repo` 已改為同時檢查連結目標是否屬於版本庫，並以測試鎖住。
+
 ---
 
 ## 3. 測試質量與記憶體防禦硬準則

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 // @ts-expect-error Node maintenance scripts expose plain ESM without declaration files.
 import { uiJobs } from '../../scripts/ui-jobs.mjs';
 // @ts-expect-error Node maintenance scripts expose plain ESM without declaration files.
-import { documentRole, inventoryMarkdown, localLinkProblems, markdownLinks } from '../../scripts/check-repository.mjs';
+import { documentRole, inventoryMarkdown, localLinkProblems, markdownLinks, repositoryLinkTargets } from '../../scripts/check-repository.mjs';
 const temporary:string[]=[];
 afterEach(()=>{for(const path of temporary.splice(0))rmSync(path,{recursive:true,force:true});});
 function directory(){const p=mkdtempSync(join(tmpdir(),'3db-repo-audit-'));temporary.push(p);return p;}
@@ -24,6 +24,14 @@ it('rejects bad case on every OS and accepts Unicode, encoded space and a local 
 it('fails closed on missing, absolute, escaping or invalid-encoded local targets, without checking remote URLs',()=>{
  const root=directory();mkdirSync(join(root,'docs'));
  expect(localLinkProblems(root,'docs/a.md','[missing](gone.md)\n[escape](../../x.md)\n[absolute](/etc/passwd)\n[bad](%ZZ)')).toHaveLength(4);expect(localLinkProblems(root,'docs/a.md','[web](https://example.com/x)\n[mail](mailto:a@example.com)\n[here](#heading)')).toEqual([]);
+});
+it('rejects a link that only a generated build artifact satisfies, as a clean checkout would',()=>{
+ const root=directory();mkdirSync(join(root,'docs'));mkdirSync(join(root,'apps','desktop','target'),{recursive:true});
+ writeFileSync(join(root,'docs','source.md'),'');writeFileSync(join(root,'apps','desktop','target','setup.exe'),'binary');
+ const targets=repositoryLinkTargets(['docs/source.md','apps/desktop/README.md']);
+ expect(localLinkProblems(root,'docs/source.md','[artifact](../apps/desktop/target/setup.exe)',targets)).toHaveLength(1);
+ expect(localLinkProblems(root,'docs/source.md','[doc](source.md)',targets)).toEqual([]);
+ expect(localLinkProblems(root,'docs/source.md','[folder](../apps/desktop)',targets)).toEqual([]);
 });
 it('requires a single explicit role for new documents and distinguishes proposals from current claims',()=>{
  expect(documentRole('docs/project-state.md')).toBe('產品現況');expect(documentRole('docs/adr/0203-example.md')).toBe('架構決策');expect(documentRole('docs/design/menu-redesign/plan.md')).toBe('設計提案');expect(documentRole('docs/phase3-plan.md')).toBe('階段計畫快照');expect(documentRole('.claude/agents/test-runner.md')).toBe('代理定義');expect(()=>documentRole('.claude/agents/nested/x.md')).toThrow(/owner\/role/);expect(()=>documentRole('wiki/unreviewed.md')).toThrow(/owner\/role/);

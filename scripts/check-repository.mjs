@@ -52,7 +52,16 @@ function exactPath(root, path) {
   }
   return existsSync(cursor);
 }
-export function localLinkProblems(root, file, text) {
+/** Files a clean checkout has: tracked, or untracked but not ignored. Generated build output is neither. */
+export function repositoryLinkTargets(files) {
+  const paths = new Set(files), directories = new Set();
+  for (const file of files) {
+    const parts = file.split('/');
+    for (let index = 1; index < parts.length; index += 1) directories.add(parts.slice(0, index).join('/'));
+  }
+  return { paths, directories };
+}
+export function localLinkProblems(root, file, text, targets = null) {
   return markdownLinks(text).flatMap(({ target, line }) => {
     if (/^[a-z][\w+.-]*:/i.test(target) || target.startsWith('//')) return [];
     const local = target.split('#')[0].split('?')[0];
@@ -61,13 +70,18 @@ export function localLinkProblems(root, file, text) {
     const dest = resolve(dirname(join(root, file)), decoded);
     const rel = relative(root, dest);
     if (isAbsolute(decoded) || rel === '..' || rel.startsWith(`..${sep}`) || !exactPath(root, dest)) return [`${file}:${line}: missing, outside-repository or wrong-case target ${target}`];
+    // A file that exists only because this machine built it is absent from a clean checkout: the three-platform CI would fail.
+    if (targets) {
+      const repositoryPath = slash(rel);
+      if (repositoryPath && !targets.paths.has(repositoryPath) && !targets.directories.has(repositoryPath)) return [`${file}:${line}: target is ignored or generated, not a repository file ${target}`];
+    }
     return [];
   });
 }
 export function auditRepository(root = ROOT) {
-  const files = repositoryFiles(root), markdown = files.filter(file => file.endsWith('.md'));
+  const files = repositoryFiles(root), targets = repositoryLinkTargets(files), markdown = files.filter(file => file.endsWith('.md'));
   const documents = markdown.map(file => ({ file, title: read(root, file).match(/^#\s+(.+)$/m)?.[1] ?? file, role: documentRole(file) }));
-  const problems = markdown.flatMap(file => localLinkProblems(root, file, read(root, file)));
+  const problems = markdown.flatMap(file => localLinkProblems(root, file, read(root, file), targets));
   const schema = (file, constant) => {
     const value = read(root, file).match(new RegExp(`export const ${constant} = (\\d+);`));
     if (!value) throw new Error(`Cannot find schema source ${file}:${constant}`);

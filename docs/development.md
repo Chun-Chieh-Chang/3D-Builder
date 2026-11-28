@@ -6,6 +6,7 @@
 
 ```sh
 npm ci
+npm run setup:hooks
 npm run doctor
 npm run dev
 ```
@@ -26,7 +27,7 @@ npm test -- tests/phase5/drawing-hole-depth.test.ts
 npm run build
 ```
 
-使用者目前偏好：只跑新增／受影響案例，失敗只重試失敗項並保留報告。`npm run check`仍提供完整檢查，包含全部Vitest；不是每次小修都必跑，也不要因AGENTS的泛用全量建議忽略使用者限制。無本版全量報告時不得宣稱全部通過。`noUnusedLocals`是型別守門的一部分；不要為清警告刪掉初始化或驗證副作用。
+使用者目前偏好：只跑新增／受影響案例，失敗只重試失敗項並保留報告。`npm run prepush`依序跑`typecheck`與`lint:rules`／`lint:deps`／`lint:i18n`／`lint:repo`（三平台CI的前段）；本工作區的pre-push hook會自動執行，新clone先以`npm run setup:hooks`安裝。`npm run check`仍提供完整檢查，包含全部Vitest；不是每次小修都必跑，也不要因AGENTS的泛用全量建議忽略使用者限制。無本版全量報告時不得宣稱全部通過。`noUnusedLocals`是型別守門的一部分；不要為清警告刪掉初始化或驗證副作用。
 
 ```sh
 npm run verify:ui -- --only "manual-grid-menu-datum-origin" --shots out/ui --json out/ui.json
@@ -42,7 +43,7 @@ npm run lint:repo
 npm run audit:repo
 ```
 
-`docs:sync`只重新產生[盤點](repository-inventory.md)，不改能力宣稱。`lint:repo`只讀驗證目前文件分類、本地連結（含大小寫）與盤點是否過時；不驗外部網址可用性。`audit:repo`另寫`out/repository-audit.json`，不把本機報告提交當跨平台真值。現況改[project-state.md](project-state.md)，交付／紅隊／RCA加[DEV_LOG](../DEV_LOG.md)，接手資訊保持在[handoff](../handoff.md)，歷史不要覆蓋改寫成今天的版本。
+`docs:sync`只重新產生[盤點](repository-inventory.md)，不改能力宣稱。`lint:repo`只讀驗證目前文件分類、本地連結（含大小寫與是否為版本庫檔案）與盤點是否過時；不驗外部網址可用性。連結只能指向已追蹤或未忽略的新檔；`target/`、`dist/`、`out/`等建置產物在乾淨checkout不存在，必須寫成行內程式碼，不得寫成Markdown連結。`audit:repo`另寫`out/repository-audit.json`，不把本機報告提交當跨平台真值。現況改[project-state.md](project-state.md)，交付／紅隊／RCA加[DEV_LOG](../DEV_LOG.md)，接手資訊保持在[handoff](../handoff.md)，歷史不要覆蓋改寫成今天的版本。
 
 ## 外部與桌面驗證
 

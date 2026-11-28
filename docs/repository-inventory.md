@@ -47,6 +47,8 @@
 | `test:watch` | `vitest` |
 | `setup:git` | `git config diff.3dbx.textconv "node scripts/3dbx.mjs cat"` |
 | `doctor` | `node scripts/doctor.mjs` |
+| `setup:hooks` | `node scripts/install-git-hooks.mjs` |
+| `prepush` | `node scripts/prepush.mjs` |
 | `make:kit` | `vitest run --config tests/kit/vitest.kit.config.ts` |
 | `make:drawing` | `vitest run --config tests/kit/vitest.kit.config.ts drawing-parts` |
 | `lint:deps` | `node scripts/check-deps.mjs` |
