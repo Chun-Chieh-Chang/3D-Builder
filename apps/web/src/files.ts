@@ -294,10 +294,17 @@ export async function pickDwgExportTarget(suggestedName: string): Promise<FileSy
 export const foldersUnsupported = () => t('files.foldersUnsupported');
 
 /** The project folder (B9.4): the folder picker; null when the user cancels. */
-export async function pickProjectFolder(mode: 'read' | 'readwrite' = 'read'): Promise<FileSystemDirectoryHandle | null> {
+export async function pickProjectFolder(mode: 'read' | 'readwrite' = 'read', startIn: FileSystemHandle | null = null): Promise<FileSystemDirectoryHandle | null> {
   if (!window.showDirectoryPicker) throw new Error(foldersUnsupported());
+  const open = (withStartIn: boolean) => window.showDirectoryPicker!({ id: 'project-folder', mode, ...(withStartIn && startIn ? { startIn } : {}) });
   try {
-    return await window.showDirectoryPicker({ id: 'project-folder', mode });
+    try {
+      return await open(true);
+    } catch (e) {
+      if (cancelled(e)) return null;
+      if (startIn) return await open(false);
+      throw e;
+    }
   } catch (e) {
     if (cancelled(e)) return null;
     throw e;

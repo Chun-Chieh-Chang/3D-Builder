@@ -637,6 +637,8 @@ class AppStore {
   private project: FileSystemDirectoryHandle | null = null;
   /** Answers the open project-folder dialog. */
   private folderAnswer: ((folder: FileSystemDirectoryHandle | null) => void) | null = null;
+  /** Optional handle (usually the file just chosen) whose folder 「選擇資料夾…」 opens at. */
+  private folderStartIn: FileSystemHandle | null = null;
   /** The project folder of an earlier session: used once the browser allows it again. */
   private remembered: FileSystemDirectoryHandle | null = null;
   /** The browser was asked to keep its storage this session (ADR 0233): once is enough. */
@@ -3913,7 +3915,7 @@ class AppStore {
   private async unpackPackage(picked: OpenedFile): Promise<void> {
     try {
       const pkg = await readPackage(picked.bytes);
-      const folder = await this.askForFolder(t('pack.askFolder', { name: picked.name, n: pkg.files.length }), true);
+      const folder = await this.askForFolder(t('pack.askFolder', { name: picked.name, n: pkg.files.length }), true, picked.handle);
       if (!folder) return;
       const changes = await compareWithFolder(pkg, (p) => fileIn(folder, p).then(readBytes, () => null));
       const added = changes.filter((c) => c.change === 'new').map((c) => c.path);
@@ -3981,7 +3983,7 @@ class AppStore {
       const bodies = this.state.result?.bodies ?? [];
       if (this.assembly || !handle || this.state.dirty) return this.notify(t('derived.saveFirst'), 'error');
       if (bodies.length === 0) return this.notify(t('derived.noBodies'), 'error');
-      const folder = await this.askForFolder(t('derived.askFolder', { name: handle.name, n: bodies.length }), true);
+      const folder = await this.askForFolder(t('derived.askFolder', { name: handle.name, n: bodies.length }), true, handle);
       if (!folder) return;
       const here = await folder.resolve(handle);
       if (!here || here.length !== 1) return this.notify(t('derived.notThatFolder', { name: handle.name }), 'error');
@@ -4012,7 +4014,7 @@ class AppStore {
       this.notify(t('stepasm.reading', { name: picked.name }));
       const plan = await this.api.readStepAssembly(picked.bytes);
       const parts = plan.prototypes.filter((p) => p.part).length;
-      const folder = await this.askForFolder(t('stepasm.askFolder', { name: picked.name, parts, subs: plan.prototypes.filter((p) => p.children).length - 1 }), true);
+      const folder = await this.askForFolder(t('stepasm.askFolder', { name: picked.name, parts, subs: plan.prototypes.filter((p) => p.children).length - 1 }), true, picked.handle);
       if (!folder) return;
       const taken = (await listFiles(folder, [PART_FILE_EXTENSION, ASSEMBLY_FILE_EXTENSION])).files;
       const out = await stepAssemblyFiles(plan, picked.name.replace(/\.(step|stp)$/i, ''), taken);
@@ -4236,7 +4238,7 @@ class AppStore {
       const handle = asm ? asm.fileHandle() : this.fileHandle;
       const dirty = asm ? asm.getState().dirty : this.state.dirty;
       if (this.drawing || !handle || dirty) return this.notify(t('drawing.saveFirst'), 'error');
-      const project = await this.projectFolder(t('drawing.askProject'));
+      const project = await this.projectFolder(t('drawing.askProject'), handle);
       if (!project) return;
       const path = await pathIn(project, handle);
       if (path === null) return this.notify(t('drawing.notInProject', { folder: project.name }), 'error');
@@ -4270,7 +4272,7 @@ class AppStore {
     let path = folder ? await pathIn(folder, picked.handle) : null;
     let reason = t('folder.askRefs', { name: picked.name });
     while (path === null) {
-      folder = await this.askForFolder(reason);
+      folder = await this.askForFolder(reason, false, picked.handle);
       if (!folder) return;
       path = await pathIn(folder, picked.handle);
       reason = t('folder.askNotIn', { folder: folder.name, name: picked.name });
@@ -4421,7 +4423,7 @@ class AppStore {
     let path = folder ? await pathIn(folder, picked.handle) : null;
     let reason = t('folder.askRefs', { name: picked.name });
     while (path === null) {
-      folder = await this.askForFolder(reason);
+      folder = await this.askForFolder(reason, false, picked.handle);
       if (!folder) return; // nothing is opened; the current document stays
       path = await pathIn(folder, picked.handle);
       reason = t('folder.askNotIn', { folder: folder.name, name: picked.name });
@@ -4431,9 +4433,10 @@ class AppStore {
     this.notify(t('file.opened', { name: picked.name }));
   }
 
-  private async projectFolder(reason: string): Promise<FileSystemDirectoryHandle | null> {
+  private async projectFolder(reason: string, startIn: FileSystemHandle | null = null): Promise<FileSystemDirectoryHandle | null> {
     if (this.project) return this.project;
-    const folder = (await this.rememberedWithAccess()) ?? (await this.askForFolder(reason));
+    const hint = startIn ?? this.drawing?.file() ?? this.assembly?.file() ?? this.fileHandle ?? null;
+    const folder = (await this.rememberedWithAccess()) ?? (await this.askForFolder(reason, false, hint));
     if (folder) this.useProject(folder);
     return folder;
   }
@@ -4442,7 +4445,7 @@ class AppStore {
   async changeProjectFolder(): Promise<void> {
     const a = this.assembly;
     if (!a?.canChangeProject()) return;
-    const folder = await this.askForFolder(t('folder.askChange'));
+    const folder = await this.askForFolder(t('folder.askChange'), false, a.file() ?? this.project);
     if (!folder) return;
     this.useProject(folder);
     await a.setProject(folder);
@@ -4589,10 +4592,11 @@ class AppStore {
   }
 
   /** Opens the project-folder dialog: the folder picker needs a click of its own, on the dialog's button. */
-  private askForFolder(reason: string, write = false): Promise<FileSystemDirectoryHandle | null> {
+  private askForFolder(reason: string, write = false, startIn: FileSystemHandle | null = null): Promise<FileSystemDirectoryHandle | null> {
     this.folderAnswer?.(null);
     return new Promise((resolve) => {
       this.folderAnswer = resolve;
+      this.folderStartIn = startIn;
       this.set({ folderRequest: reason, folderWrite: write });
     });
   }
@@ -4600,7 +4604,7 @@ class AppStore {
   /** 「選擇資料夾…」 in the project-folder dialog. */
   async chooseFolder(): Promise<void> {
     try {
-      const folder = await pickProjectFolder(this.state.folderWrite ? 'readwrite' : 'read');
+      const folder = await pickProjectFolder(this.state.folderWrite ? 'readwrite' : 'read', this.folderStartIn);
       if (folder) this.answerFolder(folder);
     } catch (e) {
       this.notify(t('folder.chooseFailed', { why: e instanceof Error ? e.message : String(e) }), 'error');
@@ -4614,6 +4618,7 @@ class AppStore {
   private answerFolder(folder: FileSystemDirectoryHandle | null): void {
     const answer = this.folderAnswer;
     this.folderAnswer = null;
+    this.folderStartIn = null;
     this.set({ folderRequest: null, folderWrite: false });
     answer?.(folder);
   }

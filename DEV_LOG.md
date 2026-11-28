@@ -1,5 +1,15 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-28 — 「選擇資料夾…」預設開啟所選檔案所在資料夾
+
+- **需求**：點選「選擇專案資料夾」對話框中的「選擇資料夾…」時，原生資料夾選擇器預設應直接開在所選檔案（或目前開啟文件）所在的資料夾，而非停在瀏覽器前次記憶的位置。
+- **實作**：
+  - `apps/web/src/files.ts`（`pickProjectFolder`）：新增可選參數 `startIn: FileSystemHandle | null = null`。當有傳入時將 `{ id: 'project-folder', mode, startIn }` 交給 `window.showDirectoryPicker`（Chromium / WebView2 中 `startIn` 優先於 `id`，傳入 `FileSystemFileHandle` 會直接開在其父資料夾）；呼叫前零 `await` 保留使用者點擊手勢（transient user activation）。若瀏覽器因過期／受限／OPFS handle 而對 `startIn` 拋出非 `AbortError` 例外，自動移除 `startIn` 重試一次；若為使用者取消（`AbortError`）則直接回傳 `null` 不重試。
+  - `apps/web/src/state/store.ts`：於 `AppStore` 新增暫存欄位 `folderStartIn`，由 `askForFolder` 接收並於 `chooseFolder` 傳給 `pickProjectFolder`，並在 `answerFolder` 清空以防止跨對話框洩漏；於 `openDrawing`、`openAssembly`、`unpackPackage`、`generateAssembly`、`importStepAssemblyNow`、`newDrawing`、`projectFolder` 及 `changeProjectFolder` 全面接線傳入對應檔案／專案 handle。
+- **驗證**：
+  - 單元測試 `tests/phase5/files-handle-timeout.test.ts` 新增 `pickProjectFolder startIn` 6 項測試（傳入 `startIn`、省略／`null` 時不附帶 `startIn` 鍵、非 `AbortError` 降級重試、`AbortError` 不重試、無 `startIn` 時原樣拋錯）。
+  - E2E 測試 `tests/e2e/manual-open-location.js` 補齊開啟 `.3dbd` 觸發「選擇資料夾…」驗證 `startIn`、選錯資料夾重試保留 `startIn`、取消後後續無關對話框不殘留 `folderStartIn`、選對資料夾成功開啟等流程。
+
 ## 2026-11-27（深夜）— 工作區 MECE 清潔、多客戶端 MCP 隔離就緒與 verify:ui 長程時好時壞根因分析（RCA）
 
 - **MECE 清潔與未追蹤防護**：
