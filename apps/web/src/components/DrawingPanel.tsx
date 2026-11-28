@@ -128,6 +128,7 @@ export function ViewPalette() {
 
 /** Whether the task pane was left closed (a convenience of this browser only). */
 const PANE_KEY = '3db.drawing.taskPane';
+const OVERLAY_QUERY = '(max-width: 768px)';
 const paneClosed = (): boolean => {
   try {
     return localStorage.getItem(PANE_KEY) === 'closed';
@@ -142,8 +143,20 @@ const paneClosed = (): boolean => {
  */
 export function DrawingTaskPane() {
   const drw = useStore((s) => s.drw);
+  const [overlay, setOverlay] = useState(() => window.matchMedia(OVERLAY_QUERY).matches);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [closed, setClosed] = useState(paneClosed);
+  useEffect(() => {
+    const media = window.matchMedia(OVERLAY_QUERY);
+    const update = () => setOverlay(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
   const set = (c: boolean) => {
+    if (overlay) {
+      setMobileOpen(!c);
+      return;
+    }
     setClosed(c);
     try {
       localStorage.setItem(PANE_KEY, c ? 'closed' : 'open');
@@ -152,7 +165,7 @@ export function DrawingTaskPane() {
     }
   };
   if (drw && page(drw.doc, drw.activePageIndex).cad) return null;
-  if (closed)
+  if (overlay ? !mobileOpen : closed)
     return (
       <aside className="task-pane closed">
         <button type="button" className="task-pane-tab" title={t('drawingUi.taskPaneExpand')} data-action="openTaskPane" onClick={() => set(false)}>
@@ -162,19 +175,24 @@ export function DrawingTaskPane() {
       </aside>
     );
   return (
-    <aside className="task-pane" data-group="palette">
-      <div className="task-pane-head">
-        <Icon name="palette" />
-        <strong>{t('drawingUi.palette')}</strong>
-        <button type="button" className="task-pane-close" title={t('drawingUi.taskPaneCollapse')} data-action="closeTaskPane" onClick={() => set(true)}>
-          <Icon name="chevron" />
-        </button>
-      </div>
-      <div className="task-pane-body">
-        <ViewPalette />
-        <StandardViews />
-      </div>
-    </aside>
+    <>
+      {overlay && (
+        <button type="button" className="task-pane-backdrop" tabIndex={-1} aria-label={t('drawingUi.taskPaneCollapse')} onClick={() => set(true)} />
+      )}
+      <aside className="task-pane" data-group="palette">
+        <div className="task-pane-head">
+          <Icon name="palette" />
+          <strong>{t('drawingUi.palette')}</strong>
+          <button type="button" className="task-pane-close" title={t('drawingUi.taskPaneCollapse')} data-action="closeTaskPane" onClick={() => set(true)}>
+            <Icon name="chevron" />
+          </button>
+        </div>
+        <div className="task-pane-body">
+          <ViewPalette />
+          <StandardViews />
+        </div>
+      </aside>
+    </>
   );
 }
 

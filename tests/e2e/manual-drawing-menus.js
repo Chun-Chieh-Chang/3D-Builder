@@ -175,6 +175,150 @@ M.run = async () => {
     await H.wait(200);
     return { pass: folder.textContent.includes('註記（1）') && row.textContent.includes('去毛邊') && kind === 'annotation' && (page()?.annotations ?? []).length === 0, folder: folder.textContent, row: row.textContent, kind };
   });
+  await step('9 the drawing fits a phone: both panels are drawers, the sheet keeps its width, and controls are usable by touch at 375, 390 and 768 px', async () => {
+    const frame = document.createElement('iframe');
+    frame.setAttribute('title', 'drawing responsive audit');
+    frame.style.cssText = 'position:fixed;left:0;top:0;width:375px;height:812px;border:0;z-index:2000;background:var(--bg)';
+    document.body.append(frame);
+    const failures = [];
+    const layouts = [];
+    const check = (ok, message) => { if (!ok) failures.push(message); };
+    try {
+      await new Promise((resolve, reject) => {
+        frame.addEventListener('load', resolve, { once: true });
+        frame.addEventListener('error', reject, { once: true });
+        frame.src = '/';
+      });
+      const w = frame.contentWindow;
+      const evaluate = (fn) => w.eval(`(${fn.toString()})()`);
+      const moduleUrl = new URL('phase2-assembly.js?' + Date.now(), import.meta.url).href;
+      w.localStorage.removeItem('3db.drawing.taskPane');
+      await w.eval(`import(${JSON.stringify(moduleUrl)})`);
+      const H = w.__ui2;
+      const touchTargets = () => evaluate(() => {
+        const visible = (el) => {
+          const r = el.getBoundingClientRect();
+          const s = getComputedStyle(el);
+          return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && !el.closest('[inert]');
+        };
+        const selectors = '.drawing-viewport > .heads-up button, .drawing-sheet-tabs button, .drawing-sheet-tab, .task-pane button, .left-panel button, .left-panel input:not([type="checkbox"]):not([type="radio"]), .left-panel select, .left-panel textarea, .left-panel summary';
+        return [...document.querySelectorAll(selectors)].filter(visible).flatMap((el) => {
+          const r = el.getBoundingClientRect();
+          const size = getComputedStyle(el).fontSize;
+          const label = (el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent || el.getAttribute('data-action') || el.className || el.tagName).trim().replace(/\s+/g, ' ').slice(0, 50);
+          return [
+            ...(r.width < 44 || r.height < 44 ? [`${label}: ${r.width.toFixed(1)}×${r.height.toFixed(1)}`] : []),
+            ...(parseFloat(size) < 14 ? [`${label}: ${size}`] : []),
+          ];
+        });
+      });
+      H.ready();
+      await H.project({ '定位板.3dbx': `${H.GOLDEN}locating-plate.3dbx` });
+      await H.open('定位板.3dbx');
+      await H.waitFor(() => H.store.getState().result?.mesh, 20000, 'the part');
+      await H.newDrawing(['front', 'top', 'right']);
+      await H.waitFor(() => {
+        const drw = H.store.getState().drw;
+        return drw && H.page(drw.doc)?.views.length === 3 && [...drw.lines.values()].filter(Boolean).length === 3;
+      }, 30000, 'the three views');
+      for (const width of [375, 390, 768]) {
+        frame.style.width = `${width}px`;
+        await H.wait(250);
+        const closed = await evaluate(() => {
+          const doc = document.documentElement;
+          const drawing = document.querySelector('[data-drawing-canvas]').getBoundingClientRect();
+          const pane = document.querySelector('.task-pane');
+          const tab = pane?.querySelector('.task-pane-tab');
+          const tabRect = tab?.getBoundingClientRect();
+          const hit = tabRect ? document.elementFromPoint(tabRect.left + tabRect.width / 2, tabRect.top + tabRect.height / 2) : null;
+          return {
+            innerWidth,
+            scrollWidth: doc.scrollWidth,
+            drawingWidth: drawing.width,
+            paneClosed: pane?.classList.contains('closed') === true,
+            paneWidth: pane?.getBoundingClientRect().width,
+            tabHit: !!tab && (hit === tab || tab.contains(hit)),
+          };
+        });
+        check(closed.scrollWidth <= closed.innerWidth, `${width}: document overflows (${closed.scrollWidth}/${closed.innerWidth})`);
+        check(closed.paneClosed, `${width}: the task pane must start closed`);
+        check(closed.paneWidth >= 44, `${width}: the closed task pane tab is only ${closed.paneWidth}px wide`);
+        check(closed.tabHit, `${width}: the closed task pane tab cannot be touched`);
+        check(closed.drawingWidth >= width - 45, `${width}: the closed task pane leaves only ${closed.drawingWidth}px for the drawing`);
+        await evaluate(() => document.querySelector('[data-action="openTaskPane"]')?.click());
+        await H.wait(150);
+        const open = await evaluate(() => {
+          const pane = document.querySelector('.task-pane');
+          const r = pane.getBoundingClientRect();
+          const style = getComputedStyle(pane);
+          return {
+            panePosition: style.position,
+            paneLeft: r.left,
+            paneRight: r.right,
+            paneWidth: r.width,
+            drawingWidth: document.querySelector('[data-drawing-canvas]').getBoundingClientRect().width,
+            backdrop: !!document.querySelector('.task-pane-backdrop'),
+          };
+        });
+        check(open.panePosition === 'absolute', `${width}: the open task pane must overlay instead of consuming a grid column (${open.panePosition})`);
+        check(open.paneLeft >= 0 && open.paneRight <= width + 1, `${width}: the task pane is outside the viewport`);
+        check(open.drawingWidth >= width - 45, `${width}: the open task pane leaves only ${open.drawingWidth}px for the drawing`);
+        check(open.backdrop, `${width}: the open task pane has no backdrop`);
+        const openTouch = await touchTargets();
+        check(openTouch.length === 0, `${width}: open task pane controls are too small: ${openTouch.slice(0, 8).join('; ')}`);
+        await evaluate(() => document.querySelector('.task-pane-backdrop')?.click());
+        await H.wait(100);
+        check(await evaluate(() => document.querySelector('.task-pane')?.classList.contains('closed') === true), `${width}: the task pane backdrop does not close it`);
+        await evaluate(() => document.querySelector('.sidebar-toggle').click());
+        await H.wait(150);
+        const drawer = await evaluate(() => {
+          const sidebar = document.querySelector('#workspace-sidebar');
+          return {
+            collapsed: sidebar.hasAttribute('data-collapsed'),
+            backdrop: !!document.querySelector('.sidebar-backdrop'),
+            width: sidebar.clientWidth,
+            scrollWidth: sidebar.scrollWidth,
+          };
+        });
+        check(!drawer.collapsed && drawer.backdrop, `${width}: the left drawer does not open with a backdrop`);
+        check(drawer.scrollWidth <= drawer.width + 1, `${width}: the left drawer overflows horizontally (${drawer.scrollWidth}/${drawer.width})`);
+        const touch = await touchTargets();
+        check(touch.length === 0, `${width}: touch targets or text are too small: ${touch.slice(0, 8).join('; ')}`);
+        await evaluate(() => document.querySelector('.sidebar-backdrop').click());
+        await H.wait(100);
+        await evaluate(() => window.__ui2.store.openDialog('shortcuts'));
+        await H.wait(150);
+        const dialog = await evaluate(() => {
+          const modal = document.querySelector('.modal');
+          const r = modal.getBoundingClientRect();
+          modal.scrollTop = modal.scrollHeight;
+          const close = [...modal.querySelectorAll('.modal-actions button')].at(-1).getBoundingClientRect();
+          const controls = [...modal.querySelectorAll('button, input, select, textarea')];
+          return {
+            left: r.left,
+            right: r.right,
+            bottom: r.bottom,
+            height: innerHeight,
+            scrollWidth: modal.scrollWidth,
+            clientWidth: modal.clientWidth,
+            closeBottom: close.bottom,
+            small: controls.filter((el) => el.getBoundingClientRect().width < 44 || el.getBoundingClientRect().height < 44).length,
+            tiny: controls.filter((el) => parseFloat(getComputedStyle(el).fontSize) < 14).length,
+          };
+        });
+        check(dialog.left >= 0 && dialog.right <= width + 1, `${width}: the dialog is clipped horizontally (${dialog.left}..${dialog.right})`);
+        check(dialog.bottom <= dialog.height + 1, `${width}: the dialog extends below the viewport`);
+        check(dialog.scrollWidth <= dialog.clientWidth + 1, `${width}: the dialog overflows horizontally`);
+        check(dialog.closeBottom <= dialog.bottom + 1, `${width}: the dialog action is not reachable`);
+        check(dialog.small === 0 && dialog.tiny === 0, `${width}: dialog has ${dialog.small} small targets and ${dialog.tiny} small labels`);
+        await evaluate(() => window.__ui2.store.openDialog(null));
+        layouts.push({ width, closed, open, openTouch, drawer, touch, dialog });
+      }
+    } finally {
+      frame.remove();
+    }
+    return { pass: failures.length === 0, failures, layouts };
+  });
   const pass = steps.every((s) => s.pass);
   return { name: 'manual-drawing-menus', steps, pass };
 };

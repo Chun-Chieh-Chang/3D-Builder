@@ -10,28 +10,22 @@ export function ColorRow({ field, value, onChange, onReset, canReset }: { field:
       <span>{t('drawingUi.color')}</span>
       <input
         type="color"
+        className="dim-style-color-input"
         data-field={field}
         value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : '#000000'}
         onChange={(e) => onChange(e.target.value.toUpperCase())}
-        style={{ width: 28, height: 22, padding: 0, border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}
       />
-      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+      <div className="dim-style-color-swatches">
         {COLOR_SWATCHES.map((hex) => (
           <button
             key={hex}
             type="button"
+            className="dim-style-color-swatch"
             title={hex}
+            aria-pressed={value.toUpperCase() === hex}
             data-color-swatch={hex}
             onClick={() => onChange(hex)}
-            style={{
-              width: 16,
-              height: 16,
-              padding: 0,
-              borderRadius: 4,
-              background: hex,
-              border: value.toUpperCase() === hex ? '2px solid var(--accent)' : '1px solid var(--border)',
-              cursor: 'pointer',
-            }}
+            style={{ background: hex }}
           />
         ))}
       </div>
