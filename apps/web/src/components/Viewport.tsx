@@ -15,6 +15,7 @@ import { buildOverlay, SKETCH_COLORS } from '../sketcher/overlay';
 import type { EntryView } from '../sketcher/controller';
 import type { P2 } from '@3db/sketch';
 import { store, useSketcherView, useStore } from '../state/store';
+import { resolveActiveRotationAxis } from '../state/axisPreview';
 import { FEATURE_LABEL, PICK_FILTER_LABEL } from '../strings';
 import type { RebuildPayload } from '../worker/protocol';
 import { topologyOf } from '../state/selectionSets';
@@ -63,6 +64,14 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
   const surfaceFaces=sectionClearance||feature?.type==='gear'||feature?.type==='rack'||feature?.type==='replaceFace'||feature?.type==='radiatedSurface';
   const projection = feature?.type === 'projectedCurve' && feature.mode === 'sketchOnFaces' ? feature : null;
   const combine = feature?.type === 'combine' || feature?.type === 'knit' || feature?.type === 'thicken' || feature?.type === 'cutWithSurface';
+  const axisRef: Ref | null =
+    feature?.type === 'thread' || feature?.type === 'knurl'
+      ? typeof feature.axis === 'object' && feature.axis.name
+        ? feature.axis
+        : null
+      : feature?.type === 'moveCopyBody' && typeof feature.rotationAxis === 'object' && feature.rotationAxis.name
+        ? feature.rotationAxis
+        : null;
   const prompt_ = combine
     ? t(feature?.type === 'knit' ? 'pick.knit' : feature?.type === 'thicken' ? 'pick.thicken' : feature?.type === 'cutWithSurface' ? 'pick.cutWithSurface' : 'pick.combine')
     : faceFeature
@@ -79,8 +88,14 @@ function picking(feature: Feature | undefined, editing: boolean, modelTool: 'con
     edges: surfaceEdges || !!projection || (!!edgeFeature && !byGroups) || !!want?.edges || modelTool !== null || measuring || !editing,
     faces: surfaceFaces || !!projection || !editing || modelTool === 'convert' || (modelTool === 'intersect' || modelTool === 'silhouette') || !!upTo || !!faceFeature || combine || !!want?.faces || measuring || edgeFeature?.type === 'fillet' || edgeFeature?.type === 'chamfer',
     vertices: !!want?.vertices || endVertices.length > 0 || measuring || !editing || modelTool === 'convert',
-    pickedEdges: byGroups ? [] : edgeFeature ? (edgeFeature.type === 'edgeFlange' || edgeFeature.type === 'hem' ? (edgeFeature.edge.name ? [edgeFeature.edge] : []) : edgeFeature.edges) : (slots?.edges ?? []),
-    pickedFaces: projection ? (projection.faces ?? []) : edgeFeature?.type === 'fillet' ? [...(edgeFeature.faces ?? []), ...(edgeFeature.faces2 ?? []), ...(edgeFeature.center ?? [])] : edgeFeature?.type === 'chamfer' ? (edgeFeature.faces ?? []) : faceFeature ? (faceFeature.type === 'shell' ? [...faceFeature.faces, ...(faceFeature.faceThickness ?? []).map((x) => x.face)] : faceFeature.type === 'deleteFace' || faceFeature.type === 'offsetSurface' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : faceFeature.type === 'mutualTrim' ? (faceFeature.discard ?? []) : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? []),
+    pickedEdges: [
+      ...(byGroups ? [] : edgeFeature ? (edgeFeature.type === 'edgeFlange' || edgeFeature.type === 'hem' ? (edgeFeature.edge.name ? [edgeFeature.edge] : []) : edgeFeature.edges) : (slots?.edges ?? [])),
+      ...(axisRef?.kind === 'edge' ? [axisRef] : []),
+    ],
+    pickedFaces: [
+      ...(projection ? (projection.faces ?? []) : edgeFeature?.type === 'fillet' ? [...(edgeFeature.faces ?? []), ...(edgeFeature.faces2 ?? []), ...(edgeFeature.center ?? [])] : edgeFeature?.type === 'chamfer' ? (edgeFeature.faces ?? []) : faceFeature ? (faceFeature.type === 'shell' ? [...faceFeature.faces, ...(faceFeature.faceThickness ?? []).map((x) => x.face)] : faceFeature.type === 'deleteFace' || faceFeature.type === 'offsetSurface' ? faceFeature.faces : faceFeature.type === 'draft' ? [faceFeature.neutral, ...faceFeature.faces] : faceFeature.type === 'mutualTrim' ? (faceFeature.discard ?? []) : [faceFeature.face]) : upTo ? endFaces : (slots?.faces ?? [])),
+      ...(axisRef?.kind === 'face' ? [axisRef] : []),
+    ],
     pickedVertices: slots ? slots.vertices : endVertices,
     /** Default and reference planes, axes and points the geometry being defined is based on: they are drawn while they are used. */
     referenceDatums: slots?.datums ?? [],
@@ -289,6 +304,7 @@ export function Viewport() {
           ? thicknessColors(thicknessReport)
           : null;
   const pick = picking(feature, !!editing, modelTool, measure !== null, editing?.kind === 'sketchPlane');
+  const activeAxis = useMemo(() => (editing?.kind === 'feature' ? resolveActiveRotationAxis(feature, result) : null), [editing?.kind, feature, result]);
   const dofMotion = useStore((s) => s.dofMotion);
   const fixPreview = useStore((s) => s.fixPreview);
 
@@ -389,8 +405,21 @@ export function Viewport() {
         if (c) datums.systems.push({ key: f.id, ...c, highlighted: lit(f.id) });
       }
     }
+    if (activeAxis) {
+      const span = activeAxis.span ? { span: activeAxis.span } : {};
+      if (activeAxis.datumId) {
+        const existing = datums.axes.findIndex((a) => a.key === activeAxis.datumId);
+        if (existing >= 0) {
+          datums.axes[existing] = { ...datums.axes[existing]!, highlighted: true, emphasized: true, ...span };
+        } else {
+          datums.axes.push({ key: activeAxis.datumId, origin: activeAxis.origin, dir: activeAxis.dir, highlighted: true, emphasized: true, ...span });
+        }
+      } else {
+        datums.axes.push({ key: '__activeRotationAxis__', origin: activeAxis.origin, dir: activeAxis.dir, highlighted: true, emphasized: true, ...span, pickable: false });
+      }
+    }
     v.setDatums(datums);
-  }, [feature, editing, selected, doc, result]);
+  }, [feature, editing, selected, doc, result, activeAxis]);
 
   // Cosmetic threads (C4.9, ADR 0156): lightweight 3D annotation curves
   useEffect(() => {
@@ -420,12 +449,17 @@ export function Viewport() {
     const pickedContours = pickedFeature && 'contours' in pickedFeature ? pickedFeature.contours ?? null : null;
     for (const [id, geometry] of result?.sketchGeometry ?? []) {
       const frame = result?.frames.get(id);
-      const forced = id === contourPick?.sketchId;
+      const forced = id === contourPick?.sketchId || activeAxis?.sketchId === id;
       if (!frame || id === editing?.featureId || (!forced && !isShown(doc, id))) continue;
       const status = result?.features.find((f) => f.id === id)?.sketch?.status;
       const color = status === 'over' ? SKETCH_COLORS.over : status === 'fully' ? SKETCH_COLORS.fully : SKETCH_COLORS.under;
       const curves: SketchOverlay['curves'] = [];
-      for (const g of geometry.values()) if (g.type !== 'point') curves.push({ points: sample(g, px), color, dashed: g.construction });
+      for (const [eid, g] of geometry) {
+        if (g.type !== 'point') {
+          const curveColor = activeAxis?.sketchId === id && activeAxis.sketchLineId === eid ? SKETCH_COLORS.hover : color;
+          curves.push({ points: sample(g, px), color: curveColor, dashed: g.construction });
+        }
+      }
       const fills: OverlayFill[] = [];
       if (forced && contourPick) {
         contourPick.outlines.forEach((o, i) => {
@@ -438,7 +472,7 @@ export function Viewport() {
       overlays.push({ frame, curves, points: [], labels: [], ...(fills.length > 0 ? { fills } : {}) });
     }
     v.setSketches(overlays);
-  }, [doc, result, editing?.featureId, zoomBand, contourPick, contourHover]);
+  }, [doc, result, editing?.featureId, zoomBand, contourPick, contourHover, activeAxis]);
 
   // The pictures of the sketch being edited, under its curves (ADR 0116): decoded once per image, and drawn again when a picture changes.
   const pictureCount = useRef(0);

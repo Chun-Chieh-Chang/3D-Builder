@@ -590,7 +590,18 @@ export interface PlaneDisplay {
  * system three arrows: the last two a constant length on screen.
  */
 export interface DatumDisplay {
-  axes: { key: string; origin: [number, number, number]; dir: [number, number, number]; highlighted?: boolean }[];
+  axes: {
+    key: string;
+    origin: [number, number, number];
+    dir: [number, number, number];
+    highlighted?: boolean;
+    /** Draws a thick dashed high-visibility line over solid geometry (e.g. active rotation axis while editing). */
+    emphasized?: boolean;
+    /** Signed extents along `dir` from `origin` so the axis covers its defining sketch or edge even with no body yet. */
+    span?: [number, number];
+    /** Whether clicking this axis picks it as a datum (`false` for read-only feature axis previews). */
+    pickable?: boolean;
+  }[];
   points: { key: string; p: [number, number, number]; highlighted?: boolean }[];
   systems: { key: string; origin: [number, number, number]; x: [number, number, number]; y: [number, number, number]; z: [number, number, number]; highlighted?: boolean }[];
 }
@@ -801,6 +812,7 @@ export class Viewer {
   private triadDrag: { move: (e: PointerEvent) => void; up: () => void } | null = null;
   private datums: DatumDisplay = { axes: [], points: [], systems: [] };
   private datumGroup: THREE.Group | null = null;
+  private datumMaterials: LineMaterial[] = [];
   private overlayGroup: THREE.Group | null = null;
   private picturesGroup: THREE.Group | null = null;
   /** `held`: being dragged, so the overlay redrawn meanwhile leaves its screen offset where the pointer put it. */
@@ -929,6 +941,7 @@ export class Viewer {
     this.setOrigin(false);
     this.setTriad(null);
     this.setGuides([]);
+    this.setDatums({ axes: [], points: [], systems: [] });
     this.setPlanes([]);
     this.setCosmeticThreads([]);
     this.setReferenceMeshes([]);
@@ -2311,19 +2324,22 @@ export class Viewer {
     if (this.datumGroup) {
       this.overlayScene.remove(this.datumGroup);
       disposeGroup(this.datumGroup);
+      for (const m of this.datumMaterials) m.dispose();
       this.datumGroup = null;
+      this.datumMaterials = [];
     }
     const { axes, points, systems } = this.datums;
     if (axes.length + points.length + systems.length > 0) {
       const group = new THREE.Group();
       const px = this.pixelSize();
+      const { w, h } = this.canvasSize();
       const box = this.contentBox();
       const reach = box.isEmpty() ? 50 : box.getSize(new THREE.Vector3()).length();
       /** Lit: what the PropertyManager says is used, or what the cursor is on (its own click would take it). */
       const lit = (key: string, highlighted?: boolean) => highlighted === true || this.hoveredDatum === key;
-      const line = (a: THREE.Vector3, b: THREE.Vector3, color: number, key: string) => {
+      const line = (a: THREE.Vector3, b: THREE.Vector3, color: number, key?: string) => {
         const seg = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color, depthTest: false }));
-        seg.userData.datumKey = key; // what a click on this line stands for
+        if (key !== undefined) seg.userData.datumKey = key; // what a click on this line stands for
         group.add(seg);
       };
       const dot = (p: THREE.Vector3, key: string, isLit: boolean) => {
@@ -2332,16 +2348,47 @@ export class Viewer {
         group.add(made);
       };
       for (const axis of axes) {
-        // through the extent of the model, and a little beyond it, whatever the axis starts at
+        const rawD = new THREE.Vector3(...axis.dir);
+        if (rawD.lengthSq() < 1e-18 || !Number.isFinite(rawD.x + rawD.y + rawD.z)) continue;
+        // through the extent of the model (and any defining sketch/edge span), and a little beyond it
         const o = new THREE.Vector3(...axis.origin);
-        const d = new THREE.Vector3(...axis.dir).normalize();
+        const d = rawD.normalize();
         let [t0, t1] = [-reach / 2, reach / 2];
+        let tMin = Infinity;
+        let tMax = -Infinity;
         if (!box.isEmpty()) {
-          const along = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).sub(o).dot(d));
-          const margin = 0.1 * (Math.max(...along) - Math.min(...along)) + 5;
-          [t0, t1] = [Math.min(...along) - margin, Math.max(...along) + margin];
+          for (let i = 0; i < 8; i++) {
+            const p = new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).sub(o).dot(d);
+            if (p < tMin) tMin = p;
+            if (p > tMax) tMax = p;
+          }
         }
-        line(o.clone().addScaledVector(d, t0), o.clone().addScaledVector(d, t1), lit(axis.key, axis.highlighted) ? COLORS.edgeHover : 0x7048a8, axis.key);
+        if (axis.span && Number.isFinite(axis.span[0]) && Number.isFinite(axis.span[1])) {
+          const lo = Math.min(axis.span[0], axis.span[1]);
+          const hi = Math.max(axis.span[0], axis.span[1]);
+          if (lo < tMin) tMin = lo;
+          if (hi > tMax) tMax = hi;
+        }
+        if (tMin <= tMax) {
+          const margin = (axis.emphasized ? 0.15 : 0.1) * Math.max(tMax - tMin, 1) + 5;
+          [t0, t1] = [tMin - margin, tMax + margin];
+        }
+        const p0 = o.clone().addScaledVector(d, t0);
+        const p1 = o.clone().addScaledVector(d, t1);
+        const pickKey = axis.pickable === false ? undefined : axis.key;
+        if (axis.emphasized) {
+          const geo = new LineSegmentsGeometry().setPositions([p0.x, p0.y, p0.z, p1.x, p1.y, p1.z]);
+          const mat = new LineMaterial({ color: COLORS.edgeHover, linewidth: 2.5, dashed: true, dashSize: 8 * px, gapSize: 4 * px, dashScale: 1, depthTest: false, transparent: true });
+          mat.resolution.set(w, h);
+          const seg2 = new LineSegments2(geo, mat);
+          seg2.computeLineDistances();
+          seg2.renderOrder = 6;
+          group.add(seg2);
+          this.datumMaterials.push(mat);
+          if (pickKey !== undefined) line(p0, p1, COLORS.edgeHover, pickKey);
+        } else {
+          line(p0, p1, lit(axis.key, axis.highlighted) ? COLORS.edgeHover : 0x7048a8, pickKey);
+        }
       }
       for (const p of points) dot(new THREE.Vector3(...p.p), p.key, lit(p.key, p.highlighted));
       const len = 40 * px;
@@ -3407,6 +3454,7 @@ export class Viewer {
     if (w === 0 || h === 0) return; // keep the last good frustum; a zero size would distort the aspect ratio
     this.renderer.setSize(w, h);
     for (const m of this.measureMaterials) m.resolution.set(w, h);
+    for (const m of this.datumMaterials) m.resolution.set(w, h);
     if (this.pendingFit) {
       this.fitView();
       return;
@@ -3421,7 +3469,7 @@ export class Viewer {
   private viewChanged(): void {
     if (this.originShown) this.paintOrigin(); // a constant size on screen
     this.scaleTriad();
-    if (this.datums.points.length + this.datums.systems.length > 0) this.paintDatums();
+    if (this.datums.points.length + this.datums.systems.length > 0 || this.datums.axes.some((a) => a.emphasized)) this.paintDatums();
     this.events.onViewChange?.();
     for (const fn of this.viewListeners) fn();
     this.requestRender();

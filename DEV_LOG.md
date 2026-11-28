@@ -1,5 +1,21 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-28 — 編輯旋轉軸特徵時於 3D 畫布穿透實體醒目顯示所選旋轉軸
+
+- **問題現象**：在建立或編輯「旋轉填料／基材」等具備旋轉軸之特徵時（如截圖中之階梯圓柱），所選旋轉軸位於實體內部且來源草圖預設被特徵吸收隱藏，導致圖形區完全看不見目前選定的旋轉軸。
+- **根因分析（RCA）**：
+  1. `packages/model/src/visibility.ts` 的 `absorbedSketches` 預設隱藏旋轉特徵吸收的草圖；`apps/web/src/components/Viewport.tsx` 僅在 `contourPick` 時暫時顯示草圖，編輯 `revolve` 時未顯示來源草圖，也未標示所選軸線。
+  2. 旋轉軸多半包埋在不透明實體中心線內，即使顯示草圖線段或僅依賴模型邊線選取，仍缺乏貫穿並延伸出實體兩端且不受深度遮蔽的視覺指示。
+- **矯正與實作（CAPA）**：
+  - 新增 [`apps/web/src/state/axisPreview.ts`](apps/web/src/state/axisPreview.ts)（`resolveActiveRotationAxis`）：依循主執行緒分層規範（`@3db/sketch` 僅 `import type`），統一解析 `revolve`、`thread`、`knurl`、`moveCopyBody`、`pattern`（circular）與 `refPlane`（angle）的 3D 旋轉軸原點、單位方向向量、定義跨度（`span`）及關聯 `datumId`／`sketchId`／`sketchLineId`。
+  - 更新 [`packages/render/src/viewer.ts`](packages/render/src/viewer.ts)：擴充 `DatumDisplay['axes']`（`emphasized`、`span`、`pickable`）；於 `overlayScene`（`clearDepth()` 之後、`depthTest: false`）改以 `LineSegments2`＋`LineMaterial`（`linewidth: 2.5` 橘色虛線、`renderOrder = 6`）繪製強調軸並延伸至實體與定義跨度外緣，同時保留 `pickable !== false` 之 `THREE.Line` 供 `pickDatum` 點選；`datumGroup` 不納入 `contentBox()`／`fitView()`，確保「全部顯示」不會無限縮放；`resize()`、`viewChanged()` 與 `dispose()` 同步更新／釋放 `datumMaterials`。
+  - 更新 [`apps/web/src/components/Viewport.tsx`](apps/web/src/components/Viewport.tsx)：編輯特徵時以 `activeAxis` 將旋轉軸傳入 `setDatums`（強調繪製）與 `setSketches`（暫時顯示旋轉／螺牙來源草圖並以 `SKETCH_COLORS.hover` 高亮 `sketchLineId`，離開編輯即恢復隱藏）；`picking()` 為 `thread`／`knurl`／`moveCopyBody` 補齊 `edge`/`face` 參考高亮。
+- **確效驗證**：
+  - `npm run docs:sync` 更新清單並通過 `npm run lint:repo`（343 份文件、16 個工作區、282 個瀏覽器呼叫）。
+  - `npm run typecheck`、`npm run lint:rules`、`npm run lint:deps`、`npm run lint:i18n` 與 `npm run build` 全數通過。
+  - Vitest 8 檔 56/56 通過（含新增 [`tests/phase1/revolve-axis-preview.test.ts`](tests/phase1/revolve-axis-preview.test.ts) 8 項）。
+  - `npm run verify:ui` 針對旋轉軸、草圖軸線、基準與透明塗彩等相關群組（11 檔 22 項呼叫，含新增 WebGL 像素驗證 [`tests/e2e/manual-revolve-axis.js`](tests/e2e/manual-revolve-axis.js)）**22 / 22 全數通過**；後續補跑全量 `npm run verify:ui`：**282 / 282 全數通過（0 known defect、0 失敗、0 Console 錯誤）**。
+
 ## 2026-11-28 — 「選擇資料夾…」預設開啟所選檔案所在資料夾
 
 - **需求**：點選「選擇專案資料夾」對話框中的「選擇資料夾…」時，原生資料夾選擇器預設應直接開在所選檔案（或目前開啟文件）所在的資料夾，而非停在瀏覽器前次記憶的位置。
