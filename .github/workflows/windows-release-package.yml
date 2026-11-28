@@ -6,11 +6,11 @@ on:
       previous_version:
         description: Previous release version to upgrade in the test
         required: true
-        default: '0.7.0'
+        default: '0.7.1'
       previous_sha256:
         description: SHA-256 of the previous Windows installer
         required: true
-        default: '509d5851986624a43dd70eaaf597da5847f4b6e93d3e0b11e75a089977da443d'
+        default: '628547d016524443429bcef77d58d7caa647b8200d03b635d065dd3d5512516a'
 
 permissions:
   contents: read
