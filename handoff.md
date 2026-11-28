@@ -1,5 +1,19 @@
 # 交接與接續工作
 
+## 2026-11-27 — MECE 清理（待辦 #18 已解決）、多客戶端 MCP 矩陣整備與 verify:ui 逾時 RCA（待辦 #4 進展）
+
+- **待辦 #18（未追蹤目錄，已解決）**：經使用者同意，將 `261126/`、`Claude outputs/`、`阿郎/` 本地參考資產完整保留於磁碟，並在 `.gitignore` 寫入忽略規則；工作區恢復潔淨（`git status` 無未追蹤目錄雜訊）。
+- **多客戶端 MCP 組合件實測矩陣（P0 接續）**：
+  - 於 `out/mcp-client-qa/` 為使用者桌面截圖所列之客戶端（`trae`、`agnes`、`minimax`、`workbuddy`、`eigent`）全面建立隔離工作區，置入 `.mcp.json`、`.trae/mcp.json`、黃金夾具零件（`locating-plate.3dbx`、`diamond-pin.3dbx`）與 `prompt.txt`。
+  - 目前整體驗證狀態：
+    - 已驗證跑通（5 個）：Codex（`0.167.0`）、OpenCode（`1.17.4`）、Kiro（`2.21.1`）、Antigravity（`1.5.14`）、Cline（`3.0.74`）。
+    - 隔離設定與零件已佈署就緒（5 處）：Trae、Agnes Code、MiniMax Code、WorkBuddy AI、Eigent。
+    - 外部阻礙（3 個）：Claude Code（`2.1.328` 回傳未登入/額度）、Qoder（`1.0.25` 回傳未登入）、DeepSeek（回傳 402 餘額不足）。
+- **待辦 #4（verify:ui 偶發 4~5 支逾時 RCA）**：
+  - 第一性原理根因確立：`verify-ui.mjs` 在單一 Chromium 行程中連續航向 281 支測試，造成 Blink DOM IPC 與 GPU 行程資源碎片累積，耗時由 9 秒惡化為 18~24 秒；`phase2-assembly.js` 的 `H.loaded` 硬編碼 30s 門檻在後期高負載偶發超時（31~34s）。
+  - CAPA 方案（遵守 AGENTS §3.3 零妥協原則）：禁止隨意調大門檻；規劃在 `verify-ui.mjs` 加入週期性（每 40~50 支）重啟 Chrome 行程之架構隔離，全程鎖定 9 秒均速。
+- **仍待**：#9 兩份 v4 審閱稿（需於產出機之 `out/` 複製檢視，或於本機重新跑出圖腳本）；#4 實施 Chrome 批次回收架構隔離；#14 實件與手機版適配。
+
 ## 2026-11-27 — 待辦 #3：seed 73、52（已解決）
 
 - seed 52 早已解決；seed 73 的重建拋例外，根因是頂點投影取到遠處的垂足，已修（`exactRound.ts`，`fa27a4ab`），重建改為精確圓角。細節見 DEV_LOG 同日、ADR 0265 §12。

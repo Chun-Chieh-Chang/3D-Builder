@@ -28,3 +28,8 @@ packages/kernel/test/zz-*.test.ts
 # Real customer parts and the fixes derived from them. They stay on disk for the real-machine checks but
 # must never enter the repository.
 apps/web/public/*part1*.json
+
+# User local reference and scratch assets
+261126/
+Claude outputs/
+阿郎/

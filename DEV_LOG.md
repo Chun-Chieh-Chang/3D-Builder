@@ -1,5 +1,20 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-27（深夜）— 工作區 MECE 清潔、多客戶端 MCP 隔離就緒與 verify:ui 長程時好時壞根因分析（RCA）
+
+- **MECE 清潔與未追蹤防護**：
+  - 盤點根目錄 `261126/`、`Claude outputs/`、`阿郎/`，確認為使用者本機參考圖片與曲軸箱建模腳本/產物，全部完整保留於本機磁碟，並於 `.gitignore` 登錄忽略規則，工作區 `git status` 恢復 100% 潔淨防護。
+- **多客戶端 MCP 實測矩陣整備**：
+  - 依使用者桌面捷徑截圖，於 `out/mcp-client-qa/` 為桌面 IDE 與工具（`trae`、`agnes`、`minimax`、`workbuddy`、`eigent`）全面佈署 `.mcp.json`、`.trae/mcp.json`、黃金夾具零件（`locating-plate.3dbx`、`diamond-pin.3dbx`）與標準組裝提示詞 `prompt.txt`。
+  - 盤點執行狀態：Codex、OpenCode、Kiro、Antigravity、Cline 已跑通並記錄實測產物；Qoder（待登入）、DeepSeek（待儲值）、Claude Code（待登入）；桌面 IDE 用戶端已備妥即開即用之測試工作區。
+- **`verify:ui` 281 支長程執行偶發逾時之根因分析（RCA）**：
+  - 依第一性原理審查 `scripts/verify-ui.mjs` 與 `tests/e2e/phase2-assembly.js`：
+    1. 現行 `verify-ui.mjs` 在單一 Chrome 行程內連續循環執行 281 支測試（每支僅透過 `about:blank` + `clearDataForOrigin` + 重新載入 `${ORIGIN}`）。
+    2. 長達近 2 小時的密集高頻 WebGL、Three.js 與 WebAssembly 運算，造成 Chromium 的 Blink DOM IPC 與 GPU 行程累積資源碎片化，使單支腳本耗時由初期的 ~9 秒逐漸攀升至 18~24 秒。
+    3. `tests/e2e/phase2-assembly.js` 的 `H.loaded` 與 `H.settle` 設有硬編碼之 `30000 ms`（30 秒）等待門檻，在單獨執行時僅需 5~8 秒；但在整輪連跑後期遇系統高負載或 GC 停頓時，開組合件求解耗時偶發達到 31~34 秒，因而觸發逾時。
+  - **CAPA 規劃（遵守 AGENTS §3.3 零妥協原則）**：
+    - 嚴禁私自放寬 30s 門檻。最佳架構解法為在 `verify-ui.mjs` 中加入「批次行程回收機制」（例如每 40~50 支測試平滑重啟一次 Chrome 瀏覽器行程），徹底清空 Chromium 累積記憶體與 WebGL 上下文，讓全量 281 支測試全程保持 9 秒高效率，根除隨機逾時。
+
 ## 2026-11-27（下午）— 新增通用雙語製造圖框樣板（`template: 'industrial'`）
 
 - **需求與設計決策**：依使用者提供之工程圖截圖欄位結構，設計通用、無真實公司／人員／零件／公差範例資料的內建可切換圖頁樣板 `industrial`（保留原 ISO/CNS 4 列樣板 `standard` 為預設，Schema 升至 `46`）。
