@@ -1,5 +1,25 @@
 # 3D-Builder 開發日誌 (DEV_LOG.md)
 
+## 2026-11-28 — verify:ui Chrome 批次行程回收（待辦 #4，未提交）
+
+- **問題與根因**：完整 `verify:ui` 長期在同一 Chrome 行程內執行，Blink DOM IPC、GPU 行程與 WebGL 資源碎片逐批累積，後段平均耗時由約 9 秒升至 18～24 秒，使既有 30 秒等待門檻偶發逾時。依 AGENTS §3.3，本輪不放寬任何等待、呼叫或評估期限，改以瀏覽器行程隔離消除累積。
+- **實作**：
+  - [`scripts/verify-ui.mjs`](scripts/verify-ui.mjs) 在檔案邊界回收 Chrome；同檔多呼叫測試不切斷，快取 PASS／KNOWN 不計入新瀏覽器的批次數。`VERIFY_UI_RECYCLE_EVERY` 預設為 40，設為 0 可停用。
+  - [`scripts/verify-ui-args.mjs`](scripts/verify-ui-args.mjs) 集中處理參數驗證與生命週期：關閉舊 WebSocket、終止 Chrome 程序樹、等待子行程退出、確認除錯埠釋放、重試刪除臨時設定檔，全部成功後才啟動下一顆 Chrome。下載數跨所有設定檔去重累計，舊 socket 事件不得污染新工作階段，未回應的 CDP 呼叫在回收時明確失敗。
+  - Windows 以 `taskkill /PID <pid> /T /F` 終止程序樹；非零回傳只在目標 PID 確實不存在時視為成功，避免把「部分子程序未退出」誤報成已清理。Chrome 啟動、HTTP readiness 與 WebSocket open 均設有界期限，readiness fetch 會取消底層連線。
+- **審查與紅隊四問**：
+  1. **輸入破壞**：負數、小數、NaN、非數字與純空白字串皆明確拒絕，純空白不會被 `Number()` 靜默轉成 0。
+  2. **幾何相交**：本功能不建立幾何、不執行布林；破壞邊界是「同檔中途回收」與「跨檔案回收」，已分別以續跑與實際跨檔回收鎖住。
+  3. **依賴鏈**：執行器 → 生命週期輔助函式 → CDP／Chrome／profile／下載目錄 → 單元測試完整接線；正常清理失敗會保留程序退出時的同步退路並以 exit code 1 回報。
+  4. **零 Mock 與真值**：單元測試覆蓋可注入的失敗路徑，另以真實 Chrome 驗證跨檔回收、checkpoint 續跑、截圖與下載，不以 mock 通過代替瀏覽器證據。
+- **確效驗證**：
+  - TDD 先看到空白參數、taskkill argv／部分失敗、close 失敗仍清理、readiness fetch 未取消等紅燈後再修正；最終 `verify-ui-args.test.ts` 與 `repository-maintenance.test.ts` 合計 **28/28 通過**。
+  - 真實 Chrome 冒煙 **6/6**（實際跨檔回收兩次）；同一 checkpoint 續跑 **6/6 cached PASS**；截圖／下載流程 **2/2**（7 張 PNG）；獨立私有埠最終冒煙 **4/4**。
+  - `node --check` 兩支執行腳本、`git diff --check` 與 `npm run prepush` 全數通過；`lint:repo` 確認 343 份文件、16 個工作區、282 個瀏覽器呼叫。
+  - **完整回歸**（2026-11-28 18:28 啟動，不使用 checkpoint，私有埠 9491／9493／9497）：230 支腳本、282 個唯一呼叫全部實際執行，**282/282 PASS，0 KNOWN、0 失敗、0 Console 錯誤**；共回收 6 次（40／40／42／40／40／42，最後一批 38），累計 2912.5 秒，exit code 0，4 份測試下載皆限制在臨時設定檔並已移除。
+  - 回歸前後的完整 source diff SHA-256 同為 `3707445d07b5261d4e01d23136d0352102b010d4fa19b21e4a5076eed10d38f1`，執行期間未修改原始碼；結束後三個私有埠皆 FREE，無本輪 Chrome／Vite 殘留，亦沒有於本輪期間寫入的 `3db-verify-*` 臨時設定檔。
+- **狀態**：依使用者指示，本輪只完成實作、審查、修正與完整驗收，**尚未提交、尚未推送**。詳細日誌與 JSON 報告保留於本機 `out/verify-ui-recycle/`。
+
 ## 2026-11-28 — 推送前門檻：文件連結不得指向建置產物
 
 - **問題現象**：`docs(desktop): record the v0.8.0 release`（`9b1b3924`）推送後，Repository integrity 的三平台 `lint:repo` 同時失敗（run #411）；本機 `npm run lint:repo` 卻通過。

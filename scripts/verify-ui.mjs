@@ -9,7 +9,8 @@
 //
 // VERIFY_UI_ORIGIN (dev server), VERIFY_UI_DEBUG_PORT (Chrome DevTools, default 9333) and VERIFY_UI_SAMPLES_PORT
 // (the read-only STEP folder, default 5393) are overridable, so two sessions can run verify:ui at once; the harness
-// tells the scripts the samples URL as window.__samplesOrigin.
+// tells the scripts the samples URL as window.__samplesOrigin. VERIFY_UI_RECYCLE_EVERY sets how many jobs share a
+// Chrome process (default 40, 0 disables recycling); replacement happens only between files.
 //
 // Each script gets a fresh page and an empty browser storage (no recovery copy, no remembered project folder). The dev server is started
 // when nothing answers on its port, and stopped again at the end. Exit code 1 when a script fails or the page logs an error.
@@ -17,13 +18,24 @@
 // Every call to the browser has a deadline (CALL_TIMEOUT_MS below): a renderer that is stuck answers nothing at all — not even the timeout
 // of `Runtime.evaluate` — and with no deadline of our own the whole batch waits for ever. A panel the page puts up (an `alert`, or the
 // `beforeunload` of an unsaved part) is dismissed so the run goes on, and reported on the row it happened in.
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { devServerArgs } from './verify-ui-args.mjs';
+import {
+  closeSocket,
+  devServerArgs,
+  killChild,
+  recycleEvery,
+  removeDirectoryWithRetry,
+  shouldRecycle,
+  teardownBrowser,
+  waitForBrowserReady,
+  waitForChildExit,
+  waitForPortFree,
+} from './verify-ui-args.mjs';
 import { uiJobs } from './ui-jobs.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -41,6 +53,8 @@ const CALL_TIMEOUT_MS = (() => {
 })();
 /** What `Runtime.evaluate` is given as its own deadline — so also the longest a script may legitimately take. The call is set a margin past it. */
 const EVAL_TIMEOUT_MS = 600_000;
+/** The browser is replaced by a fresh one every this many jobs (0: never); see verify-ui-args.mjs. */
+const RECYCLE_EVERY = recycleEvery(process.env.VERIFY_UI_RECYCLE_EVERY);
 
 const args = process.argv.slice(2);
 const option = (name) => {
@@ -53,11 +67,6 @@ const jsonFile = option('json');
 const checkpointFile = option('checkpoint');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const kill = (child) => {
-  if (!child || child.exitCode !== null) return;
-  if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-  else child.kill();
-};
 
 function findBrowser() {
   const candidates = [
@@ -108,76 +117,170 @@ async function ensureServer() {
 async function main() {
   await ensureServer();
   const samples = serveSamples();
-  const profile = mkdtempSync(join(tmpdir(), '3db-verify-'));
-  const chrome = spawn(
-    findBrowser(),
-    [`--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${profile}`, '--headless=new', '--no-first-run', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--window-size=1280,720', 'about:blank'],
-    { stdio: 'ignore' },
-  );
-  const cleanup = () => {
-    samples.close();
-    kill(chrome);
-    kill(server);
-    // the downloads the run made, kept out of the user's Downloads folder (see Browser.setDownloadBehavior below)
-    const caught = existsSync(join(profile, 'downloads')) ? readdirSync(join(profile, 'downloads')).length : 0;
-    if (caught > 0) console.log(`${caught} download(s) of the scripts kept in the run's own folder and removed with it`);
+  let profile = null;
+  let chrome = null;
+  let ws = null;
+  const profiles = new Set();
+  const countedProfiles = new Set();
+  let downloadsCaught = 0;
+  let downloadsReported = false;
+  let samplesClosed = false;
+  let cleaned = false;
+  const pending = new Map();
+  let nextId = 0;
+  let errors = [];
+  let dialogs = [];
+  let jobShots = null;
+
+  const startChrome = () => {
+    profile = mkdtempSync(join(tmpdir(), '3db-verify-'));
+    profiles.add(profile);
+    chrome = spawn(
+      findBrowser(),
+      [`--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${profile}`, '--headless=new', '--no-first-run', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--window-size=1280,720', 'about:blank'],
+      { stdio: 'ignore' },
+    );
+  };
+  const countDownloads = (folder) => {
+    if (!folder || countedProfiles.has(folder)) return;
+    countedProfiles.add(folder);
     try {
-      rmSync(profile, { recursive: true, force: true });
+      const downloads = join(folder, 'downloads');
+      if (existsSync(downloads)) downloadsCaught += readdirSync(downloads).length;
     } catch {
-      // the browser may still hold a file
+      // a profile that could not be read is reported by the removal path
     }
   };
-  process.on('exit', cleanup);
+  const reportDownloads = () => {
+    if (downloadsReported) return;
+    downloadsReported = true;
+    if (downloadsCaught > 0) console.log(`${downloadsCaught} download(s) of the scripts kept in the run's own folder and removed with it`);
+  };
+  const closeSamples = () => {
+    if (samplesClosed) return;
+    samplesClosed = true;
+    samples.close();
+  };
+  const stopServer = () => {
+    if (!server) return;
+    if (killChild(server, process.platform)) server = null;
+  };
+  const failPending = () => {
+    for (const p of pending.values()) p.fail(new Error('the browser was replaced'));
+    pending.clear();
+  };
+  const syncCleanup = () => {
+    if (cleaned) return;
+    failPending();
+    if (ws) {
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onerror = null;
+      ws.onclose = null;
+      try { ws.close(); } catch { /* already closed */ }
+    }
+    if (chrome) killChild(chrome, process.platform);
+    closeSamples();
+    stopServer();
+    for (const folder of profiles) {
+      countDownloads(folder);
+      try { rmSync(folder, { recursive: true, force: true }); } catch { /* process exit cannot await a locked profile */ }
+    }
+    reportDownloads();
+  };
+  const cleanup = async () => {
+    if (cleaned) return;
+    failPending();
+    if (chrome) {
+      await teardownBrowser({
+        socket: ws,
+        child: chrome,
+        profile,
+        port: DEBUG_PORT,
+        close: closeSocket,
+        kill: (child) => killChild(child, process.platform),
+        waitExit: waitForChildExit,
+        waitPort: waitForPortFree,
+        remove: async (folder) => {
+          countDownloads(folder);
+          await removeDirectoryWithRetry(folder);
+          profiles.delete(folder);
+        },
+      });
+      ws = null;
+      chrome = null;
+      profile = null;
+    }
+    closeSamples();
+    stopServer();
+    for (const folder of profiles) {
+      countDownloads(folder);
+      await removeDirectoryWithRetry(folder);
+      profiles.delete(folder);
+    }
+    cleaned = true;
+    reportDownloads();
+  };
+  const onExit = () => syncCleanup();
+  process.once('exit', onExit);
 
   try {
-    for (let i = 0; i < 60; i++) {
-      try {
-        await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/version`);
-        break;
-      } catch {
-        await sleep(200);
-      }
-    }
-    const target = await (await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/new?about:blank`, { method: 'PUT' })).json();
-    const ws = new WebSocket(target.webSocketDebuggerUrl);
-    await new Promise((r) => (ws.onopen = r));
-    let nextId = 0;
-    const pending = new Map();
-    let errors = [];
-    let dialogs = [];
-    ws.onmessage = (m) => {
-      const d = JSON.parse(m.data);
-      if (d.id && pending.has(d.id)) {
-        pending.get(d.id).done(d);
-        pending.delete(d.id);
-      } else if (d.method === 'Page.javascriptDialogOpening') {
-        // a panel the page put up (an `alert`, or the `beforeunload` of an unsaved part) stops it dead, and calls into a stopped page never come back
-        dialogs.push(d.params.message);
-        send('Page.handleJavaScriptDialog', { accept: true }).catch(() => {});
-      } else if (d.method === 'Runtime.consoleAPICalled' && d.params.type === 'error') errors.push(d.params.args.map((a) => a.value ?? a.description ?? '').join(' '));
-      else if (d.method === 'Runtime.exceptionThrown') errors.push(d.params.exceptionDetails.exception?.description ?? d.params.exceptionDetails.text);
-      else if (d.method === 'Log.entryAdded' && d.params.entry.level === 'error') errors.push(`${d.params.entry.text} ${d.params.entry.url ?? ''}`);
-      else if (d.method === 'Runtime.bindingCalled' && d.params.name === '__capture') takeShot(JSON.parse(d.params.payload)).catch((e) => errors.push(`screenshot: ${e.message}`));
-    };
-    // a socket that drops takes every unanswered call with it: say so at once instead of waiting out each deadline
-    ws.onclose = () => {
-      for (const p of pending.values()) p.fail(new Error('the browser connection closed before it answered'));
-      pending.clear();
+    startChrome();
+    let jobsSinceLaunch = 0;
+    /** Waits for the browser, opens a page and listens to it; run again for each fresh browser (`recycle`). */
+    const connect = async () => {
+      await waitForBrowserReady(chrome, DEBUG_PORT);
+      const response = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/new?about:blank`, { method: 'PUT', signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error(`could not create the browser page: HTTP ${response.status}`);
+      const target = await response.json();
+      if (!target.webSocketDebuggerUrl) throw new Error('the browser page did not provide a WebSocket URL');
+      const socket = new WebSocket(target.webSocketDebuggerUrl);
+      ws = socket;
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('the browser WebSocket timed out while opening')), 5000);
+        socket.onopen = () => { clearTimeout(timer); resolve(); };
+        socket.onerror = () => { clearTimeout(timer); reject(new Error('the browser WebSocket failed to open')); };
+        socket.onclose = () => { clearTimeout(timer); reject(new Error('the browser WebSocket closed before it opened')); };
+      });
+      socket.onmessage = (m) => {
+        if (socket !== ws) return;
+        const d = JSON.parse(m.data);
+        if (d.id && pending.has(d.id)) {
+          pending.get(d.id).done(d);
+          pending.delete(d.id);
+        } else if (d.method === 'Page.javascriptDialogOpening') {
+          // a panel the page put up (an `alert`, or the `beforeunload` of an unsaved part) stops it dead, and calls into a stopped page never come back
+          dialogs.push(d.params.message);
+          send('Page.handleJavaScriptDialog', { accept: true }, 5000, socket).catch(() => {});
+        } else if (d.method === 'Runtime.consoleAPICalled' && d.params.type === 'error') errors.push(d.params.args.map((a) => a.value ?? a.description ?? '').join(' '));
+        else if (d.method === 'Runtime.exceptionThrown') errors.push(d.params.exceptionDetails.exception?.description ?? d.params.exceptionDetails.text);
+        else if (d.method === 'Log.entryAdded' && d.params.entry.level === 'error') errors.push(`${d.params.entry.text} ${d.params.entry.url ?? ''}`);
+        else if (d.method === 'Runtime.bindingCalled' && d.params.name === '__capture') takeShot(JSON.parse(d.params.payload), socket).catch((e) => errors.push(`screenshot: ${e.message}`));
+      };
+      // a socket that drops takes every unanswered call with it: say so at once instead of waiting out each deadline
+      socket.onclose = () => {
+        if (socket !== ws) return;
+        for (const p of pending.values()) p.fail(new Error('the browser connection closed before it answered'));
+        pending.clear();
+      };
     };
     /** The folder the screenshots of the script that runs go to (`--shots`), and what a script asked for with `await window.__shot('label')`. */
-    let jobShots = null;
-    const takeShot = async ({ n, label, dpr }) => {
+    const takeShot = async ({ n, label, dpr }, socket = ws) => {
       if (dpr) {
-        await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: dpr, mobile: false });
+        await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: dpr, mobile: false }, CALL_TIMEOUT_MS, socket);
       } else if (jobShots) {
-        const shot = await send('Page.captureScreenshot', { format: 'png' });
+        const shot = await send('Page.captureScreenshot', { format: 'png' }, CALL_TIMEOUT_MS, socket);
         mkdirSync(jobShots, { recursive: true });
         if (shot.result?.data) writeFileSync(join(jobShots, `${String(n).padStart(2, '0')}-${String(label).replace(/[^\w.-]+/g, '_').slice(0, 80)}.png`), Buffer.from(shot.result.data, 'base64'));
       }
-      await send('Runtime.evaluate', { expression: `window.__shotDone = ${n}` });
+      await send('Runtime.evaluate', { expression: `window.__shotDone = ${n}` }, CALL_TIMEOUT_MS, socket);
     };
-    const send = (method, params = {}, timeoutMs = CALL_TIMEOUT_MS) =>
+    const send = (method, params = {}, timeoutMs = CALL_TIMEOUT_MS, socket = ws) =>
       new Promise((res, rej) => {
+        if (!socket || socket.readyState !== 1) {
+          rej(new Error(`the browser connection is not open for ${method}`));
+          return;
+        }
         const id = ++nextId;
         const timer = setTimeout(() => {
           pending.delete(id);
@@ -193,29 +296,70 @@ async function main() {
             rej(e);
           },
         });
-        ws.send(JSON.stringify({ id, method, params }));
+        try {
+          socket.send(JSON.stringify({ id, method, params }));
+        } catch (error) {
+          clearTimeout(timer);
+          pending.delete(id);
+          rej(error);
+        }
       });
-    await send('Page.enable');
-    // What a script exports (a BOM's CSV, a flat pattern's DXF, a drawing's SVG …) is clicked through to a real download: the scripts read the file from
-    // the blob they catch, but the browser saves it too, and left to itself a fresh profile saves into the user's own Downloads folder — a copy for every
-    // run. It goes into the throw-away profile instead, which is removed with it.
-    // A refused call comes back with an `error` (it is not thrown): the page-level form is the fallback, and with neither the run stops rather than litter.
-    const downloads = { behavior: 'allow', downloadPath: join(profile, 'downloads') };
-    if ((await send('Browser.setDownloadBehavior', downloads)).error && (await send('Page.setDownloadBehavior', downloads)).error) {
-      throw new Error('the browser would not say where downloads go: stopped so as not to save into the Downloads folder');
-    }
-    await send('Runtime.enable');
-    await send('Log.enable');
-    // `window.__shot(label)` for the scripts: the page asks, this process takes the screenshot (the page cannot), and the page goes on when it is saved
-    await send('Runtime.addBinding', { name: '__capture' });
-    await send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `window.__shotN = 0; window.__shotDone = 0;
+    const setup = async () => {
+      await send('Page.enable');
+      // What a script exports (a BOM's CSV, a flat pattern's DXF, a drawing's SVG …) is clicked through to a real download: the scripts read the file from
+      // the blob they catch, but the browser saves it too, and left to itself a fresh profile saves into the user's own Downloads folder — a copy for every
+      // run. It goes into the throw-away profile instead, which is removed with it.
+      // A refused call comes back with an `error` (it is not thrown): the page-level form is the fallback, and with neither the run stops rather than litter.
+      const downloads = { behavior: 'allow', downloadPath: join(profile, 'downloads') };
+      if ((await send('Browser.setDownloadBehavior', downloads)).error && (await send('Page.setDownloadBehavior', downloads)).error) {
+        throw new Error('the browser would not say where downloads go: stopped so as not to save into the Downloads folder');
+      }
+      await send('Runtime.enable');
+      await send('Log.enable');
+      // `window.__shot(label)` for the scripts: the page asks, this process takes the screenshot (the page cannot), and the page goes on when it is saved
+      await send('Runtime.addBinding', { name: '__capture' });
+      await send('Page.addScriptToEvaluateOnNewDocument', {
+        source: `window.__shotN = 0; window.__shotDone = 0;
 window.__samplesOrigin = 'http://127.0.0.1:${SAMPLES_PORT}/';
 window.__shot = async (label) => { const n = ++window.__shotN; window.__capture(JSON.stringify({ n, label })); for (let i = 0; i < 600 && window.__shotDone < n; i++) await new Promise((r) => setTimeout(r, 25)); };
 window.__setDpr = async (dpr) => { const n = ++window.__shotN; window.__capture(JSON.stringify({ n, dpr })); for (let i = 0; i < 600 && window.__shotDone < n; i++) await new Promise((r) => setTimeout(r, 25)); };`,
-    });
-    await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });
-    await send('Emulation.setFocusEmulationEnabled', { enabled: true }); // a headless page is not the focused window: without this a field never gets or loses focus (blur, autofocus)
+      });
+      await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });
+      await send('Emulation.setFocusEmulationEnabled', { enabled: true }); // a headless page is not the focused window: without this a field never gets or loses focus (blur, autofocus)
+    };
+    const launch = async () => {
+      errors = [];
+      dialogs = [];
+      jobShots = null;
+      await connect();
+      await setup();
+      jobsSinceLaunch = 0;
+    };
+    /** A fresh browser and profile: the old one is closed and killed first, its port and folder are free before the next starts. */
+    const recycle = async () => {
+      failPending();
+      await teardownBrowser({
+        socket: ws,
+        child: chrome,
+        profile,
+        port: DEBUG_PORT,
+        close: closeSocket,
+        kill: (child) => killChild(child, process.platform),
+        waitExit: waitForChildExit,
+        waitPort: waitForPortFree,
+        remove: async (folder) => {
+          countDownloads(folder);
+          await removeDirectoryWithRetry(folder);
+          profiles.delete(folder);
+        },
+      });
+      ws = null;
+      chrome = null;
+      profile = null;
+      startChrome();
+      await launch();
+    };
+    await launch();
     const evaluate = async (expression) => {
       // the browser itself ends a script that runs past EVAL_TIMEOUT_MS and says so; our call is given a margin past that, so only a renderer
       // that cannot answer at all ever reaches the deadline
@@ -287,6 +431,11 @@ window.__setDpr = async (dpr) => { const n = ++window.__shotN; window.__capture(
           continue;
         }
       }
+      if (shouldRecycle(jobsSinceLaunch, RECYCLE_EVERY)) {
+        // between files, never inside a script that runs in several loads and needs what the first left in the browser storage
+        console.log(`RECYCLE  fresh browser after ${jobsSinceLaunch} job(s)`);
+        await recycle();
+      }
       const fileRows = [];
       for (const [k, call] of calls.entries()) {
         // read before the fresh page: a panel dismissed while loading this one belongs to the row being started, not to the one before it
@@ -335,6 +484,7 @@ window.__setDpr = async (dpr) => { const n = ++window.__shotN; window.__capture(
         }
         results.push(row);
         fileRows.push(row);
+        jobsSinceLaunch += 1;
         console.log(`${row.status.padEnd(8)} ${file} ${call}  ${row.seconds}s${row.detail ? `  ${row.detail}` : ''}`);
       }
       if (checkpointFile && fileRows.length > 0) {
@@ -342,7 +492,8 @@ window.__setDpr = async (dpr) => { const n = ++window.__shotN; window.__capture(
         appendFileSync(checkpointFile, fileRows.map((r) => JSON.stringify(r)).join('\n') + '\n');
       }
     }
-    ws.close();
+    await closeSocket(ws);
+    ws = null;
 
     const count = (s) => results.filter((r) => r.status === s).length;
     console.log(`\n${count('PASS')} of ${results.length} pass; ${count('KNOWN')} pass with a known defect written down; ${results.length - count('PASS') - count('KNOWN')} do not.`);
@@ -352,7 +503,13 @@ window.__setDpr = async (dpr) => { const n = ++window.__shotN; window.__capture(
     }
     process.exitCode = results.every((r) => r.status === 'PASS' || r.status === 'KNOWN') ? 0 : 1;
   } finally {
-    cleanup();
+    try {
+      await cleanup();
+      process.off('exit', onExit);
+    } catch (error) {
+      console.error(error);
+      process.exitCode = 1;
+    }
   }
 }
 

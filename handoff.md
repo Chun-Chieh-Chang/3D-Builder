@@ -1,6 +1,6 @@
 # 交接與接續工作
 
-## 2026-11-28 — v0.8.0 正式發佈、旋轉軸 3D 醒目顯示、專案資料夾預設位置與推送前門檻強化
+## 2026-11-28 — v0.8.0 正式發佈、旋轉軸 3D 醒目顯示、專案資料夾預設位置、推送前門檻與 verify:ui 批次回收
 
 - **本日完成與已推送提交**：
   - `af3fe0c6`（**「選擇資料夾…」預設開啟所選檔案所在資料夾**）：`pickProjectFolder` 支援 `startIn` 並於呼叫前零 `await` 保留使用者手勢，非 `AbortError` 自動降級重試；`AppStore` 於各開啟／建立流程傳入對應檔案或專案 handle（CI run `46097515173` 通過）。
@@ -12,13 +12,17 @@
     - 公開發佈 [GitHub Release v0.8.0](https://github.com/Chun-Chieh-Chang/3D-Builder/releases/tag/v0.8.0)（`Latest`，附 `3D-Builder_0.8.0_x64-setup.exe` 與 `SHA256SUMS.txt`），履歷已登錄於 [docs/desktop-release-history.md](docs/desktop-release-history.md)。
   - `eaa333a1`（**推送前門檻強化**）：修正 `9b1b3924` 於 `DEV_LOG.md` 將本機 NSIS 安裝檔寫成 Markdown 連結造成 CI run #411 三平台 `lint:repo` 失敗之問題；`lint:repo` 改檢核連結目標必須屬於版本庫，並新增 `scripts/prepush.mjs` 與 `.git/hooks/pre-push`（`npm run prepush`）。[CI run 46117154173](https://github.com/Chun-Chieh-Chang/3D-Builder/actions/runs/46117154173) 三平台 integrity 與 Pages 部署全綠通過。
 - **GitHub Pages vs 桌面版能力盤點**：已確認 GitHub Pages 與桌面版共用同一份 Web／WASM 核心（3D 建模、組合件、工程圖、STEP／IGES／STL／DXF／PDF 皆完整可用）；僅 **DWG 匯入／匯出**（需 Tauri `dwg_convert`）與 **開箱即用之內建 MCP Sidecar／完全離線啟動** 屬桌面版專有。
+- **本輪未提交（依使用者指示不提交、不推送）**：
+  - **待辦 #4 已完成**：[`scripts/verify-ui.mjs`](scripts/verify-ui.mjs) 與 [`scripts/verify-ui-args.mjs`](scripts/verify-ui-args.mjs) 加入 Chrome 批次行程回收，預設每 40 個實際執行的呼叫換新瀏覽器（`VERIFY_UI_RECYCLE_EVERY=0` 可停用），只在檔案邊界回收；快取 PASS／KNOWN 不計入批次。舊 WebSocket、Chrome 程序樹、除錯埠與臨時設定檔必須依序清理完畢才啟動下一顆 Chrome，Windows taskkill 的部分失敗不會被誤報成成功。
+  - 單元測試 **28/28**、真實 Chrome 回收／續跑／截圖冒煙全數通過，`npm run prepush` 通過且仍為 282 個瀏覽器呼叫。完整回歸未使用 checkpoint：**230 支腳本、282/282 PASS，0 KNOWN、0 失敗、0 Console 錯誤**，實際回收 6 次，累計 2912.5 秒，exit code 0。
+  - 完整回歸期間 source diff SHA-256 未變；結束後私有埠 9491／9493／9497 全數釋放，無本輪 Chrome／Vite 或新建臨時設定檔殘留。證據位於本機 `out/verify-ui-recycle/`，詳見 [DEV_LOG](DEV_LOG.md) 本日條目。
 - **仍待**：
   - `#9` 兩份 v4 審閱稿（`out/R1-9035/`、`out/R1-16148/` 需於產出機檢視或本機重跑出圖腳本）；
-  - `#4` `scripts/verify-ui.mjs` 實施 Chrome 批次行程回收（每 40–50 支重啟以消除長程偶發逾時；本次 282/282 雖全過，架構隔離仍待補齊）；
+  - `#4` 實作與完整回歸已完成，等待使用者決定是否提交／推送；
   - `#14` 實件與手機版適配；
   - 多客戶端 MCP 矩陣之桌面 IDE 實測（`out/mcp-client-qa/` 已佈署就緒）與外部帳號阻礙項目（Claude Code／Qoder／DeepSeek）。
 
-## 2026-11-27 — MECE 清理（待辦 #18 已解決）、多客戶端 MCP 矩陣整備與 verify:ui 逾時 RCA（待辦 #4 進展）
+## 2026-11-27 — MECE 清理（待辦 #18 已解決）、多客戶端 MCP 矩陣整備與 verify:ui 逾時 RCA（待辦 #4 已於 11-28 完成）
 
 - **待辦 #18（未追蹤目錄，已解決）**：經使用者同意，將 `261126/`、`Claude outputs/`、`阿郎/` 本地參考資產完整保留於磁碟，並在 `.gitignore` 寫入忽略規則；工作區恢復潔淨（`git status` 無未追蹤目錄雜訊）。
 - **多客戶端 MCP 組合件實測矩陣（P0 接續）**：
@@ -27,17 +31,17 @@
     - 已驗證跑通（5 個）：Codex（`0.167.0`）、OpenCode（`1.17.4`）、Kiro（`2.21.1`）、Antigravity（`1.5.14`）、Cline（`3.0.74`）。
     - 隔離設定與零件已佈署就緒（5 處）：Trae、Agnes Code、MiniMax Code、WorkBuddy AI、Eigent。
     - 外部阻礙（3 個）：Claude Code（`2.1.328` 回傳未登入/額度）、Qoder（`1.0.25` 回傳未登入）、DeepSeek（回傳 402 餘額不足）。
-- **待辦 #4（verify:ui 偶發 4~5 支逾時 RCA）**：
+- **待辦 #4（verify:ui 偶發 4~5 支逾時 RCA，已於 2026-11-28 完成）**：
   - 第一性原理根因確立：`verify-ui.mjs` 在單一 Chromium 行程中連續航向 281 支測試，造成 Blink DOM IPC 與 GPU 行程資源碎片累積，耗時由 9 秒惡化為 18~24 秒；`phase2-assembly.js` 的 `H.loaded` 硬編碼 30s 門檻在後期高負載偶發超時（31~34s）。
-  - CAPA 方案（遵守 AGENTS §3.3 零妥協原則）：禁止隨意調大門檻；規劃在 `verify-ui.mjs` 加入週期性（每 40~50 支）重啟 Chrome 行程之架構隔離，全程鎖定 9 秒均速。
-- **仍待**：#9 兩份 v4 審閱稿（需於產出機之 `out/` 複製檢視，或於本機重新跑出圖腳本）；#4 實施 Chrome 批次回收架構隔離；#14 實件與手機版適配。
+  - CAPA 方案（遵守 AGENTS §3.3 零妥協原則）：禁止隨意調大門檻；已於 2026-11-28 在 `verify-ui.mjs` 加入週期性（預設每 40 支）重啟 Chrome 行程之架構隔離，完整 282/282 回歸通過，細節見本文件 11-28 頂部。
+- **仍待**：#9 兩份 v4 審閱稿（需於產出機之 `out/` 複製檢視，或於本機重新跑出圖腳本）；#14 實件與手機版適配。
 
 ## 2026-11-27 — 待辦 #3：seed 73、52（已解決）
 
 - seed 52 早已解決；seed 73 的重建拋例外，根因是頂點投影取到遠處的垂足，已修（`exactRound.ts`，`fa27a4ab`），重建改為精確圓角。細節見 DEV_LOG 同日、ADR 0265 §12。
 - **CI**：full-suite run 45958560186（`073be7d7`）全綠：8 片、三平台 integrity、section-offset-cost 全過；推送觸發的 run 45958542780 也全綠。本機未跑的 window-rounds、drafted、multi-window、revolved、loft 辨識 fuzz 都在其中。
 - **本日推送**：`45c77b74`（#12 開邊檢查）、`5fbdd09e`（旋轉跨軸檢查）、`9004415e`（drawing_complete 角度、斜面片段）、`fa27a4ab`（精確圓角投影）及其文件提交；各輪 CI 全綠。
-- **仍待**：#9 兩份 v4 審閱稿等使用者審閱（`out/` 不在 git，換機需手動拷 `out/R1-9035/`、`out/R1-16148/`）；#4、#14 待做；#18 三個未追蹤檔待使用者決定。
+- **仍待**：#9 兩份 v4 審閱稿等使用者審閱（`out/` 不在 git，換機需手動拷 `out/R1-9035/`、`out/R1-16148/`）；#4 已於 11-28 完成並通過完整回歸，等待提交裁決；#14 待做；#18 三個未追蹤檔待使用者決定。
 
 ## 2026-11-27 — 兩份 v4 審閱稿（待辦 #9）
 
